@@ -805,6 +805,31 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .qc-input-row button { background: #333947; border: 1px solid #787e8e; color: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
         .qc-input-row button:hover { background: #4a5265; }
         #qsResult { display: none; margin-top: 10px; font-size: 12px; background: #0f1115; padding: 10px; border-radius: 6px; border: 1px solid #262b36; }
+
+        /* --- MOBILE RESPONSIVE LAYOUT --- */
+        @media (max-width: 900px) {
+            body { display: block; overflow-y: auto; overflow-x: hidden; height: auto; }
+            
+            .sidebar { width: 100%; border-right: none; display: block; }
+            .sidebar-top { overflow-y: visible; padding-bottom: 0; }
+            .sidebar-bottom { border-top: none; padding-top: 5px; }
+            
+            .main-content { width: 100%; overflow-y: visible; display: block; padding-top: 5px; }
+            
+            .right-drawer { width: 100%; border-left: none; border-top: 1px solid #262b36; display: block; }
+            
+            .top-nav { flex-direction: column; align-items: stretch; gap: 12px; padding: 12px; }
+            .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px; white-space: normal; }
+            .controls > label { display: none; /* Hide labels on mobile to save space */ }
+            select, button.btn-control { flex: 1 1 30%; font-size: 11px; padding: 8px 6px; text-align: center; }
+            
+            .chart-container { height: 400px; margin-top: 10px; flex: none; }
+            .grid { grid-template-columns: repeat(2, 1fr); }
+            
+            .modal { width: 95%; padding: 15px; }
+            .alert-section > div { flex-wrap: wrap; flex-direction: column; }
+            .alert-section label { width: 100%; }
+        }
     </style>
 </head>
 <body>
