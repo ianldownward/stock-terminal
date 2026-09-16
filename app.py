@@ -1,11 +1,25 @@
 import os
 import json
 import time
+import urllib.request
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template_string
 
 app = Flask(__name__)
+
+def send_push_notification(topic, title, message):
+    if not topic: return
+    try:
+        url = f"https://ntfy.sh/{topic.strip()}"
+        req = urllib.request.Request(
+            url,
+            data=message.encode('utf-8'),
+            headers={'Title': title}
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as e:
+        print(f"Notification push error: {e}")
 
 class PortfolioManager:
     def __init__(self, filename='portfolio.json'):
@@ -23,7 +37,8 @@ class PortfolioManager:
                 'period': '1mo',
                 'interval': '1d',
                 'style': 'candlestick',
-                'refresh': '10000'
+                'refresh': '10000',
+                'ntfy_topic': ''
             }
         }
 
@@ -216,6 +231,11 @@ class PortfolioManager:
         else:
             ud['holdings'].pop(ticker, None)
         self.save()
+
+        ntfy_topic = ud.get('settings', {}).get('ntfy_topic', '')
+        if ntfy_topic:
+            send_push_notification(ntfy_topic, f"Trade Executed: {ticker}", f"{entry['action']} {shares} shares @ £{total_amount}")
+
         return entry
 
     def undo_trade(self, trade_id):
@@ -404,6 +424,15 @@ def delete_user():
         'active_user': portfolio_store.active_username(),
         'portfolio': portfolio_store.user_data()
     })
+
+@app.route('/api/push_test', methods=['POST'])
+def push_test():
+    body = request.get_json() or {}
+    topic = body.get('topic', '')
+    if topic:
+        send_push_notification(topic, "Stock Terminal Push Alert", "Test notification connected successfully to your iPhone!")
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error', 'message': 'No topic provided'})
 
 @app.route('/api/portfolio', methods=['GET'])
 def get_portfolio():
@@ -722,7 +751,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .budget-sub-stats b { color: #e1e3e6; }
 
         .directives-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 12px; }
-        .directives-box h3 { font-size: 11px; color: #00c853; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+        .directives-box h3 { font-size: 11px; color: #00c853; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; }
         .directive-item { background: #0f1115; border: 1px solid #262b36; border-radius: 6px; padding: 8px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
         .directive-info { font-size: 11px; color: #fff; }
         .directive-info b { color: #00d2ff; }
@@ -806,29 +835,21 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .qc-input-row button:hover { background: #4a5265; }
         #qsResult { display: none; margin-top: 10px; font-size: 12px; background: #0f1115; padding: 10px; border-radius: 6px; border: 1px solid #262b36; }
 
-        /* --- MOBILE RESPONSIVE LAYOUT --- */
+        /* Mobile Layout */
         @media (max-width: 900px) {
             body { display: block; overflow-y: auto; overflow-x: hidden; height: auto; }
-            
             .sidebar { width: 100%; border-right: none; display: block; }
             .sidebar-top { overflow-y: visible; padding-bottom: 0; }
             .sidebar-bottom { border-top: none; padding-top: 5px; }
-            
             .main-content { width: 100%; overflow-y: visible; display: block; padding-top: 5px; }
-            
             .right-drawer { width: 100%; border-left: none; border-top: 1px solid #262b36; display: block; }
-            
             .top-nav { flex-direction: column; align-items: stretch; gap: 12px; padding: 12px; }
             .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px; white-space: normal; }
-            .controls > label { display: none; /* Hide labels on mobile to save space */ }
+            .controls > label { display: none; }
             select, button.btn-control { flex: 1 1 30%; font-size: 11px; padding: 8px 6px; text-align: center; }
-            
             .chart-container { height: 400px; margin-top: 10px; flex: none; }
             .grid { grid-template-columns: repeat(2, 1fr); }
-            
             .modal { width: 95%; padding: 15px; }
-            .alert-section > div { flex-wrap: wrap; flex-direction: column; }
-            .alert-section label { width: 100%; }
         }
     </style>
 </head>
@@ -850,34 +871,33 @@ HTML_FRONTEND = """<!DOCTYPE html>
         </div>
     </div>
 
-    <!-- ALERTS MODAL -->
+    <!-- ALERTS MODAL WITH IPHONE NTFY PUSH -->
     <div class="modal-overlay" id="alertModal">
         <div class="modal">
             <h2><span id="modalTitle">Configure Alerts</span></h2>
             
-            <div class="alert-section" id="smartAlertsSection" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;">
-                <h3 style="font-size:13px; color:#00d2ff; margin-bottom:15px; text-transform:uppercase;">Smart Tranche Alerts</h3>
-                <div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;">
-                    <input type="checkbox" id="chkBuy" style="margin-right:12px; margin-top:3px;">
-                    <div><b style="color:#fff;">Anomaly Buy Signal</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when mathematical deviation dictates scaling into next tranche.</span></div>
-                </div>
-                <div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;">
-                    <input type="checkbox" id="chkSell" style="margin-right:12px; margin-top:3px;">
-                    <div><b style="color:#fff;">Take Profit Target</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when baseline discount shrinks and premium returns.</span></div>
+            <div class="alert-section" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;">
+                <h3 style="font-size:13px; color:#00d2ff; margin-bottom:10px; text-transform:uppercase;">iPhone Lock Screen Alerts (ntfy.sh)</h3>
+                <p style="font-size:11px; color:#8a8a9e; margin-top:0; margin-bottom:10px; line-height:1.4;">
+                    1. Install free <b>ntfy</b> app on iPhone.<br>
+                    2. Subscribe to a topic name (e.g. <code>ian_stock_terminal</code>).<br>
+                    3. Enter exact topic name below:
+                </p>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" id="ntfyTopicInput" placeholder="e.g. ian_stock_terminal" style="background:#0f1115; border:1px solid #262b36; color:#00d2ff; padding:8px; border-radius:6px; flex:1; font-weight:bold;">
+                    <button onclick="testPushNotification()" style="background:#00d2ff; color:#000; border:none; font-weight:bold; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:11px;">Test Push</button>
                 </div>
             </div>
 
-            <div class="alert-section" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;">
-                <h3 style="font-size:13px; color:#00d2ff; margin-bottom:15px; text-transform:uppercase;">Manual Price Overrides</h3>
-                <div style="display:flex; gap:15px;">
-                    <label style="display:flex; flex-direction:column; font-size:12px; color:#787e8e; gap:6px; flex:1;">
-                        <div style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="chkManualBuy"> Buy below price (£/p):</div>
-                        <input type="number" id="manualBuyPrice" placeholder="0.00" style="background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; width:100%;">
-                    </label>
-                    <label style="display:flex; flex-direction:column; font-size:12px; color:#787e8e; gap:6px; flex:1;">
-                        <div style="display:flex; align-items:center; gap:6px;"><input type="checkbox" id="chkManualSell"> Sell above price (£/p):</div>
-                        <input type="number" id="manualSellPrice" placeholder="0.00" style="background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; width:100%;">
-                    </label>
+            <div class="alert-section" id="smartAlertsSection" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;">
+                <h3 style="font-size:13px; color:#00d2ff; margin-bottom:15px; text-transform:uppercase;">Smart Tranche Alerts</h3>
+                <div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;">
+                    <input type="checkbox" id="chkBuy" style="margin-right:12px; margin-top:3px;" checked>
+                    <div><b style="color:#fff;">Anomaly Buy Signal</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when mathematical deviation dictates scaling into next tranche.</span></div>
+                </div>
+                <div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;">
+                    <input type="checkbox" id="chkSell" style="margin-right:12px; margin-top:3px;" checked>
+                    <div><b style="color:#fff;">Take Profit Target</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when baseline discount shrinks and premium returns.</span></div>
                 </div>
             </div>
 
@@ -1117,32 +1137,40 @@ HTML_FRONTEND = """<!DOCTYPE html>
             }
         }
 
-        function triggerBrowserNotification(title, body) {
-            if ("Notification" in window) {
-                if (Notification.permission === "granted") {
-                    new Notification(title, { body: body });
-                } else if (Notification.permission !== "denied") {
-                    Notification.requestPermission().then(permission => {
-                        if (permission === "granted") {
-                            new Notification(title, { body: body });
-                        }
-                    });
-                }
-            }
-        }
-
         function saveUISettings() {
+            let ntfyTopic = document.getElementById('ntfyTopicInput') ? document.getElementById('ntfyTopicInput').value.trim() : '';
             let settings = {
                 period: document.getElementById('periodSelect').value,
                 interval: document.getElementById('intervalSelect').value,
                 style: document.getElementById('styleSelect').value,
-                refresh: document.getElementById('refreshSelect').value
+                refresh: document.getElementById('refreshSelect').value,
+                ntfy_topic: ntfyTopic
             };
             fetch('/api/portfolio/settings', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({settings: settings})
             });
+        }
+
+        async function testPushNotification() {
+            let topic = document.getElementById('ntfyTopicInput').value.trim();
+            if (!topic) {
+                alert("Please enter a topic name first!");
+                return;
+            }
+            saveUISettings();
+            let res = await fetch('/api/push_test', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({topic: topic})
+            });
+            let data = await res.json();
+            if (data.status === 'ok') {
+                alert("Test push sent! Check your iPhone's ntfy app.");
+            } else {
+                alert("Error sending test push.");
+            }
         }
 
         async function resetTerminalData() {
@@ -1159,7 +1187,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let intervalMs = parseInt(document.getElementById('refreshSelect').value) || 0;
             if (intervalMs > 0) {
                 autoRefreshTimer = setInterval(() => {
-                    fetchData(true); // Silent auto-update
+                    fetchData(true);
                 }, intervalMs);
             }
         }
@@ -1184,17 +1212,15 @@ HTML_FRONTEND = """<!DOCTYPE html>
         function openAlertModal(isPreFilled) {
             if (!currentTicker) return;
             document.getElementById('modalTitle').innerText = `Configure Alerts: ${currentTicker}`;
-            if ("Notification" in window && Notification.permission !== "granted") {
-                Notification.requestPermission();
+            if (globalPortfolioData.settings && globalPortfolioData.settings.ntfy_topic) {
+                document.getElementById('ntfyTopicInput').value = globalPortfolioData.settings.ntfy_topic;
             }
             document.getElementById('alertModal').style.display = 'flex';
         }
 
         function saveAlerts() {
+            saveUISettings();
             document.getElementById('alertModal').style.display = 'none';
-            if (currentTicker) {
-                triggerBrowserNotification("Alerts Configured", `Monitoring ${currentTicker} anomalies actively.`);
-            }
         }
 
         function onMasterBudgetInput() {
@@ -1590,6 +1616,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     if (s.interval) document.getElementById('intervalSelect').value = s.interval;
                     if (s.style) document.getElementById('styleSelect').value = s.style;
                     if (s.refresh) document.getElementById('refreshSelect').value = s.refresh;
+                    if (s.ntfy_topic && document.getElementById('ntfyTopicInput')) {
+                        document.getElementById('ntfyTopicInput').value = s.ntfy_topic;
+                    }
                     setupAutoRefresh();
                     isSettingsLoaded = true;
                 }
