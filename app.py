@@ -382,13 +382,17 @@ def get_score():
 @app.route('/api/directives', methods=['GET'])
 def get_directives():
     watchlist = portfolio_store.data.get('watchlist', [])
-    directives = []
     engine = MarketScoringEngine()
     master_budget = portfolio_store.data.get('master_budget', 10000.0)
     
     total_owned = portfolio_store.get_total_portfolio_value()
     remaining_cash = max(0, master_budget - total_owned)
 
+    final_directives = []
+    buy_targets = []
+    total_buy_demand = 0.0
+
+    # Pass 1: Find all mathematical demands
     for t in watchlist:
         t = t.strip().upper()
         if not t: continue
@@ -413,31 +417,40 @@ def get_directives():
 
             if state['action_main'] == 'SELL':
                 if shares_owned > 0:
-                    directives.append({
+                    final_directives.append({
                         'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL',
                         'shares': shares_owned, 'price': current, 'amount': round(shares_owned * cost_per_share, 2)
                     })
             elif diff_val > 5 and tranches > 0 and cost_per_share > 0:
-                allowed_spend = min(diff_val, remaining_cash)
-                buy_shares = int(allowed_spend // cost_per_share)
-                if buy_shares > 0:
-                    amt = round(buy_shares * cost_per_share, 2)
-                    directives.append({
-                        'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'BUY',
-                        'shares': buy_shares, 'price': current, 'amount': amt
-                    })
-                    remaining_cash -= amt
+                buy_targets.append({
+                    'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'BUY',
+                    'diff_val': diff_val, 'cost_per_share': cost_per_share, 'price': current
+                })
+                total_buy_demand += diff_val
             elif val_owned > 0 and (tranches == 0 or diff_val < -5):
                 excess_val = abs(diff_val)
                 sell_shares = shares_owned if tranches == 0 else min(shares_owned, int(excess_val // cost_per_share))
                 if sell_shares > 0:
-                    directives.append({
+                    final_directives.append({
                         'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL',
                         'shares': sell_shares, 'price': current, 'amount': round(sell_shares * cost_per_share, 2)
                     })
         except Exception: pass
 
-    return jsonify({'directives': directives})
+    # Pass 2: Scale Buys Proportionally against Remaining Cash
+    if total_buy_demand > 0:
+        scale_ratio = min(1.0, remaining_cash / total_buy_demand) if remaining_cash > 0 else 0.0
+        
+        for b in buy_targets:
+            allowed_spend = b['diff_val'] * scale_ratio
+            buy_shares = int(allowed_spend // b['cost_per_share'])
+            if buy_shares > 0:
+                final_directives.append({
+                    'ticker': b['ticker'], 'name': b['name'], 'action': 'BUY',
+                    'shares': buy_shares, 'price': b['price'], 'amount': round(buy_shares * b['cost_per_share'], 2)
+                })
+
+    return jsonify({'directives': final_directives})
 
 @app.route('/api/recommend', methods=['GET'])
 def get_recommendations():
