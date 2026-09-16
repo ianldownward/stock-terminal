@@ -193,7 +193,7 @@ class MarketScoringEngine:
             'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares',
             'SLV': 'iShares Silver Trust', 'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC',
             'MSFT': 'Microsoft Corporation', 'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corporation', 'TSLA': 'Tesla, Inc.',
-            'AMZN': 'Amazon.com, Inc.', 'META': 'Meta Platforms, Inc.', 'GOOGL': 'Alphabet Inc.', 'BHP': 'BHP Group Limited', 'RIO': 'Rio Tinto Group'
+            'AMZN': 'Amazon.com, Inc.', 'META': 'Meta Platforms, Inc.', 'GOOGL': 'Alphabet Inc.', 'BHP': 'BHP Group Limited', 'RIO': 'Rio Tinto Group', 'NKE': 'Nike, Inc.', 'BA': 'The Boeing Company'
         }
 
     def score_nav_asset(self, ticker, current_price, volume_ratio):
@@ -385,6 +385,9 @@ def get_directives():
     directives = []
     engine = MarketScoringEngine()
     master_budget = portfolio_store.data.get('master_budget', 10000.0)
+    
+    total_owned = portfolio_store.get_total_portfolio_value()
+    remaining_cash = max(0, master_budget - total_owned)
 
     for t in watchlist:
         t = t.strip().upper()
@@ -415,12 +418,15 @@ def get_directives():
                         'shares': shares_owned, 'price': current, 'amount': round(shares_owned * cost_per_share, 2)
                     })
             elif diff_val > 5 and tranches > 0 and cost_per_share > 0:
-                buy_shares = int(diff_val // cost_per_share)
+                allowed_spend = min(diff_val, remaining_cash)
+                buy_shares = int(allowed_spend // cost_per_share)
                 if buy_shares > 0:
+                    amt = round(buy_shares * cost_per_share, 2)
                     directives.append({
                         'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'BUY',
-                        'shares': buy_shares, 'price': current, 'amount': round(buy_shares * cost_per_share, 2)
+                        'shares': buy_shares, 'price': current, 'amount': amt
                     })
+                    remaining_cash -= amt
             elif val_owned > 0 and (tranches == 0 or diff_val < -5):
                 excess_val = abs(diff_val)
                 sell_shares = shares_owned if tranches == 0 else min(shares_owned, int(excess_val // cost_per_share))
@@ -448,7 +454,7 @@ def get_recommendations():
             vol_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
             
             if t in engine.nav_bases: res = engine.score_nav_asset(t, current, vol_rat)
-            else: res = engine.score_equity(df, current)
+            else: res = engine.score_equity(t, current)
             
             res['ticker'] = t
             res['name'] = engine.asset_names.get(t, t)
@@ -1012,6 +1018,17 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         function calculateSizing() {
             let totalBudget = globalPortfolioData.master_budget || 10000;
+            
+            let totalOwnedAll = 0;
+            if (globalPortfolioData.holdings && globalPortfolioData.watchlist) {
+                for (let t of globalPortfolioData.watchlist) {
+                    if (globalPortfolioData.holdings[t]) {
+                        totalOwnedAll += (globalPortfolioData.holdings[t].manual_val || 0);
+                    }
+                }
+            }
+            let remaining = totalBudget - totalOwnedAll;
+
             let trancheTargetVal = (currentActiveTranches / 5.0) * totalBudget;
             let netDiffVal = trancheTargetVal - currentValOwned;
 
@@ -1031,9 +1048,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 actionMain.style.color = "#787e8e";
                 actionSub.innerText = "";
             } else {
-                let buyShares = (netDiffVal > 5 && currentActiveTranches > 0 && costPerShare > 0) ? Math.floor(netDiffVal / costPerShare) : 0;
+                let buyShares = 0;
+                if (netDiffVal > 5 && currentActiveTranches > 0 && costPerShare > 0) {
+                    let allowedSpend = Math.min(netDiffVal, Math.max(0, remaining));
+                    buyShares = Math.floor(allowedSpend / costPerShare);
+                }
+                
                 let sellShares = 0;
-
                 if (currentValOwned > 0 && (currentActiveTranches === 0 || netDiffVal < -5)) {
                     let excessVal = Math.abs(netDiffVal);
                     sellShares = currentActiveTranches === 0 ? currentSharesOwned : Math.min(currentSharesOwned, Math.floor(excessVal / costPerShare));
@@ -1062,7 +1083,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 } else {
                     actionMain.innerText = "HOLD / WAIT";
                     actionMain.style.color = "#8a8a9e";
-                    if (currentActiveTranches > 0 && currentValOwned > 0) {
+                    if (netDiffVal > 5 && remaining <= 0) {
+                        actionSub.innerText = `(Insufficient Budget)`;
+                        actionMain.style.color = "#ff9900";
+                    } else if (currentActiveTranches > 0 && currentValOwned > 0) {
                         actionSub.innerText = `(Tranche ${currentActiveTranches} Filled)`;
                     } else {
                         actionSub.innerText = `(Tranche ${currentActiveTranches})`;
@@ -1073,18 +1097,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
             document.getElementById('mRecTradeAmt').innerText = recAmtText;
             document.getElementById('mRecShares').innerText = recSharesText;
 
-            let totalOwned = 0;
-            if (globalPortfolioData.holdings && globalPortfolioData.watchlist) {
-                for (let t of globalPortfolioData.watchlist) {
-                    if (globalPortfolioData.holdings[t]) {
-                        totalOwned += (globalPortfolioData.holdings[t].manual_val || 0);
-                    }
-                }
-            }
-            let remaining = totalBudget - totalOwned;
-
-            document.getElementById('mTotalSharesHeldVal').innerText = `£${totalOwned.toFixed(2)}`;
+            document.getElementById('mTotalSharesHeldVal').innerText = `£${totalOwnedAll.toFixed(2)}`;
             document.getElementById('mBudgetRemaining').innerText = `£${remaining.toFixed(2)}`;
+            if (remaining < 0) {
+                document.getElementById('mBudgetRemaining').style.color = "#ff3d00";
+            } else {
+                document.getElementById('mBudgetRemaining').style.color = "#00c853";
+            }
         }
 
         async function executeTradeDirect(ticker, action, shares, price) {
