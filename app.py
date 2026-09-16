@@ -12,7 +12,7 @@ class PortfolioManager:
         self.filename = filename
         self.data = self.load()
 
-    def default_state(self):
+    def default_user_state(self):
         return {
             'master_budget': 10000.0,
             'watchlist': [],
@@ -32,54 +32,104 @@ class PortfolioManager:
             try:
                 with open(self.filename, 'r') as f:
                     data = json.load(f)
-                    if 'initial_positions' not in data: data['initial_positions'] = {}
-                    if 'holdings' not in data: data['holdings'] = {}
-                    if 'watchlist' not in data: data['watchlist'] = []
-                    if 'settings' not in data: data['settings'] = self.default_state()['settings']
+                    if 'users' not in data:
+                        migrated_user = {
+                            'master_budget': data.get('master_budget', 10000.0),
+                            'watchlist': data.get('watchlist', []),
+                            'initial_positions': data.get('initial_positions', {}),
+                            'holdings': data.get('holdings', {}),
+                            'history': data.get('history', []),
+                            'settings': data.get('settings', self.default_user_state()['settings'])
+                        }
+                        data = {
+                            'active_user': 'Ian',
+                            'users': { 'Ian': migrated_user }
+                        }
+                        self.save_data(data)
                     return data
             except Exception: pass
-        return self.default_state()
+        
+        initial = {
+            'active_user': 'Ian',
+            'users': {
+                'Ian': self.default_user_state()
+            }
+        }
+        return initial
 
-    def reset_all(self):
-        self.data = self.default_state()
-        self.save()
-        return self.data
-
-    def save(self):
+    def save_data(self, data_to_save):
         try:
             with open(self.filename, 'w') as f:
-                json.dump(self.data, f, indent=2)
+                json.dump(data_to_save, f, indent=2)
         except Exception as e:
             print(f"Error saving portfolio: {e}")
 
+    def save(self):
+        self.save_data(self.data)
+
+    def active_username(self):
+        if 'users' not in self.data or not self.data['users']:
+            self.data['users'] = {'Ian': self.default_user_state()}
+            self.data['active_user'] = 'Ian'
+        if self.data.get('active_user') not in self.data['users']:
+            self.data['active_user'] = list(self.data['users'].keys())[0]
+        return self.data['active_user']
+
+    def user_data(self):
+        username = self.active_username()
+        return self.data['users'][username]
+
+    def add_user(self, username):
+        username = username.strip()
+        if not username: return
+        if 'users' not in self.data: self.data['users'] = {}
+        if username not in self.data['users']:
+            self.data['users'][username] = self.default_user_state()
+        self.data['active_user'] = username
+        self.save()
+
+    def switch_user(self, username):
+        if 'users' in self.data and username in self.data['users']:
+            self.data['active_user'] = username
+            self.save()
+
+    def reset_all(self):
+        username = self.active_username()
+        self.data['users'][username] = self.default_user_state()
+        self.save()
+        return self.user_data()
+
     def update_settings(self, settings):
-        if 'settings' not in self.data:
-            self.data['settings'] = {}
-        self.data['settings'].update(settings)
+        ud = self.user_data()
+        if 'settings' not in ud: ud['settings'] = {}
+        ud['settings'].update(settings)
         self.save()
 
     def add_watchlist(self, ticker):
         ticker = ticker.upper()
-        if 'watchlist' not in self.data: self.data['watchlist'] = []
-        if ticker not in self.data['watchlist']:
-            self.data['watchlist'].append(ticker)
+        ud = self.user_data()
+        if 'watchlist' not in ud: ud['watchlist'] = []
+        if ticker not in ud['watchlist']:
+            ud['watchlist'].append(ticker)
             self.save()
 
     def remove_watchlist(self, ticker):
         ticker = ticker.upper()
-        if 'watchlist' in self.data and ticker in self.data['watchlist']:
-            self.data['watchlist'].remove(ticker)
-        if 'holdings' in self.data:
-            self.data['holdings'].pop(ticker, None)
-        if 'initial_positions' in self.data:
-            self.data['initial_positions'].pop(ticker, None)
-        if 'history' in self.data:
-            self.data['history'] = [h for h in self.data['history'] if h.get('ticker') != ticker]
+        ud = self.user_data()
+        if 'watchlist' in ud and ticker in ud['watchlist']:
+            ud['watchlist'].remove(ticker)
+        if 'holdings' in ud:
+            ud['holdings'].pop(ticker, None)
+        if 'initial_positions' in ud:
+            ud['initial_positions'].pop(ticker, None)
+        if 'history' in ud:
+            ud['history'] = [h for h in ud['history'] if h.get('ticker') != ticker]
         self.save()
 
     def get_net_trade_shares(self, ticker):
+        ud = self.user_data()
         trade_shares = 0
-        for t in self.data.get('history', []):
+        for t in ud.get('history', []):
             if t['ticker'] == ticker:
                 if t['action'] == 'BUY': trade_shares += t['shares']
                 elif t['action'] == 'SELL': trade_shares -= t['shares']
@@ -87,16 +137,19 @@ class PortfolioManager:
 
     def get_shares(self, ticker):
         if not ticker: return 0
-        init_shares = self.data.get('initial_positions', {}).get(ticker, {}).get('shares', 0)
+        ud = self.user_data()
+        init_shares = ud.get('initial_positions', {}).get(ticker, {}).get('shares', 0)
         net_trades = self.get_net_trade_shares(ticker)
         return max(0, init_shares + net_trades)
 
     def update_budget(self, budget):
-        self.data['master_budget'] = float(budget)
+        ud = self.user_data()
+        ud['master_budget'] = float(budget)
         self.save()
 
     def set_holding_value(self, ticker, value_owned, current_price):
         if not ticker: return 0
+        ud = self.user_data()
         value_owned = float(value_owned)
         current_price = float(current_price)
         is_lse_pence = ticker.endswith('.L') and current_price > 100
@@ -106,24 +159,25 @@ class PortfolioManager:
         net_trades = self.get_net_trade_shares(ticker)
         baseline_shares = target_total_shares - net_trades
         
-        if 'initial_positions' not in self.data: self.data['initial_positions'] = {}
+        if 'initial_positions' not in ud: ud['initial_positions'] = {}
         if target_total_shares > 0 or value_owned > 0:
-            self.data['initial_positions'][ticker] = {'shares': baseline_shares, 'manual_val': value_owned}
+            ud['initial_positions'][ticker] = {'shares': baseline_shares, 'manual_val': value_owned}
         else:
-            self.data['initial_positions'].pop(ticker, None)
+            ud['initial_positions'].pop(ticker, None)
 
         current_total = self.get_shares(ticker)
         live_val = round(current_total * price_per_share, 2)
-        if 'holdings' not in self.data: self.data['holdings'] = {}
+        if 'holdings' not in ud: ud['holdings'] = {}
         if current_total > 0:
-            self.data['holdings'][ticker] = {'shares': current_total, 'manual_val': live_val}
+            ud['holdings'][ticker] = {'shares': current_total, 'manual_val': live_val}
         else:
-            self.data['holdings'].pop(ticker, None)
+            ud['holdings'].pop(ticker, None)
         self.save()
         return current_total
 
     def execute_trade(self, ticker, action_type, shares, price):
         if not ticker: return None
+        ud = self.user_data()
         shares = int(shares)
         price = float(price)
 
@@ -140,42 +194,48 @@ class PortfolioManager:
             'amount': total_amount,
             'time': pd.Timestamp.now().strftime('%d %b %H:%M')
         }
-        self.data['history'].insert(0, entry)
+        if 'history' not in ud: ud['history'] = []
+        ud['history'].insert(0, entry)
 
         current_total = self.get_shares(ticker)
         current_val = round(current_total * cost_per_share, 2)
+        if 'holdings' not in ud: ud['holdings'] = {}
         if current_total > 0:
-            self.data['holdings'][ticker] = {'shares': current_total, 'manual_val': current_val}
+            ud['holdings'][ticker] = {'shares': current_total, 'manual_val': current_val}
         else:
-            self.data['holdings'].pop(ticker, None)
+            ud['holdings'].pop(ticker, None)
         self.save()
         return entry
 
     def undo_trade(self, trade_id):
+        ud = self.user_data()
+        history = ud.get('history', [])
         trade_to_remove = None
-        for t in self.data['history']:
+        for t in history:
             if t['id'] == str(trade_id):
                 trade_to_remove = t
                 break
         if not trade_to_remove: return False
 
-        self.data['history'].remove(trade_to_remove)
+        history.remove(trade_to_remove)
         ticker = trade_to_remove['ticker']
 
         current_total = self.get_shares(ticker)
+        if 'holdings' not in ud: ud['holdings'] = {}
         if current_total > 0:
             cost_per_share = trade_to_remove['price'] / 100.0 if ticker.endswith('.L') else trade_to_remove['price']
-            self.data['holdings'][ticker] = {'shares': current_total, 'manual_val': round(current_total * cost_per_share, 2)}
+            ud['holdings'][ticker] = {'shares': current_total, 'manual_val': round(current_total * cost_per_share, 2)}
         else:
-            self.data['holdings'].pop(ticker, None)
+            ud['holdings'].pop(ticker, None)
 
         self.save()
         return True
 
     def get_total_portfolio_value(self):
+        ud = self.user_data()
         total = 0.0
-        watchlist = self.data.get('watchlist', [])
-        holdings = self.data.get('holdings', {})
+        watchlist = ud.get('watchlist', [])
+        holdings = ud.get('holdings', {})
         for t in list(holdings.keys()):
             if t in watchlist and self.get_shares(t) > 0:
                 total += holdings[t].get('manual_val', 0.0)
@@ -295,9 +355,37 @@ portfolio_store = PortfolioManager()
 def index():
     return render_template_string(HTML_FRONTEND)
 
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    return jsonify({
+        'users': list(portfolio_store.data.get('users', {}).keys()),
+        'active_user': portfolio_store.active_username()
+    })
+
+@app.route('/api/users/select', methods=['POST'])
+def select_user():
+    body = request.get_json() or {}
+    portfolio_store.switch_user(body.get('username', ''))
+    return jsonify({
+        'status': 'ok',
+        'active_user': portfolio_store.active_username(),
+        'portfolio': portfolio_store.user_data()
+    })
+
+@app.route('/api/users/add', methods=['POST'])
+def add_user():
+    body = request.get_json() or {}
+    portfolio_store.add_user(body.get('username', ''))
+    return jsonify({
+        'status': 'ok',
+        'users': list(portfolio_store.data.get('users', {}).keys()),
+        'active_user': portfolio_store.active_username(),
+        'portfolio': portfolio_store.user_data()
+    })
+
 @app.route('/api/portfolio', methods=['GET'])
 def get_portfolio():
-    return jsonify(portfolio_store.data)
+    return jsonify(portfolio_store.user_data())
 
 @app.route('/api/portfolio/reset', methods=['POST'])
 def reset_portfolio():
@@ -320,13 +408,13 @@ def update_budget():
 def add_watchlist():
     body = request.get_json() or {}
     portfolio_store.add_watchlist(body.get('ticker', ''))
-    return jsonify({'status': 'ok', 'watchlist': portfolio_store.data.get('watchlist', [])})
+    return jsonify({'status': 'ok', 'watchlist': portfolio_store.user_data().get('watchlist', [])})
 
 @app.route('/api/watchlist/delete', methods=['POST'])
 def delete_watchlist():
     body = request.get_json() or {}
     portfolio_store.remove_watchlist(body.get('ticker', ''))
-    return jsonify({'status': 'ok', 'watchlist': portfolio_store.data.get('watchlist', [])})
+    return jsonify({'status': 'ok', 'watchlist': portfolio_store.user_data().get('watchlist', [])})
 
 @app.route('/api/portfolio/holding', methods=['POST'])
 def update_holding():
@@ -381,9 +469,10 @@ def get_score():
 
 @app.route('/api/directives', methods=['GET'])
 def get_directives():
-    watchlist = portfolio_store.data.get('watchlist', [])
+    ud = portfolio_store.user_data()
+    watchlist = ud.get('watchlist', [])
     engine = MarketScoringEngine()
-    master_budget = portfolio_store.data.get('master_budget', 10000.0)
+    master_budget = ud.get('master_budget', 10000.0)
     
     total_owned = portfolio_store.get_total_portfolio_value()
     remaining_cash = max(0, master_budget - total_owned)
@@ -392,7 +481,6 @@ def get_directives():
     buy_targets = []
     total_buy_demand = 0.0
 
-    # Pass 1: Find all mathematical demands
     for t in watchlist:
         t = t.strip().upper()
         if not t: continue
@@ -437,10 +525,8 @@ def get_directives():
                     })
         except Exception: pass
 
-    # Pass 2: Scale Buys Proportionally against Remaining Cash
     if total_buy_demand > 0:
         scale_ratio = min(1.0, remaining_cash / total_buy_demand) if remaining_cash > 0 else 0.0
-        
         for b in buy_targets:
             allowed_spend = b['diff_val'] * scale_ratio
             buy_shares = int(allowed_spend // b['cost_per_share'])
@@ -480,13 +566,14 @@ def get_recommendations():
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
-    watchlist = portfolio_store.data.get('watchlist', [])
+    ud = portfolio_store.user_data()
+    watchlist = ud.get('watchlist', [])
     ticker = request.args.get('t', '').upper()
     if not ticker and watchlist: ticker = watchlist[0]
 
     if not ticker or ticker not in watchlist:
         total_portfolio_owned = portfolio_store.get_total_portfolio_value()
-        master_budget = portfolio_store.data.get('master_budget', 10000.0)
+        master_budget = ud.get('master_budget', 10000.0)
         return jsonify({
             'ohlc': [],
             'name': 'No Asset Loaded',
@@ -501,10 +588,10 @@ def get_data():
                 'total_portfolio_owned': total_portfolio_owned,
                 'budget_remaining': round(master_budget - total_portfolio_owned, 2)
             },
-            'portfolio': portfolio_store.data
+            'portfolio': ud
         })
 
-    saved_settings = portfolio_store.data.get('settings', {})
+    saved_settings = ud.get('settings', {})
     period = request.args.get('p', saved_settings.get('period', '1mo'))
     interval = request.args.get('i', saved_settings.get('interval', '1d'))
 
@@ -549,16 +636,16 @@ def get_data():
         current_value_owned = round(shares_owned * cost_per_share, 2)
 
         if shares_owned > 0:
-            if 'holdings' not in portfolio_store.data: portfolio_store.data['holdings'] = {}
-            portfolio_store.data['holdings'][ticker] = {'shares': shares_owned, 'manual_val': current_value_owned}
+            if 'holdings' not in ud: ud['holdings'] = {}
+            ud['holdings'][ticker] = {'shares': shares_owned, 'manual_val': current_value_owned}
         else:
-            portfolio_store.data.get('holdings', {}).pop(ticker, None)
+            ud.get('holdings', {}).pop(ticker, None)
 
         if is_lse_pence: price_display = f"{last_price:.2f}p (£{(last_price / 100.0):.2f})"
         else: price_display = f"£{last_price:.2f}"
 
         total_portfolio_owned = portfolio_store.get_total_portfolio_value()
-        master_budget = portfolio_store.data.get('master_budget', 10000.0)
+        master_budget = ud.get('master_budget', 10000.0)
         budget_remaining = round(master_budget - total_portfolio_owned, 2)
 
         metrics = {
@@ -570,7 +657,7 @@ def get_data():
             'total_portfolio_owned': total_portfolio_owned, 'budget_remaining': budget_remaining
         }
 
-        return jsonify({'ohlc': data, 'metrics': metrics, 'name': name, 'portfolio': portfolio_store.data})
+        return jsonify({'ohlc': data, 'metrics': metrics, 'name': name, 'portfolio': ud})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -809,7 +896,14 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <!-- MAIN CONTENT -->
     <div class="main-content">
         <div class="top-nav">
-            <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+                <div style="display:flex; align-items:center; gap:6px; background:#1e222d; padding:4px 8px; border-radius:6px; border:1px solid #262b36;">
+                    <label style="font-size:11px; color:#00d2ff; font-weight:bold;">USER:</label>
+                    <select id="userSelect" onchange="onUserChange(this.value)" style="background:#0f1115; color:#fff; border:1px solid #262b36; padding:3px 6px; border-radius:4px; font-size:12px; font-weight:bold;"></select>
+                    <button onclick="addUserPrompt()" style="padding:3px 8px; font-size:11px; background:#00d2ff; color:#000; font-weight:bold; border:none; border-radius:4px; cursor:pointer;">+ New</button>
+                </div>
+            </div>
             <div class="controls">
                 <label>Range:</label>
                 <select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData();">
@@ -900,6 +994,51 @@ HTML_FRONTEND = """<!DOCTYPE html>
         let autoRefreshTimer = null;
         let isSettingsLoaded = false;
 
+        async function fetchUsers() {
+            try {
+                let res = await fetch('/api/users');
+                let data = await res.json();
+                let sel = document.getElementById('userSelect');
+                sel.innerHTML = '';
+                (data.users || []).forEach(u => {
+                    let opt = document.createElement('option');
+                    opt.value = u;
+                    opt.innerText = u;
+                    if (u === data.active_user) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+            } catch(e) {}
+        }
+
+        async function onUserChange(username) {
+            if (!username) return;
+            await fetch('/api/users/select', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: username})
+            });
+            currentTicker = '';
+            isSettingsLoaded = false;
+            await fetchUsers();
+            fetchData();
+        }
+
+        async function addUserPrompt() {
+            let name = prompt("Enter name for the new profile:");
+            if (!name) return;
+            name = name.trim();
+            if (!name) return;
+            await fetch('/api/users/add', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: name})
+            });
+            currentTicker = '';
+            isSettingsLoaded = false;
+            await fetchUsers();
+            fetchData();
+        }
+
         function triggerBrowserNotification(title, body) {
             if ("Notification" in window) {
                 if (Notification.permission === "granted") {
@@ -929,7 +1068,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         async function resetTerminalData() {
-            if (confirm("Reset all portfolio data, trade logs, and position baselines?")) {
+            if (confirm("Reset all portfolio data, trade logs, and position baselines for this user?")) {
                 await fetch('/api/portfolio/reset', { method: 'POST' });
                 currentTicker = '';
                 isSettingsLoaded = false;
@@ -1478,7 +1617,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (e.key === 'Enter') checkQuickScore();
         });
 
-        setTimeout(() => { initChart(); updateIntervals(); fetchData(); setupAutoRefresh(); }, 100);
+        setTimeout(() => { initChart(); fetchUsers(); updateIntervals(); fetchData(); setupAutoRefresh(); }, 100);
     </script>
 </body>
 </html>"""
