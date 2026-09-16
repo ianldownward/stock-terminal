@@ -88,6 +88,17 @@ class PortfolioManager:
         self.data['active_user'] = username
         self.save()
 
+    def delete_user(self, username):
+        username = username.strip()
+        if 'users' in self.data and username in self.data['users']:
+            if len(self.data['users']) > 1:
+                del self.data['users'][username]
+                if self.data.get('active_user') == username:
+                    self.data['active_user'] = list(self.data['users'].keys())[0]
+                self.save()
+                return True
+        return False
+
     def switch_user(self, username):
         if 'users' in self.data and username in self.data['users']:
             self.data['active_user'] = username
@@ -378,6 +389,17 @@ def add_user():
     portfolio_store.add_user(body.get('username', ''))
     return jsonify({
         'status': 'ok',
+        'users': list(portfolio_store.data.get('users', {}).keys()),
+        'active_user': portfolio_store.active_username(),
+        'portfolio': portfolio_store.user_data()
+    })
+
+@app.route('/api/users/delete', methods=['POST'])
+def delete_user():
+    body = request.get_json() or {}
+    success = portfolio_store.delete_user(body.get('username', ''))
+    return jsonify({
+        'status': 'ok' if success else 'error',
         'users': list(portfolio_store.data.get('users', {}).keys()),
         'active_user': portfolio_store.active_username(),
         'portfolio': portfolio_store.user_data()
@@ -686,6 +708,12 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .total-shares-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px; }
         .total-shares-box div { font-size: 18px; font-weight: bold; color: #fff; }
 
+        .user-profile-box { background: #1a1d24; padding: 10px 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 10px; }
+        .user-profile-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; }
+        .user-btn { padding: 3px 8px; font-size: 10px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; }
+        .user-btn.new { background: #00d2ff; color: #000; }
+        .user-btn.del { background: #ff3d00; color: #fff; }
+
         .master-budget-box { background: #171a21; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 15px; }
         .master-budget-box label { font-size: 11px; color: #787e8e; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 6px; }
         .master-budget-box input { width: 100%; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; font-weight: bold; font-size: 15px; }
@@ -845,6 +873,17 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <!-- LEFT SIDEBAR -->
     <div class="sidebar">
         <div class="sidebar-top">
+            <div class="user-profile-box">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <label>Active Profile</label>
+                    <div style="display:flex; gap:4px;">
+                        <button onclick="addUserPrompt()" class="user-btn new">+ New</button>
+                        <button onclick="deleteUserPrompt()" class="user-btn del">Delete</button>
+                    </div>
+                </div>
+                <select id="userSelect" onchange="onUserChange(this.value)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select>
+            </div>
+
             <div class="total-shares-box">
                 <label>Current Value of All Shares Held</label>
                 <div id="mTotalSharesHeldVal">£0.00</div>
@@ -896,17 +935,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <!-- MAIN CONTENT -->
     <div class="main-content">
         <div class="top-nav">
-            <div style="display:flex; align-items:center; gap:12px;">
-                <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
-                <div style="display:flex; align-items:center; gap:6px; background:#1e222d; padding:4px 8px; border-radius:6px; border:1px solid #262b36;">
-                    <label style="font-size:11px; color:#00d2ff; font-weight:bold;">USER:</label>
-                    <select id="userSelect" onchange="onUserChange(this.value)" style="background:#0f1115; color:#fff; border:1px solid #262b36; padding:3px 6px; border-radius:4px; font-size:12px; font-weight:bold;"></select>
-                    <button onclick="addUserPrompt()" style="padding:3px 8px; font-size:11px; background:#00d2ff; color:#000; font-weight:bold; border:none; border-radius:4px; cursor:pointer;">+ New</button>
-                </div>
-            </div>
+            <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
             <div class="controls">
                 <label>Range:</label>
-                <select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData();">
+                <select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);">
                     <option value="1d">1 Day</option>
                     <option value="5d">5 Days</option>
                     <option value="1mo" selected>1 Month</option>
@@ -916,7 +948,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     <option value="max">Max</option>
                 </select>
                 <label>Interval:</label>
-                <select id="intervalSelect" onchange="saveUISettings(); fetchData();"></select>
+                <select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
                 <label>Style:</label>
                 <select id="styleSelect" onchange="saveUISettings(); renderChart();">
                     <option value="candlestick">Candlestick</option>
@@ -935,7 +967,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     <option value="300000">5 mins</option>
                 </select>
 
-                <button class="btn-control btn-refresh" onclick="fetchData()">Refresh</button>
+                <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
                 <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
                 <button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button>
             </div>
@@ -1020,7 +1052,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             currentTicker = '';
             isSettingsLoaded = false;
             await fetchUsers();
-            fetchData();
+            fetchData(false);
         }
 
         async function addUserPrompt() {
@@ -1036,7 +1068,28 @@ HTML_FRONTEND = """<!DOCTYPE html>
             currentTicker = '';
             isSettingsLoaded = false;
             await fetchUsers();
-            fetchData();
+            fetchData(false);
+        }
+
+        async function deleteUserPrompt() {
+            let activeUser = document.getElementById('userSelect').value;
+            if (!activeUser) return;
+            if (confirm(`Are you sure you want to delete profile "${activeUser}"? This cannot be undone.`)) {
+                let res = await fetch('/api/users/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: activeUser})
+                });
+                let data = await res.json();
+                if (data.status === 'error') {
+                    alert("Cannot delete the last remaining user profile.");
+                    return;
+                }
+                currentTicker = '';
+                isSettingsLoaded = false;
+                await fetchUsers();
+                fetchData(false);
+            }
         }
 
         function triggerBrowserNotification(title, body) {
@@ -1072,7 +1125,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 await fetch('/api/portfolio/reset', { method: 'POST' });
                 currentTicker = '';
                 isSettingsLoaded = false;
-                fetchData();
+                fetchData(false);
             }
         }
 
@@ -1081,7 +1134,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let intervalMs = parseInt(document.getElementById('refreshSelect').value) || 0;
             if (intervalMs > 0) {
                 autoRefreshTimer = setInterval(() => {
-                    fetchData();
+                    fetchData(true); // Silent auto-update
                 }, intervalMs);
             }
         }
@@ -1267,7 +1320,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     ticker: ticker, action: action, shares: shares, price: price
                 })
             });
-            fetchData();
+            fetchData(false);
         }
 
         async function fetchDirectives() {
@@ -1308,7 +1361,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({id: tradeId})
             });
-            fetchData();
+            fetchData(false);
         }
 
         function renderTradeHistory() {
@@ -1495,8 +1548,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
             return haData;
         }
 
-        async function fetchData() {
-            document.getElementById('loader').style.display = 'block';
+        async function fetchData(isSilent = false) {
+            if (!isSilent) {
+                document.getElementById('loader').style.display = 'block';
+            }
             try {
                 let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`);
                 let payload = await res.json();
@@ -1518,7 +1573,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
                 if (!currentTicker && globalPortfolioData.watchlist && globalPortfolioData.watchlist.length > 0) {
                     currentTicker = globalPortfolioData.watchlist[0];
-                    fetchData();
+                    fetchData(isSilent);
                     return;
                 }
 
@@ -1545,7 +1600,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 fetchDirectives();
                 renderChart();
             } catch (err) {}
-            document.getElementById('loader').style.display = 'none';
+            if (!isSilent) {
+                document.getElementById('loader').style.display = 'none';
+            }
         }
 
         function renderChart() {
@@ -1578,7 +1635,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             currentTicker = ticker;
             document.querySelectorAll('.watchlist-item').forEach(el => el.classList.remove('active'));
             if(elem) elem.classList.add('active');
-            fetchData();
+            fetchData(false);
         }
 
         document.getElementById('watchlistUI').addEventListener('click', async function(e) {
@@ -1594,7 +1651,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 });
                 let remaining = (globalPortfolioData.watchlist || []).filter(s => s !== symbol);
                 currentTicker = remaining.length > 0 ? remaining[0] : '';
-                fetchData();
+                fetchData(false);
                 return; 
             }
             selectStock(symbol, li);
@@ -1617,7 +1674,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (e.key === 'Enter') checkQuickScore();
         });
 
-        setTimeout(() => { initChart(); fetchUsers(); updateIntervals(); fetchData(); setupAutoRefresh(); }, 100);
+        setTimeout(() => { initChart(); fetchUsers(); updateIntervals(); fetchData(false); setupAutoRefresh(); }, 100);
     </script>
 </body>
 </html>"""
