@@ -1090,6 +1090,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
         <div class="top-nav">
             <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
             <div class="controls">
+                <label style="color:#fff; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:4px; margin-right:6px;">
+                    <input type="checkbox" id="showTradesChk" checked onchange="renderChart()"> Show Trades
+                </label>
                 <label>Range:</label>
                 <select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);">
                     <option value="1d">1 Day</option>
@@ -1255,7 +1258,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 if (Notification.permission === "granted") {
                     new Notification(title, { body: body });
                 } else if (Notification.permission !== "denied") {
-                    Notification.requestPermission().then(permission => {
+                    Notification.permission.then && Notification.requestPermission().then(permission => {
                         if (permission === "granted") {
                             new Notification(title, { body: body });
                         }
@@ -1823,7 +1826,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 tvSeries.setData(cleanData);
             }
 
-            if (globalPortfolioData && globalPortfolioData.history && currentTicker) {
+            let showTrades = document.getElementById('showTradesChk') ? document.getElementById('showTradesChk').checked : true;
+
+            if (showTrades && globalPortfolioData && globalPortfolioData.history && currentTicker) {
                 let tickerHistory = globalPortfolioData.history.filter(h => h.ticker === currentTicker);
                 let markers = [];
                 let interval = document.getElementById('intervalSelect').value;
@@ -1850,22 +1855,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
                         markers.push({
                             time: markerTime,
                             position: isBuy ? 'belowBar' : 'aboveBar',
-                            color: '#ffffff',
-                            shape: 'circle',
-                            text: `${item.action} ${item.shares}sh @ ${cleanP}`
-                        });
-                    }
-
-                    if (tvSeries && tvSeries.createPriceLine) {
-                        let pl = tvSeries.createPriceLine({
-                            price: parseFloat(item.price),
                             color: isBuy ? '#00c853' : '#ff3d00',
-                            lineWidth: 1,
-                            lineStyle: LightweightCharts.LineStyle.Dashed,
-                            axisLabelVisible: true,
-                            title: `${item.action} ${item.shares}sh @ ${cleanP}`
+                            shape: isBuy ? 'arrowUp' : 'arrowDown',
+                            text: `${item.action} ${item.shares}sh @ £${cleanP}`
                         });
-                        activePriceLines.push(pl);
                     }
                 });
 
