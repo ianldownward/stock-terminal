@@ -243,6 +243,7 @@ class PortfolioManager:
         cost_per_share = price / 100.0 if is_lse_pence else price
         total_amount = round(shares * cost_per_share, 2)
 
+        now = pd.Timestamp.now()
         entry = {
             'id': str(int(time.time() * 1000)),
             'ticker': ticker,
@@ -250,7 +251,9 @@ class PortfolioManager:
             'shares': shares,
             'price': price,
             'amount': total_amount,
-            'time': pd.Timestamp.now().strftime('%d %b %H:%M')
+            'time': now.strftime('%d %b %H:%M'),
+            'date_str': now.strftime('%Y-%m-%d'),
+            'timestamp': int(now.timestamp())
         }
         if 'history' not in ud: ud['history'] = []
         ud['history'].insert(0, entry)
@@ -623,7 +626,6 @@ def get_directives():
                     'shares': buy_shares, 'price': b['price'], 'amount': round(buy_shares * b['cost_per_share'], 2)
                 })
 
-    # --- PUSH SIGNAL NOTIFICATIONS ENGINE ---
     current_active_keys = set()
     for d in final_directives:
         t = d['ticker']
@@ -644,7 +646,6 @@ def get_directives():
             ud['notified_signals'][t] = sig_key
             portfolio_store.save()
 
-    # Clear signals that are no longer active
     to_remove = [k for k in ud['notified_signals'] if k not in current_active_keys]
     if to_remove:
         for k in to_remove:
@@ -899,7 +900,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .qc-input-row button:hover { background: #4a5265; }
         #qsResult { display: none; margin-top: 10px; font-size: 12px; background: #0f1115; padding: 10px; border-radius: 6px; border: 1px solid #262b36; }
 
-        /* Mobile Layout */
         @media (max-width: 900px) {
             body { display: block; overflow-y: auto; overflow-x: hidden; height: auto; }
             .sidebar { width: 100%; border-right: none; display: block; }
@@ -1760,6 +1760,52 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
                 tvSeries.setData(cleanData);
             }
+
+            // --- TRADE MARKERS OVERLAY ---
+            if (globalPortfolioData && globalPortfolioData.history && currentTicker) {
+                let tickerHistory = globalPortfolioData.history.filter(h => h.ticker === currentTicker);
+                let markers = [];
+                let interval = document.getElementById('intervalSelect').value;
+                let isIntraday = ['1m', '5m', '15m', '30m', '1h'].includes(interval);
+
+                tickerHistory.forEach(item => {
+                    let isBuy = item.action === 'BUY';
+                    let markerTime = null;
+
+                    if (isIntraday && item.timestamp) {
+                        let closest = masterData[0];
+                        let minDiff = Math.abs(item.timestamp - closest.time);
+                        for (let d of masterData) {
+                            let diff = Math.abs(item.timestamp - d.time);
+                            if (diff < minDiff) { minDiff = diff; closest = d; }
+                        }
+                        markerTime = closest ? closest.time : null;
+                    } else if (item.date_str) {
+                        markerTime = item.date_str;
+                    }
+
+                    if (markerTime) {
+                        markers.push({
+                            time: markerTime,
+                            position: isBuy ? 'belowBar' : 'aboveBar',
+                            color: isBuy ? '#00c853' : '#ff3d00',
+                            shape: isBuy ? 'arrowUp' : 'arrowDown',
+                            text: `${item.action} ${item.shares} shs @ ${item.price}`
+                        });
+                    }
+                });
+
+                markers.sort((a, b) => {
+                    let tA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
+                    let tB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
+                    return tA - tB;
+                });
+
+                if (markers.length > 0 && tvSeries && tvSeries.setMarkers) {
+                    tvSeries.setMarkers(markers);
+                }
+            }
+
             tvChart.timeScale().fitContent();
         }
 
