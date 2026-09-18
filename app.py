@@ -700,6 +700,7 @@ def get_data():
                 'reason': 'Add a stock to your watchlist to begin tracking.',
                 'action_main': 'NO ASSET', 'action_sub': '', 'action_color': '#787e8e',
                 'shares_owned': 0, 'value_owned': 0.0,
+                'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e',
                 'master_budget': master_budget,
                 'total_portfolio_owned': total_portfolio_owned,
                 'budget_remaining': round(master_budget - total_portfolio_owned, 2)
@@ -751,6 +752,25 @@ def get_data():
         cost_per_share = last_price / 100.0 if is_lse_pence else last_price
         current_value_owned = round(shares_owned * cost_per_share, 2)
 
+        # --- PROFIT / LOSS CALCULATION ---
+        init_val = ud.get('initial_positions', {}).get(ticker, {}).get('manual_val', 0.0)
+        trade_net_cost = sum(
+            t['amount'] if t['action'] == 'BUY' else -t['amount']
+            for t in ud.get('history', []) if t.get('ticker') == ticker
+        )
+        total_cost_basis = init_val + trade_net_cost
+
+        if shares_owned > 0 and total_cost_basis > 0:
+            pnl_val = round(current_value_owned - total_cost_basis, 2)
+            pnl_pct = round((pnl_val / total_cost_basis) * 100.0, 2)
+            pnl_color = '#00c853' if pnl_val > 0 else ('#ff3d00' if pnl_val < 0 else '#8a8a9e')
+            pnl_display = f"{'+' if pnl_val > 0 else ''}£{pnl_val:.2f} ({'+' if pnl_pct > 0 else ''}{pnl_pct:.2f}%)"
+        else:
+            pnl_val = 0.0
+            pnl_pct = 0.0
+            pnl_color = '#8a8a9e'
+            pnl_display = "£0.00 (0.00%)"
+
         if shares_owned > 0:
             if 'holdings' not in ud: ud['holdings'] = {}
             ud['holdings'][ticker] = {'shares': shares_owned, 'manual_val': current_value_owned}
@@ -769,7 +789,9 @@ def get_data():
             'discount': state['discount'], 'buy_score': f"{state['score']} / 100", 'tranches': state['tranches'],
             'status': state['status'], 'color': state['color'], 'reason': state['reason'],
             'action_main': state['action_main'], 'action_sub': state['action_sub'], 'action_color': state['action_color'],
-            'shares_owned': shares_owned, 'value_owned': current_value_owned, 'master_budget': master_budget,
+            'shares_owned': shares_owned, 'value_owned': current_value_owned,
+            'pnl_display': pnl_display, 'pnl_color': pnl_color,
+            'master_budget': master_budget,
             'total_portfolio_owned': total_portfolio_owned, 'budget_remaining': budget_remaining
         }
 
@@ -1092,6 +1114,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 <input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()">
                 <span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">0 shares</span>
             </div>
+            <div class="card">
+                <h3>Profit / Loss</h3>
+                <p id="mPnL" style="font-size:15px; font-weight:bold; color:#8a8a9e;">£0.00 (0.00%)</p>
+            </div>
             <div class="card clickable-card" onclick="showAnomalyReason()">
                 <h3>Macro Status ⓘ</h3>
                 <p id="mMacro" style="font-size:12px; font-weight:bold; display:flex; justify-content:center; align-items:center; gap:6px;">--</p>
@@ -1316,7 +1342,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (!currentTicker) return;
             let val = parseFloat(document.getElementById('inputHeldVal').value) || 0;
             
-            let isLsePence = currentTicker.endsWith('.L') && currentLivePrice > 100;
+            let isLsePence = currentTicker.endswith('.L') && currentLivePrice > 100;
             let pricePerShare = isLsePence ? (currentLivePrice / 100.0) : currentLivePrice;
             currentSharesOwned = pricePerShare > 0 ? Math.round(val / pricePerShare) : 0;
             currentValOwned = roundTwo(currentSharesOwned * pricePerShare);
@@ -1725,6 +1751,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 document.getElementById('inputHeldVal').value = currentValOwned;
                 document.getElementById('mSharesOwned').innerText = `${currentSharesOwned} shares`;
 
+                document.getElementById('mPnL').innerText = payload.metrics.pnl_display;
+                document.getElementById('mPnL').style.color = payload.metrics.pnl_color;
+
                 document.getElementById('mMacro').innerHTML = `<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:${payload.metrics.color};"></span> ${payload.metrics.status}`;
                 
                 calculateSizing();
@@ -1761,7 +1790,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 tvSeries.setData(cleanData);
             }
 
-            // --- TRADE MARKERS OVERLAY ---
             if (globalPortfolioData && globalPortfolioData.history && currentTicker) {
                 let tickerHistory = globalPortfolioData.history.filter(h => h.ticker === currentTicker);
                 let markers = [];
