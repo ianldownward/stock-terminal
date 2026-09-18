@@ -879,10 +879,18 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .btn-delete { background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; padding: 0 5px; }
         
         .main-content { flex: 1; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; position: relative; }
-        .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; background: #171a21; padding: 10px 16px; border-radius: 10px; border: 1px solid #262b36; }
-        .controls { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; white-space: nowrap; }
+        
+        .top-nav { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; background: #171a21; padding: 12px 16px; border-radius: 10px; border: 1px solid #262b36; }
+        .top-nav-row1 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .top-nav-row2 { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid #262b36; padding-top: 8px; }
+        .action-buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
         select, button.btn-control { background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
         select:hover, button.btn-control:hover { border-color: #00d2ff; }
+        
+        button.btn-trades { background: #0f1115; border: 1px solid #262b36; color: #787e8e; font-weight: bold; }
+        button.btn-trades.active { border-color: #00d2ff; color: #00d2ff; }
+
         button.btn-alert { background: #0f1115; border: 1px solid #ff9900; color: #ff9900; font-weight: bold; }
         button.btn-alert:hover { background: #ff9900; color: #000; }
         button.btn-refresh { background: #0f1115; border: 1px solid #00d2ff; color: #00d2ff; font-weight: bold; }
@@ -891,6 +899,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
         button.btn-reset:hover { background: #ff4a4a; color: #fff; }
         button.btn-rec { background: #00d2ff; color: #000; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px;}
         
+        .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; white-space: nowrap; }
+        .controls label { font-size: 11px; color: #787e8e; text-transform: uppercase; font-weight: bold; }
+
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
         .card { background: #171a21; padding: 12px; border-radius: 10px; border: 1px solid #262b36; text-align: center; transition: 0.2s; }
         .card h3 { font-size: 10px; color: #787e8e; margin: 0 0 6px 0; text-transform: uppercase; }
@@ -950,10 +961,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
             .sidebar-bottom { border-top: none; padding-top: 5px; }
             .main-content { width: 100%; overflow-y: visible; display: block; padding-top: 5px; }
             .right-drawer { width: 100%; border-left: none; border-top: 1px solid #262b36; display: block; }
-            .top-nav { flex-direction: column; align-items: stretch; gap: 12px; padding: 12px; }
-            .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px; white-space: normal; }
-            .controls > label { display: none; }
-            select, button.btn-control { flex: 1 1 30%; font-size: 11px; padding: 8px 6px; text-align: center; }
+            .top-nav-row1 { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+            select, button.btn-control { flex: 1 1 45%; font-size: 11px; padding: 8px 6px; text-align: center; }
             .chart-container { height: 400px; margin-top: 10px; flex: none; }
             .grid { grid-template-columns: repeat(2, 1fr); }
             .modal { width: 95%; padding: 15px; }
@@ -1088,44 +1098,47 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <!-- MAIN CONTENT -->
     <div class="main-content">
         <div class="top-nav">
-            <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
-            <div class="controls">
-                <label style="color:#fff; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:4px; margin-right:6px;">
-                    <input type="checkbox" id="showTradesChk" checked onchange="renderChart()"> Show Trades
-                </label>
-                <label>Range:</label>
-                <select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);">
-                    <option value="1d">1 Day</option>
-                    <option value="5d">5 Days</option>
-                    <option value="1mo" selected>1 Month</option>
-                    <option value="6mo">6 Months</option>
-                    <option value="1y">1 Year</option>
-                    <option value="5y">5 Years</option>
-                    <option value="max">Max</option>
-                </select>
-                <label>Interval:</label>
-                <select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
-                <label>Style:</label>
-                <select id="styleSelect" onchange="saveUISettings(); renderChart();">
-                    <option value="candlestick">Candlestick</option>
-                    <option value="heikin-ashi">Heikin-Ashi</option>
-                    <option value="line">Line</option>
-                    <option value="area">Area</option>
-                    <option value="bar">Bar</option>
-                </select>
-                <label>Auto Update:</label>
-                <select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();">
-                    <option value="0">Manual</option>
-                    <option value="5000">5 secs</option>
-                    <option value="10000" selected>10 secs</option>
-                    <option value="30000">30 secs</option>
-                    <option value="60000">1 min</option>
-                    <option value="300000">5 mins</option>
-                </select>
-
-                <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
-                <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
-                <button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button>
+            <div class="top-nav-row1">
+                <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+                <div class="action-buttons">
+                    <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Show Trades: ON</button>
+                    <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
+                    <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
+                    <button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button>
+                </div>
+            </div>
+            <div class="top-nav-row2">
+                <div class="controls">
+                    <label>Range:</label>
+                    <select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);">
+                        <option value="1d">1 Day</option>
+                        <option value="5d">5 Days</option>
+                        <option value="1mo" selected>1 Month</option>
+                        <option value="6mo">6 Months</option>
+                        <option value="1y">1 Year</option>
+                        <option value="5y">5 Years</option>
+                        <option value="max">Max</option>
+                    </select>
+                    <label>Interval:</label>
+                    <select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
+                    <label>Style:</label>
+                    <select id="styleSelect" onchange="saveUISettings(); renderChart();">
+                        <option value="candlestick">Candlestick</option>
+                        <option value="heikin-ashi">Heikin-Ashi</option>
+                        <option value="line">Line</option>
+                        <option value="area">Area</option>
+                        <option value="bar">Bar</option>
+                    </select>
+                    <label>Auto Update:</label>
+                    <select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();">
+                        <option value="0">Manual</option>
+                        <option value="5000">5 secs</option>
+                        <option value="10000" selected>10 secs</option>
+                        <option value="30000">30 secs</option>
+                        <option value="60000">1 min</option>
+                        <option value="300000">5 mins</option>
+                    </select>
+                </div>
             </div>
         </div>
         
@@ -1177,7 +1190,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <script>
         let currentTicker = '';
         let tvChart = null; let tvSeries = null; let masterData = [];
-        let activePriceLines = [];
+        let tradeLineSeries = null;
+        let showTrades = true;
         let currentAnomalyReason = "Loading...";
         let currentLivePrice = 0;
         let currentActiveTranches = 0;
@@ -1186,6 +1200,21 @@ HTML_FRONTEND = """<!DOCTYPE html>
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null;
         let isSettingsLoaded = false;
+
+        function toggleShowTrades() {
+            showTrades = !showTrades;
+            let btn = document.getElementById('btnShowTrades');
+            if (btn) {
+                if (showTrades) {
+                    btn.innerText = "Show Trades: ON";
+                    btn.classList.add('active');
+                } else {
+                    btn.innerText = "Show Trades: OFF";
+                    btn.classList.remove('active');
+                }
+            }
+            renderChart();
+        }
 
         async function fetchUsers() {
             try {
@@ -1250,20 +1279,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 isSettingsLoaded = false;
                 await fetchUsers();
                 fetchData(false);
-            }
-        }
-
-        function triggerBrowserNotification(title, body) {
-            if ("Notification" in window) {
-                if (Notification.permission === "granted") {
-                    new Notification(title, { body: body });
-                } else if (Notification.permission !== "denied") {
-                    Notification.permission.then && Notification.requestPermission().then(permission => {
-                        if (permission === "granted") {
-                            new Notification(title, { body: body });
-                        }
-                    });
-                }
             }
         }
 
@@ -1797,12 +1812,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function renderChart() {
+            if (tradeLineSeries) {
+                try { tvChart.removeSeries(tradeLineSeries); } catch(e){}
+                tradeLineSeries = null;
+            }
             if (tvSeries) {
-                if (activePriceLines.length > 0) {
-                    activePriceLines.forEach(pl => { try { tvSeries.removePriceLine(pl); } catch(e){} });
-                    activePriceLines = [];
-                }
                 tvChart.removeSeries(tvSeries);
+                tvSeries = null;
             }
             if (!masterData.length) return;
             let style = document.getElementById('styleSelect').value;
@@ -1826,50 +1842,60 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 tvSeries.setData(cleanData);
             }
 
-            let showTrades = document.getElementById('showTradesChk') ? document.getElementById('showTradesChk').checked : true;
-
             if (showTrades && globalPortfolioData && globalPortfolioData.history && currentTicker) {
                 let tickerHistory = globalPortfolioData.history.filter(h => h.ticker === currentTicker);
+                let lineData = [];
                 let markers = [];
                 let interval = document.getElementById('intervalSelect').value;
                 let isIntraday = ['1m', '5m', '15m', '30m', '1h'].includes(interval);
 
-                tickerHistory.forEach(item => {
-                    let isBuy = item.action === 'BUY';
-                    let markerTime = null;
-                    let cleanP = parseFloat(item.price).toFixed(2);
+                if (tickerHistory.length > 0) {
+                    tradeLineSeries = tvChart.addHistogramSeries({
+                        color: 'rgba(255, 255, 255, 0.75)',
+                        priceScaleId: 'tradeLinesScale',
+                        priceFormat: { type: 'volume' },
+                    });
+                    tvChart.priceScale('tradeLinesScale').applyOptions({
+                        scaleMargins: { top: 0, bottom: 0 },
+                        visible: false,
+                    });
 
-                    if (isIntraday && item.timestamp) {
-                        let closest = masterData[0];
-                        let minDiff = Math.abs(item.timestamp - closest.time);
-                        for (let d of masterData) {
-                            let diff = Math.abs(item.timestamp - d.time);
-                            if (diff < minDiff) { minDiff = diff; closest = d; }
+                    tickerHistory.forEach(item => {
+                        let isBuy = item.action === 'BUY';
+                        let markerTime = null;
+                        let cleanP = parseFloat(item.price).toFixed(2);
+
+                        if (isIntraday && item.timestamp) {
+                            let closest = masterData[0];
+                            let minDiff = Math.abs(item.timestamp - closest.time);
+                            for (let d of masterData) {
+                                let diff = Math.abs(item.timestamp - d.time);
+                                if (diff < minDiff) { minDiff = diff; closest = d; }
+                            }
+                            markerTime = closest ? closest.time : null;
+                        } else if (item.date_str) {
+                            markerTime = item.date_str;
                         }
-                        markerTime = closest ? closest.time : null;
-                    } else if (item.date_str) {
-                        markerTime = item.date_str;
+
+                        if (markerTime) {
+                            lineData.push({ time: markerTime, value: 1, color: 'rgba(255, 255, 255, 0.75)' });
+                            markers.push({
+                                time: markerTime,
+                                position: isBuy ? 'belowBar' : 'aboveBar',
+                                color: 'rgba(0,0,0,0)',
+                                shape: 'circle',
+                                text: `${item.action} ${item.shares}sh @ £${cleanP}`
+                            });
+                        }
+                    });
+
+                    lineData.sort((a, b) => (typeof a.time === 'number' ? a.time : new Date(a.time).getTime()) - (typeof b.time === 'number' ? b.time : new Date(b.time).getTime()));
+                    markers.sort((a, b) => (typeof a.time === 'number' ? a.time : new Date(a.time).getTime()) - (typeof b.time === 'number' ? b.time : new Date(b.time).getTime()));
+
+                    tradeLineSeries.setData(lineData);
+                    if (markers.length > 0 && tvSeries && tvSeries.setMarkers) {
+                        tvSeries.setMarkers(markers);
                     }
-
-                    if (markerTime) {
-                        markers.push({
-                            time: markerTime,
-                            position: isBuy ? 'belowBar' : 'aboveBar',
-                            color: isBuy ? '#00c853' : '#ff3d00',
-                            shape: isBuy ? 'arrowUp' : 'arrowDown',
-                            text: `${item.action} ${item.shares}sh @ £${cleanP}`
-                        });
-                    }
-                });
-
-                markers.sort((a, b) => {
-                    let tA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
-                    let tB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
-                    return tA - tB;
-                });
-
-                if (markers.length > 0 && tvSeries && tvSeries.setMarkers) {
-                    tvSeries.setMarkers(markers);
                 }
             }
 
