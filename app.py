@@ -1723,35 +1723,42 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !currentTicker || !masterData.length) return;
+            if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !currentTicker || !masterData || !masterData.length) return;
 
             let tickerHistory = globalPortfolioData.history.filter(h => h.ticker === currentTicker);
-            let interval = document.getElementById('intervalSelect').value;
-            let isIntraday = ['1m', '5m', '15m', '30m', '1h'].includes(interval);
+            if (!tickerHistory.length) return;
+
+            let parsedMaster = masterData.map(d => {
+                let ts;
+                if (typeof d.time === 'number') {
+                    ts = d.time;
+                } else {
+                    ts = Math.floor(new Date(d.time + 'T00:00:00Z').getTime() / 1000);
+                }
+                return { rawTime: d.time, ts: ts };
+            });
 
             let groupedByX = {};
 
             tickerHistory.forEach(item => {
-                let markerTime = null;
-                if (isIntraday && item.timestamp) {
-                    let closest = masterData[0];
-                    let minDiff = Math.abs(item.timestamp - closest.time);
-                    for (let d of masterData) {
-                        let diff = Math.abs(item.timestamp - d.time);
-                        if (diff < minDiff) { minDiff = diff; closest = d; }
+                let itemTs = item.timestamp ? item.timestamp : Math.floor(new Date((item.date_str || item.time) + 'T00:00:00Z').getTime() / 1000);
+                if (isNaN(itemTs)) return;
+
+                let closest = parsedMaster[0];
+                let minDiff = Math.abs(itemTs - closest.ts);
+                for (let pm of parsedMaster) {
+                    let diff = Math.abs(itemTs - pm.ts);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closest = pm;
                     }
-                    markerTime = closest ? closest.time : null;
-                } else if (item.date_str) {
-                    markerTime = item.date_str;
                 }
 
-                if (markerTime) {
-                    let x = tvChart.timeScale().timeToCoordinate(markerTime);
-                    if (x !== null && x >= 0 && x <= canvas.width) {
-                        let roundedX = Math.round(x);
-                        if (!groupedByX[roundedX]) groupedByX[roundedX] = [];
-                        groupedByX[roundedX].push(item);
-                    }
+                let x = tvChart.timeScale().timeToCoordinate(closest.rawTime);
+                if (x !== null && x >= 0 && x <= canvas.width) {
+                    let roundedX = Math.round(x);
+                    if (!groupedByX[roundedX]) groupedByX[roundedX] = [];
+                    groupedByX[roundedX].push(item);
                 }
             });
 
@@ -1759,16 +1766,14 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let x = parseFloat(xStr);
                 let items = groupedByX[xStr];
 
-                // 1. Draw thin 1px white dashed vertical line
                 ctx.beginPath();
-                ctx.setLineDash([3, 3]);
+                ctx.setLineDash([4, 4]);
                 ctx.moveTo(x, 0);
                 ctx.lineTo(x, canvas.height - 25);
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 1;
                 ctx.stroke();
 
-                // 2. Draw stacked trade labels cleanly without overlapping
                 let startY = canvas.height - 45;
                 items.forEach(item => {
                     let isBuy = item.action === 'BUY';
@@ -1777,17 +1782,17 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
                     ctx.font = 'bold 10px -apple-system, sans-serif';
                     let textWidth = ctx.measureText(labelText).width;
-                    let boxWidth = textWidth + 8;
-                    let boxHeight = 16;
+                    let boxWidth = textWidth + 10;
+                    let boxHeight = 18;
 
                     ctx.setLineDash([]);
-                    ctx.fillStyle = isBuy ? 'rgba(0, 200, 83, 0.9)' : 'rgba(255, 61, 0, 0.9)';
+                    ctx.fillStyle = isBuy ? '#00c853' : '#ff3d00';
                     ctx.fillRect(x - (boxWidth / 2), startY - boxHeight, boxWidth, boxHeight);
 
                     ctx.fillStyle = '#ffffff';
-                    ctx.fillText(labelText, x - (textWidth / 2), startY - 4);
+                    ctx.fillText(labelText, x - (textWidth / 2), startY - 5);
 
-                    startY -= 20; // stack upward for multiple trades on same candle
+                    startY -= 22;
                 });
             });
         }
