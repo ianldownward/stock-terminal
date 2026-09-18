@@ -330,9 +330,36 @@ class MarketScoringEngine:
         volume_comp = min(max((volume_ratio / 2.0) * 20.0, 0.0), 20.0)
         buy_score = round(discount_comp + volume_comp, 2)
         buy_score = min(max(buy_score, 0.0), 100.0)
-        tranches = int(buy_score // 20)
         
-        if implied_discount <= 5.0 and implied_discount > -50.0:
+        # New 1-5 Tranche Mapping
+        if implied_discount <= 0:
+            tranches = 0
+        else:
+            tranches = min(5, int(buy_score // 20) + 1)
+            
+        # MACRO SENTINEL (Safety Switch)
+        macro_triggered = False
+        uun_discount = 0.0
+        if ticker == 'YCA.L':
+            try:
+                u_df = yf.Ticker('U-UN.TO').history(period="1d")
+                if not u_df.empty:
+                    u_price = u_df['Close'].iloc[-1]
+                    u_nav = self.nav_bases.get('U-UN.TO', 28.50)
+                    uun_discount = ((u_nav - u_price) / u_nav) * 100.0
+                    if uun_discount > 10.0:
+                        macro_triggered = True
+            except: pass
+
+        if macro_triggered:
+            action_main = "HOLD / WAIT"
+            action_sub = "(Sentinel Active)"
+            action_color = "#ff9900"
+            status = "MACRO SENTINEL TRIPPED"
+            color = "#ff3d00"
+            tranches = 0
+            reason = f"EMERGENCY STOP: Broad sector panic detected. Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Buying frozen at 0 tranches to protect capital."
+        elif implied_discount <= 5.0 and implied_discount > -50.0:
             action_main = "SELL"
             action_sub = "(Take Profit)"
             action_color = "#ff3d00"
@@ -353,8 +380,7 @@ class MarketScoringEngine:
             action_color = "#8a8a9e"
             status = 'Trading at Premium' if implied_discount < 0 else 'Low Value'
             color = '#ff4a4a' if implied_discount < 0 else '#8a8a9e'
-            tranches = 0
-            reason = f"No Discount Anomaly. Trading at {implied_discount:.1f}% NAV discount. Recommend 0 tranches until deeper discount."
+            reason = f"Trading at {implied_discount:.1f}% NAV discount. Active Tranches: {tranches}."
 
         return {
             'type': 'Physical Trust', 'score': buy_score, 'tranches': tranches,
@@ -382,7 +408,11 @@ class MarketScoringEngine:
         
         buy_score = round(discount_comp + rsi_comp + vol_comp, 2)
         buy_score = min(max(buy_score, 0.0), 100.0)
-        tranches = int(buy_score // 20)
+        
+        if implied_discount < 0:
+            tranches = 0
+        else:
+            tranches = min(5, int(buy_score // 20) + 1)
         
         if buy_score >= 40:
             action_main = "BUY"
@@ -405,8 +435,7 @@ class MarketScoringEngine:
             action_color = "#8a8a9e"
             status = 'Fair Value'
             color = '#8a8a9e'
-            tranches = 0
-            reason = f"No Value Anomaly. Stock near 200-day DMA. Recommend 0 tranches until price pulls back."
+            reason = f"No Value Anomaly. Stock near 200-day DMA. Active Tranches: {tranches}."
             
         return {
             'type': 'Global Equity', 'score': buy_score, 'tranches': tranches,
@@ -571,6 +600,9 @@ def get_directives():
     buy_targets = []
     total_buy_demand = 0.0
 
+    MIN_BUY_VALUE = 20.0       # Minimum trade size to trigger a BUY
+    HYSTERESIS_BUFFER = 0.15   # 15% allowance buffer to stop SELL oscillations on small score drops
+
     for t in watchlist:
         t = t.strip().upper()
         if not t: continue
@@ -594,21 +626,22 @@ def get_directives():
             diff_val = target_val - val_owned
 
             if state['action_main'] == 'SELL':
-                if shares_owned > 0:
+                if shares_owned > 0 and (shares_owned * cost_per_share) >= MIN_BUY_VALUE:
                     final_directives.append({
                         'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL',
                         'shares': shares_owned, 'price': current, 'amount': round(shares_owned * cost_per_share, 2)
                     })
-            elif diff_val > 5 and tranches > 0 and cost_per_share > 0:
+            elif diff_val >= MIN_BUY_VALUE and tranches > 0 and cost_per_share > 0:
                 buy_targets.append({
                     'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'BUY',
                     'diff_val': diff_val, 'cost_per_share': cost_per_share, 'price': current
                 })
                 total_buy_demand += diff_val
-            elif val_owned > 0 and (tranches == 0 or diff_val < -5):
+            elif val_owned > 0 and (tranches == 0 or diff_val < -(target_val * HYSTERESIS_BUFFER + MIN_BUY_VALUE)):
+                # Apply Hysteresis buffer so minor tranche drops don't trigger ping-pong SELL orders
                 excess_val = abs(diff_val)
                 sell_shares = shares_owned if tranches == 0 else min(shares_owned, int(excess_val // cost_per_share))
-                if sell_shares > 0:
+                if sell_shares > 0 and (sell_shares * cost_per_share) >= MIN_BUY_VALUE:
                     final_directives.append({
                         'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL',
                         'shares': sell_shares, 'price': current, 'amount': round(sell_shares * cost_per_share, 2)
@@ -620,10 +653,11 @@ def get_directives():
         for b in buy_targets:
             allowed_spend = b['diff_val'] * scale_ratio
             buy_shares = int(allowed_spend // b['cost_per_share'])
-            if buy_shares > 0:
+            trade_amt = round(buy_shares * b['cost_per_share'], 2)
+            if buy_shares > 0 and trade_amt >= MIN_BUY_VALUE:
                 final_directives.append({
                     'ticker': b['ticker'], 'name': b['name'], 'action': 'BUY',
-                    'shares': buy_shares, 'price': b['price'], 'amount': round(buy_shares * b['cost_per_share'], 2)
+                    'shares': buy_shares, 'price': b['price'], 'amount': trade_amt
                 })
 
     current_active_keys = set()
@@ -1451,18 +1485,21 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 actionSub.innerText = "";
             } else {
                 let buyShares = 0;
-                if (netDiffVal > 5 && currentActiveTranches > 0 && costPerShare > 0) {
+                let minBuyVal = 20.0;
+                let hysteresisBuffer = 0.15;
+
+                if (netDiffVal >= minBuyVal && currentActiveTranches > 0 && costPerShare > 0) {
                     let allowedSpend = Math.min(netDiffVal, Math.max(0, remaining));
                     buyShares = Math.floor(allowedSpend / costPerShare);
                 }
                 
                 let sellShares = 0;
-                if (currentValOwned > 0 && (currentActiveTranches === 0 || netDiffVal < -5)) {
+                if (currentValOwned > 0 && (currentActiveTranches === 0 || netDiffVal < -(trancheTargetVal * hysteresisBuffer + minBuyVal))) {
                     let excessVal = Math.abs(netDiffVal);
                     sellShares = currentActiveTranches === 0 ? currentSharesOwned : Math.min(currentSharesOwned, Math.floor(excessVal / costPerShare));
                 }
 
-                if (buyShares > 0) {
+                if (buyShares > 0 && (buyShares * costPerShare) >= minBuyVal) {
                     actionMain.innerText = "BUY";
                     actionMain.style.color = "#00c853";
                     actionSub.innerText = `(Tranche ${currentActiveTranches})`;
@@ -1472,7 +1509,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     recSharesText = `Buy ${buyShares} shares`;
                     
                     btnContainer.innerHTML = `<button class="btn-execute" onclick="executeTradeDirect('${currentTicker}', 'BUY', ${buyShares}, ${currentLivePrice})">Confirm Buy (${buyShares} Shs)</button>`;
-                } else if (sellShares > 0) {
+                } else if (sellShares > 0 && (sellShares * costPerShare) >= minBuyVal) {
                     actionMain.innerText = "SELL";
                     actionMain.style.color = "#ff3d00";
                     actionSub.innerText = "(Take Profit)";
