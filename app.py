@@ -916,8 +916,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .btn-execute.sell-btn { background: #ff3d00; }
         .btn-execute.sell-btn:hover { background: #ff5252; }
 
-        .chart-container { flex: 1; background: #171a21; padding: 10px; border-radius: 10px; border: 1px solid #262b36; position: relative; }
+        .chart-container { flex: 1; background: #171a21; padding: 10px; border-radius: 10px; border: 1px solid #262b36; position: relative; overflow: hidden; }
         #tvChart { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; }
+        #chartCanvas { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; pointer-events: none; z-index: 5; }
         #loader { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00d2ff; font-weight: bold; z-index: 10; background: rgba(23, 26, 33, 0.9); padding: 10px 20px; border-radius: 8px; border: 1px solid #00d2ff; }
 
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
@@ -1165,6 +1166,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         <div class="chart-container">
             <div id="loader">Fetching...</div>
             <div id="tvChart"></div>
+            <canvas id="chartCanvas"></canvas>
         </div>
     </div>
 
@@ -1190,7 +1192,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <script>
         let currentTicker = '';
         let tvChart = null; let tvSeries = null; let masterData = [];
-        let tradeLineSeries = null;
         let showTrades = true;
         let currentAnomalyReason = "Loading...";
         let currentLivePrice = 0;
@@ -1213,7 +1214,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     btn.classList.remove('active');
                 }
             }
-            renderChart();
+            drawCanvasOverlay();
         }
 
         async function fetchUsers() {
@@ -1701,7 +1702,94 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } },
                 crosshair: { mode: 0 }, timeScale: { borderColor: '#262b36', timeVisible: true }
             });
-            window.addEventListener('resize', () => { tvChart.applyOptions({ width: container.clientWidth, height: container.clientHeight }); });
+
+            tvChart.timeScale().subscribeVisibleTimeRangeChange(drawCanvasOverlay);
+            tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
+
+            window.addEventListener('resize', () => {
+                tvChart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+                drawCanvasOverlay();
+            });
+        }
+
+        function drawCanvasOverlay() {
+            let canvas = document.getElementById('chartCanvas');
+            if (!canvas || !tvChart || !tvSeries) return;
+            let container = document.getElementById('tvChart');
+            
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            
+            let ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !currentTicker || !masterData.length) return;
+
+            let tickerHistory = globalPortfolioData.history.filter(h => h.ticker === currentTicker);
+            let interval = document.getElementById('intervalSelect').value;
+            let isIntraday = ['1m', '5m', '15m', '30m', '1h'].includes(interval);
+
+            let groupedByX = {};
+
+            tickerHistory.forEach(item => {
+                let markerTime = null;
+                if (isIntraday && item.timestamp) {
+                    let closest = masterData[0];
+                    let minDiff = Math.abs(item.timestamp - closest.time);
+                    for (let d of masterData) {
+                        let diff = Math.abs(item.timestamp - d.time);
+                        if (diff < minDiff) { minDiff = diff; closest = d; }
+                    }
+                    markerTime = closest ? closest.time : null;
+                } else if (item.date_str) {
+                    markerTime = item.date_str;
+                }
+
+                if (markerTime) {
+                    let x = tvChart.timeScale().timeToCoordinate(markerTime);
+                    if (x !== null && x >= 0 && x <= canvas.width) {
+                        let roundedX = Math.round(x);
+                        if (!groupedByX[roundedX]) groupedByX[roundedX] = [];
+                        groupedByX[roundedX].push(item);
+                    }
+                }
+            });
+
+            Object.keys(groupedByX).forEach(xStr => {
+                let x = parseFloat(xStr);
+                let items = groupedByX[xStr];
+
+                // 1. Draw thin 1px white dashed vertical line
+                ctx.beginPath();
+                ctx.setLineDash([3, 3]);
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height - 25);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // 2. Draw stacked trade labels cleanly without overlapping
+                let startY = canvas.height - 45;
+                items.forEach(item => {
+                    let isBuy = item.action === 'BUY';
+                    let cleanP = parseFloat(item.price).toFixed(2);
+                    let labelText = `${item.action} ${item.shares}sh @ £${cleanP}`;
+
+                    ctx.font = 'bold 10px -apple-system, sans-serif';
+                    let textWidth = ctx.measureText(labelText).width;
+                    let boxWidth = textWidth + 8;
+                    let boxHeight = 16;
+
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = isBuy ? 'rgba(0, 200, 83, 0.9)' : 'rgba(255, 61, 0, 0.9)';
+                    ctx.fillRect(x - (boxWidth / 2), startY - boxHeight, boxWidth, boxHeight);
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(labelText, x - (textWidth / 2), startY - 4);
+
+                    startY -= 20; // stack upward for multiple trades on same candle
+                });
+            });
         }
 
         function updateIntervals() {
@@ -1812,10 +1900,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function renderChart() {
-            if (tradeLineSeries) {
-                try { tvChart.removeSeries(tradeLineSeries); } catch(e){}
-                tradeLineSeries = null;
-            }
             if (tvSeries) {
                 tvChart.removeSeries(tvSeries);
                 tvSeries = null;
@@ -1842,64 +1926,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 tvSeries.setData(cleanData);
             }
 
-            if (showTrades && globalPortfolioData && globalPortfolioData.history && currentTicker) {
-                let tickerHistory = globalPortfolioData.history.filter(h => h.ticker === currentTicker);
-                let lineData = [];
-                let markers = [];
-                let interval = document.getElementById('intervalSelect').value;
-                let isIntraday = ['1m', '5m', '15m', '30m', '1h'].includes(interval);
-
-                if (tickerHistory.length > 0) {
-                    tradeLineSeries = tvChart.addHistogramSeries({
-                        color: 'rgba(255, 255, 255, 0.75)',
-                        priceScaleId: 'tradeLinesScale',
-                        priceFormat: { type: 'volume' },
-                    });
-                    tvChart.priceScale('tradeLinesScale').applyOptions({
-                        scaleMargins: { top: 0, bottom: 0 },
-                        visible: false,
-                    });
-
-                    tickerHistory.forEach(item => {
-                        let isBuy = item.action === 'BUY';
-                        let markerTime = null;
-                        let cleanP = parseFloat(item.price).toFixed(2);
-
-                        if (isIntraday && item.timestamp) {
-                            let closest = masterData[0];
-                            let minDiff = Math.abs(item.timestamp - closest.time);
-                            for (let d of masterData) {
-                                let diff = Math.abs(item.timestamp - d.time);
-                                if (diff < minDiff) { minDiff = diff; closest = d; }
-                            }
-                            markerTime = closest ? closest.time : null;
-                        } else if (item.date_str) {
-                            markerTime = item.date_str;
-                        }
-
-                        if (markerTime) {
-                            lineData.push({ time: markerTime, value: 1, color: 'rgba(255, 255, 255, 0.75)' });
-                            markers.push({
-                                time: markerTime,
-                                position: isBuy ? 'belowBar' : 'aboveBar',
-                                color: 'rgba(0,0,0,0)',
-                                shape: 'circle',
-                                text: `${item.action} ${item.shares}sh @ £${cleanP}`
-                            });
-                        }
-                    });
-
-                    lineData.sort((a, b) => (typeof a.time === 'number' ? a.time : new Date(a.time).getTime()) - (typeof b.time === 'number' ? b.time : new Date(b.time).getTime()));
-                    markers.sort((a, b) => (typeof a.time === 'number' ? a.time : new Date(a.time).getTime()) - (typeof b.time === 'number' ? b.time : new Date(b.time).getTime()));
-
-                    tradeLineSeries.setData(lineData);
-                    if (markers.length > 0 && tvSeries && tvSeries.setMarkers) {
-                        tvSeries.setMarkers(markers);
-                    }
-                }
-            }
-
             tvChart.timeScale().fitContent();
+            setTimeout(drawCanvasOverlay, 50);
         }
 
         function selectStock(ticker, elem) {
