@@ -46,6 +46,7 @@ class PortfolioManager:
             'initial_positions': {},
             'holdings': {},
             'history': [],
+            'notified_signals': {},
             'settings': {
                 'period': '1mo',
                 'interval': '1d',
@@ -76,6 +77,7 @@ class PortfolioManager:
                                 'initial_positions': data.get('initial_positions', {}),
                                 'holdings': data.get('holdings', {}),
                                 'history': data.get('history', []),
+                                'notified_signals': {},
                                 'settings': data.get('settings', self.default_user_state()['settings'])
                             }
                             data = {
@@ -178,6 +180,8 @@ class PortfolioManager:
             ud['initial_positions'].pop(ticker, None)
         if 'history' in ud:
             ud['history'] = [h for h in ud['history'] if h.get('ticker') != ticker]
+        if 'notified_signals' in ud:
+            ud['notified_signals'].pop(ticker, None)
         self.save()
 
     def get_net_trade_shares(self, ticker):
@@ -552,7 +556,11 @@ def get_directives():
     watchlist = ud.get('watchlist', [])
     engine = MarketScoringEngine()
     master_budget = ud.get('master_budget', 10000.0)
+    ntfy_topic = ud.get('settings', {}).get('ntfy_topic', '')
     
+    if 'notified_signals' not in ud:
+        ud['notified_signals'] = {}
+        
     total_owned = portfolio_store.get_total_portfolio_value()
     remaining_cash = max(0, master_budget - total_owned)
 
@@ -614,6 +622,34 @@ def get_directives():
                     'ticker': b['ticker'], 'name': b['name'], 'action': 'BUY',
                     'shares': buy_shares, 'price': b['price'], 'amount': round(buy_shares * b['cost_per_share'], 2)
                 })
+
+    # --- PUSH SIGNAL NOTIFICATIONS ENGINE ---
+    current_active_keys = set()
+    for d in final_directives:
+        t = d['ticker']
+        action = d['action']
+        shares = d['shares']
+        amt = d['amount']
+        
+        sig_key = f"{action}_{shares}"
+        current_active_keys.add(t)
+        
+        if ud['notified_signals'].get(t) != sig_key:
+            if ntfy_topic:
+                send_push_notification(
+                    ntfy_topic,
+                    f"SIGNAL ALERT: {t}",
+                    f"Directive for {portfolio_store.active_username()}: {action} {shares} shares (£{amt:.2f})"
+                )
+            ud['notified_signals'][t] = sig_key
+            portfolio_store.save()
+
+    # Clear signals that are no longer active
+    to_remove = [k for k in ud['notified_signals'] if k not in current_active_keys]
+    if to_remove:
+        for k in to_remove:
+            del ud['notified_signals'][k]
+        portfolio_store.save()
 
     return jsonify({'directives': final_directives})
 
@@ -1773,8 +1809,4 @@ HTML_FRONTEND = """<!DOCTYPE html>
         setTimeout(() => { initChart(); fetchUsers(); updateIntervals(); fetchData(false); setupAutoRefresh(); }, 100);
     </script>
 </body>
-</html>"""
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8095))
-    app.run(host='0.0.0.0', port=port, debug=False)
+</html>
