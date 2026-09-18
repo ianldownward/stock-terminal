@@ -5,6 +5,7 @@ import urllib.request
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template_string
+from pymongo import MongoClient
 
 app = Flask(__name__)
 
@@ -22,8 +23,20 @@ def send_push_notification(topic, title, message):
         print(f"Notification push error: {e}")
 
 class PortfolioManager:
-    def __init__(self, filename='portfolio.json'):
-        self.filename = filename
+    def __init__(self):
+        self.mongo_uri = os.environ.get('MONGO_URI')
+        if self.mongo_uri:
+            try:
+                self.client = MongoClient(self.mongo_uri)
+                self.db = self.client['stock_terminal']
+                self.collection = self.db['portfolio']
+            except Exception as e:
+                print(f"MongoDB connection error: {e}")
+                self.client = None
+        else:
+            self.client = None
+            self.filename = 'portfolio.json'
+            
         self.data = self.load()
 
     def default_user_state(self):
@@ -43,26 +56,35 @@ class PortfolioManager:
         }
 
     def load(self):
-        if os.path.exists(self.filename):
+        if self.client:
             try:
-                with open(self.filename, 'r') as f:
-                    data = json.load(f)
-                    if 'users' not in data:
-                        migrated_user = {
-                            'master_budget': data.get('master_budget', 10000.0),
-                            'watchlist': data.get('watchlist', []),
-                            'initial_positions': data.get('initial_positions', {}),
-                            'holdings': data.get('holdings', {}),
-                            'history': data.get('history', []),
-                            'settings': data.get('settings', self.default_user_state()['settings'])
-                        }
-                        data = {
-                            'active_user': 'Ian',
-                            'users': { 'Ian': migrated_user }
-                        }
-                        self.save_data(data)
-                    return data
+                doc = self.collection.find_one({"_id": "main_store"})
+                if doc:
+                    doc.pop('_id', None)
+                    return doc
             except Exception: pass
+            
+        else:
+            if os.path.exists(self.filename):
+                try:
+                    with open(self.filename, 'r') as f:
+                        data = json.load(f)
+                        if 'users' not in data:
+                            migrated_user = {
+                                'master_budget': data.get('master_budget', 10000.0),
+                                'watchlist': data.get('watchlist', []),
+                                'initial_positions': data.get('initial_positions', {}),
+                                'holdings': data.get('holdings', {}),
+                                'history': data.get('history', []),
+                                'settings': data.get('settings', self.default_user_state()['settings'])
+                            }
+                            data = {
+                                'active_user': 'Ian',
+                                'users': { 'Ian': migrated_user }
+                            }
+                            self.save_data(data)
+                        return data
+                except Exception: pass
         
         initial = {
             'active_user': 'Ian',
@@ -73,11 +95,17 @@ class PortfolioManager:
         return initial
 
     def save_data(self, data_to_save):
-        try:
-            with open(self.filename, 'w') as f:
-                json.dump(data_to_save, f, indent=2)
-        except Exception as e:
-            print(f"Error saving portfolio: {e}")
+        if self.client:
+            try:
+                self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
+            except Exception as e:
+                print(f"Error saving to MongoDB: {e}")
+        else:
+            try:
+                with open(self.filename, 'w') as f:
+                    json.dump(data_to_save, f, indent=2)
+            except Exception as e:
+                print(f"Error saving portfolio locally: {e}")
 
     def save(self):
         self.save_data(self.data)
@@ -1134,6 +1162,20 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 isSettingsLoaded = false;
                 await fetchUsers();
                 fetchData(false);
+            }
+        }
+
+        function triggerBrowserNotification(title, body) {
+            if ("Notification" in window) {
+                if (Notification.permission === "granted") {
+                    new Notification(title, { body: body });
+                } else if (Notification.permission !== "denied") {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === "granted") {
+                            new Notification(title, { body: body });
+                        }
+                    });
+                }
             }
         }
 
