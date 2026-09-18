@@ -331,7 +331,6 @@ class MarketScoringEngine:
         buy_score = round(discount_comp + volume_comp, 2)
         buy_score = min(max(buy_score, 0.0), 100.0)
         
-        # New 1-5 Tranche Mapping
         if implied_discount <= 0:
             tranches = 0
         else:
@@ -352,13 +351,13 @@ class MarketScoringEngine:
             except: pass
 
         if macro_triggered:
-            action_main = "HOLD / WAIT"
+            action_main = "SELL"
             action_sub = "(Sentinel Active)"
-            action_color = "#ff9900"
+            action_color = "#ff3d00"
             status = "MACRO SENTINEL TRIPPED"
             color = "#ff3d00"
             tranches = 0
-            reason = f"EMERGENCY STOP: Broad sector panic detected. Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Buying frozen at 0 tranches to protect capital."
+            reason = f"EMERGENCY STOP: Broad sector panic detected. Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Liquidating to 0 tranches to protect capital."
         elif implied_discount <= 5.0 and implied_discount > -50.0:
             action_main = "SELL"
             action_sub = "(Take Profit)"
@@ -600,8 +599,7 @@ def get_directives():
     buy_targets = []
     total_buy_demand = 0.0
 
-    MIN_BUY_VALUE = 20.0       # Minimum trade size to trigger a BUY
-    HYSTERESIS_BUFFER = 0.15   # 15% allowance buffer to stop SELL oscillations on small score drops
+    MIN_BUY_VALUE = 20.0
 
     for t in watchlist:
         t = t.strip().upper()
@@ -625,7 +623,9 @@ def get_directives():
             target_val = (tranches / 5.0) * master_budget
             diff_val = target_val - val_owned
 
-            if state['action_main'] == 'SELL':
+            # Accumulate and Hold Logic: 
+            # Only issue SELL if the engine explicitly says 'SELL' (Take Profit or Sentinel Triggered)
+            if state['action_main'] == 'SELL' or tranches == 0:
                 if shares_owned > 0 and (shares_owned * cost_per_share) >= MIN_BUY_VALUE:
                     final_directives.append({
                         'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL',
@@ -637,15 +637,7 @@ def get_directives():
                     'diff_val': diff_val, 'cost_per_share': cost_per_share, 'price': current
                 })
                 total_buy_demand += diff_val
-            elif val_owned > 0 and (tranches == 0 or diff_val < -(target_val * HYSTERESIS_BUFFER + MIN_BUY_VALUE)):
-                # Apply Hysteresis buffer so minor tranche drops don't trigger ping-pong SELL orders
-                excess_val = abs(diff_val)
-                sell_shares = shares_owned if tranches == 0 else min(shares_owned, int(excess_val // cost_per_share))
-                if sell_shares > 0 and (sell_shares * cost_per_share) >= MIN_BUY_VALUE:
-                    final_directives.append({
-                        'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL',
-                        'shares': sell_shares, 'price': current, 'amount': round(sell_shares * cost_per_share, 2)
-                    })
+            
         except Exception: pass
 
     if total_buy_demand > 0:
@@ -1486,7 +1478,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
             } else {
                 let buyShares = 0;
                 let minBuyVal = 20.0;
-                let hysteresisBuffer = 0.15;
 
                 if (netDiffVal >= minBuyVal && currentActiveTranches > 0 && costPerShare > 0) {
                     let allowedSpend = Math.min(netDiffVal, Math.max(0, remaining));
@@ -1494,9 +1485,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 }
                 
                 let sellShares = 0;
-                if (currentValOwned > 0 && (currentActiveTranches === 0 || netDiffVal < -(trancheTargetVal * hysteresisBuffer + minBuyVal))) {
-                    let excessVal = Math.abs(netDiffVal);
-                    sellShares = currentActiveTranches === 0 ? currentSharesOwned : Math.min(currentSharesOwned, Math.floor(excessVal / costPerShare));
+                if (currentValOwned > 0 && actionMain.innerText === "SELL") {
+                    sellShares = currentSharesOwned; // Full liquidation or target taken
+                } else if (currentValOwned > 0 && currentActiveTranches === 0) {
+                    sellShares = currentSharesOwned;
                 }
 
                 if (buyShares > 0 && (buyShares * costPerShare) >= minBuyVal) {
@@ -1512,7 +1504,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 } else if (sellShares > 0 && (sellShares * costPerShare) >= minBuyVal) {
                     actionMain.innerText = "SELL";
                     actionMain.style.color = "#ff3d00";
-                    actionSub.innerText = "(Take Profit)";
+                    actionSub.innerText = "(Take Profit / Sentinel)";
 
                     let sellAmount = sellShares * costPerShare;
                     recAmtText = `-£${sellAmount.toFixed(2)}`;
