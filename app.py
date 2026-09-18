@@ -687,9 +687,31 @@ def get_data():
     ticker = request.args.get('t', '').upper()
     if not ticker and watchlist: ticker = watchlist[0]
 
+    # --- AGGREGATE TOTAL PORTFOLIO PNL ---
+    total_portfolio_owned = portfolio_store.get_total_portfolio_value()
+    master_budget = ud.get('master_budget', 10000.0)
+
+    total_cost_basis = 0.0
+    for w_ticker in watchlist:
+        sh_count = portfolio_store.get_shares(w_ticker)
+        if sh_count > 0:
+            w_init_val = ud.get('initial_positions', {}).get(w_ticker, {}).get('manual_val', 0.0)
+            w_trade_net = sum(
+                tr['amount'] if tr['action'] == 'BUY' else -tr['amount']
+                for tr in ud.get('history', []) if tr.get('ticker') == w_ticker
+            )
+            total_cost_basis += (w_init_val + w_trade_net)
+
+    if total_cost_basis > 0 and total_portfolio_owned > 0:
+        tot_pnl_val = round(total_portfolio_owned - total_cost_basis, 2)
+        tot_pnl_pct = round((tot_pnl_val / total_cost_basis) * 100.0, 2)
+        tot_pnl_color = '#00c853' if tot_pnl_val > 0 else ('#ff3d00' if tot_pnl_val < 0 else '#8a8a9e')
+        tot_pnl_display = f"{'+' if tot_pnl_val > 0 else ''}£{tot_pnl_val:.2f} ({'+' if tot_pnl_pct > 0 else ''}{tot_pnl_pct:.2f}%)"
+    else:
+        tot_pnl_display = "£0.00 (0.00%)"
+        tot_pnl_color = "#8a8a9e"
+
     if not ticker or ticker not in watchlist:
-        total_portfolio_owned = portfolio_store.get_total_portfolio_value()
-        master_budget = ud.get('master_budget', 10000.0)
         return jsonify({
             'ohlc': [],
             'name': 'No Asset Loaded',
@@ -701,6 +723,7 @@ def get_data():
                 'action_main': 'NO ASSET', 'action_sub': '', 'action_color': '#787e8e',
                 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e',
+                'total_pnl_display': tot_pnl_display, 'total_pnl_color': tot_pnl_color,
                 'master_budget': master_budget,
                 'total_portfolio_owned': total_portfolio_owned,
                 'budget_remaining': round(master_budget - total_portfolio_owned, 2)
@@ -752,17 +775,17 @@ def get_data():
         cost_per_share = last_price / 100.0 if is_lse_pence else last_price
         current_value_owned = round(shares_owned * cost_per_share, 2)
 
-        # --- PROFIT / LOSS CALCULATION ---
+        # --- INDIVIDUAL STOCK PNL ---
         init_val = ud.get('initial_positions', {}).get(ticker, {}).get('manual_val', 0.0)
         trade_net_cost = sum(
             t['amount'] if t['action'] == 'BUY' else -t['amount']
             for t in ud.get('history', []) if t.get('ticker') == ticker
         )
-        total_cost_basis = init_val + trade_net_cost
+        stock_cost_basis = init_val + trade_net_cost
 
-        if shares_owned > 0 and total_cost_basis > 0:
-            pnl_val = round(current_value_owned - total_cost_basis, 2)
-            pnl_pct = round((pnl_val / total_cost_basis) * 100.0, 2)
+        if shares_owned > 0 and stock_cost_basis > 0:
+            pnl_val = round(current_value_owned - stock_cost_basis, 2)
+            pnl_pct = round((pnl_val / stock_cost_basis) * 100.0, 2)
             pnl_color = '#00c853' if pnl_val > 0 else ('#ff3d00' if pnl_val < 0 else '#8a8a9e')
             pnl_display = f"{'+' if pnl_val > 0 else ''}£{pnl_val:.2f} ({'+' if pnl_pct > 0 else ''}{pnl_pct:.2f}%)"
         else:
@@ -780,8 +803,6 @@ def get_data():
         if is_lse_pence: price_display = f"{last_price:.2f}p (£{(last_price / 100.0):.2f})"
         else: price_display = f"£{last_price:.2f}"
 
-        total_portfolio_owned = portfolio_store.get_total_portfolio_value()
-        master_budget = ud.get('master_budget', 10000.0)
         budget_remaining = round(master_budget - total_portfolio_owned, 2)
 
         metrics = {
@@ -791,6 +812,7 @@ def get_data():
             'action_main': state['action_main'], 'action_sub': state['action_sub'], 'action_color': state['action_color'],
             'shares_owned': shares_owned, 'value_owned': current_value_owned,
             'pnl_display': pnl_display, 'pnl_color': pnl_color,
+            'total_pnl_display': tot_pnl_display, 'total_pnl_color': tot_pnl_color,
             'master_budget': master_budget,
             'total_portfolio_owned': total_portfolio_owned, 'budget_remaining': budget_remaining
         }
@@ -822,7 +844,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         .total-shares-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #00d2ff; margin-bottom: 10px; text-align: center; }
         .total-shares-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px; }
-        .total-shares-box div { font-size: 18px; font-weight: bold; color: #fff; }
+        .total-shares-box div.total-val { font-size: 18px; font-weight: bold; color: #fff; }
+        .total-shares-box div.total-pnl { font-size: 12px; font-weight: bold; color: #8a8a9e; margin-top: 4px; }
 
         .user-profile-box { background: #1a1d24; padding: 10px 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 10px; }
         .user-profile-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; }
@@ -1017,7 +1040,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
             <div class="total-shares-box">
                 <label>Current Value of All Shares Held</label>
-                <div id="mTotalSharesHeldVal">£0.00</div>
+                <div id="mTotalSharesHeldVal" class="total-val">£0.00</div>
+                <div id="mTotalSharesPnL" class="total-pnl">£0.00 (0.00%)</div>
             </div>
 
             <div class="master-budget-box">
@@ -1753,6 +1777,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
                 document.getElementById('mPnL').innerText = payload.metrics.pnl_display;
                 document.getElementById('mPnL').style.color = payload.metrics.pnl_color;
+
+                document.getElementById('mTotalSharesPnL').innerText = payload.metrics.total_pnl_display;
+                document.getElementById('mTotalSharesPnL').style.color = payload.metrics.total_pnl_color;
 
                 document.getElementById('mMacro').innerHTML = `<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:${payload.metrics.color};"></span> ${payload.metrics.status}`;
                 
