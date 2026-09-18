@@ -237,7 +237,7 @@ class PortfolioManager:
         if not ticker: return None
         ud = self.user_data()
         shares = int(shares)
-        price = float(price)
+        price = round(float(price), 2)
 
         is_lse_pence = ticker.endswith('.L') and price > 100
         cost_per_share = price / 100.0 if is_lse_pence else price
@@ -687,7 +687,6 @@ def get_data():
     ticker = request.args.get('t', '').upper()
     if not ticker and watchlist: ticker = watchlist[0]
 
-    # --- AGGREGATE TOTAL PORTFOLIO PNL ---
     total_portfolio_owned = portfolio_store.get_total_portfolio_value()
     master_budget = ud.get('master_budget', 10000.0)
 
@@ -753,7 +752,7 @@ def get_data():
             data.append({'time': time_val, 'open': round(row['Open'], 2), 'high': round(row['High'], 2), 'low': round(row['Low'], 2), 'close': round(row['Close'], 2)})
         
         data.sort(key=lambda x: x['time'])
-        last_price = data[-1]['close'] if data else 0
+        last_price = round(data[-1]['close'], 2) if data else 0
 
         engine = MarketScoringEngine()
         avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
@@ -775,7 +774,6 @@ def get_data():
         cost_per_share = last_price / 100.0 if is_lse_pence else last_price
         current_value_owned = round(shares_owned * cost_per_share, 2)
 
-        # --- INDIVIDUAL STOCK PNL ---
         init_val = ud.get('initial_positions', {}).get(ticker, {}).get('manual_val', 0.0)
         trade_net_cost = sum(
             t['amount'] if t['action'] == 'BUY' else -t['amount']
@@ -1176,6 +1174,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <script>
         let currentTicker = '';
         let tvChart = null; let tvSeries = null; let masterData = [];
+        let activePriceLines = [];
         let currentAnomalyReason = "Loading...";
         let currentLivePrice = 0;
         let currentActiveTranches = 0;
@@ -1366,7 +1365,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (!currentTicker) return;
             let val = parseFloat(document.getElementById('inputHeldVal').value) || 0;
             
-            let isLsePence = currentTicker.endswith('.L') && currentLivePrice > 100;
+            let isLsePence = currentTicker.endsWith('.L') && currentLivePrice > 100;
             let pricePerShare = isLsePence ? (currentLivePrice / 100.0) : currentLivePrice;
             currentSharesOwned = pricePerShare > 0 ? Math.round(val / pricePerShare) : 0;
             currentValOwned = roundTwo(currentSharesOwned * pricePerShare);
@@ -1562,10 +1561,11 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let li = document.createElement('li');
                 li.className = 'history-item';
                 let isBuy = item.action === 'BUY';
+                let cleanP = parseFloat(item.price).toFixed(2);
                 li.innerHTML = `
                     <span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span>
                     <div class="h-action ${isBuy ? 'h-buy' : 'h-sell'}">${item.action} ${item.shares} Shares</div>
-                    <div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${item.price}</div>
+                    <div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${cleanP}</div>
                     <div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>
                 `;
                 ui.appendChild(li);
@@ -1794,7 +1794,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function renderChart() {
-            if (tvSeries) tvChart.removeSeries(tvSeries);
+            if (tvSeries) {
+                if (activePriceLines.length > 0) {
+                    activePriceLines.forEach(pl => { try { tvSeries.removePriceLine(pl); } catch(e){} });
+                    activePriceLines = [];
+                }
+                tvChart.removeSeries(tvSeries);
+            }
             if (!masterData.length) return;
             let style = document.getElementById('styleSelect').value;
             
@@ -1826,6 +1832,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 tickerHistory.forEach(item => {
                     let isBuy = item.action === 'BUY';
                     let markerTime = null;
+                    let cleanP = parseFloat(item.price).toFixed(2);
 
                     if (isIntraday && item.timestamp) {
                         let closest = masterData[0];
@@ -1843,10 +1850,22 @@ HTML_FRONTEND = """<!DOCTYPE html>
                         markers.push({
                             time: markerTime,
                             position: isBuy ? 'belowBar' : 'aboveBar',
-                            color: isBuy ? '#00c853' : '#ff3d00',
-                            shape: isBuy ? 'arrowUp' : 'arrowDown',
-                            text: `${item.action} ${item.shares} shs @ ${item.price}`
+                            color: '#ffffff',
+                            shape: 'circle',
+                            text: `${item.action} ${item.shares}sh @ ${cleanP}`
                         });
+                    }
+
+                    if (tvSeries && tvSeries.createPriceLine) {
+                        let pl = tvSeries.createPriceLine({
+                            price: parseFloat(item.price),
+                            color: isBuy ? '#00c853' : '#ff3d00',
+                            lineWidth: 1,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            axisLabelVisible: true,
+                            title: `${item.action} ${item.shares}sh @ ${cleanP}`
+                        });
+                        activePriceLines.push(pl);
                     }
                 });
 
