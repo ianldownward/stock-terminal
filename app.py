@@ -414,29 +414,25 @@ def get_directives():
             vo = sh * cps
             diff = (st['tranches'] / 5.0 * ud.get('master_budget', 10000.0)) - vo
 
-            # Track for rebalancing
             if sh > 0: owned.append({'t': t, 'n': engine.asset_names.get(t, t), 's': st['score'], 'vo': vo, 'sh': sh, 'cps': cps, 'p': cur})
 
             if st['action_main'] == 'SELL' or st['tranches'] == 0:
                 if sh > 0 and vo >= MIN_BUY_VALUE:
                     dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
-                    rem_cash += vo # Optimistically add to cash pool
-                    owned = [o for o in owned if o['t'] != t] # Remove from potential rebalance list
+                    rem_cash += vo 
+                    owned = [o for o in owned if o['t'] != t] 
             elif diff >= MIN_BUY_VALUE and st['tranches'] > 0 and cps > 0:
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'diff': diff, 'cps': cps, 'p': cur, 's': st['score']})
                 tot_buy += diff
         except: pass
 
-    # --- RELATIVE STRENGTH REBALANCING LOGIC ---
-    # If out of cash, sell weak assets to fund strong assets
     if tot_buy > rem_cash and buys and owned:
         shortfall = tot_buy - rem_cash
-        owned.sort(key=lambda x: x['s']) # Weakest first
-        max_buy_score = max(b['s'] for b in buys) # Strongest opportunity
+        owned.sort(key=lambda x: x['s']) 
+        max_buy_score = max(b['s'] for b in buys) 
         
         for o in owned:
             if shortfall <= 0: break
-            # 20-point rule: Sell if the new target is at least 1 tranche (20 pts) stronger
             if max_buy_score - o['s'] >= 20.0:
                 sell_v = min(o['vo'], shortfall)
                 sell_sh = int(sell_v // o['cps'])
@@ -446,7 +442,6 @@ def get_directives():
                     rem_cash += amt
                     shortfall -= amt
 
-    # Process buys with available (and newly freed) cash
     if tot_buy > 0:
         ratio = min(1.0, rem_cash / tot_buy) if rem_cash > 0 else 0.0
         for b in buys:
@@ -455,11 +450,10 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
-    # --- AUTO-TRADER LOGIC ---
     is_auto = portfolio_store.active_username().strip().lower() == 'test'
     if is_auto and dirs:
         for d in dirs: portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
-        dirs = [] # Clear so UI doesn't require confirmation
+        dirs = [] 
 
     curr_keys, topic = set(), ud.get('settings', {}).get('ntfy_topic', '')
     for d in dirs:
@@ -730,7 +724,14 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <div class="right-drawer">
         <div class="drawer-card" id="actionCard"><h3>Recommended Action</h3><p id="mActionMain" style="font-size:18px; font-weight:bold;">--</p><span id="mActionSub" style="font-size:11px; color:#8a8a9e; font-weight:normal; display:block; margin-bottom:2px;"></span><div id="actionBtnContainer" style="margin-top:2px;"></div></div>
         <div class="drawer-card"><h3>Recommended Rec.</h3><p id="mRecTradeAmt" style="color:#00c853; font-size:15px; font-weight:bold;">£0.00</p><span id="mRecShares" style="font-size:10px; color:#787e8e; display:block; margin-top:2px;">0 shares</span></div>
-        <h2>Trade Log History</h2><ul class="history-list" id="historyUI"></ul>
+        
+        <h2>Trade Log History</h2>
+        <ul class="history-list" id="historyUI"></ul>
+        
+        <h2 style="cursor:pointer; margin-top:15px; border-top:1px solid #262b36; padding-top:10px;" onclick="document.getElementById('allHistoryUI').style.display = document.getElementById('allHistoryUI').style.display === 'none' ? 'block' : 'none'; this.querySelector('span').innerText = document.getElementById('allHistoryUI').style.display === 'none' ? '▼' : '▲';">
+            All Trades History <span style="float:right;">▼</span>
+        </h2>
+        <ul class="history-list" id="allHistoryUI" style="display:none; margin-top:10px;"></ul>
     </div>
 
     <script>
@@ -910,8 +911,20 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         function renderTradeHistory() {
             let ui = document.getElementById('historyUI'); ui.innerHTML = "";
+            let aui = document.getElementById('allHistoryUI'); aui.innerHTML = "";
+            let hist = globalPortfolioData.history || [];
+            
+            if (!hist.length) { aui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; }
+            else {
+                hist.forEach(i => {
+                    let buy = i.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
+                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${i.ticker}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
+                    aui.appendChild(li);
+                });
+            }
+
             if (!currentTicker) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No stock loaded.</li>`; return; }
-            let th = (globalPortfolioData.history || []).filter(h => h.ticker === currentTicker);
+            let th = hist.filter(h => h.ticker === currentTicker);
             if (!th.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; return; }
             th.forEach(item => {
                 let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
