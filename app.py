@@ -430,6 +430,12 @@ def get_directives():
             if buy_sh > 0 and amt >= MIN_BUY_VALUE:
                 dirs.append({'ticker': b['ticker'], 'name': b['name'], 'action': 'BUY', 'shares': buy_sh, 'price': b['price'], 'amount': amt})
 
+    # --- AUTO-TRADER LOGIC ---
+    is_auto_trade = portfolio_store.active_username().strip().lower() == 'test'
+    if is_auto_trade and dirs:
+        for d in dirs: portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
+        dirs = []
+
     curr_keys = set()
     topic = ud.get('settings', {}).get('ntfy_topic', '')
     for d in dirs:
@@ -447,7 +453,7 @@ def get_directives():
 @app.route('/api/recommend', methods=['GET'])
 def get_recommendations():
     res, engine = [], MarketScoringEngine()
-    for t in ['YCA.L', 'U-UN.TO', 'SGLN.L', 'SSLN.L', 'PHYS', 'PSLV', 'CEF', 'AAPL', 'MSFT', 'NVDA', 'TSLA']:
+    for t in ['YCA.L', 'U-UN.TO', 'SGLN.L', 'SSLN.L', 'PHYS', 'PSLV', 'CEF', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'BHP', 'RIO', 'VALE', 'XOM', 'CVX', 'OXY', 'JPM', 'BAC', 'GS', 'PFE', 'JNJ', 'UNH', 'DIS', 'NKE', 'SBUX', 'BA', 'LMT']:
         try:
             df = yf.Ticker(t).history(period="1y")
             if df.empty: continue
