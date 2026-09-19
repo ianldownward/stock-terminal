@@ -396,7 +396,7 @@ def get_directives():
     rem_cash = max(0, ud.get('master_budget', 10000.0) - portfolio_store.get_total_portfolio_value())
     if 'notified_signals' not in ud: ud['notified_signals'] = {}
     
-    dirs, buys, tot_buy = [], [], 0.0
+    dirs, buys, owned, tot_buy = [], [], [], 0.0
     MIN_BUY_VALUE = 20.0
 
     for t in wl:
@@ -407,37 +407,61 @@ def get_directives():
             if df.empty: continue
             cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
             v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
-            state = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
+            st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
             
-            sh_own = portfolio_store.get_shares(t)
+            sh = portfolio_store.get_shares(t)
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
-            val_own = sh_own * cps
-            diff_val = (state['tranches'] / 5.0 * ud.get('master_budget', 10000.0)) - val_own
+            vo = sh * cps
+            diff = (st['tranches'] / 5.0 * ud.get('master_budget', 10000.0)) - vo
 
-            if state['action_main'] == 'SELL' or state['tranches'] == 0:
-                if sh_own > 0 and (sh_own * cps) >= MIN_BUY_VALUE:
-                    dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh_own, 'price': cur, 'amount': round(sh_own * cps, 2)})
-            elif diff_val >= MIN_BUY_VALUE and state['tranches'] > 0 and cps > 0:
-                buys.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'BUY', 'diff_val': diff_val, 'cps': cps, 'price': cur})
-                tot_buy += diff_val
+            # Track for rebalancing
+            if sh > 0: owned.append({'t': t, 'n': engine.asset_names.get(t, t), 's': st['score'], 'vo': vo, 'sh': sh, 'cps': cps, 'p': cur})
+
+            if st['action_main'] == 'SELL' or st['tranches'] == 0:
+                if sh > 0 and vo >= MIN_BUY_VALUE:
+                    dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
+                    rem_cash += vo # Optimistically add to cash pool
+                    owned = [o for o in owned if o['t'] != t] # Remove from potential rebalance list
+            elif diff >= MIN_BUY_VALUE and st['tranches'] > 0 and cps > 0:
+                buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'diff': diff, 'cps': cps, 'p': cur, 's': st['score']})
+                tot_buy += diff
         except: pass
 
+    # --- RELATIVE STRENGTH REBALANCING LOGIC ---
+    # If out of cash, sell weak assets to fund strong assets
+    if tot_buy > rem_cash and buys and owned:
+        shortfall = tot_buy - rem_cash
+        owned.sort(key=lambda x: x['s']) # Weakest first
+        max_buy_score = max(b['s'] for b in buys) # Strongest opportunity
+        
+        for o in owned:
+            if shortfall <= 0: break
+            # 20-point rule: Sell if the new target is at least 1 tranche (20 pts) stronger
+            if max_buy_score - o['s'] >= 20.0:
+                sell_v = min(o['vo'], shortfall)
+                sell_sh = int(sell_v // o['cps'])
+                if sell_sh > 0 and (sell_sh * o['cps']) >= MIN_BUY_VALUE:
+                    amt = round(sell_sh * o['cps'], 2)
+                    dirs.append({'ticker': o['t'], 'name': o['n'], 'action': 'SELL', 'shares': sell_sh, 'price': o['p'], 'amount': amt})
+                    rem_cash += amt
+                    shortfall -= amt
+
+    # Process buys with available (and newly freed) cash
     if tot_buy > 0:
         ratio = min(1.0, rem_cash / tot_buy) if rem_cash > 0 else 0.0
         for b in buys:
-            buy_sh = int((b['diff_val'] * ratio) // b['cps'])
-            amt = round(buy_sh * b['cps'], 2)
-            if buy_sh > 0 and amt >= MIN_BUY_VALUE:
-                dirs.append({'ticker': b['ticker'], 'name': b['name'], 'action': 'BUY', 'shares': buy_sh, 'price': b['price'], 'amount': amt})
+            bs = int((b['diff'] * ratio) // b['cps'])
+            amt = round(bs * b['cps'], 2)
+            if bs > 0 and amt >= MIN_BUY_VALUE:
+                dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
     # --- AUTO-TRADER LOGIC ---
-    is_auto_trade = portfolio_store.active_username().strip().lower() == 'test'
-    if is_auto_trade and dirs:
+    is_auto = portfolio_store.active_username().strip().lower() == 'test'
+    if is_auto and dirs:
         for d in dirs: portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
-        dirs = []
+        dirs = [] # Clear so UI doesn't require confirmation
 
-    curr_keys = set()
-    topic = ud.get('settings', {}).get('ntfy_topic', '')
+    curr_keys, topic = set(), ud.get('settings', {}).get('ntfy_topic', '')
     for d in dirs:
         k = f"{d['action']}_{d['shares']}"
         curr_keys.add(d['ticker'])
