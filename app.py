@@ -1173,7 +1173,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
             <div class="card"><h3>Live Price</h3><p id="mPrice" class="val-highlight">--</p></div>
             <div class="card"><h3>Math Discount</h3><p id="mDisc" class="val-highlight">--</p></div>
             <div class="card"><h3>Buy Score</h3><p id="mBuy" class="val-highlight">--</p></div>
-            <div class="card"><h3>Active Tranches</h3><p id="mTranches" class="val-highlight">--</p></div>
+            <div class="card clickable-card" onclick="showAnomalyReason()">
+                <h3>Active Tranches ⓘ</h3>
+                <!-- Visual Bars added here -->
+                <div id="mTranchesContainer" class="tranche-bars-container"></div>
+                <!-- Mini text label -->
+                <p id="mTranchesText" style="font-size:10px; color:#787e8e; margin-top:4px;">--</p>
+            </div>
             <div class="card">
                 <h3>Current Value Owned (£)</h3>
                 <input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()">
@@ -1910,7 +1916,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 document.getElementById('mPrice').innerText = payload.metrics.price_display;
                 document.getElementById('mDisc').innerText = payload.metrics.discount;
                 document.getElementById('mBuy').innerText = payload.metrics.buy_score;
-                document.getElementById('mTranches').innerText = `${payload.metrics.tranches} / 5`;
+                
+                // Tranches Visual updated here
+                updateTrancheVisual(payload.metrics.tranches);
                 
                 document.getElementById('inputHeldVal').value = currentValOwned;
                 document.getElementById('mSharesOwned').innerText = `${currentSharesOwned} shares`;
@@ -1933,6 +1941,31 @@ HTML_FRONTEND = """<!DOCTYPE html>
             }
         }
 
+        // Function to update the tranche bars
+        function updateTrancheVisual(count) {
+            let container = document.getElementById('mTranchesContainer');
+            let textLabel = document.getElementById('mTranchesText');
+            if (!container || !textLabel) return;
+            
+            container.innerHTML = ''; // Clear old bars
+            textLabel.innerText = `${count} / 5 Tranches Active`; // Text update
+            
+            // Image is stack of horizontal bars stacked vertically (rising)
+            // Loop 1 to 5 for total tranches
+            for (let i = 1; i <= 5; i++) {
+                let bar = document.createElement('div');
+                bar.className = 'tranche-bar';
+                // If the loop count is within active tranches, make it green
+                if (i <= count) {
+                    bar.classList.add('active');
+                } else {
+                    bar.classList.add('inactive');
+                }
+                // Append. Note: CSS flex-direction handles stack order
+                container.appendChild(bar);
+            }
+        }
+
         function renderChart() {
             if (tvSeries) {
                 tvChart.removeSeries(tvSeries);
@@ -1946,11 +1979,11 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let cleanData = plotData.map(d => ({time: d.time, open: d.open, high: d.high, low: d.low, close: d.close}));
                 tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
                 tvSeries.setData(cleanData);
-            } else if (style === 'bar') {
+            } else if (style === bar') {
                 let cleanData = masterData.map(d => ({time: d.time, open: d.open, high: d.high, low: d.low, close: d.close}));
                 tvSeries = tvChart.addBarSeries({ upColor: '#00c853', downColor: '#ff3d00' });
                 tvSeries.setData(cleanData);
-            } else if (style === 'area') {
+            } else if (style === Area') {
                 let cleanData = masterData.map(d => ({time: d.time, value: d.close}));
                 tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff', lineWidth: 2 });
                 tvSeries.setData(cleanData);
