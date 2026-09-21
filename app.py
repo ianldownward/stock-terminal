@@ -588,6 +588,9 @@ def get_data():
     master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
     master_pdsp = f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)"
 
+    req_p = request.args.get('p', ud.get('settings', {}).get('period', '1mo'))
+    req_i = request.args.get('i', ud.get('settings', {}).get('interval', '1d'))
+
     if t == 'ALL_SHARES':
         lines = []
         holdings = ud.get('holdings', {})
@@ -595,7 +598,7 @@ def get_data():
         
         if active_tickers:
             def fetch_t(tick):
-                return tick, fetch_yf_data(tick, request.args.get('p', ud.get('settings', {}).get('period', '1mo')), request.args.get('i', ud.get('settings', {}).get('interval', '1d')))
+                return tick, fetch_yf_data(tick, req_p, req_i)
             
             dfs = {}
             with ThreadPoolExecutor(max_workers=min(10, max(1, len(active_tickers)))) as ex:
@@ -615,7 +618,7 @@ def get_data():
                     line_data = []
                     seen = set()
                     for idx, row in df_t.iterrows():
-                        ts = idx.strftime('%Y-%m-%d') if request.args.get('i', '1d') in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
+                        ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
                         if ts not in seen:
                             seen.add(ts)
                             line_data.append({'time': ts, 'value': round(row['Close'] * mult, 2)})
@@ -644,11 +647,11 @@ def get_data():
         }})
 
     try:
-        df = fetch_yf_data(t, request.args.get('p', ud.get('settings', {}).get('period', '1mo')), request.args.get('i', ud.get('settings', {}).get('interval', '1d')))
+        df = fetch_yf_data(t, req_p, req_i)
         if df.empty: raise Exception("No data")
         if df.index.tz is not None: df.index = df.index.tz_convert('UTC')
         
-        data = [{'time': i.strftime('%Y-%m-%d') if request.args.get('i', '1d') in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 'open': round(r['Open'],2), 'high': round(r['High'],2), 'low': round(r['Low'],2), 'close': round(r['Close'],2)} for i, r in df.iterrows()]
+        data = [{'time': i.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 'open': round(r['Open'],2), 'high': round(r['High'],2), 'low': round(r['Low'],2), 'close': round(r['Close'],2)} for i, r in df.iterrows()]
         seen = set(); data = [x for x in data if x['time'] not in seen and not seen.add(x['time'])]
         last_p = round(data[-1]['close'], 2) if data else 0
 
