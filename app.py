@@ -422,7 +422,6 @@ def get_directives():
                     rem_cash += vo 
                     owned = [o for o in owned if o['t'] != t] 
             elif diff <= -MIN_BUY_VALUE and cps > 0:
-                # Dynamic Trimming: Automatically sell excess overbought shares
                 trim_sh = int(abs(diff) // cps)
                 if trim_sh > 0:
                     amt = round(trim_sh * cps, 2)
@@ -746,6 +745,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
     </div>
 
     <script>
+        let currentChartStyle = ''; let lastRenderedTicker = '';
         let currentTicker = ''; let tvChart = null; let tvSeries = null; let masterData = []; let showTrades = true;
         let currentAnomalyReason = "Loading..."; let currentLivePrice = 0; let currentActiveTranches = 0; let currentSharesOwned = 0; let currentValOwned = 0;
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
@@ -880,7 +880,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 
                 if (currentValOwned > 0 && am.innerText === "SELL") ss = currentSharesOwned;
                 else if (currentValOwned > 0 && currentActiveTranches === 0) ss = currentSharesOwned;
-                else if (diff <= -mv && pps > 0) ss = Math.floor(Math.abs(diff) / pps); // Dynamic Trimming Logic
+                else if (diff <= -mv && pps > 0) ss = Math.floor(Math.abs(diff) / pps); 
 
                 if (bs > 0 && (bs * pps) >= mv) {
                     am.innerText = "BUY"; am.style.color = "#00c853"; as.innerText = `(Tranche ${currentActiveTranches})`;
@@ -1062,6 +1062,32 @@ HTML_FRONTEND = """<!DOCTYPE html>
             return r;
         }
 
+        function renderChart() {
+            if (!masterData.length) return;
+            let s = document.getElementById('styleSelect').value;
+            let needNew = (!tvSeries || currentChartStyle !== s || lastRenderedTicker !== currentTicker);
+            
+            if (needNew && tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
+            
+            let md = (s === 'heikin-ashi' ? convertToHeikinAshi(masterData) : masterData).map(d => ({time: d.time, open: d.open, high: d.high, low: d.low, close: d.close}));
+            if (s === 'area' || s === 'line') md = masterData.map(d => ({time: d.time, value: d.close}));
+            
+            if (needNew) {
+                if (s === 'candlestick' || s === 'heikin-ashi') tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
+                else if (s === 'bar') tvSeries = tvChart.addBarSeries({ upColor: '#00c853', downColor: '#ff3d00' });
+                else if (s === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff', lineWidth: 2 });
+                else tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
+                
+                tvSeries.setData(md);
+                tvChart.timeScale().fitContent();
+                currentChartStyle = s; 
+                lastRenderedTicker = currentTicker;
+            } else {
+                tvSeries.setData(md); // Smoothly injects new data without resetting user's zoom!
+            }
+            setTimeout(drawCanvasOverlay, 50);
+        }
+
         async function fetchData(silent = false) {
             if (!silent) document.getElementById('loader').style.display = 'block';
             try {
@@ -1092,23 +1118,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 calculateSizing(); renderTradeHistory(); fetchDirectives(); renderChart();
             } catch(e){}
             if (!silent) document.getElementById('loader').style.display = 'none';
-        }
-
-        function renderChart() {
-            if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
-            if (!masterData.length) return;
-            let s = document.getElementById('styleSelect').value;
-            if (s === 'candlestick' || s === 'heikin-ashi') {
-                tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
-                tvSeries.setData((s === 'heikin-ashi' ? convertToHeikinAshi(masterData) : masterData).map(d => ({time: d.time, open: d.open, high: d.high, low: d.low, close: d.close})));
-            } else if (s === 'bar') {
-                tvSeries = tvChart.addBarSeries({ upColor: '#00c853', downColor: '#ff3d00' }); tvSeries.setData(masterData.map(d => ({time: d.time, open: d.open, high: d.high, low: d.low, close: d.close})));
-            } else if (s === 'area') {
-                tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff', lineWidth: 2 }); tvSeries.setData(masterData.map(d => ({time: d.time, value: d.close})));
-            } else {
-                tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 }); tvSeries.setData(masterData.map(d => ({time: d.time, value: d.close})));
-            }
-            tvChart.timeScale().fitContent(); setTimeout(drawCanvasOverlay, 50);
         }
 
         function selectStock(t, e) { currentTicker = t; document.querySelectorAll('.watchlist-item').forEach(x => x.classList.remove('active')); if(e) e.classList.add('active'); fetchData(false); }
