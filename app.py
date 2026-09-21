@@ -73,10 +73,10 @@ class PortfolioManager:
             if 'users' not in self.data or not self.data['users']:
                 self.data['users'] = {'Ian': self.default_user_state()}
                 self.data['active_user'] = 'Ian'
-                self.save()
+                self.save_data(self.data)
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = list(self.data['users'].keys())[0]
-                self.save()
+                self.save_data(self.data)
         except: pass
 
     def save_data(self, data_to_save):
@@ -88,7 +88,18 @@ class PortfolioManager:
                 with open(self.filename, 'w') as f: json.dump(data_to_save, f, indent=2)
             except Exception as e: print(f"Error saving locally: {e}")
 
-    def save(self): self.save_data(self.data)
+    def save(self):
+        try:
+            fresh = self.load()
+            if fresh:
+                mod_user = self.data.get('active_user')
+                self.data['active_user'] = fresh.get('active_user', mod_user)
+                if 'users' not in self.data: self.data['users'] = {}
+                for u, u_data in fresh.get('users', {}).items():
+                    if u != mod_user:
+                        self.data['users'][u] = u_data
+        except: pass
+        self.save_data(self.data)
 
     def active_username(self):
         self.data = self.load()
@@ -100,7 +111,7 @@ class PortfolioManager:
         if 'users' not in self.data: self.data['users'] = {}
         if au not in self.data['users']:
             self.data['users'][au] = self.default_user_state()
-            self.save()
+            self.save_data(self.data)
         return self.data['users'][au]
 
     def add_user(self, username):
@@ -110,7 +121,7 @@ class PortfolioManager:
         if 'users' not in self.data: self.data['users'] = {}
         if username not in self.data['users']: self.data['users'][username] = self.default_user_state()
         self.data['active_user'] = username
-        self.save()
+        self.save_data(self.data)
 
     def delete_user(self, username):
         username = username.strip()
@@ -118,7 +129,7 @@ class PortfolioManager:
         if 'users' in self.data and username in self.data['users'] and len(self.data['users']) > 1:
             del self.data['users'][username]
             if self.data.get('active_user') == username: self.data['active_user'] = list(self.data['users'].keys())[0]
-            self.save()
+            self.save_data(self.data)
             return True
         return False
 
@@ -127,7 +138,7 @@ class PortfolioManager:
         self.data = self.load()
         if 'users' in self.data and username in self.data['users']:
             self.data['active_user'] = username
-            self.save()
+            self.save_data(self.data)
 
     def reset_all(self):
         ud = self.user_data()
@@ -518,7 +529,7 @@ def get_recommendations():
 def get_data():
     ud = portfolio_store.user_data()
     wl, t = ud.get('watchlist', []), request.args.get('t', '').upper()
-    if not t: t = 'ALL_SHARES'
+    if not t and wl: t = wl[0]
 
     tot_own = portfolio_store.get_total_portfolio_value()
     mb = ud.get('master_budget', 10000.0)
@@ -624,7 +635,6 @@ def get_data():
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
     except Exception as e: return jsonify({'error': str(e)}), 500
-
 
 HTML_FRONTEND = """<!DOCTYPE html>
 <html>
@@ -837,6 +847,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         async function onUserChange(username) {
             if (!username) return;
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
             await fetch('/api/users/select', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: username})});
             currentTicker = 'ALL_SHARES'; isSettingsLoaded = false;
             await fetchData(false);
@@ -846,6 +857,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         async function addUserPrompt() {
             let name = prompt("Enter name for the new profile:");
             if (!name || !name.trim()) return;
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer);
             await fetch('/api/users/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: name.trim()})});
             currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; await fetchUsers(); fetchData(false);
         }
@@ -854,6 +866,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let au = document.getElementById('userSelect').value;
             if (!au) return;
             if (confirm(`Are you sure you want to delete profile "${au}"?`)) {
+                if (autoRefreshTimer) clearInterval(autoRefreshTimer);
                 let res = await fetch('/api/users/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: au})});
                 let data = await res.json();
                 if (data.status === 'error') { alert("Cannot delete the last remaining user profile."); return; }
