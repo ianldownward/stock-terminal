@@ -393,7 +393,14 @@ def get_score():
 def get_directives():
     ud = portfolio_store.user_data()
     engine, wl = MarketScoringEngine(), ud.get('watchlist', [])
-    rem_cash = max(0, ud.get('master_budget', 10000.0) - portfolio_store.get_total_portfolio_value())
+    
+    # COMPOUNDING FIX: Compute dynamic Total Equity
+    mb = ud.get('master_budget', 10000.0)
+    tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in wl if portfolio_store.get_shares(w) > 0)
+    cash_balance = mb - tot_cb
+    rem_cash = max(0, cash_balance)
+    total_equity = cash_balance + portfolio_store.get_total_portfolio_value()
+
     if 'notified_signals' not in ud: ud['notified_signals'] = {}
     
     dirs, buys, owned, tot_buy = [], [], [], 0.0
@@ -412,7 +419,9 @@ def get_directives():
             sh = portfolio_store.get_shares(t)
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
             vo = sh * cps
-            diff = (st['tranches'] / 5.0 * ud.get('master_budget', 10000.0)) - vo
+            
+            # Compounding Target
+            diff = (st['tranches'] / 5.0 * total_equity) - vo
 
             if sh > 0: owned.append({'t': t, 'n': engine.asset_names.get(t, t), 's': st['score'], 'vo': vo, 'sh': sh, 'cps': cps, 'p': cur})
 
@@ -503,6 +512,9 @@ def get_data():
 
     tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in wl if portfolio_store.get_shares(w) > 0)
     
+    cash_balance = mb - tot_cb
+    total_equity = cash_balance + tot_own
+
     if tot_cb > 0 and tot_own > 0:
         pv, pp = round(tot_own - tot_cb, 2), round((tot_own - tot_cb) / tot_cb * 100, 2)
         pc = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
@@ -515,7 +527,7 @@ def get_data():
             'status': 'Watchlist Empty', 'color': '#787e8e', 'reason': 'Add a stock to your watchlist.',
             'action_main': 'NO ASSET', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
             'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'total_pnl_display': pdsp, 'total_pnl_color': pc,
-            'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(mb - tot_own, 2)
+            'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2)
         }})
 
     try:
@@ -554,7 +566,7 @@ def get_data():
             'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'],
             'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': pnl_d, 'pnl_color': c,
             'total_pnl_display': pdsp, 'total_pnl_color': pc, 'master_budget': mb,
-            'total_portfolio_owned': tot_own, 'budget_remaining': round(mb - tot_own, 2)
+            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2)
         }})
     except Exception as e: return jsonify({'error': str(e)}), 500
 
@@ -698,8 +710,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <div class="sidebar">
         <div class="sidebar-top">
             <div class="user-profile-box"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><label>Active Profile</label><div style="display:flex; gap:4px;"><button onclick="addUserPrompt()" class="user-btn new">+ New</button><button onclick="deleteUserPrompt()" class="user-btn del">Delete</button></div></div><select id="userSelect" onchange="onUserChange(this.value)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select></div>
-            <div class="total-shares-box"><label>Current Value of All Shares Held</label><div id="mTotalSharesHeldVal" class="total-val">£0.00</div><div id="mTotalSharesPnL" class="total-pnl">£0.00 (0.00%)</div></div>
-            <div class="master-budget-box"><label>Master Portfolio Budget (£)</label><input type="number" id="masterBudgetInput" value="10000" oninput="onMasterBudgetInput()"><div class="budget-sub-stats"><div><span>Budget Remaining:</span> <b id="mBudgetRemaining" style="color:#00c853;">£10,000.00</b></div></div></div>
+            
+            <div class="total-shares-box"><label>Total Portfolio Equity</label><div id="mTotalSharesHeldVal" class="total-val">£0.00</div><div id="mTotalSharesPnL" class="total-pnl">Cash: £0.00 | Shares: £0.00</div><div id="mTotalPnLDisplay" class="total-pnl" style="margin-top:6px;">£0.00 (0.00%)</div></div>
+            <div class="master-budget-box"><label>Starting Capital (£)</label><input type="number" id="masterBudgetInput" value="10000" oninput="onMasterBudgetInput()"><div class="budget-sub-stats"><div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£10,000.00</b></div></div></div>
+            
             <h2>Live Watchlist</h2><div class="search-box"><input type="text" id="addTickerInput" placeholder="Add Symbol..."><button id="addBtn">+</button></div><ul class="watchlist" id="watchlistUI"></ul>
         </div>
         <div class="sidebar-bottom">
@@ -860,12 +874,23 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         function calculateSizing() {
             let tb = globalPortfolioData.master_budget || 10000;
-            let toa = 0;
+            let toa = 0; let tot_cb = 0;
             if (globalPortfolioData.holdings && globalPortfolioData.watchlist) {
-                for (let t of globalPortfolioData.watchlist) { if (globalPortfolioData.holdings[t]) toa += (globalPortfolioData.holdings[t].manual_val || 0); }
+                for (let t of globalPortfolioData.watchlist) { 
+                    if (globalPortfolioData.holdings[t] && globalPortfolioData.holdings[t].shares > 0) {
+                        toa += (globalPortfolioData.holdings[t].manual_val || 0); 
+                        let init = globalPortfolioData.initial_positions?.[t]?.manual_val || 0;
+                        let net = 0;
+                        (globalPortfolioData.history || []).forEach(h => { if(h.ticker===t) net += (h.action==='BUY'?h.amount:-h.amount); });
+                        tot_cb += (init + net);
+                    }
+                }
             }
-            let rem = tb - toa;
-            let target = (currentActiveTranches / 5.0) * tb;
+            let cash_balance = tb - tot_cb;
+            let rem = cash_balance;
+            let total_equity = cash_balance + toa;
+            
+            let target = (currentActiveTranches / 5.0) * total_equity;
             let diff = target - currentValOwned;
             let pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
 
@@ -903,8 +928,12 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 }
             }
             document.getElementById('mRecTradeAmt').innerText = recAmt; document.getElementById('mRecShares').innerText = recSh;
-            document.getElementById('mTotalSharesHeldVal').innerText = `£${toa.toFixed(2)}`;
-            let mb = document.getElementById('mBudgetRemaining'); mb.innerText = `£${rem.toFixed(2)}`; mb.style.color = rem < 0 ? "#ff3d00" : "#00c853";
+            
+            // Compounding UI updates
+            document.getElementById('mTotalSharesHeldVal').innerText = `£${total_equity.toFixed(2)}`;
+            document.getElementById('mTotalSharesPnL').innerText = `Cash: £${rem.toFixed(2)} | Shares: £${toa.toFixed(2)}`;
+            let mb_el = document.getElementById('mBudgetRemaining'); 
+            mb_el.innerText = `£${rem.toFixed(2)}`; mb_el.style.color = rem < 0 ? "#ff3d00" : "#00c853";
         }
 
         async function executeTradeDirect(ticker, action, shares, price) {
@@ -1083,7 +1112,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 currentChartStyle = s; 
                 lastRenderedTicker = currentTicker;
             } else {
-                tvSeries.setData(md); // Smoothly injects new data without resetting user's zoom!
+                tvSeries.setData(md); 
             }
             setTimeout(drawCanvasOverlay, 50);
         }
@@ -1111,8 +1140,11 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 document.getElementById('mPrice').innerText = p.metrics.price_display; document.getElementById('mDisc').innerText = p.metrics.discount; document.getElementById('mBuy').innerText = p.metrics.buy_score;
                 updateTrancheVisual(p.metrics.tranches);
                 document.getElementById('inputHeldVal').value = currentValOwned; document.getElementById('mSharesOwned').innerText = `${currentSharesOwned} shares`;
+                
+                document.getElementById('mTotalPnLDisplay').innerText = p.metrics.total_pnl_display; 
+                document.getElementById('mTotalPnLDisplay').style.color = p.metrics.total_pnl_color;
+                
                 document.getElementById('mPnL').innerText = p.metrics.pnl_display; document.getElementById('mPnL').style.color = p.metrics.pnl_color;
-                document.getElementById('mTotalSharesPnL').innerText = p.metrics.total_pnl_display; document.getElementById('mTotalSharesPnL').style.color = p.metrics.total_pnl_color;
                 document.getElementById('mMacro').innerHTML = `<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:${p.metrics.color};"></span> ${p.metrics.status}`;
                 
                 calculateSizing(); renderTradeHistory(); fetchDirectives(); renderChart();
