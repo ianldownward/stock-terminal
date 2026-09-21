@@ -518,7 +518,7 @@ def get_recommendations():
 def get_data():
     ud = portfolio_store.user_data()
     wl, t = ud.get('watchlist', []), request.args.get('t', '').upper()
-    if not t and wl: t = wl[0]
+    if not t: t = 'ALL_SHARES'
 
     tot_own = portfolio_store.get_total_portfolio_value()
     mb = ud.get('master_budget', 10000.0)
@@ -532,6 +532,49 @@ def get_data():
     master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
     master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
     master_pdsp = f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)"
+
+    if t == 'ALL_SHARES':
+        agg_data = []
+        if ud.get('holdings'):
+            pdf = pd.DataFrame()
+            for tick, h_data in ud['holdings'].items():
+                sh = h_data.get('shares', 0)
+                if sh > 0:
+                    try:
+                        df_t = yf.Ticker(tick).history(period=request.args.get('p', ud.get('settings', {}).get('period', '1mo')), interval=request.args.get('i', ud.get('settings', {}).get('interval', '1d'))).dropna(subset=['Close'])
+                        if not df_t.empty:
+                            if df_t.index.tz is not None: df_t.index = df_t.index.tz_convert('UTC')
+                            if tick.endswith('.L') and df_t['Close'].iloc[-1] > 100:
+                                for col in ['Open', 'High', 'Low', 'Close']: df_t[col] = df_t[col] / 100.0
+                            pdf[f"{tick}_O"] = df_t['Open'] * sh
+                            pdf[f"{tick}_H"] = df_t['High'] * sh
+                            pdf[f"{tick}_L"] = df_t['Low'] * sh
+                            pdf[f"{tick}_C"] = df_t['Close'] * sh
+                    except: pass
+            
+            if not pdf.empty:
+                pdf = pdf.ffill().fillna(0)
+                seen = set()
+                for idx, row in pdf.iterrows():
+                    ts = idx.strftime('%Y-%m-%d') if request.args.get('i', '1d') in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
+                    if ts not in seen:
+                        seen.add(ts)
+                        o_sum = sum(row[c] for c in pdf.columns if c.endswith('_O'))
+                        h_sum = sum(row[c] for c in pdf.columns if c.endswith('_H'))
+                        l_sum = sum(row[c] for c in pdf.columns if c.endswith('_L'))
+                        c_sum = sum(row[c] for c in pdf.columns if c.endswith('_C'))
+                        agg_data.append({'time': ts, 'open': round(o_sum,2), 'high': round(h_sum,2), 'low': round(l_sum,2), 'close': round(c_sum,2)})
+        
+        return jsonify({'ohlc': agg_data, 'name': 'Portfolio Performance', 'portfolio': ud, 'metrics': {
+            'price': tot_own, 'price_display': f"£{tot_own:.2f}",
+            'discount': '--', 'buy_score': '--', 'tranches': 0,
+            'status': 'Aggregate View', 'color': '#00d2ff', 'reason': 'Viewing the historical value of your currently held shares.',
+            'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
+            'shares_owned': sum(h.get('shares',0) for h in ud.get('holdings',{}).values()), 'value_owned': tot_own, 
+            'pnl_display': master_pdsp, 'pnl_color': master_pc,
+            'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc, 'master_budget': mb,
+            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
+        }})
 
     if not t or t not in wl:
         return jsonify({'ohlc': [], 'name': 'No Asset Loaded', 'portfolio': ud, 'metrics': {
@@ -772,7 +815,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
     <script>
         let currentChartStyle = ''; let lastRenderedTicker = '';
-        let currentTicker = ''; let tvChart = null; let tvSeries = null; let masterData = []; let showTrades = true;
+        let currentTicker = 'ALL_SHARES'; let tvChart = null; let tvSeries = null; let masterData = []; let showTrades = true;
         let currentAnomalyReason = "Loading..."; let currentLivePrice = 0; let currentActiveTranches = 0; let currentSharesOwned = 0; let currentValOwned = 0;
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null; let isSettingsLoaded = false;
@@ -795,7 +838,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         async function onUserChange(username) {
             if (!username) return;
             await fetch('/api/users/select', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: username})});
-            currentTicker = ''; isSettingsLoaded = false;
+            currentTicker = 'ALL_SHARES'; isSettingsLoaded = false;
             await fetchData(false);
             await fetchUsers();
         }
@@ -804,7 +847,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let name = prompt("Enter name for the new profile:");
             if (!name || !name.trim()) return;
             await fetch('/api/users/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: name.trim()})});
-            currentTicker = ''; isSettingsLoaded = false; await fetchUsers(); fetchData(false);
+            currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; await fetchUsers(); fetchData(false);
         }
 
         async function deleteUserPrompt() {
@@ -814,7 +857,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let res = await fetch('/api/users/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: au})});
                 let data = await res.json();
                 if (data.status === 'error') { alert("Cannot delete the last remaining user profile."); return; }
-                currentTicker = ''; isSettingsLoaded = false; await fetchUsers(); fetchData(false);
+                currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; await fetchUsers(); fetchData(false);
             }
         }
 
@@ -838,7 +881,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         async function resetTerminalData() {
             if (confirm("Reset all portfolio data for this user?")) {
                 await fetch('/api/portfolio/reset', { method: 'POST' });
-                currentTicker = ''; isSettingsLoaded = false; fetchData(false);
+                currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; fetchData(false);
             }
         }
 
@@ -850,7 +893,14 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         function renderWatchlist(watchlist) {
             let ul = document.getElementById('watchlistUI'); ul.innerHTML = '';
-            if (!(watchlist || []).length) { ul.innerHTML = '<li style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">Watchlist is empty</li>'; return; }
+            
+            let allLi = document.createElement('li'); 
+            allLi.className = `watchlist-item ${currentTicker === 'ALL_SHARES' ? 'active' : ''}`; 
+            allLi.setAttribute('data-symbol', 'ALL_SHARES');
+            allLi.innerHTML = `<span class="ticker" style="color:#00d2ff; font-weight:bold;">📊 All Shares</span>`; 
+            ul.appendChild(allLi);
+
+            if (!(watchlist || []).length) { ul.innerHTML += '<li style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">Watchlist is empty</li>'; return; }
             watchlist.forEach(symbol => {
                 let li = document.createElement('li'); li.className = `watchlist-item ${symbol === currentTicker ? 'active' : ''}`; li.setAttribute('data-symbol', symbol);
                 li.innerHTML = `<span class="ticker">${symbol}</span><button class="btn-delete">✕</button>`; ul.appendChild(li);
@@ -858,7 +908,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function openAlertModal() {
-            if (!currentTicker) return;
+            if (!currentTicker || currentTicker === 'ALL_SHARES') return;
             document.getElementById('modalTitle').innerText = `Configure Alerts: ${currentTicker}`;
             if (globalPortfolioData.settings && globalPortfolioData.settings.ntfy_topic) document.getElementById('ntfyTopicInput').value = globalPortfolioData.settings.ntfy_topic;
             document.getElementById('alertModal').style.display = 'flex';
@@ -873,7 +923,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function onValOwnedInput() {
-            if (!currentTicker) return;
+            if (!currentTicker || currentTicker === 'ALL_SHARES') return;
             let val = parseFloat(document.getElementById('inputHeldVal').value) || 0;
             let pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
             currentSharesOwned = pps > 0 ? Math.round(val / pps) : 0;
@@ -903,6 +953,25 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let cash_balance = tb - tot_cb;
             let rem = cash_balance;
             let total_equity = cash_balance + toa;
+
+            if (currentTicker === 'ALL_SHARES') {
+                let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
+                let bc = document.getElementById('actionBtnContainer');
+                am.innerText = "PORTFOLIO"; am.style.color = "#00d2ff"; as.innerText = "Aggregate View";
+                document.getElementById('mRecTradeAmt').innerText = "£0.00"; document.getElementById('mRecShares').innerText = "0 shares";
+                bc.innerHTML = "";
+                document.getElementById('inputHeldVal').value = currentValOwned.toFixed(2);
+                document.getElementById('inputHeldVal').disabled = true;
+                document.getElementById('mSharesOwned').innerText = "All held shares";
+                
+                document.getElementById('mTotalSharesHeldVal').innerText = `£${total_equity.toFixed(2)}`;
+                document.getElementById('mTotalSharesPnL').innerText = `Cash: £${rem.toFixed(2)} | Shares: £${toa.toFixed(2)}`;
+                let mb_el = document.getElementById('mBudgetRemaining'); 
+                mb_el.innerText = `£${rem.toFixed(2)}`; mb_el.style.color = rem < 0 ? "#ff3d00" : "#00c853";
+                return;
+            } else {
+                document.getElementById('inputHeldVal').disabled = false;
+            }
             
             let target = (currentActiveTranches / 5.0) * total_equity;
             let diff = target - currentValOwned;
@@ -988,6 +1057,17 @@ HTML_FRONTEND = """<!DOCTYPE html>
             }
 
             if (!currentTicker) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No stock loaded.</li>`; return; }
+            
+            if (currentTicker === 'ALL_SHARES') {
+                if (!hist.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; return; }
+                hist.forEach(item => {
+                    let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
+                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${item.ticker}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                    ui.appendChild(li);
+                });
+                return;
+            }
+
             let th = hist.filter(h => h.ticker === currentTicker);
             if (!th.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; return; }
             th.forEach(item => {
@@ -1053,6 +1133,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let c = document.getElementById('tvChart'); cv.width = c.clientWidth; cv.height = c.clientHeight;
             let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
             if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !currentTicker || !masterData || !masterData.length) return;
+            if (currentTicker === 'ALL_SHARES') return; 
             
             let th = globalPortfolioData.history.filter(h => h.ticker === currentTicker); if (!th.length) return;
             let pm = masterData.map(d => ({ rawTime: d.time, ts: typeof d.time === 'number' ? d.time : Math.floor(new Date(d.time + 'T00:00:00Z').getTime() / 1000) }));
@@ -1150,14 +1231,14 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     setupAutoRefresh(); isSettingsLoaded = true;
                 }
                 renderWatchlist(globalPortfolioData.watchlist);
-                if (!currentTicker && globalPortfolioData.watchlist && globalPortfolioData.watchlist.length > 0) { currentTicker = globalPortfolioData.watchlist[0]; fetchData(silent); return; }
+                if (!currentTicker && globalPortfolioData.watchlist && globalPortfolioData.watchlist.length > 0) { currentTicker = 'ALL_SHARES'; fetchData(silent); return; }
                 
                 document.getElementById('activeTitle').innerText = p.name; currentAnomalyReason = p.metrics.reason;
                 currentLivePrice = p.metrics.price; currentActiveTranches = p.metrics.tranches; currentSharesOwned = p.metrics.shares_owned; currentValOwned = p.metrics.value_owned;
                 document.getElementById('masterBudgetInput').value = p.metrics.master_budget;
                 document.getElementById('mPrice').innerText = p.metrics.price_display; document.getElementById('mDisc').innerText = p.metrics.discount; document.getElementById('mBuy').innerText = p.metrics.buy_score;
                 updateTrancheVisual(p.metrics.tranches);
-                document.getElementById('inputHeldVal').value = currentValOwned; document.getElementById('mSharesOwned').innerText = `${currentSharesOwned} shares`;
+                document.getElementById('inputHeldVal').value = currentValOwned; document.getElementById('mSharesOwned').innerText = currentTicker === 'ALL_SHARES' ? "All held shares" : `${currentSharesOwned} shares`;
                 
                 document.getElementById('mTotalPnLDisplay').innerText = p.metrics.total_pnl_display; 
                 document.getElementById('mTotalPnLDisplay').style.color = p.metrics.total_pnl_color;
@@ -1177,7 +1258,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let sym = li.getAttribute('data-symbol');
             if (e.target.classList.contains('btn-delete')) { 
                 e.stopPropagation(); await fetch('/api/watchlist/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: sym})});
-                let rem = (globalPortfolioData.watchlist || []).filter(s => s !== sym); currentTicker = rem.length > 0 ? rem[0] : ''; fetchData(false); return; 
+                let rem = (globalPortfolioData.watchlist || []).filter(s => s !== sym); currentTicker = 'ALL_SHARES'; fetchData(false); return; 
             }
             selectStock(sym, li);
         });
