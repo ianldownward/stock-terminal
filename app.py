@@ -394,8 +394,8 @@ def get_directives():
     ud = portfolio_store.user_data()
     engine, wl = MarketScoringEngine(), ud.get('watchlist', [])
     
-    # COMPOUNDING FIX: Compute dynamic Total Equity
-    mb = ud.get('master_budget', 10000.0)
+    # COMPOUNDING FIX: Total Equity Calculation
+    mb = ud.get('master_budget', 10000.0) # This is now treated as "Starting Capital"
     tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in wl if portfolio_store.get_shares(w) > 0)
     cash_balance = mb - tot_cb
     rem_cash = max(0, cash_balance)
@@ -420,7 +420,7 @@ def get_directives():
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
             vo = sh * cps
             
-            # Compounding Target
+            # Autocompounding logic: Base Tranche target off the new total equity
             diff = (st['tranches'] / 5.0 * total_equity) - vo
 
             if sh > 0: owned.append({'t': t, 'n': engine.asset_names.get(t, t), 's': st['score'], 'vo': vo, 'sh': sh, 'cps': cps, 'p': cur})
@@ -515,19 +515,19 @@ def get_data():
     cash_balance = mb - tot_cb
     total_equity = cash_balance + tot_own
 
-    if tot_cb > 0 and tot_own > 0:
-        pv, pp = round(tot_own - tot_cb, 2), round((tot_own - tot_cb) / tot_cb * 100, 2)
-        pc = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
-        pdsp = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
-    else: pdsp, pc = "£0.00 (0.00%)", "#8a8a9e"
+    # Master P&L Anchored to Starting Capital
+    master_pnl_val = total_equity - mb
+    master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
+    master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
+    master_pdsp = f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)"
 
     if not t or t not in wl:
         return jsonify({'ohlc': [], 'name': 'No Asset Loaded', 'portfolio': ud, 'metrics': {
             'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
             'status': 'Watchlist Empty', 'color': '#787e8e', 'reason': 'Add a stock to your watchlist.',
             'action_main': 'NO ASSET', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
-            'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'total_pnl_display': pdsp, 'total_pnl_color': pc,
-            'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2)
+            'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc,
+            'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
 
     try:
@@ -565,8 +565,8 @@ def get_data():
             'status': st['status'], 'color': st['color'], 'reason': st['reason'],
             'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'],
             'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': pnl_d, 'pnl_color': c,
-            'total_pnl_display': pdsp, 'total_pnl_color': pc, 'master_budget': mb,
-            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2)
+            'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc, 'master_budget': mb,
+            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
     except Exception as e: return jsonify({'error': str(e)}), 500
 
@@ -929,7 +929,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
             }
             document.getElementById('mRecTradeAmt').innerText = recAmt; document.getElementById('mRecShares').innerText = recSh;
             
-            // Compounding UI updates
             document.getElementById('mTotalSharesHeldVal').innerText = `£${total_equity.toFixed(2)}`;
             document.getElementById('mTotalSharesPnL').innerText = `Cash: £${rem.toFixed(2)} | Shares: £${toa.toFixed(2)}`;
             let mb_el = document.getElementById('mBudgetRemaining'); 
