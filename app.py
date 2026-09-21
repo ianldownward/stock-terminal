@@ -421,6 +421,17 @@ def get_directives():
                     dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
                     rem_cash += vo 
                     owned = [o for o in owned if o['t'] != t] 
+            elif diff <= -MIN_BUY_VALUE and cps > 0:
+                # Dynamic Trimming: Automatically sell excess overbought shares
+                trim_sh = int(abs(diff) // cps)
+                if trim_sh > 0:
+                    amt = round(trim_sh * cps, 2)
+                    dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': trim_sh, 'price': cur, 'amount': amt})
+                    rem_cash += amt
+                    for o in owned:
+                        if o['t'] == t:
+                            o['vo'] -= amt
+                            o['sh'] -= trim_sh
             elif diff >= MIN_BUY_VALUE and st['tranches'] > 0 and cps > 0:
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'diff': diff, 'cps': cps, 'p': cur, 's': st['score']})
                 tot_buy += diff
@@ -860,22 +871,30 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
+            let isAuto = document.getElementById('userSelect').value.trim().toLowerCase() === 'test';
 
             if (!currentTicker) { am.innerText = "NO ASSET"; am.style.color = "#787e8e"; as.innerText = ""; } 
             else {
                 let bs = 0, ss = 0, mv = 20.0;
                 if (diff >= mv && currentActiveTranches > 0 && pps > 0) bs = Math.floor(Math.min(diff, Math.max(0, rem)) / pps);
+                
                 if (currentValOwned > 0 && am.innerText === "SELL") ss = currentSharesOwned;
                 else if (currentValOwned > 0 && currentActiveTranches === 0) ss = currentSharesOwned;
+                else if (diff <= -mv && pps > 0) ss = Math.floor(Math.abs(diff) / pps); // Dynamic Trimming Logic
 
                 if (bs > 0 && (bs * pps) >= mv) {
                     am.innerText = "BUY"; am.style.color = "#00c853"; as.innerText = `(Tranche ${currentActiveTranches})`;
                     recAmt = `+£${(bs*pps).toFixed(2)}`; recSh = `Buy ${bs} shares`;
-                    bc.innerHTML = `<button class="btn-execute" onclick="executeTradeDirect('${currentTicker}', 'BUY', ${bs}, ${currentLivePrice})">Confirm Buy (${bs} Shs)</button>`;
+                    if(isAuto) bc.innerHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default;" disabled>🤖 AI Auto-Executing</button>`;
+                    else bc.innerHTML = `<button class="btn-execute" onclick="executeTradeDirect('${currentTicker}', 'BUY', ${bs}, ${currentLivePrice})">Confirm Buy (${bs} Shs)</button>`;
                 } else if (ss > 0 && (ss * pps) >= mv) {
-                    am.innerText = "SELL"; am.style.color = "#ff3d00"; as.innerText = "(Take Profit / Sentinel)";
+                    am.innerText = "SELL"; am.style.color = "#ff3d00"; 
+                    if (ss === currentSharesOwned && currentActiveTranches > 0) as.innerText = "(Take Profit / Sentinel)";
+                    else as.innerText = "(Trim Excess Allocation)";
+                    
                     recAmt = `-£${(ss*pps).toFixed(2)}`; recSh = `Sell ${ss} shares`;
-                    bc.innerHTML = `<button class="btn-execute sell-btn" onclick="executeTradeDirect('${currentTicker}', 'SELL', ${ss}, ${currentLivePrice})">Confirm Sell (${ss} Shs)</button>`;
+                    if(isAuto) bc.innerHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default;" disabled>🤖 AI Auto-Executing</button>`;
+                    else bc.innerHTML = `<button class="btn-execute sell-btn" onclick="executeTradeDirect('${currentTicker}', 'SELL', ${ss}, ${currentLivePrice})">Confirm Sell (${ss} Shs)</button>`;
                 } else {
                     am.innerText = "HOLD / WAIT"; am.style.color = "#8a8a9e";
                     if (diff > 5 && rem <= 0) { as.innerText = `(Insufficient Budget)`; am.style.color = "#ff9900"; }
@@ -898,10 +917,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
             try {
                 let res = await fetch(`/api/directives`); let data = await res.json();
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
+                let isAuto = document.getElementById('userSelect').value.trim().toLowerCase() === 'test';
+                
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
                     let isBuy = d.action === 'BUY'; let div = document.createElement('div'); div.className = 'directive-item';
-                    div.innerHTML = `<div class="directive-info"><b>${d.ticker}</b>: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</div><button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
+                    let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default;" disabled>Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
+                    div.innerHTML = `<div class="directive-info"><b>${d.ticker}</b>: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</div>${btnHTML}`;
                     cont.appendChild(div);
                 });
             } catch(e) {}
