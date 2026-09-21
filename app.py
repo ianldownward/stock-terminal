@@ -7,6 +7,25 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
+# --- IN-MEMORY CACHING LAYER ---
+YF_CACHE = {}
+
+def fetch_yf_data(ticker, period="1y", interval="1d"):
+    cache_key = f"{ticker}_{period}_{interval}"
+    now = time.time()
+    
+    if cache_key in YF_CACHE:
+        cached_time, df = YF_CACHE[cache_key]
+        if now - cached_time < 15:  # Serve from RAM if less than 15 seconds old
+            return df.copy()
+            
+    try:
+        df = yf.Ticker(ticker).history(period=period, interval=interval)
+        YF_CACHE[cache_key] = (now, df)
+        return df.copy()
+    except:
+        return pd.DataFrame()
+
 def send_push_notification(topic, title, message):
     if not topic: return
     try:
@@ -69,6 +88,9 @@ class PortfolioManager:
         self.save_data(initial)
         return initial
 
+    def reload(self):
+        self.data = self.load()
+
     def _ensure_default_user(self):
         try:
             if 'users' not in self.data or not self.data['users']:
@@ -103,11 +125,9 @@ class PortfolioManager:
         self.save_data(self.data)
 
     def active_username(self):
-        self.data = self.load()
         return self.data.get('active_user', 'Ian')
 
     def user_data(self):
-        self.data = self.load()
         au = self.active_username()
         if 'users' not in self.data: self.data['users'] = {}
         if au not in self.data['users']:
@@ -118,7 +138,6 @@ class PortfolioManager:
     def add_user(self, username):
         username = username.strip()
         if not username: return
-        self.data = self.load()
         if 'users' not in self.data: self.data['users'] = {}
         if username not in self.data['users']: self.data['users'][username] = self.default_user_state()
         self.data['active_user'] = username
@@ -126,7 +145,6 @@ class PortfolioManager:
 
     def delete_user(self, username):
         username = username.strip()
-        self.data = self.load()
         if 'users' in self.data and username in self.data['users'] and len(self.data['users']) > 1:
             del self.data['users'][username]
             if self.data.get('active_user') == username: self.data['active_user'] = list(self.data['users'].keys())[0]
@@ -136,13 +154,11 @@ class PortfolioManager:
 
     def switch_user(self, username):
         username = username.strip()
-        self.data = self.load()
         if 'users' in self.data and username in self.data['users']:
             self.data['active_user'] = username
             self.save_data(self.data)
 
     def reset_all(self):
-        ud = self.user_data()
         self.data['users'][self.active_username()] = self.default_user_state()
         self.save()
         return self.user_data()
@@ -271,7 +287,7 @@ class MarketScoringEngine:
         macro_triggered, uun_discount = False, 0.0
         if ticker == 'YCA.L':
             try:
-                u_df = yf.Ticker('U-UN.TO').history(period="1d")
+                u_df = fetch_yf_data('U-UN.TO', '1d', '1d')
                 if not u_df.empty:
                     u_price = u_df['Close'].iloc[-1]
                     u_nav = self.nav_bases.get('U-UN.TO', 28.50)
@@ -340,20 +356,25 @@ portfolio_store = PortfolioManager()
 def index(): return render_template_string(HTML_FRONTEND)
 
 @app.route('/api/users', methods=['GET'])
-def get_users(): return jsonify({'users': list(portfolio_store.load().get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
+def get_users(): 
+    portfolio_store.reload()
+    return jsonify({'users': list(portfolio_store.data.get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
 
 @app.route('/api/users/select', methods=['POST'])
 def select_user():
+    portfolio_store.reload()
     portfolio_store.switch_user((request.get_json() or {}).get('username', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/users/add', methods=['POST'])
 def add_user():
+    portfolio_store.reload()
     portfolio_store.add_user((request.get_json() or {}).get('username', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/users/delete', methods=['POST'])
 def delete_user():
+    portfolio_store.reload()
     return jsonify({'status': 'ok' if portfolio_store.delete_user((request.get_json() or {}).get('username', '')) else 'error'})
 
 @app.route('/api/push_test', methods=['POST'])
@@ -363,50 +384,62 @@ def push_test():
     return jsonify({'status': 'ok' if topic else 'error'})
 
 @app.route('/api/portfolio', methods=['GET'])
-def get_portfolio(): return jsonify(portfolio_store.user_data())
+def get_portfolio():
+    portfolio_store.reload()
+    return jsonify(portfolio_store.user_data())
 
 @app.route('/api/portfolio/reset', methods=['POST'])
-def reset_portfolio(): return jsonify({'status': 'ok', 'portfolio': portfolio_store.reset_all()})
+def reset_portfolio():
+    portfolio_store.reload()
+    return jsonify({'status': 'ok', 'portfolio': portfolio_store.reset_all()})
 
 @app.route('/api/portfolio/settings', methods=['POST'])
 def update_settings():
+    portfolio_store.reload()
     portfolio_store.update_settings((request.get_json() or {}).get('settings', {}))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/budget', methods=['POST'])
 def update_budget():
+    portfolio_store.reload()
     portfolio_store.update_budget((request.get_json() or {}).get('budget', 10000))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/watchlist/add', methods=['POST'])
 def add_watchlist():
+    portfolio_store.reload()
     portfolio_store.add_watchlist((request.get_json() or {}).get('ticker', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/watchlist/delete', methods=['POST'])
 def delete_watchlist():
+    portfolio_store.reload()
     portfolio_store.remove_watchlist((request.get_json() or {}).get('ticker', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/holding', methods=['POST'])
 def update_holding():
+    portfolio_store.reload()
     b = request.get_json() or {}
     shares = portfolio_store.set_holding_value(b.get('ticker'), b.get('value_owned', 0), b.get('price', 1))
     return jsonify({'status': 'ok', 'shares': shares})
 
 @app.route('/api/trade/execute', methods=['POST'])
 def execute_trade():
+    portfolio_store.reload()
     b = request.get_json() or {}
     return jsonify({'status': 'ok', 'entry': portfolio_store.execute_trade(b.get('ticker'), b.get('action'), b.get('shares'), b.get('price'))})
 
 @app.route('/api/trade/undo', methods=['POST'])
-def undo_trade(): return jsonify({'status': 'ok' if portfolio_store.undo_trade((request.get_json() or {}).get('id')) else 'error'})
+def undo_trade(): 
+    portfolio_store.reload()
+    return jsonify({'status': 'ok' if portfolio_store.undo_trade((request.get_json() or {}).get('id')) else 'error'})
 
 @app.route('/api/score', methods=['GET'])
 def get_score():
     t = request.args.get('t', '').upper()
     try:
-        df = yf.Ticker(t).history(period="1y")
+        df = fetch_yf_data(t, "1y", "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
         v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
@@ -418,6 +451,7 @@ def get_score():
 
 @app.route('/api/directives', methods=['GET'])
 def get_directives():
+    portfolio_store.reload()
     ud = portfolio_store.user_data()
     engine, wl = MarketScoringEngine(), ud.get('watchlist', [])
     
@@ -432,13 +466,10 @@ def get_directives():
     MIN_BUY_VALUE = 20.0
 
     dfs = {}
-    def fetch_1y(tick):
-        try: return tick, yf.Ticker(tick).history(period="1y")
-        except: return tick, pd.DataFrame()
+    def fetch_1y(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
     with ThreadPoolExecutor(max_workers=min(10, max(1, len(wl)))) as ex:
-        for tick, df in ex.map(fetch_1y, wl):
-            dfs[tick] = df
+        for tick, df in ex.map(fetch_1y, wl): dfs[tick] = df
 
     for t in wl:
         t = t.strip().upper()
@@ -525,9 +556,7 @@ def get_recommendations():
     res, engine = [], MarketScoringEngine()
     tickers = ['YCA.L', 'U-UN.TO', 'SGLN.L', 'SSLN.L', 'PHYS', 'PSLV', 'CEF', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'BHP', 'RIO', 'VALE', 'XOM', 'CVX', 'OXY', 'JPM', 'BAC', 'GS', 'PFE', 'JNJ', 'UNH', 'DIS', 'NKE', 'SBUX', 'BA', 'LMT']
     
-    def fetch_rec(tick):
-        try: return tick, yf.Ticker(tick).history(period="1y")
-        except: return tick, pd.DataFrame()
+    def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
     with ThreadPoolExecutor(max_workers=10) as ex:
         for t, df in ex.map(fetch_rec, tickers):
@@ -540,6 +569,7 @@ def get_recommendations():
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
+    portfolio_store.reload()
     ud = portfolio_store.user_data()
     wl, t = ud.get('watchlist', []), request.args.get('t', '').upper()
     if not t: t = 'ALL_SHARES'
@@ -564,8 +594,7 @@ def get_data():
         
         if active_tickers:
             def fetch_t(tick):
-                try: return tick, yf.Ticker(tick).history(period=request.args.get('p', ud.get('settings', {}).get('period', '1mo')), interval=request.args.get('i', ud.get('settings', {}).get('interval', '1d'))).dropna(subset=['Close'])
-                except: return tick, pd.DataFrame()
+                return tick, fetch_yf_data(tick, request.args.get('p', ud.get('settings', {}).get('period', '1mo')), request.args.get('i', ud.get('settings', {}).get('interval', '1d')))
             
             dfs = {}
             with ThreadPoolExecutor(max_workers=min(10, max(1, len(active_tickers)))) as ex:
@@ -614,8 +643,8 @@ def get_data():
         }})
 
     try:
-        df = yf.Ticker(t).history(period=request.args.get('p', ud.get('settings', {}).get('period', '1mo')), interval=request.args.get('i', ud.get('settings', {}).get('interval', '1d'))).dropna(subset=['Close'])
-        df = df[~df.index.duplicated(keep='first')].sort_index()
+        df = fetch_yf_data(t, request.args.get('p', ud.get('settings', {}).get('period', '1mo')), request.args.get('i', ud.get('settings', {}).get('interval', '1d')))
+        if df.empty: raise Exception("No data")
         if df.index.tz is not None: df.index = df.index.tz_convert('UTC')
         
         data = [{'time': i.strftime('%Y-%m-%d') if request.args.get('i', '1d') in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 'open': round(r['Open'],2), 'high': round(r['High'],2), 'low': round(r['Low'],2), 'close': round(r['Close'],2)} for i, r in df.iterrows()]
@@ -624,7 +653,7 @@ def get_data():
 
         engine = MarketScoringEngine()
         av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
-        st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(yf.Ticker(t).history(period="1y"), last_p)
+        st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
 
         sh_own = portfolio_store.get_shares(t)
         cps = last_p / 100.0 if t.endswith('.L') and last_p > 100 else last_p
@@ -1070,7 +1099,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
                     let isBuy = d.action === 'BUY'; let div = document.createElement('div'); div.className = 'directive-item';
-                    let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default;" disabled>Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
+                    let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default; display:flex; align-items:center;" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
                     div.innerHTML = `<div class="directive-info"><b>${d.ticker}</b>: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</div>${btnHTML}`;
                     cont.appendChild(div);
                 });
