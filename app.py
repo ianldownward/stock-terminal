@@ -53,13 +53,8 @@ class PortfolioManager:
         self._ensure_default_user()
 
     def default_user_state(self, username=""):
-        # High volatility default watchlist for Test 2 momentum trading
-        if username.strip().lower() == 'test 2':
-            wl = ['NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL']
-        else:
-            wl = []
         return {
-            'master_budget': 10000.0, 'watchlist': wl, 'initial_positions': {}, 'holdings': {}, 'history': [],
+            'master_budget': 10000.0, 'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [],
             'notified_signals': {}, 'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
@@ -270,8 +265,8 @@ class PortfolioManager:
 
     def get_total_portfolio_value(self):
         ud = self.user_data()
-        wl, hd = ud.get('watchlist', []), ud.get('holdings', {})
-        active_tickers = [t for t in list(hd.keys()) if t in wl and self.get_shares(t) > 0]
+        hd = ud.get('holdings', {})
+        active_tickers = [t for t in list(hd.keys()) if self.get_shares(t) > 0]
         
         if not active_tickers:
             return 0.0
@@ -302,7 +297,8 @@ class MarketScoringEngine:
             'YCA.L': 'Yellow Cake plc', 'U-UN.TO': 'Sprott Physical Uranium Trust', 'PHYS': 'Sprott Physical Gold Trust',
             'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares',
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
-            'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices'
+            'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
+            'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy'
         }
 
     def score_momentum(self, df_5m, current_price):
@@ -525,11 +521,18 @@ def get_score():
 def get_directives():
     portfolio_store.reload()
     ud = portfolio_store.user_data()
-    engine, wl = MarketScoringEngine(), ud.get('watchlist', [])
+    engine = MarketScoringEngine()
     is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
     
+    if is_momentum:
+        scan_list = ['NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR']
+    else:
+        scan_list = ud.get('watchlist', [])
+    
     mb = ud.get('master_budget', 10000.0)
-    tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in wl if portfolio_store.get_shares(w) > 0)
+    active_holds = [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0]
+    tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in active_holds)
+    
     cash_balance = mb - tot_cb
     rem_cash = max(0, cash_balance)
     total_equity = cash_balance + portfolio_store.get_total_portfolio_value()
@@ -542,10 +545,10 @@ def get_directives():
     def fetch_data_thread(tick): 
         return tick, fetch_yf_data(tick, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         
-    with ThreadPoolExecutor(max_workers=min(10, max(1, len(wl)))) as ex:
-        for tick, df in ex.map(fetch_data_thread, wl): dfs[tick] = df
+    with ThreadPoolExecutor(max_workers=min(10, max(1, len(scan_list)))) as ex:
+        for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
-    for t in wl:
+    for t in scan_list:
         t = t.strip().upper()
         if not t: continue
         try:
@@ -616,6 +619,12 @@ def get_directives():
     if is_auto and dirs:
         for d in dirs: portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
         dirs = [] 
+        
+    if is_momentum:
+        ud = portfolio_store.user_data()
+        current_holdings = [t for t, h_data in ud.get('holdings', {}).items() if h_data.get('shares', 0) > 0]
+        ud['watchlist'] = current_holdings
+        portfolio_store.save()
 
     curr_keys, topic = set(), ud.get('settings', {}).get('ntfy_topic', '')
     for d in dirs:
@@ -657,7 +666,8 @@ def get_data():
     tot_own = portfolio_store.get_total_portfolio_value()
     mb = ud.get('master_budget', 10000.0)
 
-    tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in wl if portfolio_store.get_shares(w) > 0)
+    active_holds = [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0]
+    tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in active_holds)
     
     cash_balance = mb - tot_cb
     total_equity = cash_balance + tot_own
@@ -1085,8 +1095,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
         function calculateSizing() {
             let tb = globalPortfolioData.master_budget || 10000;
             let toa = 0; let tot_cb = 0;
-            if (globalPortfolioData.holdings && globalPortfolioData.watchlist) {
-                for (let t of globalPortfolioData.watchlist) { 
+            if (globalPortfolioData.holdings) {
+                for (let t of Object.keys(globalPortfolioData.holdings)) { 
                     if (globalPortfolioData.holdings[t] && globalPortfolioData.holdings[t].shares > 0) {
                         toa += (globalPortfolioData.holdings[t].manual_val || 0); 
                         let init = globalPortfolioData.initial_positions?.[t]?.manual_val || 0;
@@ -1125,7 +1135,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
-            let isAuto = document.getElementById('userSelect').value.trim().toLowerCase() in ['test', 'test 2'];
+            let isAuto = ['test', 'test 2'].includes(document.getElementById('userSelect').value.trim().toLowerCase());
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
