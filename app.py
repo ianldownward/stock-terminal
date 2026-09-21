@@ -90,12 +90,23 @@ class PortfolioManager:
 
     def save(self): self.save_data(self.data)
 
-    def active_username(self): return self.data['active_user']
-    def user_data(self): return self.data['users'][self.active_username()]
+    def active_username(self):
+        self.data = self.load()
+        return self.data.get('active_user', 'Ian')
+
+    def user_data(self):
+        self.data = self.load()
+        au = self.active_username()
+        if 'users' not in self.data: self.data['users'] = {}
+        if au not in self.data['users']:
+            self.data['users'][au] = self.default_user_state()
+            self.save()
+        return self.data['users'][au]
 
     def add_user(self, username):
         username = username.strip()
         if not username: return
+        self.data = self.load()
         if 'users' not in self.data: self.data['users'] = {}
         if username not in self.data['users']: self.data['users'][username] = self.default_user_state()
         self.data['active_user'] = username
@@ -103,6 +114,7 @@ class PortfolioManager:
 
     def delete_user(self, username):
         username = username.strip()
+        self.data = self.load()
         if 'users' in self.data and username in self.data['users'] and len(self.data['users']) > 1:
             del self.data['users'][username]
             if self.data.get('active_user') == username: self.data['active_user'] = list(self.data['users'].keys())[0]
@@ -111,11 +123,14 @@ class PortfolioManager:
         return False
 
     def switch_user(self, username):
+        username = username.strip()
+        self.data = self.load()
         if 'users' in self.data and username in self.data['users']:
             self.data['active_user'] = username
             self.save()
 
     def reset_all(self):
+        ud = self.user_data()
         self.data['users'][self.active_username()] = self.default_user_state()
         self.save()
         return self.user_data()
@@ -313,7 +328,7 @@ portfolio_store = PortfolioManager()
 def index(): return render_template_string(HTML_FRONTEND)
 
 @app.route('/api/users', methods=['GET'])
-def get_users(): return jsonify({'users': list(portfolio_store.data.get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
+def get_users(): return jsonify({'users': list(portfolio_store.load().get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
 
 @app.route('/api/users/select', methods=['POST'])
 def select_user():
@@ -394,8 +409,7 @@ def get_directives():
     ud = portfolio_store.user_data()
     engine, wl = MarketScoringEngine(), ud.get('watchlist', [])
     
-    # COMPOUNDING FIX: Total Equity Calculation
-    mb = ud.get('master_budget', 10000.0) # This is now treated as "Starting Capital"
+    mb = ud.get('master_budget', 10000.0)
     tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in wl if portfolio_store.get_shares(w) > 0)
     cash_balance = mb - tot_cb
     rem_cash = max(0, cash_balance)
@@ -420,7 +434,6 @@ def get_directives():
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
             vo = sh * cps
             
-            # Autocompounding logic: Base Tranche target off the new total equity
             diff = (st['tranches'] / 5.0 * total_equity) - vo
 
             if sh > 0: owned.append({'t': t, 'n': engine.asset_names.get(t, t), 's': st['score'], 'vo': vo, 'sh': sh, 'cps': cps, 'p': cur})
@@ -515,7 +528,6 @@ def get_data():
     cash_balance = mb - tot_cb
     total_equity = cash_balance + tot_own
 
-    # Master P&L Anchored to Starting Capital
     master_pnl_val = total_equity - mb
     master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
     master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
@@ -783,7 +795,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
         async function onUserChange(username) {
             if (!username) return;
             await fetch('/api/users/select', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: username})});
-            currentTicker = ''; isSettingsLoaded = false; await fetchUsers(); fetchData(false);
+            currentTicker = ''; isSettingsLoaded = false;
+            await fetchData(false);
+            await fetchUsers();
         }
 
         async function addUserPrompt() {
@@ -1091,7 +1105,12 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function renderChart() {
-            if (!masterData.length) return;
+            if (!masterData.length) {
+                if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
+                let cv = document.getElementById('chartCanvas');
+                if (cv) { let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); }
+                return;
+            }
             let s = document.getElementById('styleSelect').value;
             let needNew = (!tvSeries || currentChartStyle !== s || lastRenderedTicker !== currentTicker);
             
