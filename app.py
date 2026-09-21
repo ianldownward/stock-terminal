@@ -593,43 +593,40 @@ def get_data():
 
     if t == 'ALL_SHARES':
         lines = []
-        holdings = ud.get('holdings', {})
-        active_tickers = [tick for tick, h in holdings.items() if h.get('shares', 0) > 0]
-        
-        if active_tickers:
+        if wl:
             def fetch_t(tick):
                 return tick, fetch_yf_data(tick, req_p, req_i)
             
             dfs = {}
-            with ThreadPoolExecutor(max_workers=min(10, max(1, len(active_tickers)))) as ex:
-                for tick, df_t in ex.map(fetch_t, active_tickers):
+            with ThreadPoolExecutor(max_workers=min(10, max(1, len(wl)))) as ex:
+                for tick, df_t in ex.map(fetch_t, wl):
                     dfs[tick] = df_t
             
             colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
             c_idx = 0
-            for tick in active_tickers:
+            for tick in wl:
                 df_t = dfs.get(tick)
                 if df_t is not None and not df_t.empty:
                     if df_t.index.tz is not None: df_t.index = df_t.index.tz_convert('UTC')
-                    sh = holdings[tick].get('shares', 0)
-                    is_pence = tick.endswith('.L') and df_t['Close'].iloc[-1] > 100
-                    mult = sh / 100.0 if is_pence else sh
                     
-                    line_data = []
-                    seen = set()
-                    for idx, row in df_t.iterrows():
-                        ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
-                        if ts not in seen:
-                            seen.add(ts)
-                            line_data.append({'time': ts, 'value': round(row['Close'] * mult, 2)})
-                    
-                    lines.append({ 'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data })
-                    c_idx += 1
+                    base_price = df_t['Close'].iloc[0]
+                    if base_price > 0:
+                        line_data = []
+                        seen = set()
+                        for idx, row in df_t.iterrows():
+                            ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
+                            if ts not in seen:
+                                seen.add(ts)
+                                pct_change = ((row['Close'] - base_price) / base_price) * 100.0
+                                line_data.append({'time': ts, 'value': round(pct_change, 2)})
+                        
+                        lines.append({ 'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data })
+                        c_idx += 1
         
-        return jsonify({'is_multi': True, 'lines': lines, 'name': 'Portfolio Performance', 'portfolio': ud, 'metrics': {
-            'price': tot_own, 'price_display': f"£{tot_own:.2f}",
+        return jsonify({'is_multi': True, 'lines': lines, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'metrics': {
+            'price': 0, 'price_display': f"Normalized %",
             'discount': '--', 'buy_score': '--', 'tranches': 0,
-            'status': 'Aggregate View', 'color': '#00d2ff', 'reason': 'Viewing the independent historical value of your currently held shares.',
+            'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
             'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
             'shares_owned': sum(h.get('shares',0) for h in ud.get('holdings',{}).values()), 'value_owned': tot_own, 
             'pnl_display': master_pdsp, 'pnl_color': master_pc,
@@ -1280,7 +1277,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     let sr = tvChart.addLineSeries({ color: line.color, lineWidth: 2 });
                     sr.setData(line.data);
                     multiSeries.push(sr);
-                    lg.innerHTML += `<div style="font-size: 11px; color: ${line.color}; font-weight: bold; text-shadow: 1px 1px 2px #000;">${line.ticker}</div>`;
+                    let finalVal = line.data.length > 0 ? line.data[line.data.length-1].value : 0;
+                    let sign = finalVal > 0 ? '+' : '';
+                    lg.innerHTML += `<div style="font-size: 11px; color: ${line.color}; font-weight: bold; text-shadow: 1px 1px 2px #000;">${line.ticker} (${sign}${finalVal.toFixed(2)}%)</div>`;
                 });
                 if (currentChartStyle !== 'multi' || lastRenderedTicker !== 'ALL_SHARES') { tvChart.timeScale().fitContent(); }
                 currentChartStyle = 'multi'; lastRenderedTicker = 'ALL_SHARES';
