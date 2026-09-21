@@ -52,9 +52,14 @@ class PortfolioManager:
         self.data = self.load()
         self._ensure_default_user()
 
-    def default_user_state(self):
+    def default_user_state(self, username=""):
+        # High volatility default watchlist for Test 2 momentum trading
+        if username.strip().lower() == 'test 2':
+            wl = ['NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL']
+        else:
+            wl = []
         return {
-            'master_budget': 10000.0, 'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [],
+            'master_budget': 10000.0, 'watchlist': wl, 'initial_positions': {}, 'holdings': {}, 'history': [],
             'notified_signals': {}, 'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
@@ -84,7 +89,7 @@ class PortfolioManager:
                             self.save_data(data)
                         return data
             except: pass
-        initial = {'active_user': 'Ian', 'users': {'Ian': self.default_user_state()}}
+        initial = {'active_user': 'Ian', 'users': {'Ian': self.default_user_state('Ian')}}
         self.save_data(initial)
         return initial
 
@@ -95,7 +100,7 @@ class PortfolioManager:
     def _ensure_default_user(self):
         try:
             if 'users' not in self.data or not self.data['users']:
-                self.data['users'] = {'Ian': self.default_user_state()}
+                self.data['users'] = {'Ian': self.default_user_state('Ian')}
                 self.data['active_user'] = 'Ian'
                 self.save_data(self.data)
             if self.data.get('active_user') not in self.data['users']:
@@ -132,7 +137,7 @@ class PortfolioManager:
         au = self.active_username()
         if 'users' not in self.data: self.data['users'] = {}
         if au not in self.data['users']:
-            self.data['users'][au] = self.default_user_state()
+            self.data['users'][au] = self.default_user_state(au)
             self.save_data(self.data)
         return self.data['users'][au]
 
@@ -140,7 +145,7 @@ class PortfolioManager:
         username = username.strip()
         if not username: return
         if 'users' not in self.data: self.data['users'] = {}
-        if username not in self.data['users']: self.data['users'][username] = self.default_user_state()
+        if username not in self.data['users']: self.data['users'][username] = self.default_user_state(username)
         self.data['active_user'] = username
         self.save_data(self.data)
 
@@ -160,7 +165,8 @@ class PortfolioManager:
             self.save_data(self.data)
 
     def reset_all(self):
-        self.data['users'][self.active_username()] = self.default_user_state()
+        au = self.active_username()
+        self.data['users'][au] = self.default_user_state(au)
         self.save()
         return self.user_data()
 
@@ -265,7 +271,28 @@ class PortfolioManager:
     def get_total_portfolio_value(self):
         ud = self.user_data()
         wl, hd = ud.get('watchlist', []), ud.get('holdings', {})
-        total = sum(hd[t].get('manual_val', 0.0) for t in list(hd.keys()) if t in wl and self.get_shares(t) > 0)
+        active_tickers = [t for t in list(hd.keys()) if t in wl and self.get_shares(t) > 0]
+        
+        if not active_tickers:
+            return 0.0
+            
+        def fetch_val(t):
+            sh = self.get_shares(t)
+            try:
+                df = fetch_yf_data(t, "1d", "1d")
+                if not df.empty:
+                    p = df['Close'].iloc[-1]
+                    cps = p / 100.0 if t.endswith('.L') and p > 100 else p
+                    return t, round(sh * cps, 2)
+            except: pass
+            return t, hd[t].get('manual_val', 0.0)
+
+        total = 0.0
+        with ThreadPoolExecutor(max_workers=min(10, max(1, len(active_tickers)))) as ex:
+            for t, val in ex.map(fetch_val, active_tickers):
+                total += val
+                if t in hd:
+                    hd[t]['manual_val'] = val
         return round(total, 2)
 
 class MarketScoringEngine:
@@ -275,8 +302,45 @@ class MarketScoringEngine:
             'YCA.L': 'Yellow Cake plc', 'U-UN.TO': 'Sprott Physical Uranium Trust', 'PHYS': 'Sprott Physical Gold Trust',
             'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares',
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
-            'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet'
+            'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices'
         }
+
+    def score_momentum(self, df_5m, current_price):
+        """Intraday Fast EMA Momentum Engine for Test 2 Profile"""
+        if df_5m.empty or len(df_5m) < 21:
+            return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
+                    'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Tranche 0)', 'action_color': '#8a8a9e'}
+
+        ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
+        ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+        
+        delta = df_5m['Close'].diff()
+        rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
+
+        if ema9 > ema21 and rsi < 70:
+            buy_score, tranches = 80, 4
+            action_main, action_sub = "BUY", f"(Tranche {tranches})"
+            status, color = "Fast Momentum Surge", "#00c853"
+            reason = f"INTRADAY MOMENTUM: 9-EMA ({ema9:.2f}) crossed above 21-EMA ({ema21:.2f}) with RSI at {rsi:.1f}. High-probability upward surge."
+            action_color = "#00c853"
+        elif ema9 < ema21 or rsi >= 70:
+            buy_score, tranches = 10, 0
+            action_main, action_sub = "SELL", "(Exit Trend)"
+            status, color = "Momentum Fading", "#ff3d00"
+            reason = f"MOMENTUM EXHAUSTION: 9-EMA ({ema9:.2f}) dropped below 21-EMA ({ema21:.2f}) or RSI overbought ({rsi:.1f}). Dumping position to secure cash."
+            action_color = "#ff3d00"
+        else:
+            buy_score, tranches = 40, 2
+            action_main, action_sub = "HOLD / WAIT", f"(Tranche {tranches})"
+            status, color = "Neutral Flow", "#8a8a9e"
+            reason = f"Intraday consolidation. 9-EMA ({ema9:.2f}) near 21-EMA ({ema21:.2f})."
+            action_color = "#8a8a9e"
+
+        return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{((ema9-current_price)/current_price*100):.2f}%",
+                'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
+                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
 
     def score_nav_asset(self, ticker, current_price, volume_ratio):
         nav = self.nav_bases.get(ticker, current_price * 1.10)
@@ -440,12 +504,19 @@ def undo_trade():
 def get_score():
     t = request.args.get('t', '').upper()
     try:
-        df = fetch_yf_data(t, "1y", "1d")
+        is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
+        df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
-        cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-        v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
+        cur = df['Close'].iloc[-1]
         engine = MarketScoringEngine()
-        res = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
+        
+        if is_momentum:
+            res = engine.score_momentum(df, cur)
+        else:
+            avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
+            v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
+            res = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
+            
         res.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
         return jsonify(res)
     except Exception as e: return jsonify({'error': str(e)}), 500
@@ -455,6 +526,7 @@ def get_directives():
     portfolio_store.reload()
     ud = portfolio_store.user_data()
     engine, wl = MarketScoringEngine(), ud.get('watchlist', [])
+    is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
     
     mb = ud.get('master_budget', 10000.0)
     tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in wl if portfolio_store.get_shares(w) > 0)
@@ -467,10 +539,11 @@ def get_directives():
     MIN_BUY_VALUE = 20.0
 
     dfs = {}
-    def fetch_1y(tick): return tick, fetch_yf_data(tick, "1y", "1d")
+    def fetch_data_thread(tick): 
+        return tick, fetch_yf_data(tick, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         
     with ThreadPoolExecutor(max_workers=min(10, max(1, len(wl)))) as ex:
-        for tick, df in ex.map(fetch_1y, wl): dfs[tick] = df
+        for tick, df in ex.map(fetch_data_thread, wl): dfs[tick] = df
 
     for t in wl:
         t = t.strip().upper()
@@ -478,9 +551,14 @@ def get_directives():
         try:
             df = dfs.get(t)
             if df is None or df.empty: continue
-            cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-            v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
-            st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
+            cur = df['Close'].iloc[-1]
+            
+            if is_momentum:
+                st = engine.score_momentum(df, cur)
+            else:
+                avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
+                v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
+                st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
             
             sh = portfolio_store.get_shares(t)
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
@@ -534,7 +612,7 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
-    is_auto = portfolio_store.active_username().strip().lower() == 'test'
+    is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
     if is_auto and dirs:
         for d in dirs: portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
         dirs = [] 
@@ -573,6 +651,7 @@ def get_data():
     portfolio_store.reload()
     ud = portfolio_store.user_data()
     wl, t = ud.get('watchlist', []), request.args.get('t', '').upper()
+    is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
     if not t: t = 'ALL_SHARES'
 
     tot_own = portfolio_store.get_total_portfolio_value()
@@ -588,8 +667,8 @@ def get_data():
     master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
     master_pdsp = f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)"
 
-    req_p = request.args.get('p', ud.get('settings', {}).get('period', '1mo'))
-    req_i = request.args.get('i', ud.get('settings', {}).get('interval', '1d'))
+    req_p = request.args.get('p', ud.get('settings', {}).get('period', '5d' if is_momentum else '1mo'))
+    req_i = request.args.get('i', ud.get('settings', {}).get('interval', '5m' if is_momentum else '1d'))
 
     if t == 'ALL_SHARES':
         lines = []
@@ -653,8 +732,11 @@ def get_data():
         last_p = round(data[-1]['close'], 2) if data else 0
 
         engine = MarketScoringEngine()
-        av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
-        st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
+        if is_momentum:
+            st = engine.score_momentum(df, last_p)
+        else:
+            av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
+            st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
 
         sh_own = portfolio_store.get_shares(t)
         cps = last_p / 100.0 if t.endswith('.L') and last_p > 100 else last_p
@@ -1043,7 +1125,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
-            let isAuto = document.getElementById('userSelect').value.trim().toLowerCase() === 'test';
+            let isAuto = document.getElementById('userSelect').value.trim().toLowerCase() in ['test', 'test 2'];
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -1094,7 +1176,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             try {
                 let res = await fetch(`/api/directives`); let data = await res.json();
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
-                let isAuto = document.getElementById('userSelect').value.trim().toLowerCase() === 'test';
+                let isAuto = ['test', 'test 2'].includes(document.getElementById('userSelect').value.trim().toLowerCase());
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
