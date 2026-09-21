@@ -90,6 +90,7 @@ class PortfolioManager:
 
     def reload(self):
         self.data = self.load()
+        self._ensure_default_user()
 
     def _ensure_default_user(self):
         try:
@@ -681,7 +682,6 @@ def get_data():
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
     except Exception as e: return jsonify({'error': str(e)}), 500
-
 
 HTML_FRONTEND = """<!DOCTYPE html>
 <html>
