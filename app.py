@@ -11,14 +11,19 @@ app = Flask(__name__)
 YF_CACHE = {}
 
 def fetch_yf_data(ticker, period="1y", interval="1d"):
-    if not interval: interval = "1d"
-    if not period: period = "1y"
+    if not interval or interval == 'undefined': interval = "1d"
+    if not period or period == 'undefined': period = "1y"
+    
+    if period in ['1y', '5y', 'max'] and interval in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']:
+        interval = '1d'
+    if period in ['1mo', '3mo', '6mo'] and interval in ['1m', '2m']:
+        interval = '5m'
+
     cache_key = f"{ticker}_{period}_{interval}"
     now = time.time()
     
     if cache_key in YF_CACHE:
         cached_time, df = YF_CACHE[cache_key]
-        # Never serve an empty dataframe from cache, force retry
         if not df.empty and now - cached_time < 15:  
             return df.copy()
             
@@ -324,34 +329,24 @@ class MarketScoringEngine:
 
         if avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-            if pnl_pct >= 1.0: 
+            if pnl_pct >= 0.8: 
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%",
                         'reason': f"PROFIT TARGET REACHED (+{pnl_pct:.2f}%). Locking in gains.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'Take Profit', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Take Profit)', 'action_color': '#00c853'}
-            elif pnl_pct <= -0.5: 
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
-                        'reason': f"STOP LOSS TRIPPED ({pnl_pct:.2f}%). Cutting losses immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                        'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00'}
 
-        if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
-            buy_score = min(100, round(50 + pct_change_5d * 10 + (65 - rsi)))
+        if ema9 > ema21:
+            buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
             tranches = 1
-            action_main, action_sub = "BUY", "(Strong Momentum Surge)"
+            action_main, action_sub = "BUY", "(Momentum Surge)"
             status, color = "Fast Momentum Surge", "#00c853"
-            reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}, 5d growth +{pct_change_5d:.2f}%."
+            reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
             action_color = "#00c853"
-        elif ema9 < ema21 or rsi >= 65:
+        else:
             buy_score, tranches = 10, 0
             action_main, action_sub = "SELL", "(Exit Trend)"
             status, color = "Momentum Fading", "#ff3d00"
-            reason = f"MOMENTUM EXHAUSTION: 9-EMA < 21-EMA or RSI overbought ({rsi:.1f}). Dumps position to secure cash."
+            reason = f"MOMENTUM FADING: 9-EMA < 21-EMA."
             action_color = "#ff3d00"
-        else:
-            buy_score, tranches = 40, 0
-            action_main, action_sub = "HOLD / WAIT", "(Consolidating)"
-            status, color = "Neutral Flow", "#8a8a9e"
-            reason = f"Intraday consolidation. 9-EMA near 21-EMA."
-            action_color = "#8a8a9e"
 
         return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%",
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
@@ -376,16 +371,16 @@ class MarketScoringEngine:
 
         if macro_triggered:
             action_main, action_sub, status, color, tranches = "SELL", "(Sentinel Active)", "MACRO SENTINEL TRIPPED", "#ff3d00", 0
-            reason = f"EMERGENCY STOP: Broad sector panic detected. Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Liquidating to 0 tranches to protect capital."
+            reason = f"EMERGENCY STOP: Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%)."
             action_color = "#ff3d00"
         elif implied_discount <= 5.0 and implied_discount > -50.0:
             action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", "Target Reached", "#ff3d00", 0
-            reason = f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%. Algorithm dictates taking profits."
+            reason = f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%."
             action_color = "#ff3d00"
         elif buy_score >= 40:
             action_main, action_sub = "BUY", f"(Tranche {tranches})"
             status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
-            reason = f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav}). Scaling into Tranche {tranches}."
+            reason = f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav})."
             action_color = "#00c853"
         else:
             action_main, action_sub = "HOLD / WAIT", f"(Tranche {tranches})"
@@ -418,7 +413,7 @@ class MarketScoringEngine:
         if buy_score >= 40:
             action_main, action_sub = "BUY", f"(Tranche {tranches})"
             status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
-            reason = f"Value Anomaly. Trading at {implied_discount:.1f}% discount to 200d-DMA (RSI: {rsi:.1f}). Scaling into Tranche {tranches}."
+            reason = f"Value Anomaly. Trading at {implied_discount:.1f}% discount to 200d-DMA."
             action_color = "#00c853"
         elif implied_discount <= -10.0:
             action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", 'Overextended (High)', '#ff3d00', 0
@@ -426,7 +421,7 @@ class MarketScoringEngine:
             action_color = "#ff3d00"
         else:
             action_main, action_sub, status, color = "HOLD / WAIT", f"(Tranche {tranches})", 'Fair Value', '#8a8a9e'
-            reason = f"No Value Anomaly. Near 200d-DMA. Active Tranches: {tranches}."
+            reason = f"No Value Anomaly. Near 200d-DMA."
             action_color = "#8a8a9e"
             
         return {'type': 'Global Equity', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 
@@ -559,12 +554,10 @@ def get_directives():
     tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in active_holds)
     
     cash_balance = mb - tot_cb
-    rem_cash = max(0, cash_balance)
     total_equity = cash_balance + portfolio_store.get_total_portfolio_value()
 
     if 'notified_signals' not in ud: ud['notified_signals'] = {}
-    dirs, buys, owned = [], [], []
-    MIN_BUY_VALUE = 20.0
+    dirs, candidates, held_scores = [], [], []
 
     dfs = {}
     def fetch_data_thread(tick): 
@@ -601,35 +594,38 @@ def get_directives():
             if is_auto and (int(time.time()) - last_trade_time < 300):
                 continue
 
-            if st['action_main'] == 'SELL':
-                if sh > 0 and vo >= MIN_BUY_VALUE:
-                    dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
-            elif st['action_main'] == 'BUY' and rem_cash >= MIN_BUY_VALUE:
-                buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
+            if sh > 0:
+                held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
+            
+            if st['action_main'] == 'SELL' and sh > 0:
+                dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
+            elif st['action_main'] == 'BUY':
+                candidates.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': cur, 'cps': cps, 'score': st['score']})
         except: pass
 
-    if buys and rem_cash >= MIN_BUY_VALUE:
-        buys.sort(key=lambda x: x['s'], reverse=True)
-        top_buys = buys[:2]  
-        per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.20)  
+    # --- DYNAMIC OPPORTUNITY REALLOCATION FOR TEST 2 ---
+    if is_momentum and candidates:
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        top_candidate = candidates[0]
         
-        for b in top_buys:
-            bs = int(per_stock_budget // b['cps'])
-            amt = round(bs * b['cps'], 2)
-            if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
-                dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
+        # Check if held stock scores lower than top candidate
+        held_scores.sort(key=lambda x: x['score'])
+        if held_scores and top_candidate['score'] > (held_scores[0]['score'] + 15):
+            weakest = held_scores[0]
+            if weakest['shares'] > 0 and weakest['ticker'] != top_candidate['ticker']:
+                # Liquidate weakest stock to fund the top surge candidate
+                dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
+                
+                # Execute buy on top surge candidate using released capital
+                alloc_amount = max(weakest['value'], 1000.0)
+                buy_sh = int(alloc_amount // top_candidate['cps'])
+                if buy_sh > 0:
+                    dirs.append({'ticker': top_candidate['ticker'], 'name': top_candidate['name'], 'action': 'BUY', 'shares': buy_sh, 'price': top_candidate['price'], 'amount': round(buy_sh * top_candidate['cps'], 2)})
 
+    # --- AUTOMATIC EXECUTION FOR AI PROFILES ---
     is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
     if is_auto and dirs:
         for d in dirs:
-            if d['action'] == 'BUY':
-                curr_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0])
-                curr_cash = ud['master_budget'] - curr_cb
-                if curr_cash < MIN_BUY_VALUE:
-                    continue
-                if d['amount'] > curr_cash:
-                    d['shares'] = int(curr_cash // (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']))
-                    d['amount'] = round(d['shares'] * (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']), 2)
             if d['shares'] > 0:
                 portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
         dirs = [] 
@@ -693,9 +689,14 @@ def get_data():
     master_pdsp = f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)"
 
     req_p = request.args.get('p')
-    if not req_p: req_p = ud.get('settings', {}).get('period', '5d' if is_momentum else '1mo')
+    if not req_p or req_p == 'undefined': req_p = ud.get('settings', {}).get('period', '5d' if is_momentum else '1mo')
     req_i = request.args.get('i')
-    if not req_i: req_i = ud.get('settings', {}).get('interval', '5m' if is_momentum else '1d')
+    if not req_i or req_i == 'undefined': req_i = ud.get('settings', {}).get('interval', '5m' if is_momentum else '1d')
+
+    if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']:
+        req_i = '1d'
+    elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']:
+        req_i = '5m'
 
     if t == 'ALL_SHARES':
         lines = []
@@ -1204,31 +1205,27 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
             if (!currentTicker) { am.innerText = "NO ASSET"; am.style.color = "#787e8e"; as.innerText = ""; } 
             else {
-                let bs = 0, ss = 0, mv = 20.0;
-                if (diff >= mv && currentActiveTranches > 0 && pps > 0) bs = Math.floor(Math.min(diff, Math.max(0, rem)) / pps);
+                let bs = 0, ss = 0;
+                if (diff > 0 && currentActiveTranches > 0 && pps > 0) bs = Math.floor(Math.min(diff, Math.max(0, rem)) / pps);
                 
                 if (currentValOwned > 0 && am.innerText === "SELL") ss = currentSharesOwned;
                 else if (currentValOwned > 0 && currentActiveTranches === 0) ss = currentSharesOwned;
-                else if (diff <= -mv && pps > 0) ss = Math.floor(Math.abs(diff) / pps); 
+                else if (diff < 0 && pps > 0) ss = Math.floor(Math.abs(diff) / pps); 
 
-                if (bs > 0 && (bs * pps) >= mv) {
+                if (bs > 0) {
                     am.innerText = "BUY"; am.style.color = "#00c853"; as.innerText = `(Tranche ${currentActiveTranches})`;
                     recAmt = `+£${(bs*pps).toFixed(2)}`; recSh = `Buy ${bs} shares`;
                     if(isAuto) bc.innerHTML = autoBtnHTML;
                     else bc.innerHTML = `<button class="btn-execute" onclick="executeTradeDirect('${currentTicker}', 'BUY', ${bs}, ${currentLivePrice})">Confirm Buy (${bs} Shs)</button>`;
-                } else if (ss > 0 && (ss * pps) >= mv) {
+                } else if (ss > 0) {
                     am.innerText = "SELL"; am.style.color = "#ff3d00"; 
-                    if (ss === currentSharesOwned && currentActiveTranches > 0) as.innerText = "(Take Profit / Sentinel)";
-                    else as.innerText = "(Trim Excess Allocation)";
-                    
+                    as.innerText = "(Exit / Reallocate)";
                     recAmt = `-£${(ss*pps).toFixed(2)}`; recSh = `Sell ${ss} shares`;
                     if(isAuto) bc.innerHTML = autoBtnHTML;
                     else bc.innerHTML = `<button class="btn-execute sell-btn" onclick="executeTradeDirect('${currentTicker}', 'SELL', ${ss}, ${currentLivePrice})">Confirm Sell (${ss} Shs)</button>`;
                 } else {
                     am.innerText = "HOLD / WAIT"; am.style.color = "#8a8a9e";
-                    if (diff > 5 && rem <= 0) { as.innerText = `(Insufficient Budget)`; am.style.color = "#ff9900"; }
-                    else if (currentActiveTranches > 0 && currentValOwned > 0) as.innerText = `(Tranche ${currentActiveTranches} Filled)`;
-                    else as.innerText = `(Tranche ${currentActiveTranches})`;
+                    as.innerText = `(Active Monitoring)`;
                 }
             }
             document.getElementById('mRecTradeAmt').innerText = recAmt; document.getElementById('mRecShares').innerText = recSh;
@@ -1488,7 +1485,11 @@ HTML_FRONTEND = """<!DOCTYPE html>
         async function fetchData(silent = false) {
             if (!silent) document.getElementById('loader').style.display = 'block';
             try {
-                let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`);
+                updateIntervals(); 
+                let reqP = document.getElementById('periodSelect').value;
+                let reqI = document.getElementById('intervalSelect').value;
+                
+                let res = await fetch(`/api/data?t=${currentTicker}&p=${reqP}&i=${reqI}`);
                 let p = await res.json(); 
                 
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
@@ -1496,8 +1497,12 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
                     let s = globalPortfolioData.settings;
-                    if (s.period) document.getElementById('periodSelect').value = s.period; updateIntervals();
-                    if (s.interval) document.getElementById('intervalSelect').value = s.interval;
+                    if (s.period) document.getElementById('periodSelect').value = s.period; 
+                    updateIntervals();
+                    if (s.interval) {
+                        let iSel = document.getElementById('intervalSelect');
+                        if (Array.from(iSel.options).some(opt => opt.value === s.interval)) iSel.value = s.interval;
+                    }
                     if (s.style) document.getElementById('styleSelect').value = s.style;
                     if (s.refresh) document.getElementById('refreshSelect').value = s.refresh;
                     if (s.ntfy_topic && document.getElementById('ntfyTopicInput')) document.getElementById('ntfyTopicInput').value = s.ntfy_topic;
