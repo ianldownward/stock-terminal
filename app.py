@@ -64,7 +64,8 @@ class PortfolioManager:
 
     def default_user_state(self, username=""):
         return {
-            'master_budget': 10000.0, 'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [],
+            'master_budget': 5000.0 if username in ['Test', 'Test 2', 'Test 3'] else 10000.0,
+            'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [],
             'notified_signals': {}, 'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
@@ -105,9 +106,20 @@ class PortfolioManager:
     def _ensure_default_user(self):
         try:
             if 'users' not in self.data or not self.data['users']:
-                self.data['users'] = {'Ian': self.default_user_state('Ian')}
+                self.data['users'] = {
+                    'Ian': self.default_user_state('Ian'),
+                    'Test': self.default_user_state('Test'),
+                    'Test 2': self.default_user_state('Test 2'),
+                    'Test 3': self.default_user_state('Test 3')
+                }
                 self.data['active_user'] = 'Ian'
                 self.save_data(self.data)
+            
+            for profile in ['Ian', 'Test', 'Test 2', 'Test 3']:
+                if profile not in self.data['users']:
+                    self.data['users'][profile] = self.default_user_state(profile)
+                    self.save_data(self.data)
+                    
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = list(self.data['users'].keys())[0]
                 self.save_data(self.data)
@@ -314,7 +326,8 @@ class MarketScoringEngine:
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
             'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
             'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ',
-            'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA',
+            'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'TSM': 'TSMC ADR', 'SONY': 'Sony Group', 'BABA': 'Alibaba Group',
+            'ASML': 'ASML Holding', 'SAP': 'SAP SE',
             'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
             'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
@@ -535,7 +548,7 @@ def undo_trade():
 def get_score():
     t = request.args.get('t', '').upper()
     try:
-        is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
+        is_momentum = portfolio_store.active_username().strip().lower() in ['test 2', 'test 3']
         df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         cur = df['Close'].iloc[-1]
@@ -557,9 +570,17 @@ def get_directives():
     portfolio_store.reload()
     ud = portfolio_store.user_data()
     engine = MarketScoringEngine()
-    is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
+    active_profile = portfolio_store.active_username().strip().lower()
+    is_momentum = active_profile in ['test 2', 'test 3']
     
-    if is_momentum:
+    if active_profile == 'test 3':
+        # 24/5 Follow-The-Sun Global Candidates Pool
+        scan_list = [
+            'TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L',
+            'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR',
+            'TQQQ', 'SOXL', 'NVDL'
+        ]
+    elif active_profile == 'test 2':
         scan_list = [
             'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L',
             'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR',
@@ -616,7 +637,7 @@ def get_directives():
                 st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
 
             last_trade_time = next((h['timestamp'] for h in ud.get('history', []) if h['ticker'] == t), 0)
-            is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
+            is_auto = active_profile in ['test', 'test 2', 'test 3']
             if is_auto and (int(time.time()) - last_trade_time < 300):
                 continue
 
@@ -655,6 +676,7 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
+    is_auto = active_profile in ['test', 'test 2', 'test 3']
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
@@ -711,7 +733,7 @@ def get_data():
     ud = portfolio_store.user_data()
     wl = ud.get('watchlist', [])
     t = request.args.get('t', '').upper().strip()
-    is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
+    is_momentum = portfolio_store.active_username().strip().lower() in ['test 2', 'test 3']
     if not t: t = 'ALL_SHARES'
 
     tot_own = portfolio_store.get_total_portfolio_value()
@@ -836,7 +858,7 @@ def get_data():
             'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
             'shares_owned': sum(h.get('shares',0) for h in ud.get('holdings',{}).values()), 'value_owned': tot_own, 
             'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data,
-            'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_budget': mb,
+            'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
 
@@ -847,7 +869,7 @@ def get_data():
                 'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
                 'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.',
                 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
-                'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'],
+                'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data,
                 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
             }})
 
@@ -1431,7 +1453,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         function onValOwnedInput() {
             if (!currentTicker || currentTicker === 'ALL_SHARES') return;
             let val = parseFloat(document.getElementById('inputHeldVal').value) || 0;
-            let pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
+            let pps = (currentTicker.endswith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
             currentSharesOwned = pps > 0 ? Math.round(val / pps) : 0;
             currentValOwned = Math.round((currentSharesOwned * pps + Number.EPSILON) * 100) / 100;
             document.getElementById('mSharesOwned').innerText = `${currentSharesOwned} shares`;
@@ -1485,7 +1507,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
-            let isAuto = ['test', 'test 2'].includes(document.getElementById('userSelect').value.trim().toLowerCase());
+            let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
+            let isAuto = ['test', 'test 2', 'test 3'].includes(activeProf);
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -1536,7 +1559,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
             try {
                 let res = await fetch(`/api/directives`); let data = await res.json();
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
-                let isAuto = ['test', 'test 2'].includes(document.getElementById('userSelect').value.trim().toLowerCase());
+                let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
+                let isAuto = ['test', 'test 2', 'test 3'].includes(activeProf);
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
@@ -1772,7 +1796,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
             }
             
             let s = document.getElementById('styleSelect').value;
-            let isMomentum = document.getElementById('userSelect').value.trim().toLowerCase() === 'test 2';
+            let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
+            let isMomentum = ['test 2', 'test 3'].includes(activeProf);
 
             if (currentTicker === 'ALL_SHARES') {
                 tvChart.applyOptions({ leftPriceScale: { visible: false } });
