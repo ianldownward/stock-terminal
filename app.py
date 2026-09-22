@@ -53,12 +53,8 @@ class PortfolioManager:
         self._ensure_default_user()
 
     def default_user_state(self, username=""):
-        if username.strip().lower() == 'test 2':
-            wl = ['NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL']
-        else:
-            wl = []
         return {
-            'master_budget': 10000.0, 'watchlist': wl, 'initial_positions': {}, 'holdings': {}, 'history': [],
+            'master_budget': 10000.0, 'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [],
             'notified_signals': {}, 'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
@@ -307,7 +303,6 @@ class MarketScoringEngine:
         }
 
     def score_momentum(self, df_5m, current_price):
-        """Intraday Fast EMA Momentum Engine for Test 2 Profile"""
         if df_5m.empty or len(df_5m) < 21:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
@@ -578,6 +573,12 @@ def get_directives():
             diff = (st['tranches'] / 5.0 * total_equity) - vo
 
             if sh > 0: owned.append({'t': t, 'n': engine.asset_names.get(t, t), 's': st['score'], 'vo': vo, 'sh': sh, 'cps': cps, 'p': cur})
+
+            # --- ALGORITHMIC COOLDOWN FIX ---
+            last_trade_time = next((h['timestamp'] for h in ud.get('history', []) if h['ticker'] == t), 0)
+            is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
+            if is_auto and (int(time.time()) - last_trade_time < 300):
+                continue  # Prevent whipsaw: Lock the ticker for 5 minutes after a trade
 
             if st['action_main'] == 'SELL' or st['tranches'] == 0:
                 if sh > 0 and vo >= MIN_BUY_VALUE:
