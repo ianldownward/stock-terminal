@@ -18,12 +18,14 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
     
     if cache_key in YF_CACHE:
         cached_time, df = YF_CACHE[cache_key]
-        if now - cached_time < 15:  # Serve from RAM if less than 15 seconds old
+        # Never serve an empty dataframe from cache, force retry
+        if not df.empty and now - cached_time < 15:  
             return df.copy()
             
     try:
         df = yf.Ticker(ticker).history(period=period, interval=interval)
-        YF_CACHE[cache_key] = (now, df)
+        if not df.empty:
+            YF_CACHE[cache_key] = (now, df)
         return df.copy()
     except:
         return pd.DataFrame()
@@ -285,7 +287,7 @@ class PortfolioManager:
             return t, hd[t].get('manual_val', 0.0)
 
         total = 0.0
-        with ThreadPoolExecutor(max_workers=min(10, max(1, len(active_tickers)))) as ex:
+        with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_tickers)))) as ex:
             for t, val in ex.map(fetch_val, active_tickers):
                 total += val
                 if t in hd:
@@ -396,6 +398,11 @@ class MarketScoringEngine:
                 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
 
     def score_equity(self, df, current_price):
+        if df.empty or 'Close' not in df:
+            return {'type': 'Global Equity', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
+                    'reason': 'Awaiting data.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '', 'action_color': '#8a8a9e'}
+            
         dma = df['Close'].tail(200).mean() if len(df) >= 200 else df['Close'].mean()
         implied_discount = ((dma - current_price) / dma) * 100.0
         delta = df['Close'].diff()
@@ -563,7 +570,7 @@ def get_directives():
     def fetch_data_thread(tick): 
         return tick, fetch_yf_data(tick, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         
-    with ThreadPoolExecutor(max_workers=min(10, max(1, len(scan_list)))) as ex:
+    with ThreadPoolExecutor(max_workers=min(5, max(1, len(scan_list)))) as ex:
         for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
     for t in scan_list:
@@ -697,7 +704,7 @@ def get_data():
                 return tick, fetch_yf_data(tick, req_p, req_i)
             
             dfs = {}
-            with ThreadPoolExecutor(max_workers=min(10, max(1, len(wl)))) as ex:
+            with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
                 for tick, df_t in ex.map(fetch_t, wl):
                     dfs[tick] = df_t
             
