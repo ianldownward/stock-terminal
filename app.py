@@ -53,8 +53,12 @@ class PortfolioManager:
         self._ensure_default_user()
 
     def default_user_state(self, username=""):
+        if username.strip().lower() == 'test 2':
+            wl = ['NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL']
+        else:
+            wl = []
         return {
-            'master_budget': 10000.0, 'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [],
+            'master_budget': 10000.0, 'watchlist': wl, 'initial_positions': {}, 'holdings': {}, 'history': [],
             'notified_signals': {}, 'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
@@ -526,7 +530,6 @@ def get_directives():
     is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
     
     if is_momentum:
-        # Dual-Market Candidate Pool: UK Leaders (08:00 - 16:30 BST) + US Leaders (14:30 - 21:00 BST)
         scan_list = [
             'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L',
             'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR'
@@ -1343,7 +1346,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         function updateIntervals() {
             let p = document.getElementById('periodSelect').value, s = document.getElementById('intervalSelect'), ci = s.value; s.innerHTML = '';
             let o = (p === '1d' || p === '5d') ? [['1m','1 Min'],['5m','5 Mins'],['15m','15 Mins'],['30m','30 Mins'],['1h','1 Hour']] : (p === '1mo' ? [['5m','5 Mins'],['15m','15 Mins'],['30m','30 Mins'],['1h','1 Hour'],['1d','1 Day']] : [['1d','1 Day'],['1wk','1 Week'],['1mo','1 Month']]);
-            o.forEach(x => { let opt = document.value == x[0]; opt.text = x[1]; s.appendChild(opt); });
+            o.forEach(x => { let opt = document.createElement('option'); opt.value = x[0]; opt.text = x[1]; s.appendChild(opt); });
             if (Array.from(s.options).some(x => x.value === ci)) s.value = ci; else if (p === '1mo' || p === '6mo') s.value = '1d';
         }
 
