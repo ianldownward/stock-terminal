@@ -1037,13 +1037,16 @@ HTML_FRONTEND = """<!DOCTYPE html>
     </div>
     <div class="main-content">
         <div class="top-nav">
-            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Show Trades: ON</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay: OFF</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
+            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnDraw" class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="toggleDrawMode()">✏️ Draw Line</button><button id="btnToggleManual" class="btn-control active" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="toggleManualLines()">Manual: ON</button><button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button><button id="btnToggleAuto" class="btn-control" style="border-color:#b388ff; color:#b388ff;" onclick="toggleAutoLines()">Auto S/R: OFF</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
             <div class="top-nav-row2">
                 <div class="controls">
                     <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d">1 Day</option><option value="5d">5 Days</option><option value="1mo" selected>1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
                     <label>Interval:</label><select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
                     <label>Style:</label><select id="styleSelect" onchange="saveUISettings(); renderChart();"><option value="candlestick">Candlestick</option><option value="heikin-ashi">Heikin-Ashi</option><option value="line">Line</option><option value="area">Area</option><option value="bar">Bar</option></select>
                     <label>Auto Update:</label><select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();"><option value="0">Manual</option><option value="5000">5 secs</option><option value="10000" selected>10 secs</option><option value="30000">30 secs</option><option value="60000">1 min</option><option value="300000">5 mins</option></select>
+                    <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades: ON</button>
+                    <button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math: OFF</button>
+                    <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
                 </div>
             </div>
         </div>
@@ -1083,6 +1086,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null; let isSettingsLoaded = false;
 
+        // Custom Drawing Engine State
+        let manualLines = {}; 
+        let isDrawing = false; 
+        let currentLine = null;
+        let showManual = true; 
+        let showAuto = false;
+
         function toggleFullScreen() {
             let elem = document.documentElement;
             if (!document.fullscreenElement && !document.webkitFullscreenElement) {
@@ -1105,17 +1115,59 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (btn) { btn.innerText = document.webkitFullscreenElement ? "Exit Full Screen" : "Full Screen"; }
         });
 
+        function toggleDrawMode() {
+            if (currentTicker === 'ALL_SHARES') { alert("Please select a single stock to draw lines."); return; }
+            isDrawing = !isDrawing;
+            currentLine = null;
+            let btn = document.getElementById('btnDraw');
+            btn.innerText = isDrawing ? "Cancel Drawing" : "✏️ Draw Line";
+            btn.style.backgroundColor = isDrawing ? "#ffeb3b" : "#0f1115";
+            btn.style.color = isDrawing ? "#000" : "#ffeb3b";
+            drawCanvasOverlay();
+        }
+
+        function toggleManualLines() {
+            showManual = !showManual;
+            let btn = document.getElementById('btnToggleManual');
+            btn.innerText = showManual ? "Manual: ON" : "Manual: OFF";
+            btn.style.backgroundColor = showManual ? "#ffeb3b" : "#0f1115";
+            btn.style.color = showManual ? "#000" : "#ffeb3b";
+            drawCanvasOverlay();
+        }
+
+        function clearManualLines() {
+            if (currentTicker && manualLines[currentTicker]) {
+                manualLines[currentTicker] = [];
+                currentLine = null;
+                isDrawing = false;
+                let btn = document.getElementById('btnDraw');
+                btn.innerText = "✏️ Draw Line";
+                btn.style.backgroundColor = "#0f1115";
+                btn.style.color = "#ffeb3b";
+                drawCanvasOverlay();
+            }
+        }
+
+        function toggleAutoLines() {
+            showAuto = !showAuto;
+            let btn = document.getElementById('btnToggleAuto');
+            btn.innerText = showAuto ? "Auto S/R: ON" : "Auto S/R: OFF";
+            btn.style.backgroundColor = showAuto ? "#b388ff" : "#0f1115";
+            btn.style.color = showAuto ? "#000" : "#b388ff";
+            drawCanvasOverlay();
+        }
+
         function toggleShowTrades() {
             showTrades = !showTrades;
             let btn = document.getElementById('btnShowTrades');
-            if(btn){ btn.innerText = showTrades ? "Show Trades: ON" : "Show Trades: OFF"; showTrades ? btn.classList.add('active') : btn.classList.remove('active'); }
+            if(btn){ btn.innerText = showTrades ? "Trades: ON" : "Trades: OFF"; showTrades ? btn.classList.add('active') : btn.classList.remove('active'); }
             drawCanvasOverlay();
         }
 
         function toggleShowMath() {
             showMath = !showMath;
             let btn = document.getElementById('btnShowMath');
-            if(btn){ btn.innerText = showMath ? "Math Overlay: ON" : "Math Overlay: OFF"; showMath ? btn.classList.add('active') : btn.classList.remove('active'); }
+            if(btn){ btn.innerText = showMath ? "Math: ON" : "Math: OFF"; showMath ? btn.classList.add('active') : btn.classList.remove('active'); }
             renderChart();
         }
 
@@ -1429,23 +1481,92 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 rightPriceScale: { visible: true, borderColor: '#262b36' },
                 leftPriceScale: { visible: false, borderColor: '#262b36' }
             });
-            tvChart.timeScale().subscribeVisibleTimeRangeChange(drawCanvasOverlay); tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
+            
+            tvChart.timeScale().subscribeVisibleTimeRangeChange(drawCanvasOverlay); 
+            tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
             window.addEventListener('resize', () => { tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); drawCanvasOverlay(); });
+
+            // DRAWING ENGINE SUBSCRIBERS
+            tvChart.subscribeClick((param) => {
+                if (!isDrawing || !param.point || currentTicker === 'ALL_SHARES') return;
+                let logical = tvChart.timeScale().coordinateToLogical(param.point.x);
+                if (!tvSeries) return;
+                let price = tvSeries.coordinateToPrice(param.point.y);
+                
+                if (!currentLine) {
+                    currentLine = { l1: logical, p1: price, l2: logical, p2: price };
+                } else {
+                    currentLine.l2 = logical;
+                    currentLine.p2 = price;
+                    if (!manualLines[currentTicker]) manualLines[currentTicker] = [];
+                    manualLines[currentTicker].push({...currentLine});
+                    currentLine = null;
+                    toggleDrawMode(); // auto exit drawing mode after completing line
+                    drawCanvasOverlay();
+                }
+            });
+
+            tvChart.subscribeCrosshairMove((param) => {
+                if (isDrawing && currentLine && param.point && currentTicker !== 'ALL_SHARES' && tvSeries) {
+                    currentLine.l2 = tvChart.timeScale().coordinateToLogical(param.point.x);
+                    currentLine.p2 = tvSeries.coordinateToPrice(param.point.y);
+                    drawCanvasOverlay();
+                }
+            });
         }
 
         function drawCanvasOverlay() {
             let cv = document.getElementById('chartCanvas'); if (!cv || !tvChart) return;
             let c = document.getElementById('tvChart'); cv.width = c.clientWidth; cv.height = c.clientHeight;
+            let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
             
-            if (currentTicker === 'ALL_SHARES') {
-                let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
-                return; 
+            if (currentTicker === 'ALL_SHARES') return; 
+
+            // 1. AUTOMATED SUPPORT/RESISTANCE LINES (PURPLE)
+            if (showAuto && masterData && masterData.length > 0 && tvSeries) {
+                let recent = masterData.slice(-100); 
+                let high = Math.max(...recent.map(d => d.high || d.close || d.value));
+                let low = Math.min(...recent.map(d => d.low || d.close || d.value));
+                let yH = tvSeries.priceToCoordinate(high);
+                let yL = tvSeries.priceToCoordinate(low);
+                
+                ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#b388ff'; ctx.lineWidth = 1;
+                if(yH !== null) { ctx.moveTo(0, yH); ctx.lineTo(cv.width, yH); }
+                if(yL !== null) { ctx.moveTo(0, yL); ctx.lineTo(cv.width, yL); }
+                ctx.stroke();
+                
+                ctx.fillStyle = '#b388ff'; ctx.font = '10px sans-serif';
+                if(yH !== null) ctx.fillText('Auto Res', 10, yH - 5);
+                if(yL !== null) ctx.fillText('Auto Sup', 10, yL - 5);
+            }
+
+            // 2. MANUAL LINES (YELLOW)
+            if (showManual && tvSeries) {
+                let lines = manualLines[currentTicker] || [];
+                ctx.setLineDash([]); ctx.strokeStyle = '#ffeb3b'; ctx.lineWidth = 2;
+                lines.forEach(l => {
+                    let x1 = tvChart.timeScale().logicalToCoordinate(l.l1);
+                    let y1 = tvSeries.priceToCoordinate(l.p1);
+                    let x2 = tvChart.timeScale().logicalToCoordinate(l.l2);
+                    let y2 = tvSeries.priceToCoordinate(l.p2);
+                    if (x1 !== null && y1 !== null && x2 !== null && y2 !== null) {
+                        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+                    }
+                });
+                
+                if (isDrawing && currentLine) {
+                    let x1 = tvChart.timeScale().logicalToCoordinate(currentLine.l1);
+                    let y1 = tvSeries.priceToCoordinate(currentLine.p1);
+                    let x2 = tvChart.timeScale().logicalToCoordinate(currentLine.l2);
+                    let y2 = tvSeries.priceToCoordinate(currentLine.p2);
+                    if (x1 !== null && y1 !== null && x2 !== null && y2 !== null) {
+                        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+                    }
+                }
             }
             
-            if (!tvSeries || !showTrades || !globalPortfolioData || !globalPortfolioData.history || !masterData || !masterData.length) {
-                let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
-                return;
-            }
+            // 3. TRADE MARKERS (GREEN/RED DASHES)
+            if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !masterData || !masterData.length) return;
             
             let th = globalPortfolioData.history.filter(h => h.ticker === currentTicker); if (!th.length) return;
             let pm = masterData.map(d => ({ rawTime: d.time, ts: typeof d.time === 'number' ? d.time : Math.floor(new Date(d.time + 'T00:00:00Z').getTime() / 1000) }));
@@ -1460,7 +1581,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 if (x !== null && x >= 0 && x <= cv.width) { let rx = Math.round(x); if (!g[rx]) g[rx] = []; g[rx].push(i); }
             });
 
-            let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
             Object.keys(g).forEach(xs => {
                 let x = parseFloat(xs), itms = g[xs];
                 ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.moveTo(x, 0); ctx.lineTo(x, cv.height - 25); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
