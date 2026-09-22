@@ -299,7 +299,8 @@ class MarketScoringEngine:
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
             'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
             'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy',
-            'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca'
+            'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
+            'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
 
     def score_momentum(self, df_5m, current_price):
@@ -667,7 +668,8 @@ def get_recommendations():
 def get_data():
     portfolio_store.reload()
     ud = portfolio_store.user_data()
-    wl, t = ud.get('watchlist', []), request.args.get('t', '').upper()
+    wl = ud.get('watchlist', [])
+    t = request.args.get('t', '').upper().strip()
     is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
     if not t: t = 'ALL_SHARES'
 
@@ -731,18 +733,17 @@ def get_data():
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
 
-    if not t or t not in wl:
-        return jsonify({'ohlc': [], 'name': 'No Asset Loaded', 'portfolio': ud, 'metrics': {
-            'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
-            'status': 'Watchlist Empty', 'color': '#787e8e', 'reason': 'Add a stock to your watchlist.',
-            'action_main': 'NO ASSET', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
-            'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc,
-            'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
-        }})
-
     try:
         df = fetch_yf_data(t, req_p, req_i)
-        if df.empty: raise Exception("No data")
+        if df.empty:
+            return jsonify({'ohlc': [], 'name': f'{t} Data Loading...', 'portfolio': ud, 'metrics': {
+                'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
+                'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.',
+                'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
+                'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc,
+                'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
+            }})
+
         if df.index.tz is not None: df.index = df.index.tz_convert('UTC')
         
         data = [{'time': i.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 'open': round(r['Open'],2), 'high': round(r['High'],2), 'low': round(r['Low'],2), 'close': round(r['Close'],2)} for i, r in df.iterrows()]
@@ -772,39 +773,39 @@ def get_data():
             ud['holdings'][t] = {'shares': sh_own, 'manual_val': val_own}
         else: ud.get('holdings', {}).pop(t, None)
 
-        # --- CALCULATE THE MATHEMATICAL OVERLAY LINE ---
         mathLine = []
-        if is_momentum:
-            ema21_series = df['Close'].ewm(span=21, adjust=False).mean()
-            ema21_dict = {}
-            for idx, val in ema21_series.items():
-                ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
-                ema21_dict[ts] = val
-            for d in data:
-                if d['time'] in ema21_dict:
-                    mathLine.append({'time': d['time'], 'value': round(ema21_dict[d['time']], 2)})
-        else:
-            if t in engine.nav_bases:
-                target = engine.nav_bases[t]
+        try:
+            if is_momentum:
+                ema21_series = df['Close'].ewm(span=21, adjust=False).mean()
+                ema21_dict = {}
+                for idx, val in ema21_series.items():
+                    ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
+                    ema21_dict[ts] = val
                 for d in data:
-                    disc = ((target - d['close']) / target) * 100.0
-                    mathLine.append({'time': d['time'], 'value': round(disc, 2)})
+                    if d['time'] in ema21_dict:
+                        mathLine.append({'time': d['time'], 'value': round(ema21_dict[d['time']], 2)})
             else:
-                df_1y = fetch_yf_data(t, "1y", "1d")
-                if not df_1y.empty:
-                    sma200 = df_1y['Close'].rolling(200).mean()
-                    if sma200.isna().all():
-                        sma200 = df_1y['Close'].expanding().mean()
-                    sma_dict = {idx.strftime('%Y-%m-%d'): val for idx, val in sma200.items() if pd.notna(val)}
-                    last_valid = sma200.dropna().iloc[-1] if not sma200.dropna().empty else last_p
+                if t in engine.nav_bases:
+                    target = engine.nav_bases[t]
+                    for d in data:
+                        disc = ((target - d['close']) / target) * 100.0
+                        mathLine.append({'time': d['time'], 'value': round(disc, 2)})
                 else:
-                    sma_dict, last_valid = {}, last_p
-                    
-                for d in data:
-                    time_str = d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d')
-                    val = sma_dict.get(time_str, last_valid)
-                    disc = ((val - d['close']) / val) * 100.0 if val > 0 else 0
-                    mathLine.append({'time': d['time'], 'value': round(disc, 2)})
+                    df_1y = fetch_yf_data(t, "1y", "1d")
+                    if not df_1y.empty:
+                        sma200 = df_1y['Close'].rolling(200, min_periods=1).mean()
+                        sma_dict = {idx.strftime('%Y-%m-%d'): val for idx, val in sma200.items() if pd.notna(val)}
+                        last_valid = sma200.dropna().iloc[-1] if not sma200.dropna().empty else last_p
+                    else:
+                        sma_dict, last_valid = {}, last_p
+                        
+                    for d in data:
+                        time_str = d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d')
+                        val = sma_dict.get(time_str, last_valid)
+                        disc = ((val - d['close']) / val) * 100.0 if val > 0 else 0
+                        mathLine.append({'time': d['time'], 'value': round(disc, 2)})
+        except:
+            mathLine = []
 
         return jsonify({'ohlc': data, 'mathLine': mathLine, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
@@ -1492,8 +1493,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     setupAutoRefresh(); isSettingsLoaded = true;
                 }
                 renderWatchlist(globalPortfolioData.watchlist);
-                if (!currentTicker && globalPortfolioData.watchlist && globalPortfolioData.watchlist.length > 0) { currentTicker = 'ALL_SHARES'; fetchData(silent); return; }
                 
+                let activeElem = document.querySelector(`li.watchlist-item[data-symbol="${currentTicker}"]`);
+                if (activeElem) {
+                    document.querySelectorAll('.watchlist-item').forEach(x => x.classList.remove('active'));
+                    activeElem.classList.add('active');
+                }
+
                 document.getElementById('activeTitle').innerText = p.name; currentAnomalyReason = p.metrics.reason;
                 currentLivePrice = p.metrics.price; currentActiveTranches = p.metrics.tranches; currentSharesOwned = p.metrics.shares_owned; currentValOwned = p.metrics.value_owned;
                 document.getElementById('masterBudgetInput').value = p.metrics.master_budget;
@@ -1512,7 +1518,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (!silent) document.getElementById('loader').style.display = 'none';
         }
 
-        function selectStock(t, e) { currentTicker = t; document.querySelectorAll('.watchlist-item').forEach(x => x.classList.remove('active')); if(e) e.classList.add('active'); fetchData(false); }
+        function selectStock(t, e) { 
+            currentTicker = t; 
+            document.querySelectorAll('.watchlist-item').forEach(x => x.classList.remove('active')); 
+            let activeElem = e || document.querySelector(`li.watchlist-item[data-symbol="${t}"]`);
+            if (activeElem) activeElem.classList.add('active'); 
+            fetchData(false); 
+        }
 
         document.getElementById('watchlistUI').addEventListener('click', async e => {
             let li = e.target.closest('li.watchlist-item'); if (!li) return;
