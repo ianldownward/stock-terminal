@@ -574,11 +574,10 @@ def get_directives():
 
             if sh > 0: owned.append({'t': t, 'n': engine.asset_names.get(t, t), 's': st['score'], 'vo': vo, 'sh': sh, 'cps': cps, 'p': cur})
 
-            # --- ALGORITHMIC COOLDOWN FIX ---
             last_trade_time = next((h['timestamp'] for h in ud.get('history', []) if h['ticker'] == t), 0)
             is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
             if is_auto and (int(time.time()) - last_trade_time < 300):
-                continue  # Prevent whipsaw: Lock the ticker for 5 minutes after a trade
+                continue
 
             if st['action_main'] == 'SELL' or st['tranches'] == 0:
                 if sh > 0 and vo >= MIN_BUY_VALUE:
@@ -788,7 +787,8 @@ def get_data():
             if t in engine.nav_bases:
                 target = engine.nav_bases[t]
                 for d in data:
-                    mathLine.append({'time': d['time'], 'value': target})
+                    disc = ((target - d['close']) / target) * 100.0
+                    mathLine.append({'time': d['time'], 'value': round(disc, 2)})
             else:
                 df_1y = fetch_yf_data(t, "1y", "1d")
                 if not df_1y.empty:
@@ -803,7 +803,8 @@ def get_data():
                 for d in data:
                     time_str = d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d')
                     val = sma_dict.get(time_str, last_valid)
-                    mathLine.append({'time': d['time'], 'value': round(val, 2)})
+                    disc = ((val - d['close']) / val) * 100.0 if val > 0 else 0
+                    mathLine.append({'time': d['time'], 'value': round(disc, 2)})
 
         return jsonify({'ohlc': data, 'mathLine': mathLine, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
@@ -1330,7 +1331,15 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         function initChart() {
             let c = document.getElementById('tvChart');
-            tvChart = LightweightCharts.createChart(c, { width: c.clientWidth, height: c.clientHeight || 450, layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, crosshair: { mode: 0 }, timeScale: { borderColor: '#262b36', timeVisible: true }});
+            tvChart = LightweightCharts.createChart(c, { 
+                width: c.clientWidth, height: c.clientHeight || 450, 
+                layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, 
+                grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, 
+                crosshair: { mode: 0 }, 
+                timeScale: { borderColor: '#262b36', timeVisible: true },
+                rightPriceScale: { visible: true, borderColor: '#262b36' },
+                leftPriceScale: { visible: false, borderColor: '#262b36' }
+            });
             tvChart.timeScale().subscribeVisibleTimeRangeChange(drawCanvasOverlay); tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
             window.addEventListener('resize', () => { tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); drawCanvasOverlay(); });
         }
@@ -1413,8 +1422,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
             }
             
             let s = document.getElementById('styleSelect').value;
+            let isMomentum = document.getElementById('userSelect').value.trim().toLowerCase() === 'test 2';
 
             if (currentTicker === 'ALL_SHARES') {
+                tvChart.applyOptions({ leftPriceScale: { visible: false } });
                 masterData.forEach(line => {
                     let sr = tvChart.addLineSeries({ color: line.color, lineWidth: 2 });
                     sr.setData(line.data);
@@ -1446,8 +1457,16 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 }
                 
                 if (showMath && masterMathLine && masterMathLine.length > 0) {
-                    tvMathSeries = tvChart.addLineSeries({ color: '#ff9900', lineWidth: 2, lineStyle: 1 });
+                    tvChart.applyOptions({ leftPriceScale: { visible: !isMomentum } });
+                    tvMathSeries = tvChart.addLineSeries({ 
+                        color: '#ff9900', 
+                        lineWidth: 2, 
+                        lineStyle: 1,
+                        priceScaleId: isMomentum ? 'right' : 'left'
+                    });
                     tvMathSeries.setData(masterMathLine);
+                } else {
+                    tvChart.applyOptions({ leftPriceScale: { visible: false } });
                 }
             }
             setTimeout(drawCanvasOverlay, 50);
