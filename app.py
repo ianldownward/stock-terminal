@@ -224,7 +224,7 @@ class PortfolioManager:
         return curr_tot
 
     def execute_trade(self, ticker, action_type, shares, price):
-        if not ticker: return None
+        if not ticker or shares <= 0: return None
         ud = self.user_data()
         shares, price = int(shares), round(float(price), 2)
         cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
@@ -305,7 +305,7 @@ class MarketScoringEngine:
             'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
 
-    def score_momentum(self, df_5m, current_price):
+    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0):
         if df_5m.empty or len(df_5m) < 21:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
@@ -317,34 +317,49 @@ class MarketScoringEngine:
         delta = df_5m['Close'].diff()
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
+        
+        pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
-        if ema9 > ema21 and rsi < 70:
-            buy_score, tranches = 80, 4
-            action_main, action_sub = "BUY", f"(Tranche {tranches})"
+        # --- PROFIT TARGET / STOP LOSS FOR HELD POSITIONS ---
+        if avg_buy_price > 0:
+            pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+            if pnl_pct >= 1.0:  # +1% Profit Target
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%",
+                        'reason': f"PROFIT TARGET REACHED (+{pnl_pct:.2f}%). Locking in gains.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Take Profit', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Take Profit)', 'action_color': '#00c853'}
+            elif pnl_pct <= -0.5:  # -0.5% Stop Loss
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                        'reason': f"STOP LOSS TRIPPED ({pnl_pct:.2f}%). Cutting losses immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00'}
+
+        # --- ENTRY CONDITIONS ---
+        if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
+            buy_score = min(100, round(50 + pct_change_5d * 10 + (65 - rsi)))
+            tranches = 1
+            action_main, action_sub = "BUY", "(Strong Momentum Surge)"
             status, color = "Fast Momentum Surge", "#00c853"
-            reason = f"INTRADAY MOMENTUM: 9-EMA ({ema9:.2f}) crossed above 21-EMA ({ema21:.2f}) with RSI at {rsi:.1f}. High-probability upward surge."
+            reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}, 5d growth +{pct_change_5d:.2f}%."
             action_color = "#00c853"
-        elif ema9 < ema21 or rsi >= 70:
+        elif ema9 < ema21 or rsi >= 65:
             buy_score, tranches = 10, 0
             action_main, action_sub = "SELL", "(Exit Trend)"
             status, color = "Momentum Fading", "#ff3d00"
-            reason = f"MOMENTUM EXHAUSTION: 9-EMA ({ema9:.2f}) dropped below 21-EMA ({ema21:.2f}) or RSI overbought ({rsi:.1f}). Dumping position to secure cash."
+            reason = f"MOMENTUM EXHAUSTION: 9-EMA < 21-EMA or RSI overbought ({rsi:.1f}). Dumps position to secure cash."
             action_color = "#ff3d00"
         else:
-            buy_score, tranches = 40, 2
-            action_main, action_sub = "HOLD / WAIT", f"(Tranche {tranches})"
+            buy_score, tranches = 40, 0
+            action_main, action_sub = "HOLD / WAIT", "(Consolidating)"
             status, color = "Neutral Flow", "#8a8a9e"
-            reason = f"Intraday consolidation. 9-EMA ({ema9:.2f}) near 21-EMA ({ema21:.2f})."
+            reason = f"Intraday consolidation. 9-EMA near 21-EMA."
             action_color = "#8a8a9e"
 
-        return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{((ema9-current_price)/current_price*100):.2f}%",
+        return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%",
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
                 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
 
     def score_nav_asset(self, ticker, current_price, volume_ratio):
         nav = self.nav_bases.get(ticker, current_price * 1.10)
         implied_discount = ((nav - current_price) / nav) * 100.0
-        
         buy_score = min(max(round(min(max((implied_discount/20.0)*80.0, 0), 80) + min(max((volume_ratio/2.0)*20.0, 0), 20), 2), 0), 100)
         tranches = 0 if implied_discount <= 0 else min(5, int(buy_score // 20) + 1)
             
@@ -361,16 +376,16 @@ class MarketScoringEngine:
 
         if macro_triggered:
             action_main, action_sub, status, color, tranches = "SELL", "(Sentinel Active)", "MACRO SENTINEL TRIPPED", "#ff3d00", 0
-            reason = f"EMERGENCY STOP: Broad sector panic detected. Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Liquidating to 0 tranches to protect capital."
+            reason = f"EMERGENCY STOP: Broad sector panic detected. Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%)."
             action_color = "#ff3d00"
         elif implied_discount <= 5.0 and implied_discount > -50.0:
             action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", "Target Reached", "#ff3d00", 0
-            reason = f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%. Algorithm dictates taking profits."
+            reason = f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%."
             action_color = "#ff3d00"
         elif buy_score >= 40:
             action_main, action_sub = "BUY", f"(Tranche {tranches})"
             status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
-            reason = f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav}). Scaling into Tranche {tranches}."
+            reason = f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav})."
             action_color = "#00c853"
         else:
             action_main, action_sub = "HOLD / WAIT", f"(Tranche {tranches})"
@@ -385,7 +400,6 @@ class MarketScoringEngine:
     def score_equity(self, df, current_price):
         dma = df['Close'].tail(200).mean() if len(df) >= 200 else df['Close'].mean()
         implied_discount = ((dma - current_price) / dma) * 100.0
-        
         delta = df['Close'].diff()
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1]))
@@ -399,7 +413,7 @@ class MarketScoringEngine:
         if buy_score >= 40:
             action_main, action_sub = "BUY", f"(Tranche {tranches})"
             status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
-            reason = f"Value Anomaly. Trading at {implied_discount:.1f}% discount to 200d-DMA (RSI: {rsi:.1f}). Scaling into Tranche {tranches}."
+            reason = f"Value Anomaly. Trading at {implied_discount:.1f}% discount to 200d-DMA."
             action_color = "#00c853"
         elif implied_discount <= -10.0:
             action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", 'Overextended (High)', '#ff3d00', 0
@@ -407,7 +421,7 @@ class MarketScoringEngine:
             action_color = "#ff3d00"
         else:
             action_main, action_sub, status, color = "HOLD / WAIT", f"(Tranche {tranches})", 'Fair Value', '#8a8a9e'
-            reason = f"No Value Anomaly. Near 200d-DMA. Active Tranches: {tranches}."
+            reason = f"No Value Anomaly. Near 200d-DMA."
             action_color = "#8a8a9e"
             
         return {'type': 'Global Equity', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 
@@ -544,7 +558,7 @@ def get_directives():
     total_equity = cash_balance + portfolio_store.get_total_portfolio_value()
 
     if 'notified_signals' not in ud: ud['notified_signals'] = {}
-    dirs, buys, owned, tot_buy = [], [], [], 0.0
+    dirs, buys, owned = [], [], []
     MIN_BUY_VALUE = 20.0
 
     dfs = {}
@@ -561,74 +575,62 @@ def get_directives():
             df = dfs.get(t)
             if df is None or df.empty: continue
             cur = df['Close'].iloc[-1]
-            
+            sh = portfolio_store.get_shares(t)
+            cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
+            vo = sh * cps
+
+            # Calculate average buy price for stop loss / profit target
+            avg_buy_p = 0.0
+            if sh > 0:
+                t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
+                if t_buys: avg_buy_p = t_buys[0]['price']
+
             if is_momentum:
-                st = engine.score_momentum(df, cur)
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p)
             else:
                 avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
                 v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
                 st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
-            
-            sh = portfolio_store.get_shares(t)
-            cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
-            vo = sh * cps
-            
-            diff = (st['tranches'] / 5.0 * total_equity) - vo
 
-            if sh > 0: owned.append({'t': t, 'n': engine.asset_names.get(t, t), 's': st['score'], 'vo': vo, 'sh': sh, 'cps': cps, 'p': cur})
-
+            # --- 5-MINUTE COOLDOWN LOCK ---
             last_trade_time = next((h['timestamp'] for h in ud.get('history', []) if h['ticker'] == t), 0)
             is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
             if is_auto and (int(time.time()) - last_trade_time < 300):
                 continue
 
-            if st['action_main'] == 'SELL' or st['tranches'] == 0:
+            if st['action_main'] == 'SELL':
                 if sh > 0 and vo >= MIN_BUY_VALUE:
                     dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
-                    rem_cash += vo 
-                    owned = [o for o in owned if o['t'] != t] 
-            elif diff <= -MIN_BUY_VALUE and cps > 0:
-                trim_sh = int(abs(diff) // cps)
-                if trim_sh > 0:
-                    amt = round(trim_sh * cps, 2)
-                    dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': trim_sh, 'price': cur, 'amount': amt})
-                    rem_cash += amt
-                    for o in owned:
-                        if o['t'] == t:
-                            o['vo'] -= amt
-                            o['sh'] -= trim_sh
-            elif diff >= MIN_BUY_VALUE and st['tranches'] > 0 and cps > 0:
-                buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'diff': diff, 'cps': cps, 'p': cur, 's': st['score']})
-                tot_buy += diff
+            elif st['action_main'] == 'BUY' and rem_cash >= MIN_BUY_VALUE:
+                buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
         except: pass
 
-    if tot_buy > rem_cash and buys and owned:
-        shortfall = tot_buy - rem_cash
-        owned.sort(key=lambda x: x['s']) 
-        max_buy_score = max(b['s'] for b in buys) 
+    # --- RELATIVE STRENGTH RANKING: Buy ONLY top 2 surged stocks ---
+    if buys and rem_cash >= MIN_BUY_VALUE:
+        buys.sort(key=lambda x: x['s'], reverse=True)
+        top_buys = buys[:2]  # Focus budget exclusively on the top 2 momentum leaders
+        per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.20)  # Max 20% per trade (£1,000)
         
-        for o in owned:
-            if shortfall <= 0: break
-            if max_buy_score - o['s'] >= 20.0:
-                sell_v = min(o['vo'], shortfall)
-                sell_sh = int(sell_v // o['cps'])
-                if sell_sh > 0 and (sell_sh * o['cps']) >= MIN_BUY_VALUE:
-                    amt = round(sell_sh * o['cps'], 2)
-                    dirs.append({'ticker': o['t'], 'name': o['n'], 'action': 'SELL', 'shares': sell_sh, 'price': o['p'], 'amount': amt})
-                    rem_cash += amt
-                    shortfall -= amt
-
-    if tot_buy > 0:
-        ratio = min(1.0, rem_cash / tot_buy) if rem_cash > 0 else 0.0
-        for b in buys:
-            bs = int((b['diff'] * ratio) // b['cps'])
+        for b in top_buys:
+            bs = int(per_stock_budget // b['cps'])
             amt = round(bs * b['cps'], 2)
-            if bs > 0 and amt >= MIN_BUY_VALUE:
+            if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
+    # --- HARD BUDGET EXECUTION GUARD ---
     is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
     if is_auto and dirs:
-        for d in dirs: portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
+        for d in dirs:
+            if d['action'] == 'BUY':
+                curr_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0])
+                curr_cash = ud['master_budget'] - curr_cb
+                if curr_cash < MIN_BUY_VALUE:
+                    continue  # HARD STOP: Never allow cash to drop below zero!
+                if d['amount'] > curr_cash:
+                    d['shares'] = int(curr_cash // (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']))
+                    d['amount'] = round(d['shares'] * (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']), 2)
+            if d['shares'] > 0:
+                portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
         dirs = [] 
         
     if is_momentum:
@@ -755,15 +757,20 @@ def get_data():
         last_p = round(data[-1]['close'], 2) if data else 0
 
         engine = MarketScoringEngine()
-        if is_momentum:
-            st = engine.score_momentum(df, last_p)
-        else:
-            av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
-            st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
-
         sh_own = portfolio_store.get_shares(t)
         cps = last_p / 100.0 if t.endswith('.L') and last_p > 100 else last_p
         val_own = round(sh_own * cps, 2)
+
+        avg_buy_p = 0.0
+        if sh_own > 0:
+            t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
+            if t_buys: avg_buy_p = t_buys[0]['price']
+
+        if is_momentum:
+            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p)
+        else:
+            av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
+            st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
 
         cb = ud.get('initial_positions', {}).get(t, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==t)
         if sh_own > 0 and cb > 0:
@@ -1484,9 +1491,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let p = await res.json(); 
                 
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
-                masterMathLine = p.mathLine || [];
+                masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 
-                globalPortfolioData = p.portfolio;
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
                     let s = globalPortfolioData.settings;
                     if (s.period) document.getElementById('periodSelect').value = s.period; updateIntervals();
