@@ -64,7 +64,7 @@ class PortfolioManager:
 
     def default_user_state(self, username=""):
         return {
-            'master_budget': 5000.0 if username in ['Test', 'Test 2', 'Test 3'] else 10000.0,
+            'master_budget': 5000.0 if 'test' in username.lower() else 10000.0,
             'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [],
             'notified_signals': {}, 'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
@@ -105,23 +105,25 @@ class PortfolioManager:
 
     def _ensure_default_user(self):
         try:
+            default_profiles = ['Ian', 'Test', 'Test 2', 'Test 3', 'Test 4 - Volatility Breakout', 'Test 5 - Rel Strength Rotator']
             if 'users' not in self.data or not self.data['users']:
-                self.data['users'] = {
-                    'Ian': self.default_user_state('Ian'),
-                    'Test': self.default_user_state('Test'),
-                    'Test 2': self.default_user_state('Test 2'),
-                    'Test 3': self.default_user_state('Test 3')
-                }
+                self.data['users'] = {}
+                for p in default_profiles:
+                    self.data['users'][p] = self.default_user_state(p)
                 self.data['active_user'] = 'Ian'
                 self.save_data(self.data)
             
-            for profile in ['Ian', 'Test', 'Test 2', 'Test 3']:
+            needs_save = False
+            for profile in default_profiles:
                 if profile not in self.data['users']:
                     self.data['users'][profile] = self.default_user_state(profile)
-                    self.save_data(self.data)
+                    needs_save = True
                     
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = list(self.data['users'].keys())[0]
+                needs_save = True
+                
+            if needs_save:
                 self.save_data(self.data)
         except: pass
 
@@ -332,31 +334,34 @@ class MarketScoringEngine:
             'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
 
-    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0):
+    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test 2'):
         if df_5m.empty or len(df_5m) < 21:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Tranche 0)', 'action_color': '#8a8a9e'}
 
-        ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
-        ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
-        
-        delta = df_5m['Close'].diff()
-        rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
-        
+        prof = profile.lower()
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
+
+        # --- DYNAMIC RISK PARAMETERS BY PROFILE ---
+        trail_pct = 0.50
+        hard_pct = -1.00
+        if 'test 4' in prof:
+            trail_pct = 0.75
+            hard_pct = -0.50
+        elif 'test 5' in prof:
+            trail_pct = 1.00
 
         if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
 
-            if drop_from_peak_pct >= 0.5:
+            if drop_from_peak_pct >= trail_pct:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%" if pnl_pct > 0 else f"{pnl_pct:.2f}%",
                         'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff'}
             
-            if pnl_pct <= -1.0: 
+            if pnl_pct <= hard_pct: 
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
                         'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%). Cutting losses immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00'}
@@ -365,19 +370,57 @@ class MarketScoringEngine:
                     'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
 
-        if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
-            buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
-            tranches = 1
-            action_main, action_sub = "BUY", "(Momentum Surge)"
-            status, color = "Fast Momentum Surge", "#00c853"
-            reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
-            action_color = "#00c853"
+        # --- ENTRY CONDITIONS BY PROFILE ---
+        if 'test 4' in prof:
+            sma20 = df_5m['Close'].rolling(20).mean().iloc[-1]
+            std20 = df_5m['Close'].rolling(20).std().iloc[-1]
+            upper_bb = sma20 + (2 * std20)
+            
+            avg_vol = df_5m['Volume'].rolling(20).mean().iloc[-1]
+            cur_vol = df_5m['Volume'].iloc[-1]
+            
+            if current_price > upper_bb and cur_vol > (1.5 * avg_vol):
+                buy_score, tranches = 85, 1
+                action_main, action_sub = "BUY", "(Vol Breakout)"
+                status, color = "Volatility Breakout", "#00c853"
+                reason = f"BREAKOUT DETECTED: Price pierced upper Bollinger Band on 1.5x average volume."
+                action_color = "#00c853"
+            else:
+                buy_score, tranches = 10, 0
+                action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
+                status, color = "Consolidating", "#8a8a9e"
+                reason = f"Awaiting volume breakout above upper Bollinger Band."
+                action_color = "#8a8a9e"
+
+        elif 'test 5' in prof:
+            ret_60m = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0
+            buy_score = min(100, max(0, int(50 + (ret_60m * 15))))
+            if buy_score >= 65:
+                tranches, action_main, action_sub = 1, "BUY", "(Rel Strength)"
+                status, color, action_color = "High Relative Strength", "#00c853", "#00c853"
+                reason = f"STRONG ROTATION: 60-min return is +{ret_60m:.2f}%. Candidate for 100% allocation."
+            else:
+                tranches, action_main, action_sub = 0, "HOLD / WAIT", "(Weak Momentum)"
+                status, color, action_color = "Weak Rotation", "#8a8a9e", "#8a8a9e"
+                reason = f"60-min return is {ret_60m:.2f}%. Awaiting stronger relative performance."
+
         else:
-            buy_score, tranches = 10, 0
-            action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
-            status, color = "No Setup", "#8a8a9e"
-            reason = f"Awaiting fast EMA crossover surge."
-            action_color = "#8a8a9e"
+            ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
+            ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+            delta = df_5m['Close'].diff()
+            rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
+            rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
+            
+            if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
+                buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
+                tranches, action_main, action_sub = 1, "BUY", "(Momentum Surge)"
+                status, color, action_color = "Fast Momentum Surge", "#00c853", "#00c853"
+                reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
+            else:
+                buy_score, tranches = 10, 0
+                action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
+                status, color, action_color = "No Setup", "#8a8a9e", "#8a8a9e"
+                reason = f"Awaiting fast EMA crossover surge."
 
         return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%",
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
@@ -548,14 +591,15 @@ def undo_trade():
 def get_score():
     t = request.args.get('t', '').upper()
     try:
-        is_momentum = portfolio_store.active_username().strip().lower() in ['test 2', 'test 3']
+        active_profile = portfolio_store.active_username().strip().lower()
+        is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5'])
         df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         cur = df['Close'].iloc[-1]
         engine = MarketScoringEngine()
         
         if is_momentum:
-            res = engine.score_momentum(df, cur)
+            res = engine.score_momentum(df, cur, profile=active_profile)
         else:
             avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
             v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
@@ -571,21 +615,12 @@ def get_directives():
     ud = portfolio_store.user_data()
     engine = MarketScoringEngine()
     active_profile = portfolio_store.active_username().strip().lower()
-    is_momentum = active_profile in ['test 2', 'test 3']
+    is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5'])
     
-    if active_profile == 'test 3':
-        # 24/5 Follow-The-Sun Global Candidates Pool
-        scan_list = [
-            'TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L',
-            'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR',
-            'TQQQ', 'SOXL', 'NVDL'
-        ]
-    elif active_profile == 'test 2':
-        scan_list = [
-            'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L',
-            'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR',
-            'TQQQ', 'SOXL', 'NVDL'
-        ]
+    if 'test 3' in active_profile:
+        scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+    elif is_momentum:
+        scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
     else:
         scan_list = ud.get('watchlist', [])
     
@@ -630,14 +665,14 @@ def get_directives():
                     ud['holdings'][t]['high_water'] = highest_p
 
             if is_momentum:
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p)
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile)
             else:
                 avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
                 v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
                 st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
 
             last_trade_time = next((h['timestamp'] for h in ud.get('history', []) if h['ticker'] == t), 0)
-            is_auto = active_profile in ['test', 'test 2', 'test 3']
+            is_auto = any(x in active_profile for x in ['test', 'test 2', 'test 3', 'test 4', 'test 5'])
             if is_auto and (int(time.time()) - last_trade_time < 300):
                 continue
 
@@ -651,7 +686,20 @@ def get_directives():
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
         except: pass
 
-    if is_momentum and buys:
+    # --- TEST 5 RELATIVE STRENGTH ROTATION LOGIC ---
+    if 'test 5' in active_profile and buys:
+        buys.sort(key=lambda x: x['s'], reverse=True)
+        top_candidate = buys[0]
+        
+        held_scores.sort(key=lambda x: x['score'])
+        if held_scores:
+            weakest = held_scores[0]
+            if top_candidate['s'] > (weakest['score'] + 20) and weakest['shares'] > 0 and weakest['ticker'] != top_candidate['t']:
+                dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
+                # Wait for next cycle to buy, or allocate available cash immediately
+    
+    # --- STANDARD MOMENTUM ROTATION LOGIC ---
+    elif is_momentum and buys and 'test 5' not in active_profile:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_candidate = buys[0]
         
@@ -665,10 +713,15 @@ def get_directives():
                 if buy_sh > 0:
                     dirs.append({'ticker': top_candidate['t'], 'name': top_candidate['n'], 'action': 'BUY', 'shares': buy_sh, 'price': top_candidate['p'], 'amount': round(buy_sh * top_candidate['cps'], 2)})
 
+    # --- BUY ALLOCATION LOGIC ---
     if buys and rem_cash >= MIN_BUY_VALUE:
         buys.sort(key=lambda x: x['s'], reverse=True)
-        top_buys = buys[:2]  
-        per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.50)  
+        top_buys = buys[:1] if 'test 5' in active_profile else buys[:2]  
+        
+        if 'test 5' in active_profile:
+            per_stock_budget = min(rem_cash, total_equity * 0.98) # 100% allocation for Rotator
+        else:
+            per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.50) # 50% allocation for standard momentum
         
         for b in top_buys:
             bs = int(per_stock_budget // b['cps'])
@@ -676,7 +729,7 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
-    is_auto = active_profile in ['test', 'test 2', 'test 3']
+    is_auto = any(x in active_profile for x in ['test', 'test 2', 'test 3', 'test 4', 'test 5'])
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
@@ -733,7 +786,8 @@ def get_data():
     ud = portfolio_store.user_data()
     wl = ud.get('watchlist', [])
     t = request.args.get('t', '').upper().strip()
-    is_momentum = portfolio_store.active_username().strip().lower() in ['test 2', 'test 3']
+    active_profile = portfolio_store.active_username().strip().lower()
+    is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5'])
     if not t: t = 'ALL_SHARES'
 
     tot_own = portfolio_store.get_total_portfolio_value()
@@ -898,7 +952,7 @@ def get_data():
                 portfolio_store.save()
 
         if is_momentum:
-            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p)
+            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile)
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
@@ -1503,12 +1557,12 @@ HTML_FRONTEND = """<!DOCTYPE html>
             
             let target = (currentActiveTranches / 5.0) * total_equity;
             let diff = target - currentValOwned;
-            let pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
+            let pps = (currentTicker.endswith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
 
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isAuto = ['test', 'test 2', 'test 3'].includes(activeProf);
+            let isAuto = ['test', 'test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator'].includes(activeProf);
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -1560,7 +1614,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let res = await fetch(`/api/directives`); let data = await res.json();
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-                let isAuto = ['test', 'test 2', 'test 3'].includes(activeProf);
+                let isAuto = ['test', 'test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator'].includes(activeProf);
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
@@ -1797,7 +1851,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             
             let s = document.getElementById('styleSelect').value;
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test 2', 'test 3'].includes(activeProf);
+            let isMomentum = ['test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator'].includes(activeProf);
 
             if (currentTicker === 'ALL_SHARES') {
                 tvChart.applyOptions({ leftPriceScale: { visible: false } });
