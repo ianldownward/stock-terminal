@@ -334,7 +334,6 @@ class MarketScoringEngine:
         
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
-        # --- DB-BACKED TRAILING STOP LOSS ---
         if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
@@ -353,7 +352,6 @@ class MarketScoringEngine:
                     'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
 
-        # --- ENTRY CONDITIONS ---
         if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
             tranches = 1
@@ -657,6 +655,7 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
+    is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
@@ -738,6 +737,34 @@ def get_data():
     if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
     elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
 
+    # --- LIVE WATCHLIST MARKET STATUS CHECK ---
+    wl_status = {}
+    if wl:
+        def check_status(tick):
+            try:
+                # Fast background ping to check current 5-min movement
+                df_stat = fetch_yf_data(tick, "5d", "5m")
+                if df_stat.empty: return tick, 'closed'
+                if df_stat.index.tz is not None:
+                    df_stat.index = df_stat.index.tz_convert('UTC')
+                last_ts = df_stat.index[-1].timestamp()
+                
+                if (time.time() - last_ts) > 1800:
+                    return tick, 'closed' # No data in last 30 mins
+                
+                if len(df_stat) > 1:
+                    last_price = df_stat['Close'].iloc[-1]
+                    prev_price = df_stat['Close'].iloc[-2]
+                    if last_price > prev_price: return tick, 'up'
+                    elif last_price < prev_price: return tick, 'down'
+                return tick, 'closed'
+            except:
+                return tick, 'closed'
+
+        with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
+            for tick, status in ex.map(check_status, wl):
+                wl_status[tick] = status
+
     if t == 'ALL_SHARES':
         lines = []
         if wl:
@@ -770,7 +797,7 @@ def get_data():
                         lines.append({ 'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data })
                         c_idx += 1
         
-        return jsonify({'is_multi': True, 'lines': lines, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'metrics': {
+        return jsonify({'is_multi': True, 'lines': lines, 'wl_status': wl_status, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'metrics': {
             'price': 0, 'price_display': f"Normalized %",
             'discount': '--', 'buy_score': '--', 'tranches': 0,
             'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
@@ -784,7 +811,7 @@ def get_data():
     try:
         df = fetch_yf_data(t, req_p, req_i)
         if df.empty:
-            return jsonify({'ohlc': [], 'name': f'{t} Data Loading...', 'portfolio': ud, 'metrics': {
+            return jsonify({'ohlc': [], 'wl_status': wl_status, 'name': f'{t} Data Loading...', 'portfolio': ud, 'metrics': {
                 'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
                 'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.',
                 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
@@ -808,7 +835,6 @@ def get_data():
             t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
             if t_buys: avg_buy_p = t_buys[0]['price']
 
-            # Update High Water Mark in DB
             highest_p = ud.get('holdings', {}).get(t, {}).get('high_water', last_p)
             if last_p > highest_p:
                 highest_p = last_p
@@ -871,7 +897,7 @@ def get_data():
         except:
             mathLine = []
 
-        return jsonify({'ohlc': data, 'mathLine': mathLine, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'metrics': {
+        return jsonify({'ohlc': data, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
             'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
             'status': st['status'], 'color': st['color'], 'reason': st['reason'],
@@ -1037,16 +1063,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
     </div>
     <div class="main-content">
         <div class="top-nav">
-            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnDraw" class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="toggleDrawMode()">✏️ Draw Line</button><button id="btnToggleManual" class="btn-control active" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="toggleManualLines()">Manual: ON</button><button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button><button id="btnToggleAuto" class="btn-control" style="border-color:#b388ff; color:#b388ff;" onclick="toggleAutoLines()">Auto S/R: OFF</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
+            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Show Trades: ON</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay: OFF</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
             <div class="top-nav-row2">
                 <div class="controls">
                     <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d">1 Day</option><option value="5d">5 Days</option><option value="1mo" selected>1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
                     <label>Interval:</label><select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
                     <label>Style:</label><select id="styleSelect" onchange="saveUISettings(); renderChart();"><option value="candlestick">Candlestick</option><option value="heikin-ashi">Heikin-Ashi</option><option value="line">Line</option><option value="area">Area</option><option value="bar">Bar</option></select>
                     <label>Auto Update:</label><select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();"><option value="0">Manual</option><option value="5000">5 secs</option><option value="10000" selected>10 secs</option><option value="30000">30 secs</option><option value="60000">1 min</option><option value="300000">5 mins</option></select>
-                    <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades: ON</button>
-                    <button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math: OFF</button>
-                    <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
                 </div>
             </div>
         </div>
@@ -1086,13 +1109,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null; let isSettingsLoaded = false;
 
-        // Custom Drawing Engine State
-        let manualLines = {}; 
-        let isDrawing = false; 
-        let currentLine = null;
-        let showManual = true; 
-        let showAuto = false;
-
         function toggleFullScreen() {
             let elem = document.documentElement;
             if (!document.fullscreenElement && !document.webkitFullscreenElement) {
@@ -1115,59 +1131,17 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (btn) { btn.innerText = document.webkitFullscreenElement ? "Exit Full Screen" : "Full Screen"; }
         });
 
-        function toggleDrawMode() {
-            if (currentTicker === 'ALL_SHARES') { alert("Please select a single stock to draw lines."); return; }
-            isDrawing = !isDrawing;
-            currentLine = null;
-            let btn = document.getElementById('btnDraw');
-            btn.innerText = isDrawing ? "Cancel Drawing" : "✏️ Draw Line";
-            btn.style.backgroundColor = isDrawing ? "#ffeb3b" : "#0f1115";
-            btn.style.color = isDrawing ? "#000" : "#ffeb3b";
-            drawCanvasOverlay();
-        }
-
-        function toggleManualLines() {
-            showManual = !showManual;
-            let btn = document.getElementById('btnToggleManual');
-            btn.innerText = showManual ? "Manual: ON" : "Manual: OFF";
-            btn.style.backgroundColor = showManual ? "#ffeb3b" : "#0f1115";
-            btn.style.color = showManual ? "#000" : "#ffeb3b";
-            drawCanvasOverlay();
-        }
-
-        function clearManualLines() {
-            if (currentTicker && manualLines[currentTicker]) {
-                manualLines[currentTicker] = [];
-                currentLine = null;
-                isDrawing = false;
-                let btn = document.getElementById('btnDraw');
-                btn.innerText = "✏️ Draw Line";
-                btn.style.backgroundColor = "#0f1115";
-                btn.style.color = "#ffeb3b";
-                drawCanvasOverlay();
-            }
-        }
-
-        function toggleAutoLines() {
-            showAuto = !showAuto;
-            let btn = document.getElementById('btnToggleAuto');
-            btn.innerText = showAuto ? "Auto S/R: ON" : "Auto S/R: OFF";
-            btn.style.backgroundColor = showAuto ? "#b388ff" : "#0f1115";
-            btn.style.color = showAuto ? "#000" : "#b388ff";
-            drawCanvasOverlay();
-        }
-
         function toggleShowTrades() {
             showTrades = !showTrades;
             let btn = document.getElementById('btnShowTrades');
-            if(btn){ btn.innerText = showTrades ? "Trades: ON" : "Trades: OFF"; showTrades ? btn.classList.add('active') : btn.classList.remove('active'); }
+            if(btn){ btn.innerText = showTrades ? "Show Trades: ON" : "Show Trades: OFF"; showTrades ? btn.classList.add('active') : btn.classList.remove('active'); }
             drawCanvasOverlay();
         }
 
         function toggleShowMath() {
             showMath = !showMath;
             let btn = document.getElementById('btnShowMath');
-            if(btn){ btn.innerText = showMath ? "Math: ON" : "Math: OFF"; showMath ? btn.classList.add('active') : btn.classList.remove('active'); }
+            if(btn){ btn.innerText = showMath ? "Math Overlay: ON" : "Math Overlay: OFF"; showMath ? btn.classList.add('active') : btn.classList.remove('active'); }
             renderChart();
         }
 
@@ -1238,7 +1212,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (ms > 0) autoRefreshTimer = setInterval(() => { fetchData(true); }, ms);
         }
 
-        function renderWatchlist(watchlist) {
+        function renderWatchlist(watchlist, wl_status = {}) {
             let ul = document.getElementById('watchlistUI'); ul.innerHTML = '';
             
             let allLi = document.createElement('li'); 
@@ -1250,7 +1224,16 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (!(watchlist || []).length) { ul.innerHTML += '<li style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">Watchlist is empty</li>'; return; }
             watchlist.forEach(symbol => {
                 let li = document.createElement('li'); li.className = `watchlist-item ${symbol === currentTicker ? 'active' : ''}`; li.setAttribute('data-symbol', symbol);
-                li.innerHTML = `<span class="ticker">${symbol}</span><button class="btn-delete">✕</button>`; ul.appendChild(li);
+                
+                let arrow = `<span style="width:14px; margin-right:6px; display:inline-block;"></span>`; 
+                if (wl_status[symbol] === 'up') {
+                    arrow = `<span style="color:#00c853; font-size:12px; width:14px; margin-right:6px; display:inline-block; text-align:center;">▲</span>`;
+                } else if (wl_status[symbol] === 'down') {
+                    arrow = `<span style="color:#ff3d00; font-size:12px; width:14px; margin-right:6px; display:inline-block; text-align:center;">▼</span>`;
+                }
+
+                li.innerHTML = `<div style="display:flex; align-items:center;">${arrow}<span class="ticker">${symbol}</span></div><button class="btn-delete">✕</button>`; 
+                ul.appendChild(li);
             });
         }
 
@@ -1481,92 +1464,23 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 rightPriceScale: { visible: true, borderColor: '#262b36' },
                 leftPriceScale: { visible: false, borderColor: '#262b36' }
             });
-            
-            tvChart.timeScale().subscribeVisibleTimeRangeChange(drawCanvasOverlay); 
-            tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
+            tvChart.timeScale().subscribeVisibleTimeRangeChange(drawCanvasOverlay); tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
             window.addEventListener('resize', () => { tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); drawCanvasOverlay(); });
-
-            // DRAWING ENGINE SUBSCRIBERS
-            tvChart.subscribeClick((param) => {
-                if (!isDrawing || !param.point || currentTicker === 'ALL_SHARES') return;
-                let logical = tvChart.timeScale().coordinateToLogical(param.point.x);
-                if (!tvSeries) return;
-                let price = tvSeries.coordinateToPrice(param.point.y);
-                
-                if (!currentLine) {
-                    currentLine = { l1: logical, p1: price, l2: logical, p2: price };
-                } else {
-                    currentLine.l2 = logical;
-                    currentLine.p2 = price;
-                    if (!manualLines[currentTicker]) manualLines[currentTicker] = [];
-                    manualLines[currentTicker].push({...currentLine});
-                    currentLine = null;
-                    toggleDrawMode(); // auto exit drawing mode after completing line
-                    drawCanvasOverlay();
-                }
-            });
-
-            tvChart.subscribeCrosshairMove((param) => {
-                if (isDrawing && currentLine && param.point && currentTicker !== 'ALL_SHARES' && tvSeries) {
-                    currentLine.l2 = tvChart.timeScale().coordinateToLogical(param.point.x);
-                    currentLine.p2 = tvSeries.coordinateToPrice(param.point.y);
-                    drawCanvasOverlay();
-                }
-            });
         }
 
         function drawCanvasOverlay() {
             let cv = document.getElementById('chartCanvas'); if (!cv || !tvChart) return;
             let c = document.getElementById('tvChart'); cv.width = c.clientWidth; cv.height = c.clientHeight;
-            let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
             
-            if (currentTicker === 'ALL_SHARES') return; 
-
-            // 1. AUTOMATED SUPPORT/RESISTANCE LINES (PURPLE)
-            if (showAuto && masterData && masterData.length > 0 && tvSeries) {
-                let recent = masterData.slice(-100); 
-                let high = Math.max(...recent.map(d => d.high || d.close || d.value));
-                let low = Math.min(...recent.map(d => d.low || d.close || d.value));
-                let yH = tvSeries.priceToCoordinate(high);
-                let yL = tvSeries.priceToCoordinate(low);
-                
-                ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#b388ff'; ctx.lineWidth = 1;
-                if(yH !== null) { ctx.moveTo(0, yH); ctx.lineTo(cv.width, yH); }
-                if(yL !== null) { ctx.moveTo(0, yL); ctx.lineTo(cv.width, yL); }
-                ctx.stroke();
-                
-                ctx.fillStyle = '#b388ff'; ctx.font = '10px sans-serif';
-                if(yH !== null) ctx.fillText('Auto Res', 10, yH - 5);
-                if(yL !== null) ctx.fillText('Auto Sup', 10, yL - 5);
-            }
-
-            // 2. MANUAL LINES (YELLOW)
-            if (showManual && tvSeries) {
-                let lines = manualLines[currentTicker] || [];
-                ctx.setLineDash([]); ctx.strokeStyle = '#ffeb3b'; ctx.lineWidth = 2;
-                lines.forEach(l => {
-                    let x1 = tvChart.timeScale().logicalToCoordinate(l.l1);
-                    let y1 = tvSeries.priceToCoordinate(l.p1);
-                    let x2 = tvChart.timeScale().logicalToCoordinate(l.l2);
-                    let y2 = tvSeries.priceToCoordinate(l.p2);
-                    if (x1 !== null && y1 !== null && x2 !== null && y2 !== null) {
-                        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-                    }
-                });
-                
-                if (isDrawing && currentLine) {
-                    let x1 = tvChart.timeScale().logicalToCoordinate(currentLine.l1);
-                    let y1 = tvSeries.priceToCoordinate(currentLine.p1);
-                    let x2 = tvChart.timeScale().logicalToCoordinate(currentLine.l2);
-                    let y2 = tvSeries.priceToCoordinate(currentLine.p2);
-                    if (x1 !== null && y1 !== null && x2 !== null && y2 !== null) {
-                        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-                    }
-                }
+            if (currentTicker === 'ALL_SHARES') {
+                let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+                return; 
             }
             
-            // 3. TRADE MARKERS (GREEN/RED DASHES)
-            if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !masterData || !masterData.length) return;
+            if (!tvSeries || !showTrades || !globalPortfolioData || !globalPortfolioData.history || !masterData || !masterData.length) {
+                let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+                return;
+            }
             
             let th = globalPortfolioData.history.filter(h => h.ticker === currentTicker); if (!th.length) return;
             let pm = masterData.map(d => ({ rawTime: d.time, ts: typeof d.time === 'number' ? d.time : Math.floor(new Date(d.time + 'T00:00:00Z').getTime() / 1000) }));
@@ -1581,6 +1495,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 if (x !== null && x >= 0 && x <= cv.width) { let rx = Math.round(x); if (!g[rx]) g[rx] = []; g[rx].push(i); }
             });
 
+            let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
             Object.keys(g).forEach(xs => {
                 let x = parseFloat(xs), itms = g[xs];
                 ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.moveTo(x, 0); ctx.lineTo(x, cv.height - 25); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
@@ -1699,7 +1614,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     if (s.ntfy_topic && document.getElementById('ntfyTopicInput')) document.getElementById('ntfyTopicInput').value = s.ntfy_topic;
                     setupAutoRefresh(); isSettingsLoaded = true;
                 }
-                renderWatchlist(globalPortfolioData.watchlist);
+                
+                let wl_status = p.wl_status || {};
+                renderWatchlist(globalPortfolioData.watchlist, wl_status);
                 
                 let activeElem = document.querySelector(`li.watchlist-item[data-symbol="${currentTicker}"]`);
                 if (activeElem) {
