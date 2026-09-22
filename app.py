@@ -605,7 +605,6 @@ def get_directives():
                 t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
                 if t_buys: avg_buy_p = t_buys[0]['price']
                 
-                # Fetch persistent High Water Mark from DB
                 highest_p = ud.get('holdings', {}).get(t, {}).get('high_water', cur)
                 if cur > highest_p:
                     highest_p = cur
@@ -658,7 +657,6 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
-    is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
@@ -944,6 +942,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
         button.btn-trades.active { border-color: #00d2ff; color: #00d2ff; }
         button.btn-alert { background: #0f1115; border: 1px solid #ff9900; color: #ff9900; font-weight: bold; }
         button.btn-alert:hover { background: #ff9900; color: #000; }
+        button.btn-fullscreen { background: #0f1115; border: 1px solid #b388ff; color: #b388ff; font-weight: bold; }
+        button.btn-fullscreen:hover { background: #b388ff; color: #000; }
         button.btn-refresh { background: #0f1115; border: 1px solid #00d2ff; color: #00d2ff; font-weight: bold; }
         button.btn-refresh:hover { background: #00d2ff; color: #000; }
         button.btn-reset { background: #0f1115; border: 1px solid #ff4a4a; color: #ff4a4a; font-weight: bold; }
@@ -1037,7 +1037,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
     </div>
     <div class="main-content">
         <div class="top-nav">
-            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Show Trades: ON</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay: OFF</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
+            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Show Trades: ON</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay: OFF</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
             <div class="top-nav-row2">
                 <div class="controls">
                     <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d">1 Day</option><option value="5d">5 Days</option><option value="1mo" selected>1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
@@ -1082,6 +1082,28 @@ HTML_FRONTEND = """<!DOCTYPE html>
         let currentAnomalyReason = "Loading..."; let currentLivePrice = 0; let currentActiveTranches = 0; let currentSharesOwned = 0; let currentValOwned = 0;
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null; let isSettingsLoaded = false;
+
+        function toggleFullScreen() {
+            let elem = document.documentElement;
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                if (elem.requestFullscreen) { elem.requestFullscreen(); }
+                else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen(); } 
+                else if (elem.msRequestFullscreen) { elem.msRequestFullscreen(); } 
+            } else {
+                if (document.exitFullscreen) { document.exitFullscreen(); }
+                else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); } 
+                else if (document.msExitFullscreen) { document.msExitFullscreen(); } 
+            }
+        }
+
+        document.addEventListener('fullscreenchange', () => {
+            let btn = document.getElementById('btnFullscreen');
+            if (btn) { btn.innerText = document.fullscreenElement ? "Exit Full Screen" : "Full Screen"; }
+        });
+        document.addEventListener('webkitfullscreenchange', () => {
+            let btn = document.getElementById('btnFullscreen');
+            if (btn) { btn.innerText = document.webkitFullscreenElement ? "Exit Full Screen" : "Full Screen"; }
+        });
 
         function toggleShowTrades() {
             showTrades = !showTrades;
