@@ -238,7 +238,6 @@ class PortfolioManager:
         cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
         tot_amt = round(shares * cost_per_sh, 2)
 
-        # Force local London time for the trade history log display
         now = pd.Timestamp.now(tz='Europe/London')
         entry = {
             'id': str(int(time.time() * 1000)), 'ticker': ticker, 'action': 'BUY' if 'BUY' in action_type.upper() else 'SELL',
@@ -309,12 +308,13 @@ class MarketScoringEngine:
             'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares',
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
             'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
-            'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy',
+            'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ',
+            'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA',
             'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
             'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
 
-    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0):
+    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0):
         if df_5m.empty or len(df_5m) < 21:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
@@ -329,14 +329,31 @@ class MarketScoringEngine:
         
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
+        # --- DYNAMIC TRAILING STOP LOSS FOR HELD POSITIONS ---
         if avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-            if pnl_pct >= 0.8: 
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%",
-                        'reason': f"PROFIT TARGET REACHED (+{pnl_pct:.2f}%). Locking in gains.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                        'status': 'Take Profit', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Take Profit)', 'action_color': '#00c853'}
+            highest_price = max(highest_price, current_price)
+            drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
 
-        if ema9 > ema21:
+            # 1. Trailing Stop (Sells if stock drops 0.5% from local high water mark)
+            if drop_from_peak_pct >= 0.5:
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%" if pnl_pct > 0 else f"{pnl_pct:.2f}%",
+                        'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from local peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff'}
+            
+            # 2. Hard Stop Loss (-1.0% maximum risk ceiling)
+            if pnl_pct <= -1.0: 
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                        'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%). Cutting losses immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00'}
+
+            # Riding the Trend
+            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
+                    'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
+
+        # --- ENTRY CONDITIONS ---
+        if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
             tranches = 1
             action_main, action_sub = "BUY", "(Momentum Surge)"
@@ -345,10 +362,10 @@ class MarketScoringEngine:
             action_color = "#00c853"
         else:
             buy_score, tranches = 10, 0
-            action_main, action_sub = "SELL", "(Exit Trend)"
-            status, color = "Momentum Fading", "#ff3d00"
-            reason = f"MOMENTUM FADING: 9-EMA < 21-EMA."
-            action_color = "#ff3d00"
+            action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
+            status, color = "No Setup", "#8a8a9e"
+            reason = f"Awaiting fast EMA crossover surge."
+            action_color = "#8a8a9e"
 
         return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%",
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
@@ -373,7 +390,7 @@ class MarketScoringEngine:
 
         if macro_triggered:
             action_main, action_sub, status, color, tranches = "SELL", "(Sentinel Active)", "MACRO SENTINEL TRIPPED", "#ff3d00", 0
-            reason = f"EMERGENCY STOP: Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%)."
+            reason = f"EMERGENCY STOP: Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Liquidating to 0 tranches."
             action_color = "#ff3d00"
         elif implied_discount <= 5.0 and implied_discount > -50.0:
             action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", "Target Reached", "#ff3d00", 0
@@ -546,7 +563,8 @@ def get_directives():
     if is_momentum:
         scan_list = [
             'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L',
-            'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR'
+            'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR',
+            'TQQQ', 'SOXL', 'NVDL'
         ]
     else:
         scan_list = ud.get('watchlist', [])
@@ -581,13 +599,20 @@ def get_directives():
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
             vo = sh * cps
 
-            avg_buy_p = 0.0
+            avg_buy_p, highest_p = 0.0, cur
             if sh > 0:
                 t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
-                if t_buys: avg_buy_p = t_buys[0]['price']
+                if t_buys: 
+                    avg_buy_p = t_buys[0]['price']
+                    try:
+                        bt_ts = t_buys[0]['timestamp']
+                        prices_since = [r['High'] for i, r in df.iterrows() if int(i.timestamp()) >= bt_ts]
+                        highest_p = max(prices_since + [cur, avg_buy_p])
+                    except:
+                        highest_p = max(cur, avg_buy_p)
 
             if is_momentum:
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p)
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p)
             else:
                 avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
                 v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
@@ -625,7 +650,7 @@ def get_directives():
     if buys and rem_cash >= MIN_BUY_VALUE:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_buys = buys[:2]  
-        per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.20)  
+        per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.50)  
         
         for b in top_buys:
             bs = int(per_stock_budget // b['cps'])
@@ -633,7 +658,6 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
-    is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
@@ -779,13 +803,20 @@ def get_data():
         cps = last_p / 100.0 if t.endswith('.L') and last_p > 100 else last_p
         val_own = round(sh_own * cps, 2)
 
-        avg_buy_p = 0.0
+        avg_buy_p, highest_p = 0.0, last_p
         if sh_own > 0:
             t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
-            if t_buys: avg_buy_p = t_buys[0]['price']
+            if t_buys: 
+                avg_buy_p = t_buys[0]['price']
+                try:
+                    bt_ts = t_buys[0]['timestamp']
+                    prices_since = [r['High'] for i, r in df.iterrows() if int(i.timestamp()) >= bt_ts]
+                    highest_p = max(prices_since + [last_p, avg_buy_p])
+                except:
+                    highest_p = max(last_p, avg_buy_p)
 
         if is_momentum:
-            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p)
+            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p)
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
