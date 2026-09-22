@@ -666,6 +666,22 @@ def get_directives():
     portfolio_store.save()
     return jsonify({'directives': dirs})
 
+@app.route('/api/recommend', methods=['GET'])
+def get_recommendations():
+    res, engine = [], MarketScoringEngine()
+    tickers = ['YCA.L', 'U-UN.TO', 'SGLN.L', 'SSLN.L', 'PHYS', 'PSLV', 'CEF', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'BHP', 'RIO', 'VALE', 'XOM', 'CVX', 'OXY', 'JPM', 'BAC', 'GS', 'PFE', 'JNJ', 'UNH', 'DIS', 'NKE', 'SBUX', 'BA', 'LMT']
+    
+    def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
+        
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        for t, df in ex.map(fetch_rec, tickers):
+            if not df.empty:
+                cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
+                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol>0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
+                st.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
+                res.append(st)
+    return jsonify({'recommendations': sorted(res, key=lambda x: x['score'], reverse=True)})
+
 @app.route('/api/data', methods=['GET'])
 def get_data():
     portfolio_store.reload()
@@ -675,18 +691,13 @@ def get_data():
     is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
     if not t: t = 'ALL_SHARES'
 
-    req_tickers = [x.strip() for x in t.split(',') if x.strip()]
-    is_all = 'ALL_SHARES' in req_tickers
-    if is_all: req_tickers = wl.copy()
-    if not req_tickers: req_tickers = []
-
     tot_own = portfolio_store.get_total_portfolio_value()
     mb = ud.get('master_budget', 10000.0)
+
     active_holds = [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0]
     tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in active_holds)
     
     cash_balance = mb - tot_cb
-    rem_cash = max(0, cash_balance)
     total_equity = cash_balance + tot_own
 
     master_pnl_val = total_equity - mb
@@ -702,111 +713,138 @@ def get_data():
     if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
     elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
 
-    charts_data = []
-    engine = MarketScoringEngine()
-
-    def process_tick(tick):
-        try:
-            df = fetch_yf_data(tick, req_p, req_i)
-            if df.empty: return None
-            if df.index.tz is not None: df.index = df.index.tz_convert('UTC')
-            data = [{'time': i.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 'open': round(r['Open'],2), 'high': round(r['High'],2), 'low': round(r['Low'],2), 'close': round(r['Close'],2)} for i, r in df.iterrows()]
-            seen = set(); data = [x for x in data if x['time'] not in seen and not seen.add(x['time'])]
-            last_p = round(data[-1]['close'], 2) if data else 0
+    if t == 'ALL_SHARES':
+        lines = []
+        if wl:
+            def fetch_t(tick):
+                return tick, fetch_yf_data(tick, req_p, req_i)
             
-            mathLine = []
-            try:
-                if is_momentum:
-                    ema21_series = df['Close'].ewm(span=21, adjust=False).mean()
-                    ema21_dict = { (idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())): val for idx, val in ema21_series.items() }
-                    mathLine = [{'time': d['time'], 'value': round(ema21_dict[d['time']], 2)} for d in data if d['time'] in ema21_dict]
-                else:
-                    if tick in engine.nav_bases:
-                        target = engine.nav_bases[tick]
-                        mathLine = [{'time': d['time'], 'value': round(((target - d['close']) / target) * 100.0, 2)} for d in data]
-                    else:
-                        df_1y = fetch_yf_data(tick, "1y", "1d")
-                        if not df_1y.empty:
-                            sma200 = df_1y['Close'].rolling(200, min_periods=1).mean()
-                            sma_dict = {idx.strftime('%Y-%m-%d'): val for idx, val in sma200.items() if pd.notna(val)}
-                            last_valid = sma200.dropna().iloc[-1] if not sma200.dropna().empty else last_p
-                            mathLine = [{'time': d['time'], 'value': round(((sma_dict.get(d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d'), last_valid) - d['close']) / sma_dict.get(d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d'), last_valid)) * 100.0, 2)} for d in data if sma_dict.get(d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d'), last_valid) > 0]
-                        else:
-                            mathLine = []
-            except: mathLine = []
-
-            sh_own = portfolio_store.get_shares(tick)
-            avg_buy_p = 0.0
-            if sh_own > 0:
-                t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == tick and tr.get('action') == 'BUY']
-                if t_buys: avg_buy_p = t_buys[0]['price']
-                
-            if is_momentum: st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p)
-            else:
-                av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
-                st = engine.score_nav_asset(tick, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if tick in engine.nav_bases else engine.score_equity(df, last_p)
-
-            cps = last_p / 100.0 if tick.endswith('.L') and last_p > 100 else last_p
-            if sh_own > 0:
-                if 'holdings' not in ud: ud['holdings'] = {}
-                ud['holdings'][tick] = {'shares': sh_own, 'manual_val': round(sh_own * cps, 2)}
-            else: ud.get('holdings', {}).pop(tick, None)
+            dfs = {}
+            with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
+                for tick, df_t in ex.map(fetch_t, wl):
+                    dfs[tick] = df_t
             
-            return {
-                'ticker': tick, 'name': engine.asset_names.get(tick, tick), 'ohlc': data, 'mathLine': mathLine,
-                'last_p': last_p, 'st': st, 'sh_own': sh_own, 'cps': cps
-            }
-        except: return None
+            colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
+            c_idx = 0
+            for tick in wl:
+                df_t = dfs.get(tick)
+                if df_t is not None and not df_t.empty:
+                    if df_t.index.tz is not None: df_t.index = df_t.index.tz_convert('UTC')
+                    
+                    base_price = df_t['Close'].iloc[0]
+                    if base_price > 0:
+                        line_data = []
+                        seen = set()
+                        for idx, row in df_t.iterrows():
+                            ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
+                            if ts not in seen:
+                                seen.add(ts)
+                                pct_change = ((row['Close'] - base_price) / base_price) * 100.0
+                                line_data.append({'time': ts, 'value': round(pct_change, 2)})
+                        
+                        lines.append({ 'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data })
+                        c_idx += 1
         
-    with ThreadPoolExecutor(max_workers=min(5, max(1, len(req_tickers)))) as ex:
-        results = list(ex.map(process_tick, req_tickers))
-        charts_data = [r for r in results if r is not None]
+        return jsonify({'is_multi': True, 'lines': lines, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'metrics': {
+            'price': 0, 'price_display': f"Normalized %",
+            'discount': '--', 'buy_score': '--', 'tranches': 0,
+            'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
+            'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
+            'shares_owned': sum(h.get('shares',0) for h in ud.get('holdings',{}).values()), 'value_owned': tot_own, 
+            'pnl_display': master_pdsp, 'pnl_color': master_pc,
+            'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc, 'master_budget': mb,
+            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
+        }})
 
-    if not charts_data:
-        return jsonify({'chartsData': [], 'name': f'{t} Data Loading...', 'portfolio': ud, 'metrics': {
+    try:
+        df = fetch_yf_data(t, req_p, req_i)
+        if df.empty:
+            return jsonify({'ohlc': [], 'name': f'{t} Data Loading...', 'portfolio': ud, 'metrics': {
                 'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
                 'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.',
                 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc,
                 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
             }})
+
+        if df.index.tz is not None: df.index = df.index.tz_convert('UTC')
         
-    if len(req_tickers) == 1 and not is_all:
-        cd = charts_data[0]
-        sh_own = cd['sh_own']
-        val_own = round(sh_own * cd['cps'], 2)
-        cb = ud.get('initial_positions', {}).get(cd['ticker'], {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==cd['ticker'])
+        data = [{'time': i.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 'open': round(r['Open'],2), 'high': round(r['High'],2), 'low': round(r['Low'],2), 'close': round(r['Close'],2)} for i, r in df.iterrows()]
+        seen = set(); data = [x for x in data if x['time'] not in seen and not seen.add(x['time'])]
+        last_p = round(data[-1]['close'], 2) if data else 0
+
+        engine = MarketScoringEngine()
+        sh_own = portfolio_store.get_shares(t)
+        cps = last_p / 100.0 if t.endswith('.L') and last_p > 100 else last_p
+        val_own = round(sh_own * cps, 2)
+
+        avg_buy_p = 0.0
+        if sh_own > 0:
+            t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
+            if t_buys: avg_buy_p = t_buys[0]['price']
+
+        if is_momentum:
+            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p)
+        else:
+            av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
+            st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
+
+        cb = ud.get('initial_positions', {}).get(t, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==t)
         if sh_own > 0 and cb > 0:
             pv, pp = round(val_own - cb, 2), round((val_own - cb) / cb * 100, 2)
             c = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
             pnl_d = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
         else: pnl_d, c = "£0.00 (0.00%)", '#8a8a9e'
 
-        m_dict = {
-            'price': cd['last_p'], 'price_display': f"{cd['last_p']:.2f}p (£{(cd['last_p']/100.0):.2f})" if cd['ticker'].endswith('.L') and cd['last_p']>100 else f"£{cd['last_p']:.2f}",
-            'discount': cd['st']['discount'], 'buy_score': f"{cd['st']['score']} / 100", 'tranches': cd['st']['tranches'],
-            'status': cd['st']['status'], 'color': cd['st']['color'], 'reason': cd['st']['reason'],
-            'action_main': cd['st']['action_main'], 'action_sub': cd['st']['action_sub'], 'action_color': cd['st']['action_color'],
+        if sh_own > 0:
+            if 'holdings' not in ud: ud['holdings'] = {}
+            ud['holdings'][t] = {'shares': sh_own, 'manual_val': val_own}
+        else: ud.get('holdings', {}).pop(t, None)
+
+        mathLine = []
+        try:
+            if is_momentum:
+                ema21_series = df['Close'].ewm(span=21, adjust=False).mean()
+                ema21_dict = {}
+                for idx, val in ema21_series.items():
+                    ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
+                    ema21_dict[ts] = val
+                for d in data:
+                    if d['time'] in ema21_dict:
+                        mathLine.append({'time': d['time'], 'value': round(ema21_dict[d['time']], 2)})
+            else:
+                if t in engine.nav_bases:
+                    target = engine.nav_bases[t]
+                    for d in data:
+                        disc = ((target - d['close']) / target) * 100.0
+                        mathLine.append({'time': d['time'], 'value': round(disc, 2)})
+                else:
+                    df_1y = fetch_yf_data(t, "1y", "1d")
+                    if not df_1y.empty:
+                        sma200 = df_1y['Close'].rolling(200, min_periods=1).mean()
+                        sma_dict = {idx.strftime('%Y-%m-%d'): val for idx, val in sma200.items() if pd.notna(val)}
+                        last_valid = sma200.dropna().iloc[-1] if not sma200.dropna().empty else last_p
+                    else:
+                        sma_dict, last_valid = {}, last_p
+                        
+                    for d in data:
+                        time_str = d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d')
+                        val = sma_dict.get(time_str, last_valid)
+                        disc = ((val - d['close']) / val) * 100.0 if val > 0 else 0
+                        mathLine.append({'time': d['time'], 'value': round(disc, 2)})
+        except:
+            mathLine = []
+
+        return jsonify({'ohlc': data, 'mathLine': mathLine, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'metrics': {
+            'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
+            'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
+            'status': st['status'], 'color': st['color'], 'reason': st['reason'],
+            'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'],
             'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': pnl_d, 'pnl_color': c,
             'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc, 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
-        }
-        title_name = cd['name']
-    else:
-        m_dict = {
-            'price': 0, 'price_display': f"Multi View",
-            'discount': '--', 'buy_score': '--', 'tranches': 0,
-            'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing multiple charts simultaneously.',
-            'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
-            'shares_owned': sum(h.get('shares',0) for h in ud.get('holdings',{}).values()), 'value_owned': tot_own, 
-            'pnl_display': master_pdsp, 'pnl_color': master_pc,
-            'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc, 'master_budget': mb,
-            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
-        }
-        title_name = "Watchlist (All Shares)" if is_all else f"{len(req_tickers)} Stocks Selected"
-
-    portfolio_store.save()
-    return jsonify({'chartsData': charts_data, 'name': title_name, 'portfolio': ud, 'metrics': m_dict})
+        }})
+    except Exception as e: return jsonify({'error': str(e)}), 500
 
 HTML_FRONTEND = """<!DOCTYPE html>
 <html>
@@ -856,7 +894,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; }
         .watchlist-item { padding: 10px 12px; border-radius: 6px; background: #1e222d; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
         .watchlist-item:hover, .watchlist-item.active { border-color: #00d2ff; background: #252a37; }
-        .t-cb { width: 14px; height: 14px; accent-color: #00d2ff; cursor: pointer; }
         .btn-delete { background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; padding: 0 5px; }
         .main-content { flex: 1; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; position: relative; }
         .top-nav { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; background: #171a21; padding: 12px 16px; border-radius: 10px; border: 1px solid #262b36; }
@@ -892,7 +929,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .btn-execute:hover { background: #00e676; }
         .btn-execute.sell-btn { background: #ff3d00; }
         .btn-execute.sell-btn:hover { background: #ff5252; }
-        .chart-container { flex: 1; background: #0f1115; position: relative; overflow: hidden; }
+        .chart-container { flex: 1; background: #171a21; padding: 10px; border-radius: 10px; border: 1px solid #262b36; position: relative; overflow: hidden; }
+        #tvChart { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; }
+        #chartCanvas { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; pointer-events: none; z-index: 5; }
         #loader { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00d2ff; font-weight: bold; z-index: 10; background: rgba(23, 26, 33, 0.9); padding: 10px 20px; border-radius: 8px; border: 1px solid #00d2ff; }
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
         .modal { background: #171a21; width: 600px; padding: 25px; border-radius: 12px; border: 1px solid #262b36; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
@@ -933,7 +972,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             .top-nav-row1 { flex-direction: column; align-items: flex-start; gap: 8px; }
             .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px; }
             select, button.btn-control { flex: 1 1 45%; font-size: 11px; padding: 8px 6px; text-align: center; }
-            .chart-container { height: auto; min-height: 400px; margin-top: 10px; flex: none; }
+            .chart-container { height: 400px; margin-top: 10px; flex: none; }
             .grid { grid-template-columns: repeat(2, 1fr); }
             .modal { width: 95%; padding: 15px; }
         }
@@ -979,8 +1018,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
             <div class="card"><h3>Profit / Loss</h3><p id="mPnL" style="font-size:15px; font-weight:bold; color:#8a8a9e;">£0.00 (0.00%)</p></div>
             <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Macro Status ⓘ</h3><p id="mMacro" style="font-size:12px; font-weight:bold; display:flex; justify-content:center; align-items:center; gap:6px;">--</p></div>
         </div>
-        <div class="chart-container" id="chartsRoot">
+        <div class="chart-container">
+            <div id="chartLegend" style="position: absolute; top: 15px; left: 15px; z-index: 8; display: flex; flex-direction: column; gap: 4px; pointer-events: none;"></div>
             <div id="loader">Fetching...</div>
+            <div id="tvChart"></div><canvas id="chartCanvas"></canvas>
         </div>
     </div>
     <div class="right-drawer">
@@ -997,8 +1038,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
     </div>
 
     <script>
-        let currentTicker = 'ALL_SHARES'; let masterData = []; let showTrades = true; let showMath = false;
-        let globalChartInstances = [];
+        let currentChartStyle = ''; let lastRenderedTicker = ''; let multiSeries = [];
+        let currentTicker = 'ALL_SHARES'; let tvChart = null; let tvSeries = null; let masterData = []; let showTrades = true;
+        let showMath = false; let masterMathLine = []; let tvMathSeries = null;
         let currentAnomalyReason = "Loading..."; let currentLivePrice = 0; let currentActiveTranches = 0; let currentSharesOwned = 0; let currentValOwned = 0;
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null; let isSettingsLoaded = false;
@@ -1007,7 +1049,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             showTrades = !showTrades;
             let btn = document.getElementById('btnShowTrades');
             if(btn){ btn.innerText = showTrades ? "Show Trades: ON" : "Show Trades: OFF"; showTrades ? btn.classList.add('active') : btn.classList.remove('active'); }
-            drawCanvasOverlayAll();
+            drawCanvasOverlay();
         }
 
         function toggleShowMath() {
@@ -1086,48 +1128,17 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         function renderWatchlist(watchlist) {
             let ul = document.getElementById('watchlistUI'); ul.innerHTML = '';
-            let ctArr = currentTicker.split(',').map(x => x.trim());
-            let allChecked = currentTicker === 'ALL_SHARES';
-
+            
             let allLi = document.createElement('li'); 
-            allLi.className = `watchlist-item ${allChecked ? 'active' : ''}`; 
+            allLi.className = `watchlist-item ${currentTicker === 'ALL_SHARES' ? 'active' : ''}`; 
             allLi.setAttribute('data-symbol', 'ALL_SHARES');
-            allLi.innerHTML = `<div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" class="t-cb" value="ALL_SHARES" ${allChecked ? 'checked' : ''}><span class="ticker" style="color:#00d2ff; font-weight:bold;">All Shares</span></div>`; 
+            allLi.innerHTML = `<span class="ticker" style="color:#00d2ff; font-weight:bold; display:flex; align-items:center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg> All Shares</span>`; 
             ul.appendChild(allLi);
 
-            if (!(watchlist || []).length) { ul.innerHTML += '<li style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">Watchlist is empty</li>'; }
-            else {
-                watchlist.forEach(symbol => {
-                    let isChecked = ctArr.includes(symbol) && !allChecked;
-                    let li = document.createElement('li'); li.className = `watchlist-item ${isChecked && ctArr.length===1 ? 'active' : ''}`; li.setAttribute('data-symbol', symbol);
-                    li.innerHTML = `<div style="display:flex; align-items:center; gap:8px;"><input type="checkbox" class="t-cb" value="${symbol}" ${isChecked || allChecked ? 'checked' : ''}><span class="ticker">${symbol}</span></div><button class="btn-delete">✕</button>`; 
-                    ul.appendChild(li);
-                });
-            }
-
-            ul.querySelectorAll('.t-cb').forEach(cb => {
-                cb.addEventListener('change', (e) => {
-                    e.stopPropagation();
-                    let val = e.target.value;
-                    if (val === 'ALL_SHARES') {
-                        if (e.target.checked) currentTicker = 'ALL_SHARES';
-                        else currentTicker = watchlist[0] || 'ALL_SHARES';
-                    } else {
-                        let checked = Array.from(ul.querySelectorAll('.t-cb:checked')).map(x => x.value).filter(x => x !== 'ALL_SHARES');
-                        if (checked.length === 0) currentTicker = 'ALL_SHARES';
-                        else currentTicker = checked.join(',');
-                    }
-                    fetchData(false);
-                });
-            });
-            
-            ul.querySelectorAll('.watchlist-item .ticker').forEach(span => {
-                span.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    let symbol = span.closest('li').getAttribute('data-symbol');
-                    currentTicker = symbol;
-                    fetchData(false);
-                });
+            if (!(watchlist || []).length) { ul.innerHTML += '<li style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">Watchlist is empty</li>'; return; }
+            watchlist.forEach(symbol => {
+                let li = document.createElement('li'); li.className = `watchlist-item ${symbol === currentTicker ? 'active' : ''}`; li.setAttribute('data-symbol', symbol);
+                li.innerHTML = `<span class="ticker">${symbol}</span><button class="btn-delete">✕</button>`; ul.appendChild(li);
             });
         }
 
@@ -1147,7 +1158,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function onValOwnedInput() {
-            if (!currentTicker || currentTicker === 'ALL_SHARES' || currentTicker.includes(',')) return;
+            if (!currentTicker || currentTicker === 'ALL_SHARES') return;
             let val = parseFloat(document.getElementById('inputHeldVal').value) || 0;
             let pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
             currentSharesOwned = pps > 0 ? Math.round(val / pps) : 0;
@@ -1178,7 +1189,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let rem = cash_balance;
             let total_equity = cash_balance + toa;
 
-            if (currentTicker === 'ALL_SHARES' || currentTicker.includes(',')) {
+            if (currentTicker === 'ALL_SHARES') {
                 let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
                 let bc = document.getElementById('actionBtnContainer');
                 am.innerText = "PORTFOLIO"; am.style.color = "#00d2ff"; as.innerText = "Aggregate View";
@@ -1282,11 +1293,18 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 });
             }
 
-            if (!currentTicker || currentTicker === 'ALL_SHARES' || currentTicker.includes(',')) { 
-                ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">Aggregate View (No single stock selected)</li>`; 
-                return; 
-            }
+            if (!currentTicker) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No stock loaded.</li>`; return; }
             
+            if (currentTicker === 'ALL_SHARES') {
+                if (!hist.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; return; }
+                hist.forEach(item => {
+                    let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
+                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${item.ticker}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                    ui.appendChild(li);
+                });
+                return;
+            }
+
             let th = hist.filter(h => h.ticker === currentTicker);
             if (!th.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; return; }
             th.forEach(item => {
@@ -1337,7 +1355,71 @@ HTML_FRONTEND = """<!DOCTYPE html>
         async function loadRecommended(t, s, b, sell) {
             document.getElementById('recModal').style.display = 'none';
             await fetch('/api/watchlist/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: t})});
-            currentTicker = t; setTimeout(openAlertModal, 500); fetchData(false);
+            selectStock(t); setTimeout(openAlertModal, 500);
+        }
+
+        function initChart() {
+            let c = document.getElementById('tvChart');
+            tvChart = LightweightCharts.createChart(c, { 
+                width: c.clientWidth, height: c.clientHeight || 450, 
+                layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, 
+                grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, 
+                crosshair: { mode: 0 }, 
+                timeScale: { borderColor: '#262b36', timeVisible: true },
+                rightPriceScale: { visible: true, borderColor: '#262b36' },
+                leftPriceScale: { visible: false, borderColor: '#262b36' }
+            });
+            tvChart.timeScale().subscribeVisibleTimeRangeChange(drawCanvasOverlay); tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
+            window.addEventListener('resize', () => { tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); drawCanvasOverlay(); });
+        }
+
+        function drawCanvasOverlay() {
+            let cv = document.getElementById('chartCanvas'); if (!cv || !tvChart) return;
+            let c = document.getElementById('tvChart'); cv.width = c.clientWidth; cv.height = c.clientHeight;
+            
+            if (currentTicker === 'ALL_SHARES') {
+                let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+                return; 
+            }
+            
+            if (!tvSeries || !showTrades || !globalPortfolioData || !globalPortfolioData.history || !masterData || !masterData.length) {
+                let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+                return;
+            }
+            
+            let th = globalPortfolioData.history.filter(h => h.ticker === currentTicker); if (!th.length) return;
+            let pm = masterData.map(d => ({ rawTime: d.time, ts: typeof d.time === 'number' ? d.time : Math.floor(new Date(d.time + 'T00:00:00Z').getTime() / 1000) }));
+            let g = {};
+
+            th.forEach(i => {
+                let ts = i.timestamp ? i.timestamp : Math.floor(new Date((i.date_str || i.time) + 'T00:00:00Z').getTime() / 1000);
+                if (isNaN(ts)) return;
+                let cl = pm[0], md = Math.abs(ts - cl.ts);
+                for (let p of pm) { let d = Math.abs(ts - p.ts); if (d < md) { md = d; cl = p; } }
+                let x = tvChart.timeScale().timeToCoordinate(cl.rawTime);
+                if (x !== null && x >= 0 && x <= cv.width) { let rx = Math.round(x); if (!g[rx]) g[rx] = []; g[rx].push(i); }
+            });
+
+            let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
+            Object.keys(g).forEach(xs => {
+                let x = parseFloat(xs), itms = g[xs];
+                ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.moveTo(x, 0); ctx.lineTo(x, cv.height - 25); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
+                let sy = cv.height - 45;
+                itms.forEach(i => {
+                    let buy = i.action === 'BUY', txt = `${i.action} ${i.shares}sh @ £${parseFloat(i.price).toFixed(2)}`;
+                    ctx.font = 'bold 10px -apple-system, sans-serif'; let tw = ctx.measureText(txt).width, bw = tw + 10, bh = 18;
+                    ctx.setLineDash([]); ctx.fillStyle = buy ? '#00c853' : '#ff3d00'; ctx.fillRect(x - (bw / 2), sy - bh, bw, bh);
+                    ctx.fillStyle = '#ffffff'; ctx.fillText(txt, x - (tw / 2), sy - 5); sy -= 22;
+                });
+            });
+        }
+
+        function updateTrancheVisual(count) {
+            let c = document.getElementById('mTranchesContainer'), t = document.getElementById('mTranchesText');
+            if (!c || !t) return; c.innerHTML = ''; t.innerText = `${count} / 5 Tranches Active`;
+            for (let i = 1; i <= 5; i++) {
+                let b = document.createElement('div'); b.className = 'tranche-bar ' + (i <= count ? 'active' : 'inactive'); c.appendChild(b);
+            }
         }
 
         function updateIntervals() {
@@ -1357,157 +1439,100 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function renderChart() {
-            let rootContainer = document.getElementById('chartsRoot');
-            rootContainer.innerHTML = '';
-            globalChartInstances = [];
+            if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
+            if (tvMathSeries) { tvChart.removeSeries(tvMathSeries); tvMathSeries = null; }
+            if (multiSeries && multiSeries.length) { multiSeries.forEach(s => tvChart.removeSeries(s)); multiSeries = []; }
+            let lg = document.getElementById('chartLegend'); lg.innerHTML = '';
             
-            if (!masterData || masterData.length === 0) return;
+            if (!masterData.length) {
+                let cv = document.getElementById('chartCanvas');
+                if (cv) { let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); }
+                return;
+            }
             
             let s = document.getElementById('styleSelect').value;
             let isMomentum = document.getElementById('userSelect').value.trim().toLowerCase() === 'test 2';
 
-            rootContainer.style.display = 'grid';
-            rootContainer.style.gap = '10px';
-            rootContainer.style.width = '100%';
-            rootContainer.style.height = '100%';
-            rootContainer.style.overflowY = 'auto';
-            rootContainer.style.gridTemplateColumns = masterData.length > 1 ? '1fr 1fr' : '1fr';
-            
-            masterData.forEach(cData => {
-                let wrap = document.createElement('div');
-                wrap.style.position = 'relative';
-                wrap.style.minHeight = masterData.length > 1 ? '300px' : '100%';
-                wrap.style.height = '100%';
-                wrap.style.border = '1px solid #262b36';
-                wrap.style.borderRadius = '8px';
-                wrap.style.overflow = 'hidden';
-                
-                let leg = document.createElement('div');
-                leg.style.position = 'absolute'; leg.style.top = '10px'; leg.style.left = '10px'; leg.style.zIndex = '8';
-                leg.style.color = '#e1e3e6'; leg.style.fontSize = '12px'; leg.style.fontWeight = 'bold';
-                leg.style.textShadow = '1px 1px 2px #000';
-                leg.innerText = `${cData.name} (${cData.ticker})`;
-                wrap.appendChild(leg);
-                
-                rootContainer.appendChild(wrap);
-                
-                let chart = LightweightCharts.createChart(wrap, { 
-                    layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, 
-                    grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, 
-                    crosshair: { mode: 0 }, 
-                    timeScale: { borderColor: '#262b36', timeVisible: true },
-                    rightPriceScale: { visible: true, borderColor: '#262b36' },
-                    leftPriceScale: { visible: showMath && !isMomentum, borderColor: '#262b36' }
+            if (currentTicker === 'ALL_SHARES') {
+                tvChart.applyOptions({ leftPriceScale: { visible: false } });
+                masterData.forEach(line => {
+                    let sr = tvChart.addLineSeries({ color: line.color, lineWidth: 2 });
+                    sr.setData(line.data);
+                    multiSeries.push(sr);
+                    let finalVal = line.data.length > 0 ? line.data[line.data.length-1].value : 0;
+                    let sign = finalVal > 0 ? '+' : '';
+                    lg.innerHTML += `<div style="font-size: 11px; color: ${line.color}; font-weight: bold; text-shadow: 1px 1px 2px #000;">${line.ticker} (${sign}${finalVal.toFixed(2)}%)</div>`;
                 });
+                if (currentChartStyle !== 'multi' || lastRenderedTicker !== 'ALL_SHARES') { tvChart.timeScale().fitContent(); }
+                currentChartStyle = 'multi'; lastRenderedTicker = 'ALL_SHARES';
+            } else {
+                let needNew = (!tvSeries || currentChartStyle !== s || lastRenderedTicker !== currentTicker);
+                let md = (s === 'heikin-ashi' ? convertToHeikinAshi(masterData) : masterData).map(d => ({time: d.time, open: d.open, high: d.high, low: d.low, close: d.close}));
+                if (s === 'area' || s === 'line') md = masterData.map(d => ({time: d.time, value: d.close}));
                 
-                let md = (s === 'heikin-ashi' ? convertToHeikinAshi(cData.ohlc) : cData.ohlc);
-                if (s === 'area' || s === 'line') md = cData.ohlc.map(d => ({time: d.time, value: d.close}));
-                
-                let tvSeries;
-                if (s === 'candlestick' || s === 'heikin-ashi') tvSeries = chart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
-                else if (s === 'bar') tvSeries = chart.addBarSeries({ upColor: '#00c853', downColor: '#ff3d00' });
-                else if (s === 'area') tvSeries = chart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff', lineWidth: 2 });
-                else tvSeries = chart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
-                
-                tvSeries.setData(md);
-                
-                let tvMathSeries = null;
-                if (showMath && cData.mathLine && cData.mathLine.length > 0) {
-                    tvMathSeries = chart.addLineSeries({ color: '#ff9900', lineWidth: 2, lineStyle: 1, priceScaleId: isMomentum ? 'right' : 'left' });
-                    tvMathSeries.setData(cData.mathLine);
+                if (needNew) {
+                    if (s === 'candlestick' || s === 'heikin-ashi') tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
+                    else if (s === 'bar') tvSeries = tvChart.addBarSeries({ upColor: '#00c853', downColor: '#ff3d00' });
+                    else if (s === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff', lineWidth: 2 });
+                    else tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
+                    
+                    tvSeries.setData(md);
+                    tvChart.timeScale().fitContent();
+                    currentChartStyle = s; 
+                    lastRenderedTicker = currentTicker;
+                } else {
+                    tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
+                    tvSeries.setData(md);
                 }
                 
-                chart.timeScale().fitContent();
-                
-                let cv = document.createElement('canvas');
-                cv.style.position = 'absolute'; cv.style.top = '0'; cv.style.left = '0'; cv.style.pointerEvents = 'none'; cv.style.zIndex = '5';
-                wrap.appendChild(cv);
-                
-                let inst = { chart, series: tvSeries, mathSeries: tvMathSeries, cv, wrap, ticker: cData.ticker, ohlc: cData.ohlc };
-                globalChartInstances.push(inst);
-                
-                new ResizeObserver(() => {
-                    chart.applyOptions({ width: wrap.clientWidth, height: wrap.clientHeight });
-                    drawCanvasOverlaySingle(inst);
-                }).observe(wrap);
-                
-                chart.timeScale().subscribeVisibleTimeRangeChange(() => drawCanvasOverlaySingle(inst));
-            });
-            setTimeout(drawCanvasOverlayAll, 50);
-        }
-
-        function drawCanvasOverlayAll() {
-            globalChartInstances.forEach(inst => drawCanvasOverlaySingle(inst));
-        }
-
-        function drawCanvasOverlaySingle(inst) {
-            let cv = inst.cv; let chart = inst.chart; let cData = inst.ohlc; let ticker = inst.ticker;
-            cv.width = inst.wrap.clientWidth; cv.height = inst.wrap.clientHeight;
-            let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
-            
-            if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !cData || !cData.length) return;
-            
-            let th = globalPortfolioData.history.filter(h => h.ticker === ticker); if (!th.length) return;
-            let pm = cData.map(d => ({ rawTime: d.time, ts: typeof d.time === 'number' ? d.time : Math.floor(new Date(d.time + 'T00:00:00Z').getTime() / 1000) }));
-            let g = {};
-
-            th.forEach(i => {
-                let ts = i.timestamp ? i.timestamp : Math.floor(new Date((i.date_str || i.time) + 'T00:00:00Z').getTime() / 1000);
-                if (isNaN(ts)) return;
-                let cl = pm[0], md = Math.abs(ts - cl.ts);
-                for (let p of pm) { let d = Math.abs(ts - p.ts); if (d < md) { md = d; cl = p; } }
-                let x = chart.timeScale().timeToCoordinate(cl.rawTime);
-                if (x !== null && x >= 0 && x <= cv.width) { let rx = Math.round(x); if (!g[rx]) g[rx] = []; g[rx].push(i); }
-            });
-
-            Object.keys(g).forEach(xs => {
-                let x = parseFloat(xs), itms = g[xs];
-                ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.moveTo(x, 0); ctx.lineTo(x, cv.height - 25); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke();
-                let sy = cv.height - 45;
-                itms.forEach(i => {
-                    let buy = i.action === 'BUY', txt = `${i.action} ${i.shares}sh @ £${parseFloat(i.price).toFixed(2)}`;
-                    ctx.font = 'bold 10px -apple-system, sans-serif'; let tw = ctx.measureText(txt).width, bw = tw + 10, bh = 18;
-                    ctx.setLineDash([]); ctx.fillStyle = buy ? '#00c853' : '#ff3d00'; ctx.fillRect(x - (bw / 2), sy - bh, bw, bh);
-                    ctx.fillStyle = '#ffffff'; ctx.fillText(txt, x - (tw / 2), sy - 5); sy -= 22;
-                });
-            });
+                if (showMath && masterMathLine && masterMathLine.length > 0) {
+                    tvChart.applyOptions({ leftPriceScale: { visible: !isMomentum } });
+                    tvMathSeries = tvChart.addLineSeries({ 
+                        color: '#ff9900', 
+                        lineWidth: 2, 
+                        lineStyle: 1,
+                        priceScaleId: isMomentum ? 'right' : 'left'
+                    });
+                    tvMathSeries.setData(masterMathLine);
+                } else {
+                    tvChart.applyOptions({ leftPriceScale: { visible: false } });
+                }
+            }
+            setTimeout(drawCanvasOverlay, 50);
         }
 
         async function fetchData(silent = false) {
-            let loader = document.getElementById('loader');
-            if (!silent && loader) loader.style.display = 'block';
+            if (!silent) document.getElementById('loader').style.display = 'block';
             try {
-                updateIntervals(); 
-                let reqP = document.getElementById('periodSelect').value;
-                let reqI = document.getElementById('intervalSelect').value;
-                
-                let res = await fetch(`/api/data?t=${currentTicker}&p=${reqP}&i=${reqI}`);
+                let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`);
                 let p = await res.json(); 
                 
-                masterData = p.chartsData || [];
-                globalPortfolioData = p.portfolio;
+                if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
+                masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
                     let s = globalPortfolioData.settings;
-                    if (s.period) document.getElementById('periodSelect').value = s.period; 
-                    updateIntervals();
-                    if (s.interval) {
-                        let iSel = document.getElementById('intervalSelect');
-                        if (Array.from(iSel.options).some(opt => opt.value === s.interval)) iSel.value = s.interval;
-                    }
+                    if (s.period) document.getElementById('periodSelect').value = s.period; updateIntervals();
+                    if (s.interval) document.getElementById('intervalSelect').value = s.interval;
                     if (s.style) document.getElementById('styleSelect').value = s.style;
                     if (s.refresh) document.getElementById('refreshSelect').value = s.refresh;
                     if (s.ntfy_topic && document.getElementById('ntfyTopicInput')) document.getElementById('ntfyTopicInput').value = s.ntfy_topic;
                     setupAutoRefresh(); isSettingsLoaded = true;
                 }
                 renderWatchlist(globalPortfolioData.watchlist);
+                
+                let activeElem = document.querySelector(`li.watchlist-item[data-symbol="${currentTicker}"]`);
+                if (activeElem) {
+                    document.querySelectorAll('.watchlist-item').forEach(x => x.classList.remove('active'));
+                    activeElem.classList.add('active');
+                }
 
                 document.getElementById('activeTitle').innerText = p.name; currentAnomalyReason = p.metrics.reason;
                 currentLivePrice = p.metrics.price; currentActiveTranches = p.metrics.tranches; currentSharesOwned = p.metrics.shares_owned; currentValOwned = p.metrics.value_owned;
                 document.getElementById('masterBudgetInput').value = p.metrics.master_budget;
                 document.getElementById('mPrice').innerText = p.metrics.price_display; document.getElementById('mDisc').innerText = p.metrics.discount; document.getElementById('mBuy').innerText = p.metrics.buy_score;
                 updateTrancheVisual(p.metrics.tranches);
-                document.getElementById('inputHeldVal').value = currentValOwned; document.getElementById('mSharesOwned').innerText = currentTicker.includes(',') || currentTicker === 'ALL_SHARES' ? "All held shares" : `${currentSharesOwned} shares`;
+                document.getElementById('inputHeldVal').value = currentValOwned; document.getElementById('mSharesOwned').innerText = currentTicker === 'ALL_SHARES' ? "All held shares" : `${currentSharesOwned} shares`;
                 
                 document.getElementById('mTotalPnLDisplay').innerText = p.metrics.total_pnl_display; 
                 document.getElementById('mTotalPnLDisplay').style.color = p.metrics.total_pnl_color;
@@ -1517,16 +1542,34 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 
                 calculateSizing(); renderTradeHistory(); fetchDirectives(); renderChart();
             } catch(e){}
-            if (!silent && loader) loader.style.display = 'none';
+            if (!silent) document.getElementById('loader').style.display = 'none';
         }
+
+        function selectStock(t, e) { 
+            currentTicker = t; 
+            document.querySelectorAll('.watchlist-item').forEach(x => x.classList.remove('active')); 
+            let activeElem = e || document.querySelector(`li.watchlist-item[data-symbol="${t}"]`);
+            if (activeElem) activeElem.classList.add('active'); 
+            fetchData(false); 
+        }
+
+        document.getElementById('watchlistUI').addEventListener('click', async e => {
+            let li = e.target.closest('li.watchlist-item'); if (!li) return;
+            let sym = li.getAttribute('data-symbol');
+            if (e.target.classList.contains('btn-delete')) { 
+                e.stopPropagation(); await fetch('/api/watchlist/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: sym})});
+                let rem = (globalPortfolioData.watchlist || []).filter(s => s !== sym); currentTicker = 'ALL_SHARES'; fetchData(false); return; 
+            }
+            selectStock(sym, li);
+        });
 
         document.getElementById('addBtn').addEventListener('click', async () => {
             let v = document.getElementById('addTickerInput').value.trim().toUpperCase(); if(!v) return;
             document.getElementById('addTickerInput').value = ''; await fetch('/api/watchlist/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: v})});
-            currentTicker = v; setTimeout(openAlertModal, 500); fetchData(false);
+            selectStock(v); setTimeout(openAlertModal, 500);
         });
         document.getElementById('qsTicker').addEventListener('keypress', e => { if (e.key === 'Enter') checkQuickScore(); });
-        setTimeout(() => { fetchUsers(); updateIntervals(); fetchData(false); setupAutoRefresh(); }, 100);
+        setTimeout(() => { initChart(); fetchUsers(); updateIntervals(); fetchData(false); setupAutoRefresh(); }, 100);
     </script>
 </body>
 </html>
