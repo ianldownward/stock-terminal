@@ -226,7 +226,9 @@ class PortfolioManager:
 
         curr_tot = self.get_shares(ticker)
         if 'holdings' not in ud: ud['holdings'] = {}
-        if curr_tot > 0: ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * price_per_share, 2)}
+        if curr_tot > 0: 
+            hw = ud['holdings'].get(ticker, {}).get('high_water', current_price)
+            ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * price_per_share, 2), 'high_water': max(hw, current_price)}
         else: ud['holdings'].pop(ticker, None)
         self.save()
         return curr_tot
@@ -249,7 +251,9 @@ class PortfolioManager:
 
         curr_tot = self.get_shares(ticker)
         if 'holdings' not in ud: ud['holdings'] = {}
-        if curr_tot > 0: ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2)}
+        if curr_tot > 0: 
+            hw = ud['holdings'].get(ticker, {}).get('high_water', price)
+            ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2), 'high_water': max(hw, price)}
         else: ud['holdings'].pop(ticker, None)
         self.save()
 
@@ -268,7 +272,8 @@ class PortfolioManager:
         if 'holdings' not in ud: ud['holdings'] = {}
         if curr_tot > 0:
             cost = trade['price'] / 100.0 if trade['ticker'].endswith('.L') else trade['price']
-            ud['holdings'][trade['ticker']] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost, 2)}
+            hw = ud['holdings'].get(trade['ticker'], {}).get('high_water', trade['price'])
+            ud['holdings'][trade['ticker']] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost, 2), 'high_water': hw}
         else: ud['holdings'].pop(trade['ticker'], None)
         self.save()
         return True
@@ -329,25 +334,21 @@ class MarketScoringEngine:
         
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
-        # --- DYNAMIC TRAILING STOP LOSS FOR HELD POSITIONS ---
-        if avg_buy_price > 0:
+        # --- DB-BACKED TRAILING STOP LOSS ---
+        if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-            highest_price = max(highest_price, current_price)
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
 
-            # 1. Trailing Stop (Sells if stock drops 0.5% from local high water mark)
             if drop_from_peak_pct >= 0.5:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%" if pnl_pct > 0 else f"{pnl_pct:.2f}%",
-                        'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from local peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff'}
             
-            # 2. Hard Stop Loss (-1.0% maximum risk ceiling)
             if pnl_pct <= -1.0: 
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
                         'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%). Cutting losses immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00'}
 
-            # Riding the Trend
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
                     'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
@@ -602,14 +603,13 @@ def get_directives():
             avg_buy_p, highest_p = 0.0, cur
             if sh > 0:
                 t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
-                if t_buys: 
-                    avg_buy_p = t_buys[0]['price']
-                    try:
-                        bt_ts = t_buys[0]['timestamp']
-                        prices_since = [r['High'] for i, r in df.iterrows() if int(i.timestamp()) >= bt_ts]
-                        highest_p = max(prices_since + [cur, avg_buy_p])
-                    except:
-                        highest_p = max(cur, avg_buy_p)
+                if t_buys: avg_buy_p = t_buys[0]['price']
+                
+                # Fetch persistent High Water Mark from DB
+                highest_p = ud.get('holdings', {}).get(t, {}).get('high_water', cur)
+                if cur > highest_p:
+                    highest_p = cur
+                    ud['holdings'][t]['high_water'] = highest_p
 
             if is_momentum:
                 st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p)
@@ -658,6 +658,7 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
+    is_auto = portfolio_store.active_username().strip().lower() in ['test', 'test 2']
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
@@ -676,7 +677,8 @@ def get_directives():
         ud = portfolio_store.user_data()
         current_holdings = [t for t, h_data in ud.get('holdings', {}).items() if h_data.get('shares', 0) > 0]
         ud['watchlist'] = current_holdings
-        portfolio_store.save()
+
+    portfolio_store.save()
 
     curr_keys, topic = set(), ud.get('settings', {}).get('ntfy_topic', '')
     for d in dirs:
@@ -806,14 +808,16 @@ def get_data():
         avg_buy_p, highest_p = 0.0, last_p
         if sh_own > 0:
             t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
-            if t_buys: 
-                avg_buy_p = t_buys[0]['price']
-                try:
-                    bt_ts = t_buys[0]['timestamp']
-                    prices_since = [r['High'] for i, r in df.iterrows() if int(i.timestamp()) >= bt_ts]
-                    highest_p = max(prices_since + [last_p, avg_buy_p])
-                except:
-                    highest_p = max(last_p, avg_buy_p)
+            if t_buys: avg_buy_p = t_buys[0]['price']
+
+            # Update High Water Mark in DB
+            highest_p = ud.get('holdings', {}).get(t, {}).get('high_water', last_p)
+            if last_p > highest_p:
+                highest_p = last_p
+                if 'holdings' not in ud: ud['holdings'] = {}
+                if t not in ud['holdings']: ud['holdings'][t] = {}
+                ud['holdings'][t]['high_water'] = highest_p
+                portfolio_store.save()
 
         if is_momentum:
             st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p)
@@ -830,7 +834,9 @@ def get_data():
 
         if sh_own > 0:
             if 'holdings' not in ud: ud['holdings'] = {}
-            ud['holdings'][t] = {'shares': sh_own, 'manual_val': val_own}
+            if t not in ud['holdings']: ud['holdings'][t] = {}
+            ud['holdings'][t]['shares'] = sh_own
+            ud['holdings'][t]['manual_val'] = val_own
         else: ud.get('holdings', {}).pop(t, None)
 
         mathLine = []
