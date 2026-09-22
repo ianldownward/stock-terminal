@@ -298,7 +298,8 @@ class MarketScoringEngine:
             'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares',
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
             'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
-            'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy'
+            'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy',
+            'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca'
         }
 
     def score_momentum(self, df_5m, current_price):
@@ -525,7 +526,11 @@ def get_directives():
     is_momentum = portfolio_store.active_username().strip().lower() == 'test 2'
     
     if is_momentum:
-        scan_list = ['NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR']
+        # Dual-Market Candidate Pool: UK Leaders (08:00 - 16:30 BST) + US Leaders (14:30 - 21:00 BST)
+        scan_list = [
+            'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L',
+            'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR'
+        ]
     else:
         scan_list = ud.get('watchlist', [])
     
@@ -1338,7 +1343,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         function updateIntervals() {
             let p = document.getElementById('periodSelect').value, s = document.getElementById('intervalSelect'), ci = s.value; s.innerHTML = '';
             let o = (p === '1d' || p === '5d') ? [['1m','1 Min'],['5m','5 Mins'],['15m','15 Mins'],['30m','30 Mins'],['1h','1 Hour']] : (p === '1mo' ? [['5m','5 Mins'],['15m','15 Mins'],['30m','30 Mins'],['1h','1 Hour'],['1d','1 Day']] : [['1d','1 Day'],['1wk','1 Week'],['1mo','1 Month']]);
-            o.forEach(x => { let opt = document.createElement('option'); opt.value = x[0]; opt.text = x[1]; s.appendChild(opt); });
+            o.forEach(x => { let opt = document.value == x[0]; opt.text = x[1]; s.appendChild(opt); });
             if (Array.from(s.options).some(x => x.value === ci)) s.value = ci; else if (p === '1mo' || p === '6mo') s.value = '1d';
         }
 
