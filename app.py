@@ -773,7 +773,39 @@ def get_data():
             ud['holdings'][t] = {'shares': sh_own, 'manual_val': val_own}
         else: ud.get('holdings', {}).pop(t, None)
 
-        return jsonify({'ohlc': data, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'metrics': {
+        # --- CALCULATE THE MATHEMATICAL OVERLAY LINE ---
+        mathLine = []
+        if is_momentum:
+            ema21_series = df['Close'].ewm(span=21, adjust=False).mean()
+            ema21_dict = {}
+            for idx, val in ema21_series.items():
+                ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
+                ema21_dict[ts] = val
+            for d in data:
+                if d['time'] in ema21_dict:
+                    mathLine.append({'time': d['time'], 'value': round(ema21_dict[d['time']], 2)})
+        else:
+            if t in engine.nav_bases:
+                target = engine.nav_bases[t]
+                for d in data:
+                    mathLine.append({'time': d['time'], 'value': target})
+            else:
+                df_1y = fetch_yf_data(t, "1y", "1d")
+                if not df_1y.empty:
+                    sma200 = df_1y['Close'].rolling(200).mean()
+                    if sma200.isna().all():
+                        sma200 = df_1y['Close'].expanding().mean()
+                    sma_dict = {idx.strftime('%Y-%m-%d'): val for idx, val in sma200.items() if pd.notna(val)}
+                    last_valid = sma200.dropna().iloc[-1] if not sma200.dropna().empty else last_p
+                else:
+                    sma_dict, last_valid = {}, last_p
+                    
+                for d in data:
+                    time_str = d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d')
+                    val = sma_dict.get(time_str, last_valid)
+                    mathLine.append({'time': d['time'], 'value': round(val, 2)})
+
+        return jsonify({'ohlc': data, 'mathLine': mathLine, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
             'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
             'status': st['status'], 'color': st['color'], 'reason': st['reason'],
@@ -937,7 +969,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
     </div>
     <div class="main-content">
         <div class="top-nav">
-            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Show Trades: ON</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
+            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Show Trades: ON</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay: OFF</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
             <div class="top-nav-row2">
                 <div class="controls">
                     <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d">1 Day</option><option value="5d">5 Days</option><option value="1mo" selected>1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
@@ -978,6 +1010,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
     <script>
         let currentChartStyle = ''; let lastRenderedTicker = ''; let multiSeries = [];
         let currentTicker = 'ALL_SHARES'; let tvChart = null; let tvSeries = null; let masterData = []; let showTrades = true;
+        let showMath = false; let masterMathLine = []; let tvMathSeries = null;
         let currentAnomalyReason = "Loading..."; let currentLivePrice = 0; let currentActiveTranches = 0; let currentSharesOwned = 0; let currentValOwned = 0;
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null; let isSettingsLoaded = false;
@@ -987,6 +1020,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let btn = document.getElementById('btnShowTrades');
             if(btn){ btn.innerText = showTrades ? "Show Trades: ON" : "Show Trades: OFF"; showTrades ? btn.classList.add('active') : btn.classList.remove('active'); }
             drawCanvasOverlay();
+        }
+
+        function toggleShowMath() {
+            showMath = !showMath;
+            let btn = document.getElementById('btnShowMath');
+            if(btn){ btn.innerText = showMath ? "Math Overlay: ON" : "Math Overlay: OFF"; showMath ? btn.classList.add('active') : btn.classList.remove('active'); }
+            renderChart();
         }
 
         async function fetchUsers() {
@@ -1362,6 +1402,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         function renderChart() {
             if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
+            if (tvMathSeries) { tvChart.removeSeries(tvMathSeries); tvMathSeries = null; }
             if (multiSeries && multiSeries.length) { multiSeries.forEach(s => tvChart.removeSeries(s)); multiSeries = []; }
             let lg = document.getElementById('chartLegend'); lg.innerHTML = '';
             
@@ -1403,6 +1444,11 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
                     tvSeries.setData(md);
                 }
+                
+                if (showMath && masterMathLine && masterMathLine.length > 0) {
+                    tvMathSeries = tvChart.addLineSeries({ color: '#ff9900', lineWidth: 2, lineStyle: 1 });
+                    tvMathSeries.setData(masterMathLine);
+                }
             }
             setTimeout(drawCanvasOverlay, 50);
         }
@@ -1414,6 +1460,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let p = await res.json(); 
                 
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
+                masterMathLine = p.mathLine || [];
                 
                 globalPortfolioData = p.portfolio;
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
