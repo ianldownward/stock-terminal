@@ -726,7 +726,6 @@ def get_data():
     master_pnl_val = total_equity - mb
     master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
     master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
-    master_pdsp = f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)"
 
     req_p = request.args.get('p')
     if not req_p or req_p == 'undefined': req_p = ud.get('settings', {}).get('period', '5d' if is_momentum else '1mo')
@@ -746,10 +745,8 @@ def get_data():
                 if df_stat.index.tz is not None:
                     df_stat.index = df_stat.index.tz_convert('UTC')
                 last_ts = df_stat.index[-1].timestamp()
-                
                 if (time.time() - last_ts) > 1800:
                     return tick, 'closed' 
-                
                 if len(df_stat) > 1:
                     last_price = df_stat['Close'].iloc[-1]
                     prev_price = df_stat['Close'].iloc[-2]
@@ -764,39 +761,40 @@ def get_data():
                 wl_status[tick] = status
 
     # --- PNL TIMEFRAME CALCULATIONS ---
-    def get_price_changes(tick):
-        df_ch = fetch_yf_data(tick, "1mo", "1d")
-        if df_ch.empty or len(df_ch) < 2: return 0.0, 0.0
-        cur = df_ch['Close'].iloc[-1]
-        p_1d = df_ch['Close'].iloc[-2]
-        p_1mo = df_ch['Close'].iloc[0]
-        div = 100.0 if tick.endswith('.L') and cur > 100 else 1.0
-        return (cur - p_1d)/div, (cur - p_1mo)/div
-
     pnl_dfs = {}
-    def fetch_pnl_data(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
+    def fetch_pnl_data(tick): return tick, fetch_yf_data(tick, "5d", "5m")
     with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds)))) as ex:
         for tick, df_pnl in ex.map(fetch_pnl_data, active_holds): pnl_dfs[tick] = df_pnl
         
-    tot_1d, tot_1mo = 0.0, 0.0
+    tot_today_diff, tot_1h_diff = 0.0, 0.0
     for tk in active_holds:
         df_ch = pnl_dfs.get(tk)
         if df_ch is not None and not df_ch.empty and len(df_ch) >= 2:
             cur_price = df_ch['Close'].iloc[-1]
-            p_1d = df_ch['Close'].iloc[-2]
-            p_1mo = df_ch['Close'].iloc[0]
+            last_date = df_ch.index[-1].date()
+            today_df = df_ch[df_ch.index.date == last_date]
+            p_today = today_df['Close'].iloc[0] if not today_df.empty else cur_price
+            
+            target_ts = df_ch.index[-1] - pd.Timedelta(hours=1)
+            prior_df = df_ch[df_ch.index <= target_ts]
+            p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
+            
             div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
             sh_h = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
-            tot_1d += sh_h * ((cur_price - p_1d)/div)
-            tot_1mo += sh_h * ((cur_price - p_1mo)/div)
+            
+            tot_today_diff += sh_h * ((cur_price - p_today)/div)
+            tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
 
-    master_1d_pct = (tot_1d / (total_equity - tot_1d) * 100.0) if (total_equity - tot_1d) > 0 else 0.0
-    master_1mo_pct = (tot_1mo / (total_equity - tot_1mo) * 100.0) if (total_equity - tot_1mo) > 0 else 0.0
+    prev_equity_today = total_equity - tot_today_diff
+    master_today_pct = (tot_today_diff / prev_equity_today * 100.0) if prev_equity_today > 0 else 0.0
+    
+    prev_equity_1h = total_equity - tot_1h_diff
+    master_1h_pct = (tot_1h_diff / prev_equity_1h * 100.0) if prev_equity_1h > 0 else 0.0
 
     master_pnl_data = {
         'all': {'val': f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')},
-        '1mo': {'val': f"{'+' if tot_1mo>0 else ''}£{tot_1mo:.2f} ({'+' if master_1mo_pct>0 else ''}{master_1mo_pct:.2f}%)", 'color': '#00c853' if tot_1mo > 0 else ('#ff3d00' if tot_1mo < 0 else '#8a8a9e')},
-        '1d': {'val': f"{'+' if tot_1d>0 else ''}£{tot_1d:.2f} ({'+' if master_1d_pct>0 else ''}{master_1d_pct:.2f}%)", 'color': '#00c853' if tot_1d > 0 else ('#ff3d00' if tot_1d < 0 else '#8a8a9e')}
+        'today': {'val': f"{'+' if tot_today_diff>0 else ''}£{tot_today_diff:.2f} ({'+' if master_today_pct>0 else ''}{master_today_pct:.2f}%)", 'color': '#00c853' if tot_today_diff > 0 else ('#ff3d00' if tot_today_diff < 0 else '#8a8a9e')},
+        '1h': {'val': f"{'+' if tot_1h_diff>0 else ''}£{tot_1h_diff:.2f} ({'+' if master_1h_pct>0 else ''}{master_1h_pct:.2f}%)", 'color': '#00c853' if tot_1h_diff > 0 else ('#ff3d00' if tot_1h_diff < 0 else '#8a8a9e')}
     }
 
     if t == 'ALL_SHARES':
@@ -837,8 +835,8 @@ def get_data():
             'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
             'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
             'shares_owned': sum(h.get('shares',0) for h in ud.get('holdings',{}).values()), 'value_owned': tot_own, 
-            'pnl_display': master_pdsp, 'pnl_color': master_pc, 'pnl_data': master_pnl_data,
-            'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc, 'master_budget': mb,
+            'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data,
+            'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
 
@@ -849,7 +847,7 @@ def get_data():
                 'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
                 'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.',
                 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
-                'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc,
+                'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'],
                 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
             }})
 
@@ -891,30 +889,39 @@ def get_data():
             c = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
             pnl_d = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
 
-            df_ch = fetch_yf_data(t, "1mo", "1d")
+            df_ch = fetch_yf_data(t, "5d", "5m")
             if not df_ch.empty and len(df_ch) >= 2:
                 cur_p = df_ch['Close'].iloc[-1]
-                p_1d = df_ch['Close'].iloc[-2]
-                p_1mo = df_ch['Close'].iloc[0]
+                last_date = df_ch.index[-1].date()
+                today_df = df_ch[df_ch.index.date == last_date]
+                p_today = today_df['Close'].iloc[0] if not today_df.empty else cur_p
+                
+                target_ts = df_ch.index[-1] - pd.Timedelta(hours=1)
+                prior_df = df_ch[df_ch.index <= target_ts]
+                p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
+                
                 div = 100.0 if t.endswith('.L') and cur_p > 100 else 1.0
                 
-                pv_1d = sh_own * ((cur_p - p_1d)/div)
-                pv_1mo = sh_own * ((cur_p - p_1mo)/div)
+                pv_today = sh_own * ((cur_p - p_today)/div)
+                pv_1h = sh_own * ((cur_p - p_1h)/div)
                 
-                pp_1d = (pv_1d / (val_own - pv_1d) * 100.0) if (val_own - pv_1d) > 0 else 0.0
-                pp_1mo = (pv_1mo / (val_own - pv_1mo) * 100.0) if (val_own - pv_1mo) > 0 else 0.0
+                val_today_start = sh_own * (p_today/div)
+                val_1h_start = sh_own * (p_1h/div)
+                
+                pp_today = (pv_today / val_today_start * 100.0) if val_today_start > 0 else 0.0
+                pp_1h = (pv_1h / val_1h_start * 100.0) if val_1h_start > 0 else 0.0
                 
                 ticker_pnl_data = {
                     'all': {'val': pnl_d, 'color': c},
-                    '1mo': {'val': f"{'+' if pv_1mo>0 else ''}£{pv_1mo:.2f} ({'+' if pp_1mo>0 else ''}{pp_1mo:.2f}%)", 'color': '#00c853' if pv_1mo > 0 else ('#ff3d00' if pv_1mo < 0 else '#8a8a9e')},
-                    '1d': {'val': f"{'+' if pv_1d>0 else ''}£{pv_1d:.2f} ({'+' if pp_1d>0 else ''}{pp_1d:.2f}%)", 'color': '#00c853' if pv_1d > 0 else ('#ff3d00' if pv_1d < 0 else '#8a8a9e')}
+                    'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')},
+                    '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}
                 }
             else:
-                ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, '1mo': {'val': pnl_d, 'color': c}, '1d': {'val': pnl_d, 'color': c}}
+                ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': {'val': pnl_d, 'color': c}, '1h': {'val': pnl_d, 'color': c}}
         else: 
             pnl_d, c = "£0.00 (0.00%)", '#8a8a9e'
             empty_pnl = {'val': pnl_d, 'color': c}
-            ticker_pnl_data = {'all': empty_pnl, '1mo': empty_pnl, '1d': empty_pnl}
+            ticker_pnl_data = {'all': empty_pnl, 'today': empty_pnl, '1h': empty_pnl}
 
         if sh_own > 0:
             if 'holdings' not in ud: ud['holdings'] = {}
@@ -962,8 +969,8 @@ def get_data():
             'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
             'status': st['status'], 'color': st['color'], 'reason': st['reason'],
             'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'],
-            'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': pnl_d, 'pnl_color': c, 'pnl_data': ticker_pnl_data,
-            'total_pnl_display': master_pdsp, 'total_pnl_color': master_pc, 'master_budget': mb,
+            'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': ticker_pnl_data['all']['val'], 'pnl_color': ticker_pnl_data['all']['color'], 'pnl_data': ticker_pnl_data,
+            'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
     except Exception as e: return jsonify({'error': str(e)}), 500
@@ -1024,27 +1031,34 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .action-buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         select, button.btn-control { background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
         select:hover, button.btn-control:hover { border-color: #00d2ff; }
-        button.btn-trades { background: #0f1115; border: 1px solid #262b36; color: #787e8e; font-weight: bold; }
-        button.btn-trades.active { border-color: #00d2ff; color: #00d2ff; }
-        button.btn-alert { background: #0f1115; border: 1px solid #ff9900; color: #ff9900; font-weight: bold; }
+        button.btn-trades { background: #0f1115; border: 1px solid #262b36; color: #787e8e; font-weight: bold; transition: background 0.2s, color 0.2s; }
+        button.btn-trades.active { border-color: #00d2ff; background: #00d2ff; color: #000; }
+        button.btn-alert { background: #0f1115; border: 1px solid #ff9900; color: #ff9900; font-weight: bold; transition: background 0.2s, color 0.2s; }
         button.btn-alert:hover { background: #ff9900; color: #000; }
-        button.btn-fullscreen { background: #0f1115; border: 1px solid #b388ff; color: #b388ff; font-weight: bold; }
+        button.btn-draw.active { border-color: #ffeb3b; background: #ffeb3b; color: #000; }
+        button.btn-manual.active { border-color: #ffeb3b; background: #ffeb3b; color: #000; }
+        button.btn-fullscreen { background: #0f1115; border: 1px solid #b388ff; color: #b388ff; font-weight: bold; transition: background 0.2s, color 0.2s; }
         button.btn-fullscreen:hover { background: #b388ff; color: #000; }
-        button.btn-refresh { background: #0f1115; border: 1px solid #00d2ff; color: #00d2ff; font-weight: bold; }
+        button.btn-refresh { background: #0f1115; border: 1px solid #00d2ff; color: #00d2ff; font-weight: bold; transition: background 0.2s, color 0.2s; }
         button.btn-refresh:hover { background: #00d2ff; color: #000; }
-        button.btn-reset { background: #0f1115; border: 1px solid #ff4a4a; color: #ff4a4a; font-weight: bold; }
+        button.btn-reset { background: #0f1115; border: 1px solid #ff4a4a; color: #ff4a4a; font-weight: bold; transition: background 0.2s, color 0.2s; }
         button.btn-reset:hover { background: #ff4a4a; color: #fff; }
         button.btn-rec { background: #00d2ff; color: #000; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px;}
         .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; white-space: nowrap; }
         .controls label { font-size: 11px; color: #787e8e; text-transform: uppercase; font-weight: bold; }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
-        .card { background: #171a21; padding: 12px; border-radius: 10px; border: 1px solid #262b36; text-align: center; transition: 0.2s; }
+        .card { background: #171a21; padding: 12px; border-radius: 10px; border: 1px solid #262b36; text-align: center; transition: 0.2s; display: flex; flex-direction: column; justify-content: center; }
         .card h3 { font-size: 10px; color: #787e8e; margin: 0 0 6px 0; text-transform: uppercase; }
         .card p { font-size: 15px; font-weight: bold; margin: 0; color: #fff; }
         .card input { width: 100%; background: #0f1115; border: 1px solid #262b36; color: #00d2ff; padding: 4px; border-radius: 4px; font-weight: bold; font-size: 14px; text-align: center; }
         .val-highlight { color: #00d2ff; }
         .clickable-card { cursor: pointer; border: 1px solid #363c4a; }
         .clickable-card:hover { border-color: #00d2ff; background: #1e222d; }
+        .segmented-control { display: flex; background: #0f1115; border: 1px solid #262b36; border-radius: 6px; overflow: hidden; width: 100%; }
+        .segmented-control input[type="radio"] { display: none; }
+        .segmented-control label { flex: 1; text-align: center; padding: 4px 0; cursor: pointer; font-size: 9px; font-weight: bold; color: #787e8e; border-right: 1px solid #262b36; transition: 0.2s; margin: 0; }
+        .segmented-control label:last-child { border-right: none; }
+        .segmented-control input[type="radio"]:checked + label { background: #1e222d; color: #00d2ff; }
         .tranche-bars-container { display: flex; flex-direction: column-reverse; gap: 3px; height: 35px; justify-content: center; align-items: center; margin-top: 5px; }
         .tranche-bar { width: 80%; height: 5px; border-radius: 2px; transition: background 0.3s; }
         .tranche-bar.active { background: #00c853; }
@@ -1110,7 +1124,22 @@ HTML_FRONTEND = """<!DOCTYPE html>
         <div class="sidebar-top">
             <div class="user-profile-box"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><label>Active Profile</label><div style="display:flex; gap:4px;"><button onclick="addUserPrompt()" class="user-btn new">+ New</button><button onclick="deleteUserPrompt()" class="user-btn del">Delete</button></div></div><select id="userSelect" onchange="onUserChange(this.value)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select></div>
             
-            <div class="total-shares-box"><label>Total Portfolio Equity</label><div id="mTotalSharesHeldVal" class="total-val">£0.00</div><div id="mTotalSharesPnL" class="total-pnl">Cash: £0.00 | Shares: £0.00</div><div id="mTotalPnLDisplay" class="total-pnl" style="margin-top:6px;">£0.00 (0.00%)</div></div>
+            <div class="total-shares-box">
+                <label>Total Portfolio Equity</label>
+                <div id="mTotalSharesHeldVal" class="total-val">£0.00</div>
+                <div id="mTotalSharesPnL" class="total-pnl">Cash: £0.00 | Shares: £0.00</div>
+                <div id="mTotalPnLDisplay" class="total-pnl" style="margin-top:6px; font-size:14px;">£0.00 (0.00%)</div>
+                <div style="display:flex; justify-content:center; margin-top:8px;">
+                    <div class="segmented-control" id="mPnlTogglesSidebar">
+                        <input type="radio" name="master_pnl_tf" id="mpnl_all" value="all" checked onchange="updateMasterPnLDisplay()">
+                        <label for="mpnl_all">All Time</label>
+                        <input type="radio" name="master_pnl_tf" id="mpnl_today" value="today" onchange="updateMasterPnLDisplay()">
+                        <label for="mpnl_today">Today</label>
+                        <input type="radio" name="master_pnl_tf" id="mpnl_1h" value="1h" onchange="updateMasterPnLDisplay()">
+                        <label for="mpnl_1h">1 Hour</label>
+                    </div>
+                </div>
+            </div>
             <div class="master-budget-box"><label>Starting Capital (£)</label><input type="number" id="masterBudgetInput" value="10000" oninput="onMasterBudgetInput()"><div class="budget-sub-stats"><div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£10,000.00</b></div></div></div>
             
             <h2>Live Watchlist</h2><div class="search-box"><input type="text" id="addTickerInput" placeholder="Add Symbol..."><button id="addBtn">+</button></div><ul class="watchlist" id="watchlistUI"></ul>
@@ -1123,7 +1152,23 @@ HTML_FRONTEND = """<!DOCTYPE html>
     </div>
     <div class="main-content">
         <div class="top-nav">
-            <div class="top-nav-row1"><h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2><div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnDraw" class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="toggleDrawMode()">✏️ Draw Line</button><button id="btnToggleManual" class="btn-control active" style="border-color:#ffeb3b; background:#ffeb3b; color:#000;" onclick="toggleManualLines()">Manual</button><button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button><button id="btnToggleAuto" class="btn-control" style="border-color:#b388ff; color:#b388ff;" onclick="toggleAutoLines()">Auto S/R</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div></div>
+            <div class="top-nav-row1">
+                <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+                <div class="action-buttons">
+                    <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button>
+                    <button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button>
+                    <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
+                    <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
+                    <button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="19" r="3"></circle><circle cx="19" cy="5" r="3"></circle><line x1="7.11" y1="16.89" x2="16.89" y2="7.11"></line></svg>
+                        <span id="drawBtnText">Draw Line</span>
+                    </button>
+                    <button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button>
+                    <button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button>
+                    <button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button>
+                    <button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button>
+                </div>
+            </div>
             <div class="top-nav-row2">
                 <div class="controls">
                     <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d">1 Day</option><option value="5d">5 Days</option><option value="1mo" selected>1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
@@ -1139,13 +1184,18 @@ HTML_FRONTEND = """<!DOCTYPE html>
             <div class="card"><h3>Buy Score</h3><p id="mBuy" class="val-highlight">--</p></div>
             <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Active Tranches ⓘ</h3><div id="mTranchesContainer" class="tranche-bars-container"></div><p id="mTranchesText" style="font-size:10px; color:#787e8e; margin-top:4px;">--</p></div>
             <div class="card"><h3>Current Value Owned (£)</h3><input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()"><span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">0 shares</span></div>
-            <div class="card">
+            <div class="card" style="justify-content: flex-start;">
                 <h3>Profit / Loss</h3>
-                <p id="mPnL" style="font-size:15px; font-weight:bold; color:#8a8a9e; margin-top:0px;">£0.00 (0.00%)</p>
-                <div style="display:flex; justify-content:center; gap:6px; margin-top:6px; font-size:9px; color:#787e8e;">
-                    <label style="cursor:pointer;"><input type="radio" name="pnl_tf" value="all" checked onchange="updatePnLDisplay()" style="margin:0 2px 0 0; vertical-align:middle;">All</label>
-                    <label style="cursor:pointer;"><input type="radio" name="pnl_tf" value="1mo" onchange="updatePnLDisplay()" style="margin:0 2px 0 0; vertical-align:middle;">1M</label>
-                    <label style="cursor:pointer;"><input type="radio" name="pnl_tf" value="1d" onchange="updatePnLDisplay()" style="margin:0 2px 0 0; vertical-align:middle;">1D</label>
+                <p id="mPnL" style="font-size:15px; font-weight:bold; color:#8a8a9e; margin-top:2px;">£0.00 (0.00%)</p>
+                <div style="display:flex; justify-content:center; margin-top:8px;">
+                    <div class="segmented-control" id="pnlTogglesMain">
+                        <input type="radio" name="pnl_tf" id="pnl_all" value="all" checked onchange="updatePnLDisplay()">
+                        <label for="pnl_all">All Time</label>
+                        <input type="radio" name="pnl_tf" id="pnl_today" value="today" onchange="updatePnLDisplay()">
+                        <label for="pnl_today">Today</label>
+                        <input type="radio" name="pnl_tf" id="pnl_1h" value="1h" onchange="updatePnLDisplay()">
+                        <label for="pnl_1h">1 Hour</label>
+                    </div>
                 </div>
             </div>
             <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Macro Status ⓘ</h3><p id="mMacro" style="font-size:12px; font-weight:bold; display:flex; justify-content:center; align-items:center; gap:6px;">--</p></div>
@@ -1176,20 +1226,28 @@ HTML_FRONTEND = """<!DOCTYPE html>
         let currentAnomalyReason = "Loading..."; let currentLivePrice = 0; let currentActiveTranches = 0; let currentSharesOwned = 0; let currentValOwned = 0;
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null; let isSettingsLoaded = false;
-        let currentPnLData = {};
+        let currentPnLData = {}; let currentMasterPnLData = {};
 
         // Custom Drawing Engine State
         let manualLines = {}; 
         let isDrawing = false; 
         let currentLine = null;
         let showManual = true; 
-        let showAuto = false;
 
         function updatePnLDisplay() {
             if (!currentPnLData || !currentPnLData['all']) return;
             let tf = document.querySelector('input[name="pnl_tf"]:checked').value;
             let data = currentPnLData[tf] || currentPnLData['all'];
             let pnlEl = document.getElementById('mPnL');
+            pnlEl.innerText = data.val;
+            pnlEl.style.color = data.color;
+        }
+
+        function updateMasterPnLDisplay() {
+            if (!currentMasterPnLData || !currentMasterPnLData['all']) return;
+            let tf = document.querySelector('input[name="master_pnl_tf"]:checked').value;
+            let data = currentMasterPnLData[tf] || currentMasterPnLData['all'];
+            let pnlEl = document.getElementById('mTotalPnLDisplay');
             pnlEl.innerText = data.val;
             pnlEl.style.color = data.color;
         }
@@ -1220,10 +1278,10 @@ HTML_FRONTEND = """<!DOCTYPE html>
             if (currentTicker === 'ALL_SHARES') { alert("Please select a single stock to draw lines."); return; }
             isDrawing = !isDrawing;
             currentLine = null;
+            let btnText = document.getElementById('drawBtnText');
             let btn = document.getElementById('btnDraw');
-            btn.innerText = isDrawing ? "Cancel Drawing" : "✏️ Draw Line";
-            btn.style.backgroundColor = isDrawing ? "#ffeb3b" : "#0f1115";
-            btn.style.color = isDrawing ? "#000" : "#ffeb3b";
+            btnText.innerText = isDrawing ? "Cancel" : "Draw Line";
+            if(isDrawing) { btn.classList.add('active'); } else { btn.classList.remove('active'); }
             drawCanvasOverlay();
         }
 
@@ -1231,8 +1289,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             showManual = !showManual;
             let btn = document.getElementById('btnToggleManual');
             if(btn){
-                btn.style.backgroundColor = showManual ? "#ffeb3b" : "#0f1115";
-                btn.style.color = showManual ? "#000" : "#ffeb3b";
+                if(showManual) { btn.classList.add('active'); } else { btn.classList.remove('active'); }
             }
             drawCanvasOverlay();
         }
@@ -1243,21 +1300,11 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 currentLine = null;
                 isDrawing = false;
                 let btn = document.getElementById('btnDraw');
-                btn.innerText = "✏️ Draw Line";
-                btn.style.backgroundColor = "#0f1115";
-                btn.style.color = "#ffeb3b";
+                let btnText = document.getElementById('drawBtnText');
+                btnText.innerText = "Draw Line";
+                btn.classList.remove('active');
                 drawCanvasOverlay();
             }
-        }
-
-        function toggleAutoLines() {
-            showAuto = !showAuto;
-            let btn = document.getElementById('btnToggleAuto');
-            if(btn){
-                btn.style.backgroundColor = showAuto ? "#b388ff" : "#0f1115";
-                btn.style.color = showAuto ? "#000" : "#b388ff";
-            }
-            drawCanvasOverlay();
         }
 
         function toggleShowTrades() {
@@ -1634,25 +1681,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             
             if (currentTicker === 'ALL_SHARES') return; 
 
-            // 1. AUTOMATED SUPPORT/RESISTANCE LINES (PURPLE)
-            if (showAuto && masterData && masterData.length > 0 && tvSeries) {
-                let recent = masterData.slice(-100); 
-                let high = Math.max(...recent.map(d => d.high || d.close || d.value));
-                let low = Math.min(...recent.map(d => d.low || d.close || d.value));
-                let yH = tvSeries.priceToCoordinate(high);
-                let yL = tvSeries.priceToCoordinate(low);
-                
-                ctx.beginPath(); ctx.setLineDash([5, 5]); ctx.strokeStyle = '#b388ff'; ctx.lineWidth = 1;
-                if(yH !== null) { ctx.moveTo(0, yH); ctx.lineTo(cv.width, yH); }
-                if(yL !== null) { ctx.moveTo(0, yL); ctx.lineTo(cv.width, yL); }
-                ctx.stroke();
-                
-                ctx.fillStyle = '#b388ff'; ctx.font = '10px sans-serif';
-                if(yH !== null) ctx.fillText('Auto Res', 10, yH - 5);
-                if(yL !== null) ctx.fillText('Auto Sup', 10, yL - 5);
-            }
-
-            // 2. MANUAL LINES (YELLOW)
+            // 1. MANUAL LINES (YELLOW)
             if (showManual && tvSeries) {
                 let lines = manualLines[currentTicker] || [];
                 ctx.setLineDash([]); ctx.strokeStyle = '#ffeb3b'; ctx.lineWidth = 2;
@@ -1677,7 +1706,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 }
             }
             
-            // 3. TRADE MARKERS (GREEN/RED DASHES)
+            // 2. TRADE MARKERS (GREEN/RED DASHES)
             if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !masterData || !masterData.length) return;
             
             let th = globalPortfolioData.history.filter(h => h.ticker === currentTicker); if (!th.length) return;
@@ -1832,8 +1861,8 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 updateTrancheVisual(p.metrics.tranches);
                 document.getElementById('inputHeldVal').value = currentValOwned; document.getElementById('mSharesOwned').innerText = currentTicker === 'ALL_SHARES' ? "All held shares" : `${currentSharesOwned} shares`;
                 
-                document.getElementById('mTotalPnLDisplay').innerText = p.metrics.total_pnl_display; 
-                document.getElementById('mTotalPnLDisplay').style.color = p.metrics.total_pnl_color;
+                currentMasterPnLData = p.metrics.master_pnl_data || { 'all': {val: p.metrics.total_pnl_display, color: p.metrics.total_pnl_color} };
+                updateMasterPnLDisplay();
                 
                 currentPnLData = p.metrics.pnl_data || { 'all': {val: p.metrics.pnl_display, color: p.metrics.pnl_color} };
                 updatePnLDisplay();
