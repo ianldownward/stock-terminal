@@ -11,6 +11,8 @@ app = Flask(__name__)
 YF_CACHE = {}
 
 def fetch_yf_data(ticker, period="1y", interval="1d"):
+    if not interval: interval = "1d"
+    if not period: period = "1y"
     cache_key = f"{ticker}_{period}_{interval}"
     now = time.time()
     
@@ -687,8 +689,10 @@ def get_data():
     master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
     master_pdsp = f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)"
 
-    req_p = request.args.get('p', ud.get('settings', {}).get('period', '5d' if is_momentum else '1mo'))
-    req_i = request.args.get('i', ud.get('settings', {}).get('interval', '5m' if is_momentum else '1d'))
+    req_p = request.args.get('p')
+    if not req_p: req_p = ud.get('settings', {}).get('period', '5d' if is_momentum else '1mo')
+    req_i = request.args.get('i')
+    if not req_i: req_i = ud.get('settings', {}).get('interval', '5m' if is_momentum else '1d')
 
     if t == 'ALL_SHARES':
         lines = []
@@ -1398,7 +1402,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let p = document.getElementById('periodSelect').value, s = document.getElementById('intervalSelect'), ci = s.value; s.innerHTML = '';
             let o = (p === '1d' || p === '5d') ? [['1m','1 Min'],['5m','5 Mins'],['15m','15 Mins'],['30m','30 Mins'],['1h','1 Hour']] : (p === '1mo' ? [['5m','5 Mins'],['15m','15 Mins'],['30m','30 Mins'],['1h','1 Hour'],['1d','1 Day']] : [['1d','1 Day'],['1wk','1 Week'],['1mo','1 Month']]);
             o.forEach(x => { let opt = document.createElement('option'); opt.value = x[0]; opt.text = x[1]; s.appendChild(opt); });
-            if (Array.from(s.options).some(x => x.value === ci)) s.value = ci; else if (p === '1mo' || p === '6mo') s.value = '1d';
+            if (Array.from(s.options).some(x => x.value === ci)) s.value = ci; else s.value = s.options[0].value;
         }
 
         function convertToHeikinAshi(o) {
