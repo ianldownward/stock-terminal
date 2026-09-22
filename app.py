@@ -238,7 +238,8 @@ class PortfolioManager:
         cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
         tot_amt = round(shares * cost_per_sh, 2)
 
-        now = pd.Timestamp.now()
+        # Force local London time for the trade history log display
+        now = pd.Timestamp.now(tz='Europe/London')
         entry = {
             'id': str(int(time.time() * 1000)), 'ticker': ticker, 'action': 'BUY' if 'BUY' in action_type.upper() else 'SELL',
             'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'),
