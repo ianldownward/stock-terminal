@@ -303,13 +303,13 @@
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
             'Test A - Deep Value': 'Manual value accumulation using physical trusts and deep-value blue chips. No automated intraday trading.',
-            'Test B - Momentum (UK & US)': 'Trades high-momentum UK stocks and 3x/2x leveraged US ETFs using fast 9/21 EMA crossovers and tight 0.5% trailing stops.',
+            'Test B - Momentum (UK & US)': 'Trades high-momentum UK stocks and 3x/2x leveraged US ETFs. Automatically unlocks US capital at 8:50 PM BST to prepare for UK morning open.',
             'Test C - 24/5 Global': '24/5 Follow-the-Sun strategy. Rotates capital across Asian, European, and US markets using fast EMAs.',
             'Test D - Volatility': 'Hunts for aggressive volume spikes breaking above the upper Bollinger Band. Uses wider 0.75% trailing stops.',
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes.',
             'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 5 minutes before the US market closes to avoid overnight gaps.',
             'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.',
-            'Test H - Wick Reversal': 'Aggressively scans for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion. Rotates capital into stronger wick setups.'
+            'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.'
         };
 
         function updatePnLDisplay() {

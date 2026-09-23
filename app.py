@@ -309,8 +309,10 @@ class MarketScoringEngine:
             'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ',
             'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'SQQQ': 'ProShares UltraPro Short QQQ (3x Short)',
             '3SUS.L': 'WisdomTree US NASDAQ 3x Short', 'TSM': 'TSMC ADR', 'SONY': 'Sony Group', 'BABA': 'Alibaba Group',
-            'ASML': 'ASML Holding', 'SAP': 'SAP SE',
+            'ASML': 'ASML Holding', 'SAP': 'SAP SE', 'SMCI': 'Super Micro Computer', 'ARM': 'ARM Holdings', 'AVGO': 'Broadcom Inc.',
+            'CONL': 'GraniteShares 2x Long COIN', 'MSTX': 'Defiance 2x Daily Long MSTR', 'BITX': '2x Bitcoin Strategy ETF',
             'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
+            'GLEN.L': 'Glencore plc', 'RIO.L': 'Rio Tinto plc', 'HSBA.L': 'HSBC Holdings', 'GSK.L': 'GSK plc', 'ULVR.L': 'Unilever plc',
             'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
 
@@ -357,6 +359,17 @@ class MarketScoringEngine:
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
         now_uk = pd.Timestamp.now(tz='Europe/London')
+        is_us_stock = not ticker.endswith('.L')
+
+        # TEST B PRE-CLOSE CAPITAL UNLOCK RULE (8:50 PM BST - 8:58 PM BST)
+        if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
+            if avg_buy_price > 0:
+                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                if pnl_pct < 0.30:  # Liquidate non-stellar US holdings before US close to free capital for UK open
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                            'reason': "US PRE-CLOSE CAPITAL UNLOCK: Liquidating weak US stock before 9:00 PM BST close to free capital for UK morning open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'status': 'US Pre-Close Unlock', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(UK Capital Unlock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
         if 'test f' in prof and now_uk.hour == 20 and now_uk.minute >= 55:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
                     'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
@@ -546,14 +559,15 @@ def process_auto_profile(prof_name):
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         if not is_momentum: return
 
+        # EXPANDED 30+ CANDIDATE SCAN UNIVERSE
         if 'test g' in active_profile:
             scan_list = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
         elif 'test h' in active_profile:
-            scan_list = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'RR.L', 'SHEL.L', 'BP.L']
+            scan_list = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
         elif 'test c' in active_profile:
-            scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+            scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
         else:
-            scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+            scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'SMCI', 'ARM', 'AVGO', 'CONL', 'MSTX', 'BITX']
 
         mb = ud.get('master_budget', 5000.0)
         hist = ud.get('history') or []
@@ -573,7 +587,7 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        with ThreadPoolExecutor(max_workers=min(5, max(1, len(scan_list)))) as ex:
+        with ThreadPoolExecutor(max_workers=min(10, max(1, len(scan_list)))) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
