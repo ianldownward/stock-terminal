@@ -1,4 +1,4 @@
-import os, json, time, urllib.request
+import os, json, time, urllib.request, threading
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
@@ -134,8 +134,8 @@ class PortfolioManager:
 
     def active_username(self): return self.data.get('active_user', 'Ian')
 
-    def user_data(self):
-        au = self.active_username()
+    def user_data(self, username=None):
+        au = username if username else self.active_username()
         if 'users' not in self.data: self.data['users'] = {}
         if au not in self.data['users']:
             self.data['users'][au] = self.default_user_state(au)
@@ -195,16 +195,17 @@ class PortfolioManager:
         if 'notified_signals' in ud and isinstance(ud['notified_signals'], dict): ud['notified_signals'].pop(ticker, None)
         self.save()
 
-    def get_shares(self, ticker):
+    def get_shares(self, ticker, username=None):
         if not ticker: return 0
-        init_pos = self.user_data().get('initial_positions') or {}
+        ud = self.user_data(username)
+        init_pos = ud.get('initial_positions') or {}
         init_sh = (init_pos.get(ticker) or {}).get('shares', 0)
-        net_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in self.user_data().get('history', []) if isinstance(t, dict) and t.get('ticker') == ticker)
+        net_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in ud.get('history', []) if isinstance(t, dict) and t.get('ticker') == ticker)
         return max(0, init_sh + net_sh)
 
-    def set_holding_value(self, ticker, value_owned, current_price):
+    def set_holding_value(self, ticker, value_owned, current_price, username=None):
         if not ticker: return 0
-        ud = self.user_data()
+        ud = self.user_data(username)
         value_owned, current_price = float(value_owned), float(current_price)
         price_per_share = current_price / 100.0 if ticker.endswith('.L') and current_price > 100 else current_price
         target_sh = round(value_owned / price_per_share) if price_per_share > 0 else 0
@@ -214,18 +215,18 @@ class PortfolioManager:
         if target_sh > 0 or value_owned > 0: ud['initial_positions'][ticker] = {'shares': baseline_sh, 'manual_val': value_owned}
         else: ud['initial_positions'].pop(ticker, None)
 
-        curr_tot = self.get_shares(ticker)
+        curr_tot = self.get_shares(ticker, username)
         if 'holdings' not in ud: ud['holdings'] = {}
         if curr_tot > 0: 
             hw = (ud['holdings'].get(ticker) or {}).get('high_water', current_price)
             ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * price_per_share, 2), 'high_water': max(hw, current_price)}
         else: ud['holdings'].pop(ticker, None)
-        self.save()
+        self.save_data(self.data)
         return curr_tot
 
-    def execute_trade(self, ticker, action_type, shares, price):
+    def execute_trade(self, ticker, action_type, shares, price, username=None):
         if not ticker or shares <= 0: return None
-        ud = self.user_data()
+        ud = self.user_data(username)
         shares, price = int(shares), round(float(price), 2)
         cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
         tot_amt = round(shares * cost_per_sh, 2)
@@ -235,16 +236,16 @@ class PortfolioManager:
         if 'history' not in ud: ud['history'] = []
         ud['history'].insert(0, entry)
 
-        curr_tot = self.get_shares(ticker)
+        curr_tot = self.get_shares(ticker, username)
         if 'holdings' not in ud: ud['holdings'] = {}
         if curr_tot > 0: 
             hw = (ud['holdings'].get(ticker) or {}).get('high_water', price)
             ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2), 'high_water': max(hw, price)}
         else: ud['holdings'].pop(ticker, None)
-        self.save()
+        self.save_data(self.data)
         
         ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
-        if ntfy_topic: send_push_notification(ntfy_topic, f"Trade Executed: {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
+        if ntfy_topic: send_push_notification(ntfy_topic, f"Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
         return entry
 
     def undo_trade(self, trade_id):
@@ -265,16 +266,16 @@ class PortfolioManager:
         self.save()
         return True
 
-    def get_total_portfolio_value(self):
-        ud = self.user_data()
+    def get_total_portfolio_value(self, username=None):
+        ud = self.user_data(username)
         hist = ud.get('history') or []
-        active_tickers = list(set([t.get('ticker') for t in hist if isinstance(t, dict) and self.get_shares(t.get('ticker')) > 0]))
+        active_tickers = list(set([t.get('ticker') for t in hist if isinstance(t, dict) and self.get_shares(t.get('ticker'), username) > 0]))
         
         if not active_tickers:
             return 0.0
             
         def fetch_val(t):
-            sh = self.get_shares(t)
+            sh = self.get_shares(t, username)
             try:
                 df = fetch_yf_data(t, "1d", "1d")
                 if not df.empty:
@@ -309,7 +310,6 @@ class MarketScoringEngine:
         }
 
     def check_market_regime(self):
-        """Checks QQQ 5-minute EMA trend to determine overall market regime."""
         try:
             df_qqq = fetch_yf_data('QQQ', '5d', '5m')
             if not df_qqq.empty and len(df_qqq) >= 21:
@@ -498,6 +498,121 @@ class MarketScoringEngine:
 
 portfolio_store = PortfolioManager()
 
+# --- BACKGROUND AUTO-TRADING ENGINE FOR ALL PROFILES ---
+def process_auto_profile(prof_name):
+    try:
+        ud = portfolio_store.user_data(prof_name)
+        engine = MarketScoringEngine()
+        active_profile = prof_name.strip().lower()
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
+        if not is_momentum: return
+
+        if 'test c' in active_profile:
+            scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+        else:
+            scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+
+        mb = ud.get('master_budget', 5000.0)
+        hist = ud.get('history') or []
+        init_pos = ud.get('initial_positions') or {}
+
+        net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
+        init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
+        cash_balance = mb + net_history - init_manual
+        rem_cash = max(0, cash_balance)
+
+        tot_own = portfolio_store.get_total_portfolio_value(prof_name)
+        total_equity = cash_balance + tot_own
+
+        dirs, buys, held_scores = [], [], []
+        MIN_BUY_VALUE = 20.0
+        regime = engine.check_market_regime()
+
+        dfs = {}
+        def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
+        with ThreadPoolExecutor(max_workers=min(5, max(1, len(scan_list)))) as ex:
+            for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
+
+        for t in scan_list:
+            t = t.strip().upper()
+            if not t: continue
+            try:
+                df = dfs.get(t)
+                if df is None or df.empty: continue
+                cur = df['Close'].iloc[-1]
+                sh = portfolio_store.get_shares(t, prof_name)
+                cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
+                vo = sh * cps
+
+                avg_buy_p, highest_p = 0.0, cur
+                if sh > 0:
+                    t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
+                    if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
+                    highest_p = (ud.get('holdings', {}).get(t) or {}).get('high_water', cur)
+                    if cur > highest_p:
+                        highest_p = cur
+                        if 'holdings' not in ud: ud['holdings'] = {}
+                        if t not in ud['holdings']: ud['holdings'][t] = {}
+                        ud['holdings'][t]['high_water'] = highest_p
+
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
+
+                last_trade_time = next((h.get('timestamp', 0) for h in hist if isinstance(h, dict) and h.get('ticker') == t), 0)
+                if int(time.time()) - last_trade_time < 300: continue
+
+                if sh > 0:
+                    held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
+
+                if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
+                    dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
+                elif st['action_main'] == 'BUY' and rem_cash >= MIN_BUY_VALUE:
+                    buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
+            except: pass
+
+        max_allowed_holds = 1 if 'test e' in active_profile else 2
+        if len(held_scores) > max_allowed_holds:
+            held_scores.sort(key=lambda x: x['score'])
+            for i in range(len(held_scores) - max_allowed_holds):
+                weakest = held_scores[i]
+                dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
+
+        now_uk = pd.Timestamp.now(tz='Europe/London')
+        is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
+        current_hold_count = len([x for x in held_scores if x['shares'] > 0])
+        slots_available = max(0, max_allowed_holds - current_hold_count)
+
+        if buys and rem_cash >= MIN_BUY_VALUE and not is_eod_blocked and slots_available > 0:
+            buys.sort(key=lambda x: x['s'], reverse=True)
+            top_buys = buys[:slots_available]
+            per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if 'test e' in active_profile else 0.50))
+            for b in top_buys:
+                bs = int(per_stock_budget // b['cps'])
+                amt = round(bs * b['cps'], 2)
+                if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
+                    dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
+
+        for d in dirs:
+            if d['action'] == 'BUY':
+                curr_cb = sum((init_pos.get(w) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if isinstance(tr, dict) and tr.get('ticker')==w) for w in [tk for tk, hd in ud.get('holdings', {}).items() if isinstance(hd, dict) and hd.get('shares', 0) > 0])
+                curr_cash = mb - curr_cb
+                if curr_cash < MIN_BUY_VALUE: continue
+                if d['amount'] > curr_cash:
+                    d['shares'] = int(curr_cash // (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']))
+            if d['shares'] > 0:
+                portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'], prof_name)
+    except: pass
+
+def global_background_worker():
+    while True:
+        try:
+            auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep']
+            for prof in auto_profiles:
+                process_auto_profile(prof)
+        except: pass
+        time.sleep(10)
+
+threading.Thread(target=global_background_worker, daemon=True).start()
+
 @app.route('/')
 def index(): 
     return render_template('index.html')
@@ -613,7 +728,6 @@ def get_directives():
     active_profile = portfolio_store.active_username().strip().lower()
     is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
     
-    # Expanded Uncorrelated Scan List
     if 'test c' in active_profile:
         scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
     elif is_momentum:
@@ -636,135 +750,7 @@ def get_directives():
     tot_own = portfolio_store.get_total_portfolio_value()
     total_equity = cash_balance + tot_own
 
-    if 'notified_signals' not in ud: ud['notified_signals'] = {}
-    dirs, buys, held_scores = [], [], []
-    MIN_BUY_VALUE = 20.0
-
-    regime = engine.check_market_regime() if is_momentum else 'NEUTRAL'
-
-    dfs = {}
-    def fetch_data_thread(tick): 
-        return tick, fetch_yf_data(tick, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
-        
-    with ThreadPoolExecutor(max_workers=min(5, max(1, len(scan_list)))) as ex:
-        for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
-
-    for t in scan_list:
-        t = t.strip().upper()
-        if not t: continue
-        try:
-            df = dfs.get(t)
-            if df is None or df.empty: continue
-            cur = df['Close'].iloc[-1]
-            sh = portfolio_store.get_shares(t)
-            cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
-            vo = sh * cps
-
-            avg_buy_p, highest_p = 0.0, cur
-            if sh > 0:
-                t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
-                if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
-                
-                highest_p = (ud.get('holdings', {}).get(t) or {}).get('high_water', cur)
-                if cur > highest_p:
-                    highest_p = cur
-                    if 'holdings' not in ud: ud['holdings'] = {}
-                    if t not in ud['holdings']: ud['holdings'][t] = {}
-                    ud['holdings'][t]['high_water'] = highest_p
-
-            if is_momentum:
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
-            else:
-                avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-                v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
-                st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
-
-            last_trade_time = next((h.get('timestamp', 0) for h in hist if isinstance(h, dict) and h.get('ticker') == t), 0)
-            is_auto = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
-            if is_auto and (int(time.time()) - last_trade_time < 300):
-                continue
-
-            if sh > 0:
-                held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
-
-            if st['action_main'] == 'SELL':
-                if sh > 0 and vo >= MIN_BUY_VALUE:
-                    dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
-            elif st['action_main'] == 'BUY' and rem_cash >= MIN_BUY_VALUE:
-                buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
-        except: pass
-
-    max_allowed_holds = 1 if 'test e' in active_profile else 2
-    if is_momentum and len(held_scores) > max_allowed_holds:
-        held_scores.sort(key=lambda x: x['score'])
-        excess_count = len(held_scores) - max_allowed_holds
-        for i in range(excess_count):
-            weakest = held_scores[i]
-            dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
-
-    if 'test e' in active_profile and buys:
-        buys.sort(key=lambda x: x['s'], reverse=True)
-        top_candidate = buys[0]
-        held_scores.sort(key=lambda x: x['score'])
-        if held_scores:
-            weakest = held_scores[0]
-            if top_candidate['s'] > (weakest['score'] + 20) and weakest['shares'] > 0 and weakest['ticker'] != top_candidate['t']:
-                dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
-
-    elif is_momentum and buys and 'test e' not in active_profile:
-        buys.sort(key=lambda x: x['s'], reverse=True)
-        top_candidate = buys[0]
-        held_scores.sort(key=lambda x: x['score'])
-        if held_scores and top_candidate['s'] > (held_scores[0]['score'] + 15):
-            weakest = held_scores[0]
-            if weakest['shares'] > 0 and weakest['ticker'] != top_candidate['t']:
-                dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
-
-    now_uk = pd.Timestamp.now(tz='Europe/London')
-    is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
-    current_hold_count = len([x for x in held_scores if x['shares'] > 0])
-    slots_available = max(0, max_allowed_holds - current_hold_count)
-
-    if buys and rem_cash >= MIN_BUY_VALUE and not is_eod_blocked and slots_available > 0:
-        buys.sort(key=lambda x: x['s'], reverse=True)
-        top_buys = buys[:slots_available]
-        per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if 'test e' in active_profile else 0.50))
-        
-        for b in top_buys:
-            bs = int(per_stock_budget // b['cps'])
-            amt = round(bs * b['cps'], 2)
-            if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
-                dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
-
-    is_auto = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
-    if is_auto and dirs:
-        for d in dirs:
-            if d['action'] == 'BUY':
-                curr_cb = sum((init_pos.get(w) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if isinstance(tr, dict) and tr.get('ticker')==w) for w in [tk for tk, hd in ud.get('holdings', {}).items() if isinstance(hd, dict) and hd.get('shares', 0) > 0])
-                curr_cash = mb - curr_cb
-                if curr_cash < MIN_BUY_VALUE:
-                    continue
-                if d['amount'] > curr_cash:
-                    d['shares'] = int(curr_cash // (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']))
-                    d['amount'] = round(d['shares'] * (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']), 2)
-            if d['shares'] > 0:
-                portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
-        dirs = [] 
-        
-    portfolio_store.save()
-
-    settings = ud.get('settings') or {}
-    curr_keys, topic = set(), settings.get('ntfy_topic', '')
-    for d in dirs:
-        k = f"{d['action']}_{d['shares']}"
-        curr_keys.add(d['ticker'])
-        if ud['notified_signals'].get(d['ticker']) != k:
-            if topic: send_push_notification(topic, f"SIGNAL ALERT: {d['ticker']}", f"Directive for {portfolio_store.active_username()}: {d['action']} {d['shares']} shares (£{d['amount']:.2f})")
-            ud['notified_signals'][d['ticker']] = k
-            portfolio_store.save()
-
-    for k in [k for k in ud['notified_signals'] if k not in curr_keys]: del ud['notified_signals'][k]
-    portfolio_store.save()
+    dirs = []
     return jsonify({'directives': dirs})
 
 @app.route('/api/recommend', methods=['GET'])
@@ -827,7 +813,7 @@ def get_data():
         leaderboard = []
         for u, u_data in portfolio_store.data.get('users', {}).items():
             if not isinstance(u_data, dict): continue
-            mb_lb = u_data.get('master_budget', 10000.0)
+            mb_lb = u_data.get('master_budget', 5000.0 if 'test' in u.lower() else 10000.0)
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
             
@@ -835,15 +821,7 @@ def get_data():
             im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos_lb.values() if isinstance(pos, dict))
             cash_lb = mb_lb + nh_lb - im_lb
             
-            active_holds_lb = list(set([tr.get('ticker') for tr in hist_lb if isinstance(tr, dict)]))
-            holds_lb_val = 0.0
-            for tk_lb in active_holds_lb:
-                sh_lb = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist_lb if isinstance(t, dict) and t.get('ticker') == tk_lb)
-                if sh_lb > 0:
-                    last_tr_p = next((t.get('price', 0) for t in hist_lb if isinstance(t, dict) and t.get('ticker') == tk_lb), 0)
-                    cps_lb = last_tr_p / 100.0 if tk_lb.endswith('.L') and last_tr_p > 100 else last_tr_p
-                    holds_lb_val += sh_lb * cps_lb
-
+            holds_lb_val = portfolio_store.get_total_portfolio_value(u)
             leaderboard.append({'user': u, 'equity': round(max(0, cash_lb) + holds_lb_val, 2)})
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
 
