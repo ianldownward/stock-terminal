@@ -17,7 +17,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
 
     cache_key = f"{ticker}_{period}_{interval}"
     now = time.time()
-    # Shared global cache across all background profiles to prevent Yahoo Finance API throttling
+    
     if cache_key in YF_CACHE:
         cached_time, df = YF_CACHE[cache_key]
         if not df.empty and (now - cached_time < 30): return df.copy()
@@ -122,19 +122,8 @@ class PortfolioManager:
                 with open(self.filename, 'w') as f: json.dump(data_to_save, f, indent=2)
             except: pass
 
-    def save(self):
-        try:
-            fresh = self.load()
-            if fresh:
-                mod_user = self.active_username()
-                if 'users' not in fresh: fresh['users'] = {}
-                fresh['users'][mod_user] = self.data['users'][mod_user]
-                fresh['active_user'] = self.data.get('active_user', fresh.get('active_user'))
-                self.data = fresh
-        except: pass
-        self.save_data(self.data)
-
-    def active_username(self): return self.data.get('active_user', 'Ian')
+    def active_username(self): 
+        return self.data.get('active_user', 'Ian')
 
     def user_data(self, username=None):
         au = username if username else self.active_username()
@@ -168,26 +157,29 @@ class PortfolioManager:
             self.save_data(self.data)
 
     def reset_all(self):
-        au = self.active_username()
         self.reload()
+        au = self.active_username()
         self.data['users'][au] = self.default_user_state(au)
         self.save_data(self.data)
         return self.user_data()
 
     def update_settings(self, settings):
+        self.reload()
         ud = self.user_data()
         if 'settings' not in ud or not isinstance(ud['settings'], dict): ud['settings'] = {}
         ud['settings'].update(settings)
-        self.save()
+        self.save_data(self.data)
 
     def add_watchlist(self, ticker):
+        self.reload()
         ud = self.user_data()
         if 'watchlist' not in ud or not isinstance(ud['watchlist'], list): ud['watchlist'] = []
         if ticker.upper() not in ud['watchlist']:
             ud['watchlist'].append(ticker.upper())
-            self.save()
+            self.save_data(self.data)
 
     def remove_watchlist(self, ticker):
+        self.reload()
         ticker = ticker.upper()
         ud = self.user_data()
         if 'watchlist' in ud and isinstance(ud['watchlist'], list) and ticker in ud['watchlist']: ud['watchlist'].remove(ticker)
@@ -195,7 +187,7 @@ class PortfolioManager:
         if 'initial_positions' in ud and isinstance(ud['initial_positions'], dict): ud['initial_positions'].pop(ticker, None)
         if 'history' in ud and isinstance(ud['history'], list): ud['history'] = [h for h in ud['history'] if isinstance(h, dict) and h.get('ticker') != ticker]
         if 'notified_signals' in ud and isinstance(ud['notified_signals'], dict): ud['notified_signals'].pop(ticker, None)
-        self.save()
+        self.save_data(self.data)
 
     def get_shares(self, ticker, username=None):
         if not ticker: return 0
@@ -206,6 +198,7 @@ class PortfolioManager:
         return max(0, init_sh + net_sh)
 
     def set_holding_value(self, ticker, value_owned, current_price, username=None):
+        self.reload()
         if not ticker: return 0
         ud = self.user_data(username)
         value_owned, current_price = float(value_owned), float(current_price)
@@ -227,6 +220,7 @@ class PortfolioManager:
         return curr_tot
 
     def execute_trade(self, ticker, action_type, shares, price, username=None):
+        self.reload()
         if not ticker or shares <= 0: return None
         ud = self.user_data(username)
         shares, price = int(shares), round(float(price), 2)
@@ -254,6 +248,7 @@ class PortfolioManager:
         return entry
 
     def undo_trade(self, trade_id):
+        self.reload()
         ud = self.user_data()
         hist = ud.get('history') or []
         trade = next((t for t in hist if isinstance(t, dict) and t.get('id') == str(trade_id)), None)
@@ -268,7 +263,7 @@ class PortfolioManager:
             hw = (ud['holdings'].get(trade['ticker']) or {}).get('high_water', trade['price'])
             ud['holdings'][trade['ticker']] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost, 2), 'high_water': hw}
         else: ud['holdings'].pop(trade['ticker'], None)
-        self.save()
+        self.save_data(self.data)
         return True
 
     def get_total_portfolio_value(self, username=None):
@@ -292,7 +287,7 @@ class PortfolioManager:
 
         total = 0.0
         holds = ud.get('holdings') or {}
-        with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_tickers)))) as ex:
+        with ThreadPoolExecutor(max_workers=40) as ex:
             for t, val in ex.map(fetch_val, active_tickers):
                 total += val
                 if t in holds and isinstance(holds[t], dict):
@@ -362,7 +357,7 @@ class MarketScoringEngine:
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_us_stock = not ticker.endswith('.L')
 
-        # TEST B PRE-CLOSE CAPITAL UNLOCK RULE (8:50 PM BST - 8:58 PM BST)
+        # TEST B PRE-CLOSE CAPITAL UNLOCK RULE
         if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -551,7 +546,6 @@ class MarketScoringEngine:
 
 portfolio_store = PortfolioManager()
 
-# --- BACKGROUND AUTO-TRADING ENGINE FOR ALL PROFILES ---
 def process_auto_profile(prof_name):
     try:
         ud = portfolio_store.user_data(prof_name)
@@ -587,7 +581,8 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        with ThreadPoolExecutor(max_workers=min(10, max(1, len(scan_list)))) as ex:
+        # Increase threading limit to process 40 parallel requests to eliminate loading bottlenecks
+        with ThreadPoolExecutor(max_workers=40) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
@@ -815,7 +810,7 @@ def get_recommendations():
     
     def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
-    with ThreadPoolExecutor(max_workers=10) as ex:
+    with ThreadPoolExecutor(max_workers=40) as ex:
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
@@ -842,8 +837,9 @@ def get_data():
                 wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR']
             else:
                 wl = ['SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L', 'MSTR', 'TQQQ', 'SOXL', 'NVDA', 'PLTR', 'AMZN']
-            ud['watchlist'] = wl
-            portfolio_store.save()
+            for w in wl: portfolio_store.add_watchlist(w)
+            portfolio_store.reload()
+            ud = portfolio_store.user_data()
 
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
@@ -857,7 +853,7 @@ def get_data():
         def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
         
         if active_holds:
-            with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds) * 2))) as ex:
+            with ThreadPoolExecutor(max_workers=40) as ex:
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
                 for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
 
@@ -912,7 +908,7 @@ def get_data():
                     return tick, 'closed'
                 except: return tick, 'closed'
 
-            with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
+            with ThreadPoolExecutor(max_workers=40) as ex:
                 for tick, status in ex.map(check_status, wl):
                     wl_status[tick] = status
             
@@ -964,7 +960,7 @@ def get_data():
                     return tick, fetch_yf_data(tick, req_p, req_i)
                 
                 dfs = {}
-                with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
+                with ThreadPoolExecutor(max_workers=40) as ex:
                     for tick, df_t in ex.map(fetch_t, wl):
                         dfs[tick] = df_t
                 
@@ -1030,10 +1026,7 @@ def get_data():
             highest_p = (holds_dict.get(t) or {}).get('high_water', last_p)
             if last_p > highest_p:
                 highest_p = last_p
-                if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
-                if t not in ud['holdings'] or not isinstance(ud['holdings'][t], dict): ud['holdings'][t] = {}
-                ud['holdings'][t]['high_water'] = highest_p
-                portfolio_store.save()
+                # Removed dangerous DB save from read-only function
 
         if is_momentum:
             st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
@@ -1106,8 +1099,6 @@ def get_data():
             if t not in ud['holdings'] or not isinstance(ud['holdings'][t], dict): ud['holdings'][t] = {}
             ud['holdings'][t]['shares'] = sh_own
             ud['holdings'][t]['manual_val'] = val_own
-        else:
-            if 'holdings' in ud and isinstance(ud['holdings'], dict): ud['holdings'].pop(t, None)
 
         mathLine = []
         try:

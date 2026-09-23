@@ -294,6 +294,9 @@
         let globalPortfolioData = { master_budget: 10000, history: [], holdings: {}, watchlist: [], settings: {} };
         let autoRefreshTimer = null; let isSettingsLoaded = false;
         let currentPnLData = {}; let currentMasterPnLData = {};
+        
+        // UNIQUE REQUEST ID FOR PREVENTING STALE UI RENDERS
+        let currentFetchId = 0;
 
         let manualLines = {}; 
         let isDrawing = false; 
@@ -441,7 +444,8 @@
             if (!username) return;
             if (autoRefreshTimer) clearInterval(autoRefreshTimer);
             
-            // Instant UI Feedback
+            // Increment fetch ID and show immediate UI feedback to kill stale request hangovers
+            currentFetchId++;
             document.getElementById('activeTitle').innerText = "Loading " + username + "...";
             document.getElementById('loader').style.display = 'block';
 
@@ -490,8 +494,11 @@
 
         async function resetTerminalData() {
             if (confirm("Reset all portfolio data for this user?")) {
+                currentFetchId++; // Cancel pending slow fetches immediately
+                document.getElementById('loader').style.display = 'block';
                 await fetch('/api/portfolio/reset', { method: 'POST' });
-                currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; fetchData(false);
+                currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; 
+                fetchData(false);
             }
         }
 
@@ -973,11 +980,18 @@
         }
 
         async function fetchData(silent = false) {
+            let fetchId = ++currentFetchId; // Increment fetch tracker
+            
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
                 let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`);
                 let p = await res.json(); 
+                
+                // CRITICAL FIX: If the user hit reset or changed profiles while this request was running, discard the stale data immediately!
+                if (fetchId !== currentFetchId) {
+                    return; 
+                }
                 
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
@@ -1058,7 +1072,9 @@
 
                 renderTradeHistory(); fetchDirectives(); renderChart();
             } catch(e){}
-            if (!silent && loader) loader.style.display = 'none';
+            
+            // Only hide the loader if this fetch wasn't superseded by a faster user interaction
+            if (fetchId === currentFetchId && !silent && loader) loader.style.display = 'none';
         }
 
         function selectStock(t, e) { 
