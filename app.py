@@ -115,7 +115,7 @@ class PortfolioManager:
             }
             
             needs_save = False
-            if 'users' not in self.data or not self.data['users']:
+            if 'users' not in self.data or not isinstance(self.data['users'], dict):
                 self.data['users'] = {}
                 needs_save = True
                 
@@ -156,12 +156,7 @@ class PortfolioManager:
                 mod_user = self.active_username()
                 if 'users' not in fresh: fresh['users'] = {}
                 fresh['users'][mod_user] = self.data['users'][mod_user]
-                
-                # PREVENT RACE CONDITION: Never overwrite fresh DB active_user 
-                # unless it's fundamentally missing
-                if 'active_user' not in fresh:
-                    fresh['active_user'] = self.data.get('active_user')
-                    
+                fresh['active_user'] = self.data.get('active_user', fresh.get('active_user'))
                 self.data = fresh
         except: pass
         self.save_data(self.data)
@@ -211,14 +206,14 @@ class PortfolioManager:
 
     def update_settings(self, settings):
         ud = self.user_data()
-        if 'settings' not in ud: ud['settings'] = {}
+        if 'settings' not in ud or not isinstance(ud['settings'], dict): ud['settings'] = {}
         ud['settings'].update(settings)
         self.save()
 
     def add_watchlist(self, ticker):
         ticker = ticker.upper()
         ud = self.user_data()
-        if 'watchlist' not in ud: ud['watchlist'] = []
+        if 'watchlist' not in ud or not isinstance(ud['watchlist'], list): ud['watchlist'] = []
         if ticker not in ud['watchlist']:
             ud['watchlist'].append(ticker)
             self.save()
@@ -226,19 +221,21 @@ class PortfolioManager:
     def remove_watchlist(self, ticker):
         ticker = ticker.upper()
         ud = self.user_data()
-        if 'watchlist' in ud and ticker in ud['watchlist']: ud['watchlist'].remove(ticker)
-        ud.get('holdings', {}).pop(ticker, None)
-        ud.get('initial_positions', {}).pop(ticker, None)
-        if 'history' in ud: ud['history'] = [h for h in ud['history'] if h.get('ticker') != ticker]
-        ud.get('notified_signals', {}).pop(ticker, None)
+        if 'watchlist' in ud and isinstance(ud['watchlist'], list) and ticker in ud['watchlist']: ud['watchlist'].remove(ticker)
+        if 'holdings' in ud and isinstance(ud['holdings'], dict): ud['holdings'].pop(ticker, None)
+        if 'initial_positions' in ud and isinstance(ud['initial_positions'], dict): ud['initial_positions'].pop(ticker, None)
+        if 'history' in ud and isinstance(ud['history'], list): ud['history'] = [h for h in ud['history'] if isinstance(h, dict) and h.get('ticker') != ticker]
+        if 'notified_signals' in ud and isinstance(ud['notified_signals'], dict): ud['notified_signals'].pop(ticker, None)
         self.save()
 
     def get_net_trade_shares(self, ticker):
-        return sum(t['shares'] if t['action'] == 'BUY' else -t['shares'] for t in self.user_data().get('history', []) if t['ticker'] == ticker)
+        hist = self.user_data().get('history') or []
+        return sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if isinstance(t, dict) and t.get('ticker') == ticker)
 
     def get_shares(self, ticker):
         if not ticker: return 0
-        init_sh = self.user_data().get('initial_positions', {}).get(ticker, {}).get('shares', 0)
+        init_pos = self.user_data().get('initial_positions') or {}
+        init_sh = (init_pos.get(ticker) or {}).get('shares', 0)
         return max(0, init_sh + self.get_net_trade_shares(ticker))
 
     def update_budget(self, budget):
@@ -254,14 +251,14 @@ class PortfolioManager:
         target_sh = round(value_owned / price_per_share) if price_per_share > 0 else 0
         baseline_sh = target_sh - self.get_net_trade_shares(ticker)
         
-        if 'initial_positions' not in ud: ud['initial_positions'] = {}
+        if 'initial_positions' not in ud or not isinstance(ud['initial_positions'], dict): ud['initial_positions'] = {}
         if target_sh > 0 or value_owned > 0: ud['initial_positions'][ticker] = {'shares': baseline_sh, 'manual_val': value_owned}
         else: ud['initial_positions'].pop(ticker, None)
 
         curr_tot = self.get_shares(ticker)
-        if 'holdings' not in ud: ud['holdings'] = {}
+        if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
         if curr_tot > 0: 
-            hw = ud['holdings'].get(ticker, {}).get('high_water', current_price)
+            hw = (ud['holdings'].get(ticker) or {}).get('high_water', current_price)
             ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * price_per_share, 2), 'high_water': max(hw, current_price)}
         else: ud['holdings'].pop(ticker, None)
         self.save()
@@ -280,33 +277,35 @@ class PortfolioManager:
             'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'),
             'date_str': now.strftime('%Y-%m-%d'), 'timestamp': int(now.timestamp())
         }
-        if 'history' not in ud: ud['history'] = []
+        if 'history' not in ud or not isinstance(ud['history'], list): ud['history'] = []
         ud['history'].insert(0, entry)
 
         curr_tot = self.get_shares(ticker)
-        if 'holdings' not in ud: ud['holdings'] = {}
+        if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
         if curr_tot > 0: 
-            hw = ud['holdings'].get(ticker, {}).get('high_water', price)
+            hw = (ud['holdings'].get(ticker) or {}).get('high_water', price)
             ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2), 'high_water': max(hw, price)}
         else: ud['holdings'].pop(ticker, None)
         self.save()
 
-        ntfy_topic = ud.get('settings', {}).get('ntfy_topic', '')
+        settings = ud.get('settings') or {}
+        ntfy_topic = settings.get('ntfy_topic', '')
         if ntfy_topic: send_push_notification(ntfy_topic, f"Trade Executed: {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
         return entry
 
     def undo_trade(self, trade_id):
         ud = self.user_data()
-        hist = ud.get('history', [])
-        trade = next((t for t in hist if t['id'] == str(trade_id)), None)
+        hist = ud.get('history') or []
+        trade = next((t for t in hist if isinstance(t, dict) and t.get('id') == str(trade_id)), None)
         if not trade: return False
         hist.remove(trade)
+        ud['history'] = hist
         
-        curr_tot = self.get_shares(trade['ticker'])
-        if 'holdings' not in ud: ud['holdings'] = {}
+        curr_tot = self.get_shares(trade.get('ticker'))
+        if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
         if curr_tot > 0:
             cost = trade['price'] / 100.0 if trade['ticker'].endswith('.L') else trade['price']
-            hw = ud['holdings'].get(trade['ticker'], {}).get('high_water', trade['price'])
+            hw = (ud['holdings'].get(trade['ticker']) or {}).get('high_water', trade['price'])
             ud['holdings'][trade['ticker']] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost, 2), 'high_water': hw}
         else: ud['holdings'].pop(trade['ticker'], None)
         self.save()
@@ -608,18 +607,24 @@ def get_directives():
     elif is_momentum:
         scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
     else:
-        scan_list = ud.get('watchlist', [])
+        scan_list = ud.get('watchlist') or []
+    
+    holds = ud.get('holdings') or {}
+    active_holds = [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0]
     
     mb = ud.get('master_budget', 10000.0)
+    hist = ud.get('history') or []
+    init_pos = ud.get('initial_positions') or {}
     
-    # Calculate real cash balance properly
-    net_history = sum(-tr['amount'] if tr['action'] == 'BUY' else tr['amount'] for tr in ud.get('history', []))
-    init_manual = sum(pos.get('manual_val', 0.0) for pos in ud.get('initial_positions', {}).values())
+    net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
+    init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
+    
     cash_balance = mb + net_history - init_manual
     rem_cash = max(0, cash_balance)
-
-    active_holds = [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0]
     
+    tot_own = sum(hd.get('manual_val', 0.0) for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0)
+    total_equity = cash_balance + tot_own
+
     if 'notified_signals' not in ud: ud['notified_signals'] = {}
     dirs, buys, held_scores = [], [], []
     MIN_BUY_VALUE = 20.0
@@ -631,7 +636,6 @@ def get_directives():
     with ThreadPoolExecutor(max_workers=min(5, max(1, len(scan_list)))) as ex:
         for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
-    tot_own = 0.0
     for t in scan_list:
         t = t.strip().upper()
         if not t: continue
@@ -642,16 +646,16 @@ def get_directives():
             sh = portfolio_store.get_shares(t)
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
             vo = sh * cps
-            tot_own += vo
 
             avg_buy_p, highest_p = 0.0, cur
             if sh > 0:
-                t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
-                if t_buys: avg_buy_p = t_buys[0]['price']
+                t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
+                if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
                 
-                highest_p = ud.get('holdings', {}).get(t, {}).get('high_water', cur)
+                highest_p = (holds.get(t) or {}).get('high_water', cur)
                 if cur > highest_p:
                     highest_p = cur
+                    if t not in ud['holdings']: ud['holdings'][t] = {}
                     ud['holdings'][t]['high_water'] = highest_p
 
             if is_momentum:
@@ -661,7 +665,7 @@ def get_directives():
                 v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
                 st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
 
-            last_trade_time = next((h['timestamp'] for h in ud.get('history', []) if h['ticker'] == t), 0)
+            last_trade_time = next((h.get('timestamp', 0) for h in hist if isinstance(h, dict) and h.get('ticker') == t), 0)
             is_auto = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
             if is_auto and (int(time.time()) - last_trade_time < 300):
                 continue
@@ -675,8 +679,6 @@ def get_directives():
             elif st['action_main'] == 'BUY' and rem_cash >= MIN_BUY_VALUE:
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
         except: pass
-
-    total_equity = cash_balance + tot_own
 
     if 'test e' in active_profile and buys:
         buys.sort(key=lambda x: x['s'], reverse=True)
@@ -724,8 +726,8 @@ def get_directives():
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
-                curr_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0])
-                curr_cash = ud['master_budget'] - curr_cb
+                curr_cb = sum((init_pos.get(w) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if isinstance(tr, dict) and tr.get('ticker')==w) for w in [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0])
+                curr_cash = mb - curr_cb
                 if curr_cash < MIN_BUY_VALUE:
                     continue
                 if d['amount'] > curr_cash:
@@ -737,12 +739,13 @@ def get_directives():
 
     if is_momentum:
         ud = portfolio_store.user_data()
-        current_holdings = [t for t, h_data in ud.get('holdings', {}).items() if h_data.get('shares', 0) > 0]
+        current_holdings = [t for t, h_data in (ud.get('holdings') or {}).items() if isinstance(h_data, dict) and h_data.get('shares', 0) > 0]
         ud['watchlist'] = current_holdings
 
     portfolio_store.save()
 
-    curr_keys, topic = set(), ud.get('settings', {}).get('ntfy_topic', '')
+    settings = ud.get('settings') or {}
+    curr_keys, topic = set(), settings.get('ntfy_topic', '')
     for d in dirs:
         k = f"{d['action']}_{d['shares']}"
         curr_keys.add(d['ticker'])
@@ -773,179 +776,192 @@ def get_recommendations():
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
-    portfolio_store.reload()
-    ud = portfolio_store.user_data()
-    wl = ud.get('watchlist', [])
-    t = request.args.get('t', '').upper().strip()
-    active_profile = portfolio_store.active_username().strip().lower()
-    is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
-    if not t: t = 'ALL_SHARES'
-
-    active_holds = [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0]
-
-    # --- TRUE PNL TIMEFRAME CALCULATIONS ---
-    pnl_dfs_5m = {}
-    pnl_dfs_1d = {}
-    def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-    def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
-    
-    with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds) * 2))) as ex:
-        for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
-        for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
-
-    # Calculate real cash balance globally
-    mb = ud.get('master_budget', 10000.0)
-    net_history = sum(-tr['amount'] if tr['action'] == 'BUY' else tr['amount'] for tr in ud.get('history', []))
-    init_manual = sum(pos.get('manual_val', 0.0) for pos in ud.get('initial_positions', {}).values())
-    cash_balance = mb + net_history - init_manual
-
-    # Get live portfolio value aligned with 5m charts
-    tot_own = 0.0
-    for tk in active_holds:
-        sh = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
-        df_5m = pnl_dfs_5m.get(tk)
-        if df_5m is not None and not df_5m.empty:
-            cp = df_5m['Close'].iloc[-1]
-        else:
-            df1 = pnl_dfs_1d.get(tk)
-            cp = df1['Close'].iloc[-1] if df1 is not None and not df1.empty else 0.0
-        div = 100.0 if tk.endswith('.L') and cp > 100 else 1.0
-        tot_own += sh * (cp / div)
-        
-    total_equity = cash_balance + tot_own
-    master_pnl_val = total_equity - mb
-    master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
-    master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
-
-    # Leaderboard Calculation (applying correct cash formula)
-    leaderboard = []
-    for u, u_data in portfolio_store.data.get('users', {}).items():
-        mb_lb = u_data.get('master_budget', 10000.0)
-        nh_lb = sum(-tr['amount'] if tr['action'] == 'BUY' else tr['amount'] for tr in u_data.get('history', []))
-        im_lb = sum(pos.get('manual_val', 0.0) for pos in u_data.get('initial_positions', {}).values())
-        cash_lb = mb_lb + nh_lb - im_lb
-        holds_lb = sum(hd.get('manual_val', 0.0) for hd in u_data.get('holdings', {}).values())
-        leaderboard.append({'user': u, 'equity': round(max(0, cash_lb) + holds_lb, 2)})
-    leaderboard.sort(key=lambda x: x['equity'], reverse=True)
-
-    req_p = request.args.get('p')
-    if not req_p or req_p == 'undefined': req_p = ud.get('settings', {}).get('period', '5d' if is_momentum else '1mo')
-    req_i = request.args.get('i')
-    if not req_i or req_i == 'undefined': req_i = ud.get('settings', {}).get('interval', '5m' if is_momentum else '1d')
-
-    if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
-    elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
-
-    wl_status = {}
-    if wl:
-        def check_status(tick):
-            try:
-                df_stat = fetch_yf_data(tick, "5d", "5m")
-                if df_stat.empty: return tick, 'closed'
-                if df_stat.index.tz is not None: df_stat.index = df_stat.index.tz_convert('UTC')
-                if (time.time() - df_stat.index[-1].timestamp()) > 1800: return tick, 'closed' 
-                if len(df_stat) > 1:
-                    if df_stat['Close'].iloc[-1] > df_stat['Close'].iloc[-2]: return tick, 'up'
-                    elif df_stat['Close'].iloc[-1] < df_stat['Close'].iloc[-2]: return tick, 'down'
-                return tick, 'closed'
-            except: return tick, 'closed'
-
-        with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
-            for tick, status in ex.map(check_status, wl):
-                wl_status[tick] = status
-        
-    tot_today_diff, tot_1h_diff = 0.0, 0.0
-    now_utc = pd.Timestamp.now(tz='UTC')
-    now_lon = pd.Timestamp.now(tz='Europe/London')
-    
-    for tk in active_holds:
-        df_5m = pnl_dfs_5m.get(tk)
-        if df_5m is None or df_5m.empty: continue
-            
-        if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
-        else: df_5m.index = df_5m.index.tz_convert('UTC')
-            
-        cur_price = df_5m['Close'].iloc[-1]
-        last_ts = df_5m.index[-1]
-        last_lon = last_ts.tz_convert('Europe/London')
-        
-        if now_lon.date() > last_lon.date():
-            p_today = cur_price # Market hasn't printed a candle today
-            p_1h = cur_price
-        else:
-            last_date_str = last_lon.strftime('%Y-%m-%d')
-            prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-            p_today = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-            
-            if (now_utc - last_ts).total_seconds() > 4200:
-                p_1h = cur_price # Market closed for over 70 mins
-            else:
-                target_ts = now_utc - pd.Timedelta(hours=1)
-                prior_df = df_5m[df_5m.index <= target_ts]
-                p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
-                
-        div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
-        sh_h = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
-        
-        tot_today_diff += sh_h * ((cur_price - p_today)/div)
-        tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
-
-    prev_equity_today = total_equity - tot_today_diff
-    master_today_pct = (tot_today_diff / prev_equity_today * 100.0) if prev_equity_today > 0 else 0.0
-    
-    prev_equity_1h = total_equity - tot_1h_diff
-    master_1h_pct = (tot_1h_diff / prev_equity_1h * 100.0) if prev_equity_1h > 0 else 0.0
-
-    master_pnl_data = {
-        'all': {'val': f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')},
-        'today': {'val': f"{'+' if tot_today_diff>0 else ''}£{tot_today_diff:.2f} ({'+' if master_today_pct>0 else ''}{master_today_pct:.2f}%)", 'color': '#00c853' if tot_today_diff > 0 else ('#ff3d00' if tot_today_diff < 0 else '#8a8a9e')},
-        '1h': {'val': f"{'+' if tot_1h_diff>0 else ''}£{tot_1h_diff:.2f} ({'+' if master_1h_pct>0 else ''}{master_1h_pct:.2f}%)", 'color': '#00c853' if tot_1h_diff > 0 else ('#ff3d00' if tot_1h_diff < 0 else '#8a8a9e')}
-    }
-
-    if t == 'ALL_SHARES':
-        lines = []
-        if wl:
-            def fetch_t(tick):
-                return tick, fetch_yf_data(tick, req_p, req_i)
-            
-            dfs = {}
-            with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
-                for tick, df_t in ex.map(fetch_t, wl):
-                    dfs[tick] = df_t
-            
-            colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
-            c_idx = 0
-            for tick in wl:
-                df_t = dfs.get(tick)
-                if df_t is not None and not df_t.empty:
-                    if df_t.index.tz is not None: df_t.index = df_t.index.tz_convert('UTC')
-                    
-                    base_price = df_t['Close'].iloc[0]
-                    if base_price > 0:
-                        line_data = []
-                        seen = set()
-                        for idx, row in df_t.iterrows():
-                            ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
-                            if ts not in seen:
-                                seen.add(ts)
-                                pct_change = ((row['Close'] - base_price) / base_price) * 100.0
-                                line_data.append({'time': ts, 'value': round(pct_change, 2)})
-                        
-                        lines.append({ 'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data })
-                        c_idx += 1
-        
-        return jsonify({'is_multi': True, 'lines': lines, 'wl_status': wl_status, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
-            'price': 0, 'price_display': f"Normalized %",
-            'discount': '--', 'buy_score': '--', 'tranches': 0,
-            'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
-            'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
-            'shares_owned': sum(h.get('shares',0) for h in ud.get('holdings',{}).values()), 'value_owned': tot_own, 
-            'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data,
-            'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
-            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
-        }})
-
     try:
+        portfolio_store.reload()
+        ud = portfolio_store.user_data()
+        wl = ud.get('watchlist') or []
+        t = request.args.get('t', '').upper().strip()
+        active_profile = portfolio_store.active_username().strip().lower()
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
+        if not t: t = 'ALL_SHARES'
+
+        # Safe dictionary getters
+        holds = ud.get('holdings') or {}
+        init_pos = ud.get('initial_positions') or {}
+        hist = ud.get('history') or []
+        mb = ud.get('master_budget', 10000.0)
+
+        active_holds = [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0]
+
+        # --- TRUE PNL TIMEFRAME CALCULATIONS ---
+        pnl_dfs_5m = {}
+        pnl_dfs_1d = {}
+        def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
+        def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
+        
+        if active_holds:
+            with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds) * 2))) as ex:
+                for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
+                for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
+
+        # Calculate real cash balance globally
+        net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
+        init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
+        cash_balance = mb + net_history - init_manual
+
+        # Get live portfolio value aligned with 5m charts
+        tot_own = 0.0
+        for tk in active_holds:
+            sh = (holds.get(tk) or {}).get('shares', 0)
+            df_5m = pnl_dfs_5m.get(tk)
+            if df_5m is not None and not df_5m.empty:
+                cp = df_5m['Close'].iloc[-1]
+            else:
+                df1 = pnl_dfs_1d.get(tk)
+                cp = df1['Close'].iloc[-1] if df1 is not None and not df1.empty else 0.0
+            div = 100.0 if tk.endswith('.L') and cp > 100 else 1.0
+            tot_own += sh * (cp / div)
+            
+        total_equity = cash_balance + tot_own
+        master_pnl_val = total_equity - mb
+        master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
+        master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
+
+        # Leaderboard Calculation (applying correct cash formula)
+        leaderboard = []
+        for u, u_data in portfolio_store.data.get('users', {}).items():
+            if not isinstance(u_data, dict): continue
+            mb_lb = u_data.get('master_budget', 10000.0)
+            hist_lb = u_data.get('history') or []
+            init_pos_lb = u_data.get('initial_positions') or {}
+            holds_lb_dict = u_data.get('holdings') or {}
+            
+            nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist_lb if isinstance(tr, dict))
+            im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos_lb.values() if isinstance(pos, dict))
+            cash_lb = mb_lb + nh_lb - im_lb
+            
+            holds_lb_val = sum(hd.get('manual_val', 0.0) for hd in holds_lb_dict.values() if isinstance(hd, dict))
+            leaderboard.append({'user': u, 'equity': round(max(0, cash_lb) + holds_lb_val, 2)})
+        leaderboard.sort(key=lambda x: x['equity'], reverse=True)
+
+        settings = ud.get('settings') or {}
+        req_p = request.args.get('p')
+        if not req_p or req_p == 'undefined': req_p = settings.get('period', '5d' if is_momentum else '1mo')
+        req_i = request.args.get('i')
+        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '5m' if is_momentum else '1d')
+
+        if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
+        elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
+
+        wl_status = {}
+        if wl:
+            def check_status(tick):
+                try:
+                    df_stat = fetch_yf_data(tick, "5d", "5m")
+                    if df_stat.empty: return tick, 'closed'
+                    if df_stat.index.tz is not None: df_stat.index = df_stat.index.tz_convert('UTC')
+                    if (time.time() - df_stat.index[-1].timestamp()) > 1800: return tick, 'closed' 
+                    if len(df_stat) > 1:
+                        if df_stat['Close'].iloc[-1] > df_stat['Close'].iloc[-2]: return tick, 'up'
+                        elif df_stat['Close'].iloc[-1] < df_stat['Close'].iloc[-2]: return tick, 'down'
+                    return tick, 'closed'
+                except: return tick, 'closed'
+
+            with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
+                for tick, status in ex.map(check_status, wl):
+                    wl_status[tick] = status
+            
+        tot_today_diff, tot_1h_diff = 0.0, 0.0
+        now_utc = pd.Timestamp.now(tz='UTC')
+        now_lon = pd.Timestamp.now(tz='Europe/London')
+        
+        for tk in active_holds:
+            df_5m = pnl_dfs_5m.get(tk)
+            if df_5m is None or df_5m.empty: continue
+                
+            if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
+            else: df_5m.index = df_5m.index.tz_convert('UTC')
+                
+            cur_price = df_5m['Close'].iloc[-1]
+            last_ts = df_5m.index[-1]
+            last_lon = last_ts.tz_convert('Europe/London')
+            
+            if now_lon.date() > last_lon.date():
+                p_today = cur_price 
+                p_1h = cur_price
+            else:
+                last_date_str = last_lon.strftime('%Y-%m-%d')
+                prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
+                p_today = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
+                
+                if (now_utc - last_ts).total_seconds() > 4200:
+                    p_1h = cur_price 
+                else:
+                    target_ts = now_utc - pd.Timedelta(hours=1)
+                    prior_df = df_5m[df_5m.index <= target_ts]
+                    p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
+                    
+            div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
+            sh_h = (holds.get(tk) or {}).get('shares', 0)
+            
+            tot_today_diff += sh_h * ((cur_price - p_today)/div)
+            tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
+
+        prev_equity_today = total_equity - tot_today_diff
+        master_today_pct = (tot_today_diff / prev_equity_today * 100.0) if prev_equity_today > 0 else 0.0
+        
+        prev_equity_1h = total_equity - tot_1h_diff
+        master_1h_pct = (tot_1h_diff / prev_equity_1h * 100.0) if prev_equity_1h > 0 else 0.0
+
+        master_pnl_data = {
+            'all': {'val': f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')},
+            'today': {'val': f"{'+' if tot_today_diff>0 else ''}£{tot_today_diff:.2f} ({'+' if master_today_pct>0 else ''}{master_today_pct:.2f}%)", 'color': '#00c853' if tot_today_diff > 0 else ('#ff3d00' if tot_today_diff < 0 else '#8a8a9e')},
+            '1h': {'val': f"{'+' if tot_1h_diff>0 else ''}£{tot_1h_diff:.2f} ({'+' if master_1h_pct>0 else ''}{master_1h_pct:.2f}%)", 'color': '#00c853' if tot_1h_diff > 0 else ('#ff3d00' if tot_1h_diff < 0 else '#8a8a9e')}
+        }
+
+        if t == 'ALL_SHARES':
+            lines = []
+            if wl:
+                def fetch_t(tick):
+                    return tick, fetch_yf_data(tick, req_p, req_i)
+                
+                dfs = {}
+                with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
+                    for tick, df_t in ex.map(fetch_t, wl):
+                        dfs[tick] = df_t
+                
+                colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
+                c_idx = 0
+                for tick in wl:
+                    df_t = dfs.get(tick)
+                    if df_t is not None and not df_t.empty:
+                        if df_t.index.tz is not None: df_t.index = df_t.index.tz_convert('UTC')
+                        
+                        base_price = df_t['Close'].iloc[0]
+                        if base_price > 0:
+                            line_data = []
+                            seen = set()
+                            for idx, row in df_t.iterrows():
+                                ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
+                                if ts not in seen:
+                                    seen.add(ts)
+                                    pct_change = ((row['Close'] - base_price) / base_price) * 100.0
+                                    line_data.append({'time': ts, 'value': round(pct_change, 2)})
+                            
+                            lines.append({ 'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data })
+                            c_idx += 1
+            
+            return jsonify({'is_multi': True, 'lines': lines, 'wl_status': wl_status, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
+                'price': 0, 'price_display': f"Normalized %",
+                'discount': '--', 'buy_score': '--', 'tranches': 0,
+                'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
+                'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
+                'shares_owned': sum(h.get('shares',0) for h in holds.values() if isinstance(h, dict)), 'value_owned': tot_own, 
+                'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data,
+                'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
+                'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
+            }})
+
         df = fetch_yf_data(t, req_p, req_i)
         if df.empty:
             return jsonify({'ohlc': [], 'wl_status': wl_status, 'name': f'{t} Data Loading...', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
@@ -969,14 +985,14 @@ def get_data():
 
         avg_buy_p, highest_p = 0.0, last_p
         if sh_own > 0:
-            t_buys = [tr for tr in ud.get('history', []) if tr.get('ticker') == t and tr.get('action') == 'BUY']
-            if t_buys: avg_buy_p = t_buys[0]['price']
+            t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
+            if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
 
-            highest_p = ud.get('holdings', {}).get(t, {}).get('high_water', last_p)
+            highest_p = (holds.get(t) or {}).get('high_water', last_p)
             if last_p > highest_p:
                 highest_p = last_p
-                if 'holdings' not in ud: ud['holdings'] = {}
-                if t not in ud['holdings']: ud['holdings'][t] = {}
+                if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
+                if t not in ud['holdings'] or not isinstance(ud['holdings'][t], dict): ud['holdings'][t] = {}
                 ud['holdings'][t]['high_water'] = highest_p
                 portfolio_store.save()
 
@@ -986,7 +1002,7 @@ def get_data():
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
 
-        cb_t = ud.get('initial_positions', {}).get(t, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==t)
+        cb_t = (init_pos.get(t) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if isinstance(tr, dict) and tr.get('ticker')==t)
         
         ticker_pnl_data = {}
         if sh_own > 0 and cb_t > 0:
@@ -994,8 +1010,8 @@ def get_data():
             c = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
             pnl_d = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
 
-            df_5m = pnl_dfs_5m.get(t)
-            if df_5m is not None and not df_5m.empty:
+            df_5m = fetch_yf_data(t, "5d", "5m")
+            if not df_5m.empty:
                 if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
                 else: df_5m.index = df_5m.index.tz_convert('UTC')
                 
@@ -1042,11 +1058,12 @@ def get_data():
             ticker_pnl_data = {'all': empty_pnl, 'today': empty_pnl, '1h': empty_pnl}
 
         if sh_own > 0:
-            if 'holdings' not in ud: ud['holdings'] = {}
-            if t not in ud['holdings']: ud['holdings'][t] = {}
+            if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
+            if t not in ud['holdings'] or not isinstance(ud['holdings'][t], dict): ud['holdings'][t] = {}
             ud['holdings'][t]['shares'] = sh_own
             ud['holdings'][t]['manual_val'] = val_own
-        else: ud.get('holdings', {}).pop(t, None)
+        else:
+            if 'holdings' in ud and isinstance(ud['holdings'], dict): ud['holdings'].pop(t, None)
 
         mathLine = []
         try:
@@ -1091,7 +1108,8 @@ def get_data():
             'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
         }})
-    except Exception as e: return jsonify({'error': str(e)}), 500
+    except Exception as e: 
+        return jsonify({'error': str(e)}), 500
 
 HTML_FRONTEND = """<!DOCTYPE html>
 <html>
@@ -1662,8 +1680,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
-            let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f'].includes(activeProf);
+            let userSel = document.getElementById('userSelect');
+            let activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
+            let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f'].some(prefix => activeProf.includes(prefix));
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -1714,8 +1733,9 @@ HTML_FRONTEND = """<!DOCTYPE html>
             try {
                 let res = await fetch(`/api/directives`); let data = await res.json();
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
-                let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-                let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f'].includes(activeProf);
+                let userSel = document.getElementById('userSelect');
+                let activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
+                let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f'].some(prefix => activeProf.includes(prefix));
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
