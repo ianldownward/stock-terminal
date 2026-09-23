@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
-# --- IN-MEMORY CACHING LAYER ---
 YF_CACHE = {}
 
 def fetch_yf_data(ticker, period="1y", interval="1d"):
@@ -53,7 +52,6 @@ class PortfolioManager:
                 self.db = self.client['stock_terminal']
                 self.collection = self.db['portfolio']
             except Exception as e:
-                print(f"MongoDB connection error: {e}")
                 self.client = None
         else:
             self.client = None
@@ -143,11 +141,11 @@ class PortfolioManager:
     def save_data(self, data_to_save):
         if self.client:
             try: self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
-            except Exception as e: print(f"Error saving to MongoDB: {e}")
+            except: pass
         else:
             try:
                 with open(self.filename, 'w') as f: json.dump(data_to_save, f, indent=2)
-            except Exception as e: print(f"Error saving locally: {e}")
+            except: pass
 
     def save(self):
         try:
@@ -310,6 +308,33 @@ class PortfolioManager:
         else: ud['holdings'].pop(trade['ticker'], None)
         self.save()
         return True
+
+    def get_total_portfolio_value(self):
+        ud = self.user_data()
+        holds = ud.get('holdings') or {}
+        active_tickers = [t for t in list(holds.keys()) if self.get_shares(t) > 0]
+        
+        if not active_tickers:
+            return 0.0
+            
+        def fetch_val(t):
+            sh = self.get_shares(t)
+            try:
+                df = fetch_yf_data(t, "1d", "1d")
+                if not df.empty:
+                    p = df['Close'].iloc[-1]
+                    cps = p / 100.0 if t.endswith('.L') and p > 100 else p
+                    return t, round(sh * cps, 2)
+            except: pass
+            return t, (holds.get(t) or {}).get('manual_val', 0.0)
+
+        total = 0.0
+        with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_tickers)))) as ex:
+            for t, val in ex.map(fetch_val, active_tickers):
+                total += val
+                if t in holds and isinstance(holds[t], dict):
+                    holds[t]['manual_val'] = val
+        return round(total, 2)
 
 class MarketScoringEngine:
     def __init__(self):
@@ -737,11 +762,6 @@ def get_directives():
                 portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
         dirs = [] 
 
-    if is_momentum:
-        ud = portfolio_store.user_data()
-        current_holdings = [t for t, h_data in (ud.get('holdings') or {}).items() if isinstance(h_data, dict) and h_data.get('shares', 0) > 0]
-        ud['watchlist'] = current_holdings
-
     portfolio_store.save()
 
     settings = ud.get('settings') or {}
@@ -784,8 +804,12 @@ def get_data():
         active_profile = portfolio_store.active_username().strip().lower()
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
         if not t: t = 'ALL_SHARES'
+        
+        if is_momentum and not wl:
+            wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'PLTR', 'RR.L']
+            ud['watchlist'] = wl
+            portfolio_store.save()
 
-        # Safe dictionary getters
         holds = ud.get('holdings') or {}
         init_pos = ud.get('initial_positions') or {}
         hist = ud.get('history') or []
@@ -793,7 +817,6 @@ def get_data():
 
         active_holds = [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0]
 
-        # --- TRUE PNL TIMEFRAME CALCULATIONS ---
         pnl_dfs_5m = {}
         pnl_dfs_1d = {}
         def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
@@ -804,12 +827,10 @@ def get_data():
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
                 for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
 
-        # Calculate real cash balance globally
         net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
         init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
         cash_balance = mb + net_history - init_manual
 
-        # Get live portfolio value aligned with 5m charts
         tot_own = 0.0
         for tk in active_holds:
             sh = (holds.get(tk) or {}).get('shares', 0)
@@ -827,7 +848,6 @@ def get_data():
         master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
         master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
 
-        # Leaderboard Calculation (applying correct cash formula)
         leaderboard = []
         for u, u_data in portfolio_store.data.get('users', {}).items():
             if not isinstance(u_data, dict): continue
@@ -1111,151 +1131,7 @@ def get_data():
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
 
-HTML_FRONTEND = """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Stock Terminal</title>
-    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
-    <style>
-        * { box-sizing: border-box; }
-        body { font-family: -apple-system, sans-serif; background: #0f1115; color: #e1e3e6; margin: 0; display: flex; height: 100vh; overflow: hidden; }
-        .sidebar { width: 300px; background: #171a21; border-right: 1px solid #262b36; display: flex; flex-direction: column; flex-shrink: 0; }
-        .sidebar-top { padding: 15px; flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
-        .sidebar-bottom { padding: 15px; border-top: 1px solid #262b36; background: #1a1d24; flex-shrink: 0; }
-        .right-drawer { width: 280px; background: #171a21; border-left: 1px solid #262b36; display: flex; flex-direction: column; padding: 15px; flex-shrink: 0; }
-        .right-drawer h2, .sidebar h2 { font-size: 12px; color: #787e8e; margin: 10px 0; text-transform: uppercase; letter-spacing: 0.5px; }
-        .sidebar h2 { margin-top: 0; }
-        .drawer-details { background: #1a1d24; border: 1px solid #262b36; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
-        .drawer-details summary { font-size: 11px; color: #00d2ff; text-transform: uppercase; font-weight: bold; cursor: pointer; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
-        .drawer-details summary::-webkit-details-marker { display: none; }
-        .drawer-details summary::after { content: '▼'; color: #787e8e; font-size: 9px; }
-        .drawer-details[open] summary::after { content: '▲'; }
-        .lb-item { background: #0f1115; border: 1px solid #262b36; border-radius: 6px; padding: 8px; margin-bottom: 6px; }
-        .lb-header { display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; color: #fff; cursor: pointer; }
-        .lb-desc { font-size: 10px; color: #8a8a9e; margin-top: 6px; display: none; line-height: 1.3; }
-        .total-shares-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #00d2ff; margin-bottom: 10px; text-align: center; }
-        .total-shares-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px; }
-        .total-shares-box div.total-val { font-size: 18px; font-weight: bold; color: #fff; }
-        .total-shares-box div.total-pnl { font-size: 12px; font-weight: bold; color: #8a8a9e; margin-top: 4px; }
-        .user-profile-box { background: #1a1d24; padding: 10px 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 10px; }
-        .user-profile-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; }
-        .user-btn { padding: 3px 8px; font-size: 10px; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; }
-        .user-btn.new { background: #00d2ff; color: #000; }
-        .user-btn.del { background: #ff3d00; color: #fff; }
-        .master-budget-box { background: #171a21; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 15px; }
-        .master-budget-box label { font-size: 11px; color: #787e8e; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 6px; }
-        .master-budget-box input { width: 100%; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; font-weight: bold; font-size: 15px; }
-        .budget-sub-stats { margin-top: 10px; padding-top: 8px; border-top: 1px solid #262b36; display: flex; flex-direction: column; gap: 6px; font-size: 11px; }
-        .budget-sub-stats div { display: flex; justify-content: space-between; color: #787e8e; }
-        .budget-sub-stats b { color: #e1e3e6; }
-        .directives-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 12px; }
-        .directives-box h3 { font-size: 11px; color: #00c853; margin: 0 0 8px 0; text-transform: uppercase; text-align: center; }
-        .directive-item { background: #0f1115; border: 1px solid #262b36; border-radius: 6px; padding: 8px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
-        .directive-info { font-size: 11px; color: #fff; }
-        .directive-info b { color: #00d2ff; }
-        .directive-btn { background: #00c853; color: #fff; border: none; font-weight: bold; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; }
-        .directive-btn:hover { background: #00e676; }
-        .directive-btn.sell { background: #ff3d00; }
-        .directive-btn.sell:hover { background: #ff5252; }
-        .search-box { display: flex; gap: 8px; margin-bottom: 15px; }
-        .search-box input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; }
-        .search-box button { background: #00d2ff; border: none; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
-        .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; }
-        .watchlist-item { padding: 10px 12px; border-radius: 6px; background: #1e222d; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
-        .watchlist-item:hover, .watchlist-item.active { border-color: #00d2ff; background: #252a37; }
-        .btn-delete { background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; padding: 0 5px; }
-        .main-content { flex: 1; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; position: relative; }
-        .top-nav { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; background: #171a21; padding: 12px 16px; border-radius: 10px; border: 1px solid #262b36; }
-        .top-nav-row1 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-        .top-nav-row2 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid #262b36; padding-top: 8px; }
-        .action-buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        select, button.btn-control { background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
-        select:hover, button.btn-control:hover { border-color: #00d2ff; }
-        button.btn-trades { background: #0f1115; border: 1px solid #262b36; color: #787e8e; font-weight: bold; transition: background 0.2s, color 0.2s; }
-        button.btn-trades.active { border-color: #00d2ff; background: #00d2ff; color: #000; }
-        button.btn-alert { background: #0f1115; border: 1px solid #ff9900; color: #ff9900; font-weight: bold; transition: background 0.2s, color 0.2s; }
-        button.btn-alert:hover { background: #ff9900; color: #000; }
-        button.btn-draw.active { border-color: #ffeb3b; background: #ffeb3b; color: #000; }
-        button.btn-manual.active { border-color: #ffeb3b; background: #ffeb3b; color: #000; }
-        button.btn-fullscreen { background: #0f1115; border: 1px solid #b388ff; color: #b388ff; font-weight: bold; transition: background 0.2s, color 0.2s; }
-        button.btn-fullscreen:hover { background: #b388ff; color: #000; }
-        button.btn-refresh { background: #0f1115; border: 1px solid #00d2ff; color: #00d2ff; font-weight: bold; transition: background 0.2s, color 0.2s; }
-        button.btn-refresh:hover { background: #00d2ff; color: #000; }
-        button.btn-reset { background: #0f1115; border: 1px solid #ff4a4a; color: #ff4a4a; font-weight: bold; transition: background 0.2s, color 0.2s; }
-        button.btn-reset:hover { background: #ff4a4a; color: #fff; }
-        button.btn-rec { background: #00d2ff; color: #000; font-weight: bold; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px;}
-        .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; white-space: nowrap; }
-        .controls label { font-size: 11px; color: #787e8e; text-transform: uppercase; font-weight: bold; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
-        .card { background: #171a21; padding: 12px; border-radius: 10px; border: 1px solid #262b36; text-align: center; transition: 0.2s; display: flex; flex-direction: column; justify-content: center; }
-        .card h3 { font-size: 10px; color: #787e8e; margin: 0 0 6px 0; text-transform: uppercase; }
-        .card p { font-size: 15px; font-weight: bold; margin: 0; color: #fff; }
-        .card input { width: 100%; background: #0f1115; border: 1px solid #262b36; color: #00d2ff; padding: 4px; border-radius: 4px; font-weight: bold; font-size: 14px; text-align: center; }
-        .val-highlight { color: #00d2ff; }
-        .clickable-card { cursor: pointer; border: 1px solid #363c4a; }
-        .clickable-card:hover { border-color: #00d2ff; background: #1e222d; }
-        .segmented-control { display: flex; background: #0f1115; border: 1px solid #262b36; border-radius: 6px; overflow: hidden; width: 100%; }
-        .segmented-control input[type="radio"] { display: none; }
-        .segmented-control label { flex: 1; text-align: center; padding: 4px 0; cursor: pointer; font-size: 9px; font-weight: bold; color: #787e8e; border-right: 1px solid #262b36; transition: 0.2s; margin: 0; }
-        .segmented-control label:last-child { border-right: none; }
-        .segmented-control input[type="radio"]:checked + label { background: #1e222d; color: #00d2ff; }
-        .tranche-bars-container { display: flex; flex-direction: column-reverse; gap: 3px; height: 35px; justify-content: center; align-items: center; margin-top: 5px; }
-        .tranche-bar { width: 80%; height: 5px; border-radius: 2px; transition: background 0.3s; }
-        .tranche-bar.active { background: #00c853; }
-        .tranche-bar.inactive { background: #363c4a; }
-        .btn-execute { background: #00c853; color: #fff; border: none; font-weight: bold; padding: 6px 10px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 11px; margin-top: 4px; }
-        .btn-execute:hover { background: #00e676; }
-        .btn-execute.sell-btn { background: #ff3d00; }
-        .btn-execute.sell-btn:hover { background: #ff5252; }
-        .chart-container { flex: 1; background: #171a21; padding: 10px; border-radius: 10px; border: 1px solid #262b36; position: relative; overflow: hidden; }
-        #tvChart { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; }
-        #chartCanvas { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; pointer-events: none; z-index: 5; }
-        #loader { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00d2ff; font-weight: bold; z-index: 10; background: rgba(23, 26, 33, 0.9); padding: 10px 20px; border-radius: 8px; border: 1px solid #00d2ff; }
-        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
-        .modal { background: #171a21; width: 600px; padding: 25px; border-radius: 12px; border: 1px solid #262b36; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-height: 90vh; overflow-y: auto; }
-        .modal h2 { margin-top: 0; color: #fff; font-size: 18px; border-bottom: 1px solid #262b36; padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
-        .rec-item { background: #1e222d; border: 1px solid #262b36; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
-        .rec-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-        .rec-title-block { display: flex; flex-direction: column; gap: 4px; }
-        .rec-title-block h3 { margin: 0; color: #fff; font-size: 16px; }
-        .rec-score { background: rgba(0, 210, 255, 0.1); color: #00d2ff; font-weight: bold; padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #00d2ff; height: 26px; display: flex; align-items: center; }
-        .rec-desc { font-size: 13px; color: #8a8a9e; line-height: 1.4; margin-bottom: 15px; }
-        .btn-load { background: #00c853; border: none; color: #fff; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 13px; }
-        .btn-load:hover { background: #00e676; }
-        .history-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; max-height:250px; }
-        .history-item { background: #1e222d; border: 1px solid #262b36; border-radius: 6px; padding: 10px; margin-bottom: 8px; position: relative; }
-        .history-item .h-action { font-weight: bold; font-size: 12px; }
-        .history-item .h-buy { color: #00c853; }
-        .history-item .h-sell { color: #ff3d00; }
-        .history-item .h-meta { font-size: 11px; color: #787e8e; margin-top: 4px; }
-        .history-item .btn-undo { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; }
-        .pagination-row { display:none; justify-content:space-between; align-items:center; margin-top:15px; border-top:1px solid #262b36; padding-top:15px; }
-        .quick-check-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 10px; }
-        .qc-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .qc-header-row h3 { font-size: 11px; color: #787e8e; margin: 0; text-transform: uppercase; }
-        .qc-close-btn { color: #787e8e; cursor: pointer; font-size: 12px; font-weight: bold; padding: 0 4px; }
-        .qc-close-btn:hover { color: #fff; }
-        .qc-input-row { display: flex; gap: 8px; }
-        .qc-input-row input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
-        .qc-input-row button { background: #333947; border: 1px solid #787e8e; color: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
-        .qc-input-row button:hover { background: #4a5265; }
-        #qsResult { display: none; margin-top: 10px; font-size: 12px; background: #0f1115; padding: 10px; border-radius: 6px; border: 1px solid #262b36; }
-        @media (max-width: 900px) {
-            body { display: block; overflow-y: auto; overflow-x: hidden; height: auto; }
-            .sidebar { width: 100%; border-right: none; display: block; }
-            .sidebar-top { overflow-y: visible; padding-bottom: 0; }
-            .sidebar-bottom { border-top: none; padding-top: 5px; }
-            .main-content { width: 100%; overflow-y: visible; display: block; padding-top: 5px; }
-            .right-drawer { width: 100%; border-left: none; border-top: 1px solid #262b36; display: block; }
-            .top-nav-row1 { flex-direction: column; align-items: flex-start; gap: 8px; }
-            .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px; }
-            select, button.btn-control { flex: 1 1 45%; font-size: 11px; padding: 8px 6px; text-align: center; }
-            .chart-container { height: 400px; margin-top: 10px; flex: none; }
-            .grid { grid-template-columns: repeat(2, 1fr); }
-            .modal { width: 95%; padding: 15px; }
-        }
+HTML_FRONTEND = """<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Pro Stock Terminal</title><script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script><style>*{box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#0f1115;color:#e1e3e6;margin:0;display:flex;height:100vh;overflow:hidden}.sidebar{width:300px;background:#171a21;border-right:1px solid #262b36;display:flex;flex-direction:column;flex-shrink:0}.sidebar-top{padding:15px;flex:1;display:flex;flex-direction:column;overflow-y:auto}.sidebar-bottom{padding:15px;border-top:1px solid #262b36;background:#1a1d24;flex-shrink:0}.right-drawer{width:280px;background:#171a21;border-left:1px solid #262b36;display:flex;flex-direction:column;padding:15px;flex-shrink:0}.right-drawer h2,.sidebar h2{font-size:12px;color:#787e8e;margin:10px 0;text-transform:uppercase;letter-spacing:.5px}.sidebar h2{margin-top:0}.drawer-details{background:#1a1d24;border:1px solid #262b36;border-radius:8px;padding:10px;margin-bottom:10px}.drawer-details summary{font-size:11px;color:#00d2ff;text-transform:uppercase;font-weight:bold;cursor:pointer;list-style:none;outline:none;display:flex;justify-content:space-between;align-items:center}.drawer-details summary::-webkit-details-marker{display:none}.drawer-details summary::after{content:'▼';color:#787e8e;font-size:9px}.drawer-details[open] summary::after{content:'▲'}.lb-item{background:#0f1115;border:1px solid #262b36;border-radius:6px;padding:8px;margin-bottom:6px}.lb-header{display:flex;justify-content:space-between;font-size:11px;font-weight:bold;color:#fff;cursor:pointer}.lb-desc{font-size:10px;color:#8a8a9e;margin-top:6px;display:none;line-height:1.3}.total-shares-box{background:#1e222d;padding:12px;border-radius:8px;border:1px solid #00d2ff;margin-bottom:10px;text-align:center}.total-shares-box label{font-size:10px;color:#00d2ff;text-transform:uppercase;font-weight:bold;display:block;margin-bottom:4px}.total-shares-box div.total-val{font-size:18px;font-weight:bold;color:#fff}.total-shares-box div.total-pnl{font-size:12px;font-weight:bold;color:#8a8a9e;margin-top:4px}.user-profile-box{background:#1a1d24;padding:10px 12px;border-radius:8px;border:1px solid #262b36;margin-bottom:10px}.user-profile-box label{font-size:10px;color:#00d2ff;text-transform:uppercase;font-weight:bold}.user-btn{padding:3px 8px;font-size:10px;font-weight:bold;border:none;border-radius:4px;cursor:pointer}.user-btn.new{background:#00d2ff;color:#000}.user-btn.del{background:#ff3d00;color:#fff}.master-budget-box{background:#171a21;padding:12px;border-radius:8px;border:1px solid #262b36;margin-bottom:15px}.master-budget-box label{font-size:11px;color:#787e8e;text-transform:uppercase;font-weight:bold;display:block;margin-bottom:6px}.master-budget-box input{width:100%;background:#0f1115;border:1px solid #262b36;color:#fff;padding:8px;border-radius:6px;font-weight:bold;font-size:15px}.budget-sub-stats{margin-top:10px;padding-top:8px;border-top:1px solid #262b36;display:flex;flex-direction:column;gap:6px;font-size:11px}.budget-sub-stats div{display:flex;justify-content:space-between;color:#787e8e}.budget-sub-stats b{color:#e1e3e6}.directives-box{background:#1e222d;padding:12px;border-radius:8px;border:1px solid #262b36;margin-bottom:12px}.directives-box h3{font-size:11px;color:#00c853;margin:0 0 8px 0;text-transform:uppercase;text-align:center}.directive-item{background:#0f1115;border:1px solid #262b36;border-radius:6px;padding:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}.directive-info{font-size:11px;color:#fff}.directive-info b{color:#00d2ff}.directive-btn{background:#00c853;color:#fff;border:none;font-weight:bold;padding:4px 8px;border-radius:4px;font-size:10px;cursor:pointer}.directive-btn:hover{background:#00e676}.directive-btn.sell{background:#ff3d00}.directive-btn.sell:hover{background:#ff5252}.search-box{display:flex;gap:8px;margin-bottom:15px}.search-box input{flex:1;background:#0f1115;border:1px solid #262b36;color:#fff;padding:8px;border-radius:6px}.search-box button{background:#00d2ff;border:none;color:#000;font-weight:bold;padding:8px 12px;border-radius:6px;cursor:pointer}.watchlist{flex:1;list-style:none;padding:0;margin:0}.watchlist-item{padding:10px 12px;border-radius:6px;background:#1e222d;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;border:1px solid transparent}.watchlist-item:hover,.watchlist-item.active{border-color:#00d2ff;background:#252a37}.btn-delete{background:none;border:none;color:#ff4a4a;font-weight:bold;cursor:pointer;padding:0 5px}.main-content{flex:1;display:flex;flex-direction:column;padding:15px;overflow-y:auto;position:relative}.top-nav{display:flex;flex-direction:column;gap:10px;margin-bottom:12px;background:#171a21;padding:12px 16px;border-radius:10px;border:1px solid #262b36}.top-nav-row1{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}.top-nav-row2{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-top:1px solid #262b36;padding-top:8px}.action-buttons{display:flex;gap:8px;align-items:center;flex-wrap:wrap}select,button.btn-control{background:#0f1115;border:1px solid #262b36;color:#fff;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap}select:hover,button.btn-control:hover{border-color:#00d2ff}button.btn-trades{background:#0f1115;border:1px solid #262b36;color:#787e8e;font-weight:bold;transition:background .2s,color .2s}button.btn-trades.active{border-color:#00d2ff;background:#00d2ff;color:#000}button.btn-alert{background:#0f1115;border:1px solid #ff9900;color:#ff9900;font-weight:bold;transition:background .2s,color .2s}button.btn-alert:hover{background:#ff9900;color:#000}button.btn-draw.active{border-color:#ffeb3b;background:#ffeb3b;color:#000}button.btn-manual.active{border-color:#ffeb3b;background:#ffeb3b;color:#000}button.btn-fullscreen{background:#0f1115;border:1px solid #b388ff;color:#b388ff;font-weight:bold;transition:background .2s,color .2s}button.btn-fullscreen:hover{background:#b388ff;color:#000}button.btn-refresh{background:#0f1115;border:1px solid #00d2ff;color:#00d2ff;font-weight:bold;transition:background .2s,color .2s}button.btn-refresh:hover{background:#00d2ff;color:#000}button.btn-reset{background:#0f1115;border:1px solid #ff4a4a;color:#ff4a4a;font-weight:bold;transition:background .2s,color .2s}button.btn-reset:hover{background:#ff4a4a;color:#fff}button.btn-rec{background:#00d2ff;color:#000;font-weight:bold;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border:none;border-radius:6px;cursor:pointer;margin-top:10px}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;white-space:nowrap}.controls label{font-size:11px;color:#787e8e;text-transform:uppercase;font-weight:bold}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px}.card{background:#171a21;padding:12px;border-radius:10px;border:1px solid #262b36;text-align:center;transition:.2s;display:flex;flex-direction:column;justify-content:center}.card h3{font-size:10px;color:#787e8e;margin:0 0 6px 0;text-transform:uppercase}.card p{font-size:15px;font-weight:bold;margin:0;color:#fff}.card input{width:100%;background:#0f1115;border:1px solid #262b36;color:#00d2ff;padding:4px;border-radius:4px;font-weight:bold;font-size:14px;text-align:center}.val-highlight{color:#00d2ff}.clickable-card{cursor:pointer;border:1px solid #363c4a}.clickable-card:hover{border-color:#00d2ff;background:#1e222d}.segmented-control{display:flex;background:#0f1115;border:1px solid #262b36;border-radius:6px;overflow:hidden;width:100%}.segmented-control input[type="radio"]{display:none}.segmented-control label{flex:1;text-align:center;padding:4px 0;cursor:pointer;font-size:9px;font-weight:bold;color:#787e8e;border-right:1px solid #262b36;transition:.2s;margin:0}.segmented-control label:last-child{border-right:none}.segmented-control input[type="radio"]:checked+label{background:#1e222d;color:#00d2ff}.tranche-bars-container{display:flex;flex-direction:column-reverse;gap:3px;height:35px;justify-content:center;align-items:center;margin-top:5px}.tranche-bar{width:80%;height:5px;border-radius:2px;transition:background .3s}.tranche-bar.active{background:#00c853}.tranche-bar.inactive{background:#363c4a}.btn-execute{background:#00c853;color:#fff;border:none;font-weight:bold;padding:6px 10px;border-radius:6px;cursor:pointer;width:100%;font-size:11px;margin-top:4px}.btn-execute:hover{background:#00e676}.btn-execute.sell-btn{background:#ff3d00}.btn-execute.sell-btn:hover{background:#ff5252}.chart-container{flex:1;background:#171a21;padding:10px;border-radius:10px;border:1px solid #262b36;position:relative;overflow:hidden}#tvChart{position:absolute;top:10px;left:10px;right:10px;bottom:10px}#chartCanvas{position:absolute;top:10px;left:10px;right:10px;bottom:10px;pointer-events:none;z-index:5}#loader{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#00d2ff;font-weight:bold;z-index:10;background:rgba(23,26,33,.9);padding:10px 20px;border-radius:8px;border:1px solid #00d2ff}.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:100;justify-content:center;align-items:center}.modal{background:#171a21;width:600px;padding:25px;border-radius:12px;border:1px solid #262b36;box-shadow:0 10px 30px rgba(0,0,0,.5);max-height:90vh;overflow-y:auto}.modal h2{margin-top:0;color:#fff;font-size:18px;border-bottom:1px solid #262b36;padding-bottom:12px;display:flex;justify-content:space-between;align-items:center}.rec-item{background:#1e222d;border:1px solid #262b36;border-radius:8px;padding:15px;margin-bottom:15px}.rec-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}.rec-title-block{display:flex;flex-direction:column;gap:4px}.rec-title-block h3{margin:0;color:#fff;font-size:16px}.rec-score{background:rgba(0,210,255,.1);color:#00d2ff;font-weight:bold;padding:4px 8px;border-radius:4px;font-size:12px;border:1px solid #00d2ff;height:26px;display:flex;align-items:center}.rec-desc{font-size:13px;color:#8a8a9e;line-height:1.4;margin-bottom:15px}.btn-load{background:#00c853;border:none;color:#fff;font-weight:bold;padding:8px 12px;border-radius:6px;cursor:pointer;width:100%;font-size:13px}.btn-load:hover{background:#00e676}.history-list{list-style:none;padding:0;margin:0;overflow-y:auto;max-height:250px}.history-item{background:#1e222d;border:1px solid #262b36;border-radius:6px;padding:10px;margin-bottom:8px;position:relative}.history-item .h-action{font-weight:bold;font-size:12px}.history-item .h-buy{color:#00c853}.history-item .h-sell{color:#ff3d00}.history-item .h-meta{font-size:11px;color:#787e8e;margin-top:4px}.history-item .btn-undo{position:absolute;top:8px;right:8px;background:none;border:none;color:#ff4a4a;font-weight:bold;cursor:pointer}.pagination-row{display:none;justify-content:space-between;align-items:center;margin-top:15px;border-top:1px solid #262b36;padding-top:15px}.quick-check-box{background:#1e222d;padding:12px;border-radius:8px;border:1px solid #262b36;margin-bottom:10px}.qc-header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.qc-header-row h3{font-size:11px;color:#787e8e;margin:0;text-transform:uppercase}.qc-close-btn{color:#787e8e;cursor:pointer;font-size:12px;font-weight:bold;padding:0 4px}.qc-close-btn:hover{color:#fff}.qc-input-row{display:flex;gap:8px}.qc-input-row input{flex:1;background:#0f1115;border:1px solid #262b36;color:#fff;padding:6px 8px;border-radius:6px;font-size:12px}.qc-input-row button{background:#333947;border:1px solid #787e8e;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer}.qc-input-row button:hover{background:#4a5265}#qsResult{display:none;margin-top:10px;font-size:12px;background:#0f1115;padding:10px;border-radius:6px;border:1px solid #262b36}@media(max-width:900px){body{display:block;overflow-y:auto;overflow-x:hidden;height:auto}.sidebar{width:100%;border-right:none;display:block}.sidebar-top{overflow-y:visible;padding-bottom:0}.sidebar-bottom{border-top:none;padding-top:5px}.main-content{width:100%;overflow-y:visible;display:block;padding-top:5px}.right-drawer{width:100%;border-left:none;border-top:1px solid #262b36;display:block}.top-nav-row1{flex-direction:column;align-items:flex-start;gap:8px}.controls{flex-wrap:wrap;justify-content:space-between;gap:8px}select,button.btn-control{flex:1 1 45%;font-size:11px;padding:8px 6px;text-align:center}.chart-container{height:400px;margin-top:10px;flex:none}.grid{grid-template-columns:repeat(2,1fr)}.modal{width:95%;padding:15px}}
     </style>
 </head>
 <body>
@@ -1428,13 +1304,11 @@ HTML_FRONTEND = """<!DOCTYPE html>
             
             let html = '';
             
-            // UK: Open 8:00 (480), Close 16:30 (990)
             let openUK = 480; let closeUK = 990;
             let pctUK = Math.max(0, Math.min(100, ((minsUK - openUK) / (closeUK - openUK)) * 100));
             let colorUK = (minsUK >= openUK && minsUK < closeUK) ? '#00c853' : '#8a8a9e';
             html += `<div style="display:flex; align-items:center; gap:6px;"><span style="font-size:12px; font-weight:bold; color:${colorUK};">UK</span><div style="width:80px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pctUK}%; height:100%; background:${colorUK};"></div></div><span style="font-size:11px; color:#787e8e; width: 40px;">${timeStringUK}</span></div>`;
             
-            // US: Open 9:30 (570), Close 16:00 (960)
             let openUS = 570; let closeUS = 960;
             let pctUS = Math.max(0, Math.min(100, ((minsUS - openUS) / (closeUS - openUS)) * 100));
             let colorUS = (minsUS >= openUS && minsUS < closeUS) ? '#00c853' : '#8a8a9e';
@@ -1845,7 +1719,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
             tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
             window.addEventListener('resize', () => { tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); drawCanvasOverlay(); });
 
-            // DRAWING ENGINE SUBSCRIBERS
             tvChart.subscribeClick((param) => {
                 if (!isDrawing || !param.point || currentTicker === 'ALL_SHARES') return;
                 let logical = tvChart.timeScale().coordinateToLogical(param.point.x);
@@ -1860,7 +1733,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     if (!manualLines[currentTicker]) manualLines[currentTicker] = [];
                     manualLines[currentTicker].push({...currentLine});
                     currentLine = null;
-                    toggleDrawMode(); // auto exit drawing mode after completing line
+                    toggleDrawMode(); 
                     drawCanvasOverlay();
                 }
             });
@@ -1881,7 +1754,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
             
             if (currentTicker === 'ALL_SHARES') return; 
 
-            // 1. MANUAL LINES (YELLOW)
             if (showManual && tvSeries) {
                 let lines = manualLines[currentTicker] || [];
                 ctx.setLineDash([]); ctx.strokeStyle = '#ffeb3b'; ctx.lineWidth = 2;
@@ -1906,7 +1778,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 }
             }
             
-            // 2. TRADE MARKERS (GREEN/RED DASHES)
             if (!showTrades || !globalPortfolioData || !globalPortfolioData.history || !masterData || !masterData.length) return;
             
             let th = globalPortfolioData.history.filter(h => h.ticker === currentTicker); if (!th.length) return;
@@ -1973,7 +1844,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             
             let s = document.getElementById('styleSelect').value;
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f'].includes(activeProf);
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f'].some(prefix => activeProf.includes(prefix));
 
             if (currentTicker === 'ALL_SHARES') {
                 tvChart.applyOptions({ leftPriceScale: { visible: false } });
@@ -2057,7 +1928,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 
-                // Populate Leaderboard
                 if (p.leaderboard) {
                     let lbHtml = p.leaderboard.map(lb => `
                         <div class="lb-item">
