@@ -14,7 +14,6 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
     if not interval or interval == 'undefined': interval = "1d"
     if not period or period == 'undefined': period = "1y"
     
-    # HARD YFINANCE API LIMIT OVERRIDES
     if period in ['1y', '5y', 'max'] and interval in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']:
         interval = '1d'
     if period in ['1mo', '3mo', '6mo'] and interval in ['1m', '2m']:
@@ -157,7 +156,12 @@ class PortfolioManager:
                 mod_user = self.active_username()
                 if 'users' not in fresh: fresh['users'] = {}
                 fresh['users'][mod_user] = self.data['users'][mod_user]
-                fresh['active_user'] = self.data.get('active_user', fresh.get('active_user'))
+                
+                # PREVENT RACE CONDITION: Never overwrite fresh DB active_user 
+                # unless it's fundamentally missing
+                if 'active_user' not in fresh:
+                    fresh['active_user'] = self.data.get('active_user')
+                    
                 self.data = fresh
         except: pass
         self.save_data(self.data)
@@ -307,33 +311,6 @@ class PortfolioManager:
         else: ud['holdings'].pop(trade['ticker'], None)
         self.save()
         return True
-
-    def get_total_portfolio_value(self):
-        ud = self.user_data()
-        hd = ud.get('holdings', {})
-        active_tickers = [t for t in list(hd.keys()) if self.get_shares(t) > 0]
-        
-        if not active_tickers:
-            return 0.0
-            
-        def fetch_val(t):
-            sh = self.get_shares(t)
-            try:
-                df = fetch_yf_data(t, "1d", "1d")
-                if not df.empty:
-                    p = df['Close'].iloc[-1]
-                    cps = p / 100.0 if t.endswith('.L') and p > 100 else p
-                    return t, round(sh * cps, 2)
-            except: pass
-            return t, hd[t].get('manual_val', 0.0)
-
-        total = 0.0
-        with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_tickers)))) as ex:
-            for t, val in ex.map(fetch_val, active_tickers):
-                total += val
-                if t in hd:
-                    hd[t]['manual_val'] = val
-        return round(total, 2)
 
 class MarketScoringEngine:
     def __init__(self):
@@ -634,13 +611,15 @@ def get_directives():
         scan_list = ud.get('watchlist', [])
     
     mb = ud.get('master_budget', 10000.0)
-    active_holds = [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0]
-    tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in active_holds)
     
-    cash_balance = mb - tot_cb
+    # Calculate real cash balance properly
+    net_history = sum(-tr['amount'] if tr['action'] == 'BUY' else tr['amount'] for tr in ud.get('history', []))
+    init_manual = sum(pos.get('manual_val', 0.0) for pos in ud.get('initial_positions', {}).values())
+    cash_balance = mb + net_history - init_manual
     rem_cash = max(0, cash_balance)
-    total_equity = cash_balance + portfolio_store.get_total_portfolio_value()
 
+    active_holds = [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0]
+    
     if 'notified_signals' not in ud: ud['notified_signals'] = {}
     dirs, buys, held_scores = [], [], []
     MIN_BUY_VALUE = 20.0
@@ -652,6 +631,7 @@ def get_directives():
     with ThreadPoolExecutor(max_workers=min(5, max(1, len(scan_list)))) as ex:
         for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
+    tot_own = 0.0
     for t in scan_list:
         t = t.strip().upper()
         if not t: continue
@@ -662,6 +642,7 @@ def get_directives():
             sh = portfolio_store.get_shares(t)
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
             vo = sh * cps
+            tot_own += vo
 
             avg_buy_p, highest_p = 0.0, cur
             if sh > 0:
@@ -694,6 +675,8 @@ def get_directives():
             elif st['action_main'] == 'BUY' and rem_cash >= MIN_BUY_VALUE:
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
         except: pass
+
+    total_equity = cash_balance + tot_own
 
     if 'test e' in active_profile and buys:
         buys.sort(key=lambda x: x['s'], reverse=True)
@@ -751,7 +734,7 @@ def get_directives():
             if d['shares'] > 0:
                 portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
         dirs = [] 
-        
+
     if is_momentum:
         ud = portfolio_store.user_data()
         current_holdings = [t for t, h_data in ud.get('holdings', {}).items() if h_data.get('shares', 0) > 0]
@@ -798,25 +781,52 @@ def get_data():
     is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
     if not t: t = 'ALL_SHARES'
 
-    leaderboard = []
-    for u, u_data in portfolio_store.data.get('users', {}).items():
-        lb_cash = u_data.get('master_budget', 0) - sum(u_data.get('initial_positions',{}).get(w,{}).get('manual_val',0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in u_data.get('history',[]) if tr.get('ticker')==w) for w in [tk for tk, hd in u_data.get('holdings',{}).items() if hd.get('shares',0)>0])
-        lb_holds = sum(hd.get('manual_val', 0) for hd in u_data.get('holdings', {}).values())
-        leaderboard.append({'user': u, 'equity': round(max(0, lb_cash) + lb_holds, 2)})
-    leaderboard.sort(key=lambda x: x['equity'], reverse=True)
-
-    tot_own = portfolio_store.get_total_portfolio_value()
-    mb = ud.get('master_budget', 10000.0)
-
     active_holds = [tk for tk, hd in ud.get('holdings', {}).items() if hd.get('shares', 0) > 0]
-    tot_cb = sum(ud.get('initial_positions', {}).get(w, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==w) for w in active_holds)
-    
-    cash_balance = mb - tot_cb
-    total_equity = cash_balance + tot_own
 
+    # --- TRUE PNL TIMEFRAME CALCULATIONS ---
+    pnl_dfs_5m = {}
+    pnl_dfs_1d = {}
+    def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
+    def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
+    
+    with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds) * 2))) as ex:
+        for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
+        for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
+
+    # Calculate real cash balance globally
+    mb = ud.get('master_budget', 10000.0)
+    net_history = sum(-tr['amount'] if tr['action'] == 'BUY' else tr['amount'] for tr in ud.get('history', []))
+    init_manual = sum(pos.get('manual_val', 0.0) for pos in ud.get('initial_positions', {}).values())
+    cash_balance = mb + net_history - init_manual
+
+    # Get live portfolio value aligned with 5m charts
+    tot_own = 0.0
+    for tk in active_holds:
+        sh = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
+        df_5m = pnl_dfs_5m.get(tk)
+        if df_5m is not None and not df_5m.empty:
+            cp = df_5m['Close'].iloc[-1]
+        else:
+            df1 = pnl_dfs_1d.get(tk)
+            cp = df1['Close'].iloc[-1] if df1 is not None and not df1.empty else 0.0
+        div = 100.0 if tk.endswith('.L') and cp > 100 else 1.0
+        tot_own += sh * (cp / div)
+        
+    total_equity = cash_balance + tot_own
     master_pnl_val = total_equity - mb
     master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
     master_pc = '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')
+
+    # Leaderboard Calculation (applying correct cash formula)
+    leaderboard = []
+    for u, u_data in portfolio_store.data.get('users', {}).items():
+        mb_lb = u_data.get('master_budget', 10000.0)
+        nh_lb = sum(-tr['amount'] if tr['action'] == 'BUY' else tr['amount'] for tr in u_data.get('history', []))
+        im_lb = sum(pos.get('manual_val', 0.0) for pos in u_data.get('initial_positions', {}).values())
+        cash_lb = mb_lb + nh_lb - im_lb
+        holds_lb = sum(hd.get('manual_val', 0.0) for hd in u_data.get('holdings', {}).values())
+        leaderboard.append({'user': u, 'equity': round(max(0, cash_lb) + holds_lb, 2)})
+    leaderboard.sort(key=lambda x: x['equity'], reverse=True)
 
     req_p = request.args.get('p')
     if not req_p or req_p == 'undefined': req_p = ud.get('settings', {}).get('period', '5d' if is_momentum else '1mo')
@@ -832,30 +842,17 @@ def get_data():
             try:
                 df_stat = fetch_yf_data(tick, "5d", "5m")
                 if df_stat.empty: return tick, 'closed'
-                if df_stat.index.tz is not None:
-                    df_stat.index = df_stat.index.tz_convert('UTC')
-                last_ts = df_stat.index[-1].timestamp()
-                if (time.time() - last_ts) > 1800:
-                    return tick, 'closed' 
+                if df_stat.index.tz is not None: df_stat.index = df_stat.index.tz_convert('UTC')
+                if (time.time() - df_stat.index[-1].timestamp()) > 1800: return tick, 'closed' 
                 if len(df_stat) > 1:
-                    last_price = df_stat['Close'].iloc[-1]
-                    prev_price = df_stat['Close'].iloc[-2]
-                    if last_price > prev_price: return tick, 'up'
-                    elif last_price < prev_price: return tick, 'down'
+                    if df_stat['Close'].iloc[-1] > df_stat['Close'].iloc[-2]: return tick, 'up'
+                    elif df_stat['Close'].iloc[-1] < df_stat['Close'].iloc[-2]: return tick, 'down'
                 return tick, 'closed'
-            except:
-                return tick, 'closed'
+            except: return tick, 'closed'
 
         with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
             for tick, status in ex.map(check_status, wl):
                 wl_status[tick] = status
-
-    # --- TRUE PNL TIMEFRAME CALCULATIONS ---
-    pnl_dfs_5m = {}
-    def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-    
-    with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds)))) as ex:
-        for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
         
     tot_today_diff, tot_1h_diff = 0.0, 0.0
     now_utc = pd.Timestamp.now(tz='UTC')
@@ -872,21 +869,20 @@ def get_data():
         last_ts = df_5m.index[-1]
         last_lon = last_ts.tz_convert('Europe/London')
         
-        # Today PnL Baseline
         if now_lon.date() > last_lon.date():
-            p_today = cur_price # Market closed today, £0 profit
+            p_today = cur_price # Market hasn't printed a candle today
+            p_1h = cur_price
         else:
             last_date_str = last_lon.strftime('%Y-%m-%d')
             prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
             p_today = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
             
-        # 1 Hour PnL Baseline
-        if (now_utc - last_ts).total_seconds() > 4200:
-            p_1h = cur_price # Market closed for over 70 mins, £0 profit
-        else:
-            target_ts = now_utc - pd.Timedelta(hours=1)
-            prior_df = df_5m[df_5m.index <= target_ts]
-            p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else df_5m['Close'].iloc[0]
+            if (now_utc - last_ts).total_seconds() > 4200:
+                p_1h = cur_price # Market closed for over 70 mins
+            else:
+                target_ts = now_utc - pd.Timedelta(hours=1)
+                prior_df = df_5m[df_5m.index <= target_ts]
+                p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
                 
         div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
         sh_h = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
@@ -990,16 +986,16 @@ def get_data():
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
 
-        cb = ud.get('initial_positions', {}).get(t, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==t)
+        cb_t = ud.get('initial_positions', {}).get(t, {}).get('manual_val', 0.0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in ud.get('history', []) if tr.get('ticker')==t)
         
         ticker_pnl_data = {}
-        if sh_own > 0 and cb > 0:
-            pv, pp = round(val_own - cb, 2), round((val_own - cb) / cb * 100, 2)
+        if sh_own > 0 and cb_t > 0:
+            pv, pp = round(val_own - cb_t, 2), round((val_own - cb_t) / cb_t * 100, 2)
             c = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
             pnl_d = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
 
-            df_5m = fetch_yf_data(t, "5d", "5m")
-            if not df_5m.empty:
+            df_5m = pnl_dfs_5m.get(t)
+            if df_5m is not None and not df_5m.empty:
                 if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
                 else: df_5m.index = df_5m.index.tz_convert('UTC')
                 
@@ -1009,17 +1005,18 @@ def get_data():
                 
                 if now_lon.date() > last_lon.date():
                     p_today = cur_p
+                    p_1h = cur_p
                 else:
                     last_date_str = last_lon.strftime('%Y-%m-%d')
                     prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
                     p_today = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
                     
-                if (now_utc - last_ts).total_seconds() > 4200:
-                    p_1h = cur_p
-                else:
-                    target_ts = now_utc - pd.Timedelta(hours=1)
-                    prior_df = df_5m[df_5m.index <= target_ts]
-                    p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else df_5m['Close'].iloc[0]
+                    if (now_utc - last_ts).total_seconds() > 4200:
+                        p_1h = cur_p
+                    else:
+                        target_ts = now_utc - pd.Timedelta(hours=1)
+                        prior_df = df_5m[df_5m.index <= target_ts]
+                        p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
                 
                 div = 100.0 if t.endswith('.L') and cur_p > 100 else 1.0
                 
@@ -1417,13 +1414,13 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let openUK = 480; let closeUK = 990;
             let pctUK = Math.max(0, Math.min(100, ((minsUK - openUK) / (closeUK - openUK)) * 100));
             let colorUK = (minsUK >= openUK && minsUK < closeUK) ? '#00c853' : '#8a8a9e';
-            html += `<div style="display:flex; align-items:center; gap:6px;"><span style="font-size:12px; font-weight:bold; color:${colorUK};">UK</span><div style="width:80px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pctUK}%; height:100%; background:${colorUK};"></div></div><span style="font-size:11px; color:#787e8e;">${timeStringUK} BST</span></div>`;
+            html += `<div style="display:flex; align-items:center; gap:6px;"><span style="font-size:12px; font-weight:bold; color:${colorUK};">UK</span><div style="width:80px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pctUK}%; height:100%; background:${colorUK};"></div></div><span style="font-size:11px; color:#787e8e; width: 40px;">${timeStringUK}</span></div>`;
             
             // US: Open 9:30 (570), Close 16:00 (960)
             let openUS = 570; let closeUS = 960;
             let pctUS = Math.max(0, Math.min(100, ((minsUS - openUS) / (closeUS - openUS)) * 100));
             let colorUS = (minsUS >= openUS && minsUS < closeUS) ? '#00c853' : '#8a8a9e';
-            html += `<div style="display:flex; align-items:center; gap:6px; margin-left:10px;"><span style="font-size:12px; font-weight:bold; color:${colorUS};">US</span><div style="width:80px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pctUS}%; height:100%; background:${colorUS};"></div></div><span style="font-size:11px; color:#787e8e;">${timeStringUS} EDT</span></div>`;
+            html += `<div style="display:flex; align-items:center; gap:6px; margin-left:10px;"><span style="font-size:12px; font-weight:bold; color:${colorUS};">US</span><div style="width:80px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pctUS}%; height:100%; background:${colorUS};"></div></div><span style="font-size:11px; color:#787e8e; width: 40px;">${timeStringUS}</span></div>`;
             
             document.getElementById('marketClocks').innerHTML = html;
         }
@@ -1621,19 +1618,22 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
         function calculateSizing() {
             let tb = globalPortfolioData.master_budget || 10000;
-            let toa = 0; let tot_cb = 0;
+            let net_hist = 0;
+            (globalPortfolioData.history || []).forEach(h => { net_hist += (h.action === 'BUY' ? -h.amount : h.amount); });
+            let init_man = 0;
+            if(globalPortfolioData.initial_positions) {
+                Object.values(globalPortfolioData.initial_positions).forEach(p => { init_man += (p.manual_val || 0); });
+            }
+            let cash_balance = tb + net_hist - init_man;
+            
+            let toa = 0;
             if (globalPortfolioData.holdings) {
                 for (let t of Object.keys(globalPortfolioData.holdings)) { 
                     if (globalPortfolioData.holdings[t] && globalPortfolioData.holdings[t].shares > 0) {
                         toa += (globalPortfolioData.holdings[t].manual_val || 0); 
-                        let init = globalPortfolioData.initial_positions?.[t]?.manual_val || 0;
-                        let net = 0;
-                        (globalPortfolioData.history || []).forEach(h => { if(h.ticker===t) net += (h.action==='BUY'?h.amount:-h.amount); });
-                        tot_cb += (init + net);
                     }
                 }
             }
-            let cash_balance = tb - tot_cb;
             let rem = cash_balance;
             let total_equity = cash_balance + toa;
 
