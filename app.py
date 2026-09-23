@@ -808,7 +808,7 @@ def get_recommendations():
     
     def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
-    with ThreadPoolExecutor(max_workers=10) as ex:
+    with ThreadPoolExecutor(max_workers=15) as ex:
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0

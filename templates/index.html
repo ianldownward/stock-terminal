@@ -9,9 +9,12 @@
         * { box-sizing: border-box; }
         body { font-family: -apple-system, sans-serif; background: #0f1115; color: #e1e3e6; margin: 0; display: flex; height: 100vh; overflow: hidden; }
         .sidebar { width: 300px; background: #171a21; border-right: 1px solid #262b36; display: flex; flex-direction: column; flex-shrink: 0; }
-        .sidebar-top { padding: 15px; flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+        
+        /* CSS FIX: Made the sidebar-top pin to the top and ONLY the watchlist scrolls */
+        .sidebar-top { padding: 15px 15px 0 15px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .sidebar-bottom { padding: 15px; border-top: 1px solid #262b36; background: #1a1d24; flex-shrink: 0; }
-        .right-drawer { width: 280px; background: #171a21; border-left: 1px solid #262b36; display: flex; flex-direction: column; padding: 15px; flex-shrink: 0; }
+        
+        .right-drawer { width: 280px; background: #171a21; border-left: 1px solid #262b36; display: flex; flex-direction: column; padding: 15px; flex-shrink: 0; overflow-y: auto; }
         .right-drawer h2, .sidebar h2 { font-size: 12px; color: #787e8e; margin: 10px 0; text-transform: uppercase; letter-spacing: 0.5px; }
         .sidebar h2 { margin-top: 0; }
         .drawer-card { background: #1a1d24; border: 1px solid #262b36; border-radius: 8px; padding: 12px; margin-bottom: 10px; text-align: center; position: relative; }
@@ -51,10 +54,17 @@
         .directive-btn:hover { background: #00e676; }
         .directive-btn.sell { background: #ff3d00; }
         .directive-btn.sell:hover { background: #ff5252; }
-        .search-box { display: flex; gap: 8px; margin-bottom: 15px; }
+        .search-box { display: flex; gap: 8px; margin-bottom: 15px; flex-shrink: 0; }
         .search-box input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; }
         .search-box button { background: #00d2ff; border: none; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
-        .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; }
+        
+        /* CSS FIX: The watchlist explicitly scrolls now, with custom scrollbars */
+        .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; overflow-y: auto; padding-bottom: 15px; padding-right: 5px; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #363c4a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #00d2ff; }
+
         .watchlist-item { padding: 10px 12px; border-radius: 6px; background: #1e222d; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
         .watchlist-item:hover, .watchlist-item.active { border-color: #00d2ff; background: #252a37; }
         .btn-delete { background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; padding: 0 5px; }
@@ -104,7 +114,6 @@
         .thermo-bar-fill { height: 100%; width: 50%; background: #8a8a9e; transition: width 0.4s ease, background-color 0.4s ease; border-radius: 4px; }
         .thermo-text { font-size: 10px; font-weight: bold; margin-top: 4px; display: block; }
 
-        /* MINIMAL SHORT S TAG */
         .short-tag { color: #ff3d00; font-size: 11px; font-weight: bold; margin-right: 6px; }
 
         .btn-execute { background: #00c853; color: #fff; border: none; font-weight: bold; padding: 6px 10px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 11px; margin-top: 4px; }
@@ -187,7 +196,9 @@
             </div>
             <div class="master-budget-box"><label>Starting Capital (£)</label><input type="number" id="masterBudgetInput" value="10000" oninput="onMasterBudgetInput()"><div class="budget-sub-stats"><div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£10,000.00</b></div></div></div>
             
-            <h2>Live Watchlist</h2><div class="search-box"><input type="text" id="addTickerInput" placeholder="Add Symbol..."><button id="addBtn">+</button></div><ul class="watchlist" id="watchlistUI"></ul>
+            <h2>Live Watchlist</h2><div class="search-box"><input type="text" id="addTickerInput" placeholder="Add Symbol..."><button id="addBtn">+</button></div>
+            
+            <ul class="watchlist" id="watchlistUI"></ul>
         </div>
         <div class="sidebar-bottom">
             <div class="directives-box"><h3>Portfolio Action Directives</h3><div id="directivesList" style="max-height: 120px; overflow-y: auto;"><div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">Scanning portfolio...</div></div></div>
@@ -1000,7 +1011,6 @@
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
-                // INCREASED TIMEOUT TO 15 SECONDS TO ALLOW MONGODB SECURE HANDSHAKES ON WAKE
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 15000);
 
@@ -1056,6 +1066,17 @@
                 }
 
                 document.getElementById('activeTitle').innerText = p.name; currentAnomalyReason = p.metrics.reason;
+
+                // HEADER BADGE UPDATE
+                let dirBadgeEl = document.getElementById('activeDirectionBadge');
+                if (currentTicker !== 'ALL_SHARES') {
+                    let isShort = p.metrics.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(currentTicker);
+                    dirBadgeEl.className = `badge-direction ${isShort ? 'badge-short' : 'badge-long'}`;
+                    dirBadgeEl.innerText = isShort ? 'SHORT POSITION' : 'LONG POSITION';
+                    dirBadgeEl.style.display = 'inline-block';
+                } else {
+                    dirBadgeEl.style.display = 'none';
+                }
 
                 currentLivePrice = p.metrics.price; currentActiveTranches = p.metrics.tranches; currentSharesOwned = p.metrics.shares_owned; currentValOwned = p.metrics.value_owned;
                 document.getElementById('masterBudgetInput').value = p.metrics.master_budget;
