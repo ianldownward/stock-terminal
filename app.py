@@ -105,7 +105,7 @@ class PortfolioManager:
 
     def _ensure_default_user(self):
         try:
-            default_profiles = ['Ian', 'Test', 'Test 2', 'Test 3', 'Test 4 - Volatility Breakout', 'Test 5 - Rel Strength Rotator']
+            default_profiles = ['Ian', 'Test', 'Test 2', 'Test 3', 'Test 4 - Volatility Breakout', 'Test 5 - Rel Strength Rotator', 'Test 6 - EOD Cash Sweep']
             if 'users' not in self.data or not self.data['users']:
                 self.data['users'] = {}
                 for p in default_profiles:
@@ -343,13 +343,20 @@ class MarketScoringEngine:
         prof = profile.lower()
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
+        # --- EOD CASH SWEEP RULE (TEST 6) ---
+        now_uk = pd.Timestamp.now(tz='Europe/London')
+        if 'test 6' in prof and now_uk.hour == 20 and now_uk.minute >= 55: # 8:55 PM BST
+            return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                    'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900'}
+
         # --- DYNAMIC RISK PARAMETERS BY PROFILE ---
         trail_pct = 0.50
         hard_pct = -1.00
         if 'test 4' in prof:
             trail_pct = 0.75
             hard_pct = -0.50
-        elif 'test 5' in prof:
+        elif 'test 5' in prof or 'test 6' in prof:
             trail_pct = 1.00
 
         if avg_buy_price > 0 and highest_price > 0:
@@ -592,7 +599,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5'])
+        is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
         df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         cur = df['Close'].iloc[-1]
@@ -615,7 +622,7 @@ def get_directives():
     ud = portfolio_store.user_data()
     engine = MarketScoringEngine()
     active_profile = portfolio_store.active_username().strip().lower()
-    is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5'])
+    is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
     
     if 'test 3' in active_profile:
         scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
@@ -672,7 +679,7 @@ def get_directives():
                 st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
 
             last_trade_time = next((h['timestamp'] for h in ud.get('history', []) if h['ticker'] == t), 0)
-            is_auto = any(x in active_profile for x in ['test', 'test 2', 'test 3', 'test 4', 'test 5'])
+            is_auto = any(x in active_profile for x in ['test', 'test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
             if is_auto and (int(time.time()) - last_trade_time < 300):
                 continue
 
@@ -696,7 +703,6 @@ def get_directives():
             weakest = held_scores[0]
             if top_candidate['s'] > (weakest['score'] + 20) and weakest['shares'] > 0 and weakest['ticker'] != top_candidate['t']:
                 dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
-                # Wait for next cycle to buy, or allocate available cash immediately
     
     # --- STANDARD MOMENTUM ROTATION LOGIC ---
     elif is_momentum and buys and 'test 5' not in active_profile:
@@ -714,7 +720,10 @@ def get_directives():
                     dirs.append({'ticker': top_candidate['t'], 'name': top_candidate['n'], 'action': 'BUY', 'shares': buy_sh, 'price': top_candidate['p'], 'amount': round(buy_sh * top_candidate['cps'], 2)})
 
     # --- BUY ALLOCATION LOGIC ---
-    if buys and rem_cash >= MIN_BUY_VALUE:
+    now_uk = pd.Timestamp.now(tz='Europe/London')
+    is_eod_blocked = ('test 6' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
+    
+    if buys and rem_cash >= MIN_BUY_VALUE and not is_eod_blocked:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_buys = buys[:1] if 'test 5' in active_profile else buys[:2]  
         
@@ -729,7 +738,7 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
-    is_auto = any(x in active_profile for x in ['test', 'test 2', 'test 3', 'test 4', 'test 5'])
+    is_auto = any(x in active_profile for x in ['test', 'test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
@@ -787,7 +796,7 @@ def get_data():
     wl = ud.get('watchlist', [])
     t = request.args.get('t', '').upper().strip()
     active_profile = portfolio_store.active_username().strip().lower()
-    is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5'])
+    is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
     if not t: t = 'ALL_SHARES'
 
     tot_own = portfolio_store.get_total_portfolio_value()
@@ -1562,7 +1571,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isAuto = ['test', 'test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator'].includes(activeProf);
+            let isAuto = ['test', 'test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator', 'test 6 - eod cash sweep'].includes(activeProf);
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -1614,7 +1623,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let res = await fetch(`/api/directives`); let data = await res.json();
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-                let isAuto = ['test', 'test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator'].includes(activeProf);
+                let isAuto = ['test', 'test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator', 'test 6 - eod cash sweep'].includes(activeProf);
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
@@ -1851,7 +1860,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             
             let s = document.getElementById('styleSelect').value;
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator'].includes(activeProf);
+            let isMomentum = ['test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator', 'test 6 - eod cash sweep'].includes(activeProf);
 
             if (currentTicker === 'ALL_SHARES') {
                 tvChart.applyOptions({ leftPriceScale: { visible: false } });
