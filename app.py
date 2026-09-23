@@ -105,10 +105,10 @@ class PortfolioManager:
 
     def _ensure_default_user(self):
         try:
-            # Migration map for old profile names
             rename_map = {
                 'Test': 'Test A - Deep Value',
-                'Test 2': 'Test B - US Momentum',
+                'Test 2': 'Test B - Momentum (UK & US)',
+                'Test B - US Momentum': 'Test B - Momentum (UK & US)',
                 'Test 3': 'Test C - 24/5 Global',
                 'Test 4 - Volatility Breakout': 'Test D - Volatility',
                 'Test 5 - Rel Strength Rotator': 'Test E - Rotator',
@@ -127,7 +127,7 @@ class PortfolioManager:
                         self.data['active_user'] = new
                     needs_save = True
 
-            default_profiles = ['Ian'] + list(rename_map.values())
+            default_profiles = ['Ian'] + list(set(rename_map.values()))
             for profile in default_profiles:
                 if profile not in self.data['users']:
                     self.data['users'][profile] = self.default_user_state(profile)
@@ -154,12 +154,11 @@ class PortfolioManager:
         try:
             fresh = self.load()
             if fresh:
-                mod_user = self.data.get('active_user')
-                self.data['active_user'] = fresh.get('active_user', mod_user)
-                if 'users' not in self.data: self.data['users'] = {}
-                for u, u_data in fresh.get('users', {}).items():
-                    if u != mod_user:
-                        self.data['users'][u] = u_data
+                mod_user = self.active_username()
+                if 'users' not in fresh: fresh['users'] = {}
+                fresh['users'][mod_user] = self.data['users'][mod_user]
+                fresh['active_user'] = self.data.get('active_user', fresh.get('active_user'))
+                self.data = fresh
         except: pass
         self.save_data(self.data)
 
@@ -177,6 +176,7 @@ class PortfolioManager:
     def add_user(self, username):
         username = username.strip()
         if not username: return
+        self.reload()
         if 'users' not in self.data: self.data['users'] = {}
         if username not in self.data['users']: self.data['users'][username] = self.default_user_state(username)
         self.data['active_user'] = username
@@ -184,6 +184,7 @@ class PortfolioManager:
 
     def delete_user(self, username):
         username = username.strip()
+        self.reload()
         if 'users' in self.data and username in self.data['users'] and len(self.data['users']) > 1:
             del self.data['users'][username]
             if self.data.get('active_user') == username: self.data['active_user'] = list(self.data['users'].keys())[0]
@@ -193,6 +194,7 @@ class PortfolioManager:
 
     def switch_user(self, username):
         username = username.strip()
+        self.reload()
         if 'users' in self.data and username in self.data['users']:
             self.data['active_user'] = username
             self.save_data(self.data)
@@ -357,14 +359,12 @@ class MarketScoringEngine:
         prof = profile.lower()
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
-        # --- EOD CASH SWEEP RULE (TEST F) ---
         now_uk = pd.Timestamp.now(tz='Europe/London')
-        if 'test f' in prof and now_uk.hour == 20 and now_uk.minute >= 55: # 8:55 PM BST
+        if 'test f' in prof and now_uk.hour == 20 and now_uk.minute >= 55:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
                     'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900'}
 
-        # --- DYNAMIC RISK PARAMETERS BY PROFILE ---
         trail_pct = 0.50
         hard_pct = -1.00
         if 'test d' in prof:
@@ -391,7 +391,6 @@ class MarketScoringEngine:
                     'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
 
-        # --- ENTRY CONDITIONS BY PROFILE ---
         if 'test d' in prof:
             sma20 = df_5m['Close'].rolling(20).mean().iloc[-1]
             std20 = df_5m['Close'].rolling(20).std().iloc[-1]
@@ -535,19 +534,16 @@ def get_users():
 
 @app.route('/api/users/select', methods=['POST'])
 def select_user():
-    portfolio_store.reload()
     portfolio_store.switch_user((request.get_json() or {}).get('username', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/users/add', methods=['POST'])
 def add_user():
-    portfolio_store.reload()
     portfolio_store.add_user((request.get_json() or {}).get('username', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/users/delete', methods=['POST'])
 def delete_user():
-    portfolio_store.reload()
     return jsonify({'status': 'ok' if portfolio_store.delete_user((request.get_json() or {}).get('username', '')) else 'error'})
 
 @app.route('/api/push_test', methods=['POST'])
@@ -563,49 +559,41 @@ def get_portfolio():
 
 @app.route('/api/portfolio/reset', methods=['POST'])
 def reset_portfolio():
-    portfolio_store.reload()
     return jsonify({'status': 'ok', 'portfolio': portfolio_store.reset_all()})
 
 @app.route('/api/portfolio/settings', methods=['POST'])
 def update_settings():
-    portfolio_store.reload()
     portfolio_store.update_settings((request.get_json() or {}).get('settings', {}))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/budget', methods=['POST'])
 def update_budget():
-    portfolio_store.reload()
     portfolio_store.update_budget((request.get_json() or {}).get('budget', 10000))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/watchlist/add', methods=['POST'])
 def add_watchlist():
-    portfolio_store.reload()
     portfolio_store.add_watchlist((request.get_json() or {}).get('ticker', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/watchlist/delete', methods=['POST'])
 def delete_watchlist():
-    portfolio_store.reload()
     portfolio_store.remove_watchlist((request.get_json() or {}).get('ticker', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/holding', methods=['POST'])
 def update_holding():
-    portfolio_store.reload()
     b = request.get_json() or {}
     shares = portfolio_store.set_holding_value(b.get('ticker'), b.get('value_owned', 0), b.get('price', 1))
     return jsonify({'status': 'ok', 'shares': shares})
 
 @app.route('/api/trade/execute', methods=['POST'])
 def execute_trade():
-    portfolio_store.reload()
     b = request.get_json() or {}
     return jsonify({'status': 'ok', 'entry': portfolio_store.execute_trade(b.get('ticker'), b.get('action'), b.get('shares'), b.get('price'))})
 
 @app.route('/api/trade/undo', methods=['POST'])
 def undo_trade(): 
-    portfolio_store.reload()
     return jsonify({'status': 'ok' if portfolio_store.undo_trade((request.get_json() or {}).get('id')) else 'error'})
 
 @app.route('/api/score', methods=['GET'])
@@ -742,9 +730,9 @@ def get_directives():
         top_buys = buys[:1] if 'test e' in active_profile else buys[:2]  
         
         if 'test e' in active_profile:
-            per_stock_budget = min(rem_cash, total_equity * 0.98) # 100% allocation for Rotator
+            per_stock_budget = min(rem_cash, total_equity * 0.98) 
         else:
-            per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.50) # 50% allocation for standard momentum
+            per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.50) 
         
         for b in top_buys:
             bs = int(per_stock_budget // b['cps'])
@@ -813,7 +801,6 @@ def get_data():
     is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
     if not t: t = 'ALL_SHARES'
 
-    # Leaderboard Generation
     leaderboard = []
     for u, u_data in portfolio_store.data.get('users', {}).items():
         lb_cash = u_data.get('master_budget', 0) - sum(u_data.get('initial_positions',{}).get(w,{}).get('manual_val',0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in u_data.get('history',[]) if tr.get('ticker')==w) for w in [tk for tk, hd in u_data.get('holdings',{}).items() if hd.get('shares',0)>0])
@@ -842,7 +829,6 @@ def get_data():
     if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
     elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
 
-    # --- LIVE WATCHLIST MARKET STATUS CHECK ---
     wl_status = {}
     if wl:
         def check_status(tick):
@@ -888,10 +874,10 @@ def get_data():
         
         p_1h = yday_close
         if df_5m is not None and not df_5m.empty:
-            target_ts = df_5m.index[-1] - pd.Timedelta(hours=1)
-            prior_df = df_5m[df_5m.index <= target_ts]
-            if not prior_df.empty:
-                p_1h = prior_df['Close'].iloc[-1]
+            if len(df_5m) >= 12:
+                p_1h = df_5m['Close'].iloc[-12]
+            else:
+                p_1h = df_5m['Close'].iloc[0]
                 
         div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
         sh_h = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
@@ -1003,15 +989,16 @@ def get_data():
             c = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
             pnl_d = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
 
-            df_1d = fetch_yf_data(t, "1mo", "1d")
-            yday_p = df_1d['Close'].iloc[-2] if not df_1d.empty and len(df_1d) >= 2 else last_p
+            df_1d = pnl_dfs_1d.get(t)
+            yday_p = df_1d['Close'].iloc[-2] if df_1d is not None and len(df_1d) >= 2 else last_p
             
-            df_5m = fetch_yf_data(t, "5d", "5m")
+            df_5m = pnl_dfs_5m.get(t)
             p_1h = yday_p
-            if not df_5m.empty:
-                target_ts = df_5m.index[-1] - pd.Timedelta(hours=1)
-                prior_df = df_5m[df_5m.index <= target_ts]
-                if not prior_df.empty: p_1h = prior_df['Close'].iloc[-1]
+            if df_5m is not None and not df_5m.empty:
+                if len(df_5m) >= 12:
+                    p_1h = df_5m['Close'].iloc[-12]
+                else:
+                    p_1h = df_5m['Close'].iloc[0]
             
             div = 100.0 if t.endswith('.L') and last_p > 100 else 1.0
             
@@ -1362,7 +1349,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
             'Test A - Deep Value': 'Manual value accumulation using physical trusts and deep-value blue chips. No automated intraday trading.',
-            'Test B - US Momentum': 'Trades 3x/2x leveraged US ETFs (SOXL, TQQQ) using fast 9/21 EMA crossovers and tight 0.5% trailing stops.',
+            'Test B - Momentum (UK & US)': 'Trades high-momentum UK stocks and 3x/2x leveraged US ETFs using fast 9/21 EMA crossovers and tight 0.5% trailing stops.',
             'Test C - 24/5 Global': '24/5 Follow-the-Sun strategy. Rotates capital across Asian, European, and US markets using fast EMAs.',
             'Test D - Volatility': 'Hunts for aggressive volume spikes breaking above the upper Bollinger Band. Uses wider 0.75% trailing stops.',
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes.',
@@ -1388,33 +1375,33 @@ HTML_FRONTEND = """<!DOCTYPE html>
         }
 
         function updateMarketClocks() {
-            if(!globalPortfolioData || !globalPortfolioData.holdings) return;
-            let holds = Object.keys(globalPortfolioData.holdings);
-            let hasUK = holds.some(t => t.endsWith('.L'));
-            let hasUS = holds.some(t => !t.endsWith('.L') && t !== 'YCA.L');
-            
             let d = new Date();
-            let options = { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false };
-            let timeString = d.toLocaleTimeString('en-GB', options);
-            let parts = timeString.split(':');
-            let mins = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            let optionsUK = { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false };
+            let optionsUS = { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false };
+            
+            let timeStringUK = d.toLocaleTimeString('en-GB', optionsUK);
+            let timeStringUS = d.toLocaleTimeString('en-US', optionsUS);
+            
+            let partsUK = timeStringUK.split(':');
+            let minsUK = parseInt(partsUK[0]) * 60 + parseInt(partsUK[1]);
+            
+            let partsUS = timeStringUS.split(':');
+            let minsUS = parseInt(partsUS[0]) * 60 + parseInt(partsUS[1]);
             
             let html = '';
             
-            if (hasUK) {
-                let open = 480; let close = 990;
-                let pct = Math.max(0, Math.min(100, ((mins - open) / (close - open)) * 100));
-                let color = (mins >= open && mins < close) ? '#00c853' : '#ff3d00';
-                if(mins >= close || mins < open) color = '#8a8a9e';
-                html += `<div style="display:flex; align-items:center; gap:6px;"><span style="font-size:12px; font-weight:bold; color:${color};">UK</span><div style="width:100px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${color};"></div></div></div>`;
-            }
-            if (hasUS) {
-                let open = 870; let close = 1260;
-                let pct = Math.max(0, Math.min(100, ((mins - open) / (close - open)) * 100));
-                let color = (mins >= open && mins < close) ? '#00c853' : '#ff3d00';
-                if(mins >= close || mins < open) color = '#8a8a9e';
-                html += `<div style="display:flex; align-items:center; gap:6px;"><span style="font-size:12px; font-weight:bold; color:${color};">US</span><div style="width:100px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${color};"></div></div></div>`;
-            }
+            // UK: Open 8:00 (480), Close 16:30 (990)
+            let openUK = 480; let closeUK = 990;
+            let pctUK = Math.max(0, Math.min(100, ((minsUK - openUK) / (closeUK - openUK)) * 100));
+            let colorUK = (minsUK >= openUK && minsUK < closeUK) ? '#00c853' : '#8a8a9e';
+            html += `<div style="display:flex; align-items:center; gap:6px;"><span style="font-size:12px; font-weight:bold; color:${colorUK};">UK</span><div style="width:80px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pctUK}%; height:100%; background:${colorUK};"></div></div><span style="font-size:11px; color:#787e8e;">${timeStringUK} BST</span></div>`;
+            
+            // US: Open 9:30 (570), Close 16:00 (960)
+            let openUS = 570; let closeUS = 960;
+            let pctUS = Math.max(0, Math.min(100, ((minsUS - openUS) / (closeUS - openUS)) * 100));
+            let colorUS = (minsUS >= openUS && minsUS < closeUS) ? '#00c853' : '#8a8a9e';
+            html += `<div style="display:flex; align-items:center; gap:6px; margin-left:10px;"><span style="font-size:12px; font-weight:bold; color:${colorUS};">US</span><div style="width:80px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pctUS}%; height:100%; background:${colorUS};"></div></div><span style="font-size:11px; color:#787e8e;">${timeStringUS} EDT</span></div>`;
+            
             document.getElementById('marketClocks').innerHTML = html;
         }
         setInterval(updateMarketClocks, 60000);
@@ -1964,7 +1951,6 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     lg.innerHTML += `<div style="font-size: 11px; color: ${line.color}; font-weight: bold; text-shadow: 1px 1px 2px #000;">${line.ticker} (${sign}${finalVal.toFixed(2)}%)</div>`;
                 });
                 
-                // Plotted Benchmark Average Line
                 let avgDataKeys = Object.keys(avgDataMap).sort();
                 if (avgDataKeys.length > 0) {
                     let avgData = avgDataKeys.map(t => ({
