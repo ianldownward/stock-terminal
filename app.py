@@ -92,24 +92,11 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            rename_map = {
-                'Test': 'Test A - Deep Value',
-                'Test 2': 'Test B - Momentum (UK & US)',
-                'Test B - US Momentum': 'Test B - Momentum (UK & US)',
-                'Test 3': 'Test C - 24/5 Global',
-                'Test 4 - Volatility Breakout': 'Test D - Volatility',
-                'Test 5 - Rel Strength Rotator': 'Test E - Rotator',
-                'Test 6 - EOD Cash Sweep': 'Test F - EOD Sweep'
-            }
-            
-            for old, new in rename_map.items():
-                if old in self.data['users']:
-                    if len(self.data['users'][old].get('history', [])) > len(self.data['users'].get(new, {}).get('history', [])):
-                        self.data['users'][new] = self.data['users'][old]
-                    del self.data['users'][old]
+            ghost_keys = ['Test', 'Test 2', 'Test 3', 'Test 4 - Volatility Breakout', 'Test 5 - Rel Strength Rotator', 'Test 6 - EOD Cash Sweep', 'Test B - US Momentum']
+            for gk in ghost_keys:
+                if gk in self.data['users']:
+                    del self.data['users'][gk]
                     needs_save = True
-                    if self.data.get('active_user') == old:
-                        self.data['active_user'] = new
 
             for p in default_profiles:
                 if p not in self.data['users']:
@@ -117,12 +104,12 @@ class PortfolioManager:
                     needs_save = True
                     
             if self.data.get('active_user') not in self.data['users']:
-                self.data['active_user'] = list(self.data['users'].keys())[0]
+                self.data['active_user'] = 'Test B - Momentum (UK & US)'
                 needs_save = True
             
             if needs_save: self.save_data(self.data)
         except Exception as e:
-            print(f"Migration error: {e}")
+            print(f"Cleanup error: {e}")
 
     def save_data(self, data_to_save):
         if self.client:
@@ -179,8 +166,10 @@ class PortfolioManager:
             self.save_data(self.data)
 
     def reset_all(self):
-        self.data['users'][self.active_username()] = self.default_user_state(self.active_username())
-        self.save()
+        au = self.active_username()
+        self.reload()
+        self.data['users'][au] = self.default_user_state(au)
+        self.save_data(self.data)
         return self.user_data()
 
     def update_settings(self, settings):
@@ -278,8 +267,8 @@ class PortfolioManager:
 
     def get_total_portfolio_value(self):
         ud = self.user_data()
-        holds = ud.get('holdings') or {}
-        active_tickers = [t for t in list(holds.keys()) if self.get_shares(t) > 0]
+        hist = ud.get('history') or []
+        active_tickers = list(set([t.get('ticker') for t in hist if isinstance(t, dict) and self.get_shares(t.get('ticker')) > 0]))
         
         if not active_tickers:
             return 0.0
@@ -293,9 +282,10 @@ class PortfolioManager:
                     cps = p / 100.0 if t.endswith('.L') and p > 100 else p
                     return t, round(sh * cps, 2)
             except: pass
-            return t, (holds.get(t) or {}).get('manual_val', 0.0)
+            return t, 0.0
 
         total = 0.0
+        holds = ud.get('holdings') or {}
         with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_tickers)))) as ex:
             for t, val in ex.map(fetch_val, active_tickers):
                 total += val
@@ -318,7 +308,18 @@ class MarketScoringEngine:
             'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
 
-    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test b'):
+    def check_market_regime(self):
+        """Checks QQQ 5-minute EMA trend to determine overall market regime."""
+        try:
+            df_qqq = fetch_yf_data('QQQ', '5d', '5m')
+            if not df_qqq.empty and len(df_qqq) >= 21:
+                ema9 = df_qqq['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
+                ema21 = df_qqq['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+                return 'BULL' if ema9 > ema21 else 'BEAR'
+        except: pass
+        return 'NEUTRAL'
+
+    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test b', regime='NEUTRAL'):
         if df_5m.empty or len(df_5m) < 21:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
@@ -358,6 +359,11 @@ class MarketScoringEngine:
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
                     'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
+
+        if regime == 'BEAR':
+            return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                    'reason': "MARKET REGIME FILTER ACTIVE: QQQ is in a 5-min downward EMA trend. Buys blocked to protect cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Regime Filter Block', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Market Dipping)', 'action_color': '#ff9900'}
 
         if 'test d' in prof:
             sma20 = df_5m['Close'].rolling(20).mean().iloc[-1]
@@ -588,7 +594,8 @@ def get_score():
         engine = MarketScoringEngine()
         
         if is_momentum:
-            res = engine.score_momentum(df, cur, profile=active_profile)
+            regime = engine.check_market_regime()
+            res = engine.score_momentum(df, cur, profile=active_profile, regime=regime)
         else:
             avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
             v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
@@ -606,19 +613,19 @@ def get_directives():
     active_profile = portfolio_store.active_username().strip().lower()
     is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
     
+    # Expanded Uncorrelated Scan List
     if 'test c' in active_profile:
-        scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+        scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
     elif is_momentum:
-        scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+        scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
     else:
         scan_list = ud.get('watchlist', [])
-    
-    holds = ud.get('holdings') or {}
-    active_holds = [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0]
     
     mb = ud.get('master_budget', 10000.0)
     hist = ud.get('history') or []
     init_pos = ud.get('initial_positions') or {}
+    
+    active_holds = list(set([t.get('ticker') for t in hist if isinstance(t, dict) and portfolio_store.get_shares(t.get('ticker')) > 0]))
     
     net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
     init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
@@ -626,12 +633,14 @@ def get_directives():
     cash_balance = mb + net_history - init_manual
     rem_cash = max(0, cash_balance)
     
-    tot_own = sum(hd.get('manual_val', 0.0) for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0)
+    tot_own = portfolio_store.get_total_portfolio_value()
     total_equity = cash_balance + tot_own
 
     if 'notified_signals' not in ud: ud['notified_signals'] = {}
     dirs, buys, held_scores = [], [], []
     MIN_BUY_VALUE = 20.0
+
+    regime = engine.check_market_regime() if is_momentum else 'NEUTRAL'
 
     dfs = {}
     def fetch_data_thread(tick): 
@@ -656,14 +665,15 @@ def get_directives():
                 t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
                 if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
                 
-                highest_p = (holds.get(t) or {}).get('high_water', cur)
+                highest_p = (ud.get('holdings', {}).get(t) or {}).get('high_water', cur)
                 if cur > highest_p:
                     highest_p = cur
+                    if 'holdings' not in ud: ud['holdings'] = {}
                     if t not in ud['holdings']: ud['holdings'][t] = {}
                     ud['holdings'][t]['high_water'] = highest_p
 
             if is_momentum:
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile)
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
             else:
                 avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
                 v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
@@ -730,7 +740,7 @@ def get_directives():
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
-                curr_cb = sum((init_pos.get(w) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if isinstance(tr, dict) and tr.get('ticker')==w) for w in [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0])
+                curr_cb = sum((init_pos.get(w) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if isinstance(tr, dict) and tr.get('ticker')==w) for w in [tk for tk, hd in ud.get('holdings', {}).items() if isinstance(hd, dict) and hd.get('shares', 0) > 0])
                 curr_cash = mb - curr_cb
                 if curr_cash < MIN_BUY_VALUE:
                     continue
@@ -768,7 +778,7 @@ def get_recommendations():
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol>0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
+                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
                 st.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
                 res.append(st)
     return jsonify({'recommendations': sorted(res, key=lambda x: x['score'], reverse=True)})
@@ -784,18 +794,16 @@ def get_data():
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
         if not t: t = 'ALL_SHARES'
 
-        # Ensure the watchlist auto-populates for momentum profiles, but NEVER deletes it.
         if is_momentum and not wl:
-            wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'PLTR', 'RR.L', 'AMZN']
+            wl = ['SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L', 'MSTR', 'TQQQ', 'SOXL', 'NVDA', 'PLTR', 'AMZN']
             ud['watchlist'] = wl
             portfolio_store.save()
 
-        holds = ud.get('holdings') or {}
-        init_pos = ud.get('initial_positions') or {}
         hist = ud.get('history') or []
+        init_pos = ud.get('initial_positions') or {}
         mb = ud.get('master_budget', 10000.0)
 
-        active_holds = [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0]
+        active_holds = list(set([tr.get('ticker') for tr in hist if isinstance(tr, dict) and portfolio_store.get_shares(tr.get('ticker')) > 0]))
 
         pnl_dfs_5m = {}
         pnl_dfs_1d = {}
@@ -811,18 +819,7 @@ def get_data():
         init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
         cash_balance = mb + net_history - init_manual
 
-        tot_own = 0.0
-        for tk in active_holds:
-            sh = (holds.get(tk) or {}).get('shares', 0)
-            df_5m = pnl_dfs_5m.get(tk)
-            if df_5m is not None and not df_5m.empty:
-                cp = df_5m['Close'].iloc[-1]
-            else:
-                df1 = pnl_dfs_1d.get(tk)
-                cp = df1['Close'].iloc[-1] if df1 is not None and not df1.empty else 0.0
-            div = 100.0 if tk.endswith('.L') and cp > 100 else 1.0
-            tot_own += sh * (cp / div)
-            
+        tot_own = portfolio_store.get_total_portfolio_value()
         total_equity = cash_balance + tot_own
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
@@ -833,13 +830,20 @@ def get_data():
             mb_lb = u_data.get('master_budget', 10000.0)
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
-            holds_lb_dict = u_data.get('holdings') or {}
             
             nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist_lb if isinstance(tr, dict))
             im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos_lb.values() if isinstance(pos, dict))
             cash_lb = mb_lb + nh_lb - im_lb
             
-            holds_lb_val = sum(hd.get('manual_val', 0.0) for hd in holds_lb_dict.values() if isinstance(hd, dict))
+            active_holds_lb = list(set([tr.get('ticker') for tr in hist_lb if isinstance(tr, dict)]))
+            holds_lb_val = 0.0
+            for tk_lb in active_holds_lb:
+                sh_lb = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist_lb if isinstance(t, dict) and t.get('ticker') == tk_lb)
+                if sh_lb > 0:
+                    last_tr_p = next((t.get('price', 0) for t in hist_lb if isinstance(t, dict) and t.get('ticker') == tk_lb), 0)
+                    cps_lb = last_tr_p / 100.0 if tk_lb.endswith('.L') and last_tr_p > 100 else last_tr_p
+                    holds_lb_val += sh_lb * cps_lb
+
             leaderboard.append({'user': u, 'equity': round(max(0, cash_lb) + holds_lb_val, 2)})
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
 
@@ -906,7 +910,7 @@ def get_data():
                     p_1h = avg_b_today_t if avg_b_today_t > 0 else p_1h_mkt
             
             div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
-            sh_h = (holds.get(tk) or {}).get('shares', 0)
+            sh_h = portfolio_store.get_shares(tk)
             
             tot_today_diff += sh_h * ((cur_price - p_today)/div)
             tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
@@ -960,7 +964,7 @@ def get_data():
                 'discount': '--', 'buy_score': '--', 'tranches': 0,
                 'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
                 'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
-                'shares_owned': sum(h.get('shares',0) for h in holds.values() if isinstance(h, dict)), 'value_owned': tot_own, 
+                'shares_owned': sum(portfolio_store.get_shares(tk) for tk in active_holds), 'value_owned': tot_own, 
                 'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data,
                 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
                 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
@@ -988,11 +992,12 @@ def get_data():
         val_own = round(sh_own * cps, 2)
 
         avg_buy_p, highest_p = 0.0, last_p
+        holds_dict = ud.get('holdings') or {}
         if sh_own > 0:
             t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
             if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
 
-            highest_p = (holds.get(t) or {}).get('high_water', last_p)
+            highest_p = (holds_dict.get(t) or {}).get('high_water', last_p)
             if last_p > highest_p:
                 highest_p = last_p
                 if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
@@ -1001,7 +1006,8 @@ def get_data():
                 portfolio_store.save()
 
         if is_momentum:
-            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile)
+            regime = engine.check_market_regime()
+            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
