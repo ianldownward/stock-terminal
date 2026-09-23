@@ -451,7 +451,7 @@ class MarketScoringEngine:
             reason = f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav})."
             action_color = "#00c853"
         else:
-            action_main, action_sub = "HOLD / WAIT", f"(Tranche {tranches})"
+            action_main, action_sub, status, color = "HOLD / WAIT", f"(Tranche {tranches})"
             status, color = ('Trading at Premium', '#ff4a4a') if implied_discount < 0 else ('Low Value', '#8a8a9e')
             reason = f"Trading at {implied_discount:.1f}% NAV discount. Active Tranches: {tranches}."
             action_color = "#8a8a9e"
@@ -723,33 +723,6 @@ def get_score():
 @app.route('/api/directives', methods=['GET'])
 def get_directives():
     portfolio_store.reload()
-    ud = portfolio_store.user_data()
-    engine = MarketScoringEngine()
-    active_profile = portfolio_store.active_username().strip().lower()
-    is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
-    
-    if 'test c' in active_profile:
-        scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
-    elif is_momentum:
-        scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
-    else:
-        scan_list = ud.get('watchlist', [])
-    
-    mb = ud.get('master_budget', 10000.0)
-    hist = ud.get('history') or []
-    init_pos = ud.get('initial_positions') or {}
-    
-    active_holds = list(set([t.get('ticker') for t in hist if isinstance(t, dict) and portfolio_store.get_shares(t.get('ticker')) > 0]))
-    
-    net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
-    init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
-    
-    cash_balance = mb + net_history - init_manual
-    rem_cash = max(0, cash_balance)
-    
-    tot_own = portfolio_store.get_total_portfolio_value()
-    total_equity = cash_balance + tot_own
-
     dirs = []
     return jsonify({'directives': dirs})
 
@@ -787,7 +760,7 @@ def get_data():
 
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
-        mb = ud.get('master_budget', 10000.0)
+        mb = ud.get('master_budget', 5000.0 if is_momentum else 10000.0)
 
         active_holds = list(set([tr.get('ticker') for tr in hist if isinstance(tr, dict) and portfolio_store.get_shares(tr.get('ticker')) > 0]))
 
@@ -857,47 +830,32 @@ def get_data():
         now_lon = pd.Timestamp.now(tz='Europe/London')
         
         for tk in active_holds:
-            df_5m = pnl_dfs_5m.get(tk)
-            if df_5m is None or df_5m.empty: continue
-                
-            if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
-            else: df_5m.index = df_5m.index.tz_convert('UTC')
-                
-            cur_price = df_5m['Close'].iloc[-1]
-            last_ts = df_5m.index[-1]
-            last_lon = last_ts.tz_convert('Europe/London')
-            
-            t_buys_today_t = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == tk and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
-            avg_b_today_t = (sum(tr.get('amount', 0) for tr in t_buys_today_t) / sum(tr.get('shares', 1) for tr in t_buys_today_t)) if t_buys_today_t else 0.0
-
-            if now_lon.date() > last_lon.date():
-                p_today = cur_price 
-                p_1h = cur_price
-            else:
-                last_date_str = last_lon.strftime('%Y-%m-%d')
-                prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-                p_today_mkt = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                p_today = avg_b_today_t if avg_b_today_t > 0 else p_today_mkt
-                
-                if (now_utc - last_ts).total_seconds() > 4200:
-                    p_1h = cur_price 
-                else:
-                    target_ts = now_utc - pd.Timedelta(hours=1)
-                    prior_df = df_5m[df_5m.index <= target_ts]
-                    p_1h_mkt = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
-                    p_1h = avg_b_today_t if avg_b_today_t > 0 else p_1h_mkt
-            
-            div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
             sh_h = portfolio_store.get_shares(tk)
+            if sh_h <= 0: continue
             
-            tot_today_diff += sh_h * ((cur_price - p_today)/div)
-            tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
+            t_buys_today = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == tk and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
+            
+            df_5m = pnl_dfs_5m.get(tk)
+            if df_5m is not None and not df_5m.empty:
+                cur_price = df_5m['Close'].iloc[-1]
+                div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
+                
+                if t_buys_today:
+                    p_today_base = sum(tr.get('amount', 0) for tr in t_buys_today) / sum(tr.get('shares', 1) for tr in t_buys_today)
+                else:
+                    last_date_str = now_lon.strftime('%Y-%m-%d')
+                    prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
+                    p_today_base = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
 
-        prev_equity_today = total_equity - tot_today_diff
-        master_today_pct = (tot_today_diff / prev_equity_today * 100.0) if prev_equity_today > 0 else 0.0
-        
-        prev_equity_1h = total_equity - tot_1h_diff
-        master_1h_pct = (tot_1h_diff / prev_equity_1h * 100.0) if prev_equity_1h > 0 else 0.0
+                target_ts = now_utc - pd.Timedelta(hours=1)
+                prior_df = df_5m[df_5m.index <= target_ts]
+                p_1h_base = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today_base
+
+                tot_today_diff += sh_h * ((cur_price - p_today_base) / div)
+                tot_1h_diff += sh_h * ((cur_price - p_1h_base) / div)
+
+        master_today_pct = (tot_today_diff / mb * 100.0) if mb > 0 else 0.0
+        master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
 
         master_pnl_data = {
             'all': {'val': f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')},
