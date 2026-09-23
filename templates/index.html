@@ -532,7 +532,6 @@
                 let isShort = ['SQQQ', '3SUS.L'].includes(symbol);
                 let shortTag = isShort ? `<span class="short-tag">(S)</span>` : '';
 
-                // NEW: HELD BADGE INDICATOR
                 let heldTag = '';
                 if (globalPortfolioData && globalPortfolioData.holdings && globalPortfolioData.holdings[symbol] && globalPortfolioData.holdings[symbol].shares > 0) {
                     heldTag = `<span style="background:#00d2ff; color:#000; padding:2px 5px; border-radius:4px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>`;
@@ -686,16 +685,22 @@
             else {
                 hist.forEach(i => {
                     let buy = i.action === 'BUY';
+                    let isShort = i.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(i.ticker);
+                    let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '';
+                    
                     let li = document.createElement('li'); li.className = 'history-item';
-                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${i.ticker}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
+                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${i.ticker} ${badge}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
                     aui.appendChild(li);
                 });
                 
                 if (currentTicker === 'ALL_SHARES') {
                     hist.forEach(item => {
                         let isBuy = item.action === 'BUY';
+                        let isShort = item.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(item.ticker);
+                        let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '';
+
                         let li = document.createElement('li'); li.className = 'history-item';
-                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${item.ticker}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${item.ticker} ${badge}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
                         ui.appendChild(li);
                     });
                 } else {
@@ -704,8 +709,11 @@
                     else {
                         th.forEach(item => {
                             let isBuy = item.action === 'BUY';
+                            let isShort = item.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(item.ticker);
+                            let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '';
+
                             let li = document.createElement('li'); li.className = 'history-item';
-                            li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                            li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares ${badge}</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
                             ui.appendChild(li);
                         });
                     }
@@ -992,9 +1000,9 @@
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
-                // NEW: Frontend Escape Hatch (8-second absolute maximum load time)
+                // INCREASED TIMEOUT TO 15 SECONDS TO ALLOW MONGODB SECURE HANDSHAKES ON WAKE
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 8000);
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
 
                 let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`, { signal: controller.signal });
                 clearTimeout(timeoutId);
@@ -1082,7 +1090,6 @@
 
                 renderTradeHistory(); fetchDirectives(); renderChart();
             } catch(e) {
-                // Automatically clear the loading screen and retry if it hung
                 console.error("Fetch aborted/timed out:", e);
                 if (fetchId === currentFetchId && document.getElementById('activeTitle').innerText.includes("Loading")) {
                     document.getElementById('activeTitle').innerText = "Network Retry...";
