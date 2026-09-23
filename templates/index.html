@@ -967,16 +967,21 @@
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 
+                // DYNAMIC COLOR LEADERBOARD
                 if (p.leaderboard) {
-                    let lbHtml = p.leaderboard.map(lb => `
-                        <div class="lb-item">
-                            <div class="lb-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'">
-                                <span>${lb.user}</span>
-                                <span style="color:#00c853">£${lb.equity.toFixed(2)}</span>
+                    let lbHtml = p.leaderboard.map(lb => {
+                        let isProfit = lb.equity >= lb.budget;
+                        let color = isProfit ? '#00c853' : '#ff3d00';
+                        return `
+                            <div class="lb-item">
+                                <div class="lb-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'">
+                                    <span>${lb.user}</span>
+                                    <span style="color:${color}; font-weight:bold;">£${lb.equity.toFixed(2)}</span>
+                                </div>
+                                <div class="lb-desc">${profileDesc[lb.user] || 'Custom execution profile.'}</div>
                             </div>
-                            <div class="lb-desc">${profileDesc[lb.user] || 'Custom execution profile.'}</div>
-                        </div>
-                    `).join('');
+                        `;
+                    }).join('');
                     document.getElementById('leaderboardUI').innerHTML = lbHtml;
                 }
 

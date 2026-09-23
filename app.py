@@ -785,6 +785,7 @@ def get_data():
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
 
+        # DYNAMIC COLOR LEADERBOARD PAYLOAD
         leaderboard = []
         for u, u_data in portfolio_store.data.get('users', {}).items():
             if not isinstance(u_data, dict): continue
@@ -797,7 +798,11 @@ def get_data():
             cash_lb = mb_lb + nh_lb - im_lb
             
             holds_lb_val = portfolio_store.get_total_portfolio_value(u)
-            leaderboard.append({'user': u, 'equity': round(max(0, cash_lb) + holds_lb_val, 2)})
+            leaderboard.append({
+                'user': u, 
+                'equity': round(max(0, cash_lb) + holds_lb_val, 2),
+                'budget': mb_lb
+            })
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
 
         settings = ud.get('settings') or {}
