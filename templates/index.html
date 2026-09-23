@@ -104,6 +104,11 @@
         .thermo-bar-fill { height: 100%; width: 50%; background: #8a8a9e; transition: width 0.4s ease, background-color 0.4s ease; border-radius: 4px; }
         .thermo-text { font-size: 10px; font-weight: bold; margin-top: 4px; display: block; }
 
+        /* LONG / SHORT DIRECTIONAL BADGES */
+        .badge-direction { font-size: 9px; font-weight: bold; padding: 2px 5px; border-radius: 3px; margin-left: 6px; display: inline-block; text-transform: uppercase; }
+        .badge-long { background: rgba(0, 200, 83, 0.15); color: #00c853; border: 1px solid #00c853; }
+        .badge-short { background: rgba(255, 61, 0, 0.15); color: #ff3d00; border: 1px solid #ff3d00; }
+
         .btn-execute { background: #00c853; color: #fff; border: none; font-weight: bold; padding: 6px 10px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 11px; margin-top: 4px; }
         .btn-execute:hover { background: #00e676; }
         .btn-execute.sell-btn { background: #ff3d00; }
@@ -196,7 +201,10 @@
     <div class="main-content">
         <div class="top-nav">
             <div class="top-nav-row1">
-                <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+                    <span id="activeDirectionBadge" style="display:none;"></span>
+                </div>
                 <div class="action-buttons">
                     <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button>
                     <button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button>
@@ -512,7 +520,10 @@
                     arrow = `<span style="color:#ff3d00; font-size:12px; width:14px; margin-right:6px; display:inline-block; text-align:center;">▼</span>`;
                 }
 
-                li.innerHTML = `<div style="display:flex; align-items:center;">${arrow}<span class="ticker">${symbol}</span></div><button class="btn-delete">✕</button>`; 
+                let isShort = ['SQQQ', '3SUS.L'].includes(symbol);
+                let dirBadge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : `<span class="badge-direction badge-long">LONG</span>`;
+
+                li.innerHTML = `<div style="display:flex; align-items:center;">${arrow}<span class="ticker">${symbol}</span>${dirBadge}</div><button class="btn-delete">✕</button>`; 
                 ul.appendChild(li);
             });
         }
@@ -659,15 +670,23 @@
             }
             else {
                 hist.forEach(i => {
-                    let buy = i.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
-                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${i.ticker}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
+                    let buy = i.action === 'BUY';
+                    let isShort = i.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(i.ticker);
+                    let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : `<span class="badge-direction badge-long">LONG</span>`;
+                    
+                    let li = document.createElement('li'); li.className = 'history-item';
+                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${i.ticker} ${badge}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
                     aui.appendChild(li);
                 });
                 
                 if (currentTicker === 'ALL_SHARES') {
                     hist.forEach(item => {
-                        let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
-                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${item.ticker}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                        let isBuy = item.action === 'BUY';
+                        let isShort = item.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(item.ticker);
+                        let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : `<span class="badge-direction badge-long">LONG</span>`;
+
+                        let li = document.createElement('li'); li.className = 'history-item';
+                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${item.ticker} ${badge}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
                         ui.appendChild(li);
                     });
                 } else {
@@ -675,8 +694,12 @@
                     if (!th.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; }
                     else {
                         th.forEach(item => {
-                            let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
-                            li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                            let isBuy = item.action === 'BUY';
+                            let isShort = item.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(item.ticker);
+                            let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : `<span class="badge-direction badge-long">LONG</span>`;
+
+                            let li = document.createElement('li'); li.className = 'history-item';
+                            li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares ${badge}</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
                             ui.appendChild(li);
                         });
                     }
@@ -1008,6 +1031,18 @@
                 }
 
                 document.getElementById('activeTitle').innerText = p.name; currentAnomalyReason = p.metrics.reason;
+                
+                // HEADER BADGE UPDATE
+                let dirBadgeEl = document.getElementById('activeDirectionBadge');
+                if (currentTicker !== 'ALL_SHARES') {
+                    let isShort = p.metrics.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(currentTicker);
+                    dirBadgeEl.className = `badge-direction ${isShort ? 'badge-short' : 'badge-long'}`;
+                    dirBadgeEl.innerText = isShort ? 'SHORT POSITION' : 'LONG POSITION';
+                    dirBadgeEl.style.display = 'inline-block';
+                } else {
+                    dirBadgeEl.style.display = 'none';
+                }
+
                 currentLivePrice = p.metrics.price; currentActiveTranches = p.metrics.tranches; currentSharesOwned = p.metrics.shares_owned; currentValOwned = p.metrics.value_owned;
                 document.getElementById('masterBudgetInput').value = p.metrics.master_budget;
                 document.getElementById('mPrice').innerText = p.metrics.price_display; document.getElementById('mDisc').innerText = p.metrics.discount; document.getElementById('mBuy').innerText = p.metrics.buy_score;

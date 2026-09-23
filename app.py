@@ -231,9 +231,12 @@ class PortfolioManager:
         shares, price = int(shares), round(float(price), 2)
         cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
         tot_amt = round(shares * cost_per_sh, 2)
+        
+        is_short = ticker in ['SQQQ', '3SUS.L']
+        trade_type = 'SHORT' if is_short else 'LONG'
 
         now = pd.Timestamp.now(tz='Europe/London')
-        entry = {'id': str(int(time.time() * 1000)), 'ticker': ticker, 'action': 'BUY' if 'BUY' in action_type.upper() else 'SELL', 'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'), 'date_str': now.strftime('%Y-%m-%d'), 'timestamp': int(now.timestamp())}
+        entry = {'id': str(int(time.time() * 1000)), 'ticker': ticker, 'trade_type': trade_type, 'action': 'BUY' if 'BUY' in action_type.upper() else 'SELL', 'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'), 'date_str': now.strftime('%Y-%m-%d'), 'timestamp': int(now.timestamp())}
         if 'history' not in ud: ud['history'] = []
         ud['history'].insert(0, entry)
 
@@ -246,7 +249,7 @@ class PortfolioManager:
         self.save_data(self.data)
         
         ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
-        if ntfy_topic: send_push_notification(ntfy_topic, f"Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
+        if ntfy_topic: send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
         return entry
 
     def undo_trade(self, trade_id):
@@ -341,10 +344,14 @@ class MarketScoringEngine:
     def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test b', regime=None):
         if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL'}
         
+        ticker = getattr(df_5m, 'name', '')
+        is_inverse = ticker in ['SQQQ', '3SUS.L']
+        trade_type = 'SHORT' if is_inverse else 'LONG'
+
         if df_5m.empty or len(df_5m) < 21:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Tranche 0)', 'action_color': '#8a8a9e', 'regime': regime}
+                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Tranche 0)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         prof = profile.lower()
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
@@ -353,7 +360,7 @@ class MarketScoringEngine:
         if 'test f' in prof and now_uk.hour == 20 and now_uk.minute >= 55:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
                     'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900', 'regime': regime}
+                    'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
         trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof or 'test f' in prof else 0.50))
         hard_pct = -0.50 if 'test d' in prof else -1.00
@@ -365,34 +372,32 @@ class MarketScoringEngine:
             if drop_from_peak_pct >= trail_pct:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%" if pnl_pct > 0 else f"{pnl_pct:.2f}%",
                         'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                        'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff', 'regime': regime}
+                        'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
             
             if pnl_pct <= hard_pct: 
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
                         'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%). Cutting losses immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                        'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime}
+                        'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
 
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
                     'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime}
+                    'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
         # TEST G BI-DIRECTIONAL LOGIC
         if 'test g' in prof:
-            ticker = df_5m.name if hasattr(df_5m, 'name') else ''
-            is_inverse = ticker in ['SQQQ', '3SUS.L']
             if regime['code'] in ['BEAR', 'BEAR_FREEZE'] and not is_inverse:
                 return {'type': 'Bi-Directional', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
                         'reason': "LONG BUYS BLOCKED: Market Sentiment in Pullback mode. Scanning Inverse Short ETFs.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                        'status': 'Bearish Market - Short Mode', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeking Short)', 'action_color': '#ff9900', 'regime': regime}
+                        'status': 'Bearish Market - Short Mode', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeking Short)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': 'LONG'}
             elif regime['code'] in ['BULL', 'BULL_OVERHEAT'] and is_inverse:
                 return {'type': 'Bi-Directional', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
                         'reason': "SHORT BUYS BLOCKED: Market Sentiment in Bullish mode. Inverse ETFs paused.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                        'status': 'Bullish Market - Long Mode', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeking Long)', 'action_color': '#00c853', 'regime': regime}
+                        'status': 'Bullish Market - Long Mode', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeking Long)', 'action_color': '#00c853', 'regime': regime, 'trade_type': 'SHORT'}
 
         elif regime['code'] in ['BEAR', 'BEAR_FREEZE']:
             return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
                     'reason': f"SENTIMENT THERMOMETER BLOCK ({regime['score']}/100 - {regime['state']}): QQQ in pullback. Tech buys blocked to defend cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': regime['state'], 'color': regime['color'], 'action_main': 'HOLD / WAIT', 'action_sub': '(Market Cooling)', 'action_color': regime['color'], 'regime': regime}
+                    'status': regime['state'], 'color': regime['color'], 'action_main': 'HOLD / WAIT', 'action_sub': '(Market Cooling)', 'action_color': regime['color'], 'regime': regime, 'trade_type': trade_type}
 
         ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
         ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
@@ -402,9 +407,9 @@ class MarketScoringEngine:
         
         if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
-            tranches, action_main, action_sub = 1, "BUY", "(Momentum Surge)"
-            status, color, action_color = "Fast Momentum Surge", "#00c853", "#00c853"
-            reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
+            tranches, action_main, action_sub = 1, "BUY", f"({trade_type} Surge)"
+            status, color, action_color = f"Fast {trade_type} Surge", "#00c853", "#00c853"
+            reason = f"SURGE DETECTED ({trade_type}): 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
         else:
             buy_score, tranches = 10, 0
             action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
@@ -413,7 +418,7 @@ class MarketScoringEngine:
 
         return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%",
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
-                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': regime}
+                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': regime, 'trade_type': trade_type}
 
     def score_nav_asset(self, ticker, current_price, volume_ratio):
         nav = self.nav_bases.get(ticker, current_price * 1.10)
@@ -453,13 +458,13 @@ class MarketScoringEngine:
 
         return {'type': 'Physical Trust', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.98, 2), 'rec_sell': round(nav*0.95, 2),
-                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}}
+                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}, 'trade_type': 'LONG'}
 
     def score_equity(self, df, current_price):
         if df.empty or 'Close' not in df:
             return {'type': 'Global Equity', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Awaiting data.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '', 'action_color': '#8a8a9e', 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}}
+                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '', 'action_color': '#8a8a9e', 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}, 'trade_type': 'LONG'}
             
         dma = df['Close'].tail(200).mean() if len(df) >= 200 else df['Close'].mean()
         implied_discount = ((dma - current_price) / dma) * 100.0
@@ -489,7 +494,7 @@ class MarketScoringEngine:
             
         return {'type': 'Global Equity', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 
                 'reason': reason, 'is_smart': True, 'rec_buy': round(dma*0.9, 2), 'rec_sell': round(dma*1.05, 2),
-                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}}
+                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}, 'trade_type': 'LONG'}
 
 portfolio_store = PortfolioManager()
 
@@ -785,7 +790,6 @@ def get_data():
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
 
-        # DYNAMIC COLOR LEADERBOARD PAYLOAD
         leaderboard = []
         for u, u_data in portfolio_store.data.get('users', {}).items():
             if not isinstance(u_data, dict): continue
@@ -1066,7 +1070,7 @@ def get_data():
             'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'],
             'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': ticker_pnl_data['all']['val'], 'pnl_color': ticker_pnl_data['all']['color'], 'pnl_data': ticker_pnl_data,
             'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
-            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime
+            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG')
         }})
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
