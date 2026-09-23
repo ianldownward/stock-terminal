@@ -86,7 +86,7 @@ class PortfolioManager:
             default_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test B - Momentum (UK & US)', 
                 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep',
-                'Test G - Long/Short Bi-Directional'
+                'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -362,6 +362,45 @@ class MarketScoringEngine:
                     'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
+        # TEST H WICK REVERSAL SPECIFIC SCORING ENGINE
+        if 'test h' in prof:
+            last_candle = df_5m.iloc[-2]
+            c_open, c_close = last_candle['Open'], last_candle['Close']
+            c_high, c_low = last_candle['High'], last_candle['Low']
+            total_range = c_high - c_low
+
+            if total_range > 0:
+                upper_wick = c_high - max(c_open, c_close)
+                lower_wick = min(c_open, c_close) - c_low
+
+                if avg_buy_price > 0 and highest_price > 0:
+                    pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                    drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
+
+                    if (upper_wick / total_range) >= 0.50:
+                        return {'type': 'Wick Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                                'reason': f"TOP WICK EXHAUSTION DETECTED. Upper wick made up {((upper_wick/total_range)*100):.1f}% of candle range. Selling peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                                'status': 'Top Wick Rejection', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Top Exhaustion)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
+                    
+                    if drop_from_peak >= 0.40:
+                        return {'type': 'Wick Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                                'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                                'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
+
+                    return {'type': 'Wick Reversal', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
+                            'reason': f"HOLDING WICK REVERSAL. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'status': 'Holding Reversal', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Reversal)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
+
+                if (lower_wick / total_range) >= 0.50 and current_price > c_low:
+                    wick_score = min(100, max(65, round(60 + (lower_wick / total_range) * 40)))
+                    return {'type': 'Wick Reversal', 'score': wick_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
+                            'reason': f"BOTTOM WICK REVERSAL: Buyers rejected low prices. Lower wick ratio is {((lower_wick/total_range)*100):.1f}%.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
+                            'status': 'Bottom Wick Reversal', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Wick Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+
+            return {'type': 'Wick Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Scanning Wicks', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Wick Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
+
         trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof or 'test f' in prof else 0.50))
         hard_pct = -0.50 if 'test d' in prof else -1.00
 
@@ -504,11 +543,13 @@ def process_auto_profile(prof_name):
         ud = portfolio_store.user_data(prof_name)
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         if not is_momentum: return
 
         if 'test g' in active_profile:
             scan_list = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
+        elif 'test h' in active_profile:
+            scan_list = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'RR.L', 'SHEL.L', 'BP.L']
         elif 'test c' in active_profile:
             scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
         else:
@@ -568,11 +609,22 @@ def process_auto_profile(prof_name):
 
                 if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
                     dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
-                elif st['action_main'] == 'BUY' and rem_cash >= MIN_BUY_VALUE:
+                elif st['action_main'] == 'BUY':
                     buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
             except: pass
 
         max_allowed_holds = 1 if 'test e' in active_profile else 2
+        
+        # RELATIVE STRENGTH ROTATION FOR TEST H AND OTHERS
+        if buys and held_scores and len(held_scores) >= max_allowed_holds:
+            top_candidate = max(buys, key=lambda x: x['s'])
+            weakest_holding = min(held_scores, key=lambda x: x['score'])
+            
+            # Rotate if new candidate score exceeds current holding by at least 15 points
+            if top_candidate['s'] >= (weakest_holding['score'] + 15) and top_candidate['s'] >= 65:
+                dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
+                rem_cash += weakest_holding['value']
+
         if len(held_scores) > max_allowed_holds:
             held_scores.sort(key=lambda x: x['score'])
             for i in range(len(held_scores) - max_allowed_holds):
@@ -608,7 +660,7 @@ def process_auto_profile(prof_name):
 def global_background_worker():
     while True:
         try:
-            auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional']
+            auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except: pass
@@ -705,7 +757,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         df.name = t
@@ -754,12 +806,14 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         if not t: t = 'ALL_SHARES'
 
         if is_momentum and not wl:
             if 'test g' in active_profile:
                 wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'MSTR']
+            elif 'test h' in active_profile:
+                wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR']
             else:
                 wl = ['SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L', 'MSTR', 'TQQQ', 'SOXL', 'NVDA', 'PLTR', 'AMZN']
             ud['watchlist'] = wl
