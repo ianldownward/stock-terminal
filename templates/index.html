@@ -199,7 +199,10 @@
     <div class="main-content">
         <div class="top-nav">
             <div class="top-nav-row1">
-                <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+                    <span id="activeDirectionBadge" style="display:none;"></span>
+                </div>
                 <div class="action-buttons">
                     <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button>
                     <button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button>
@@ -989,7 +992,13 @@
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
-                let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`);
+                // NEW: Frontend Escape Hatch (8-second absolute maximum load time)
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+                let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
                 let p = await res.json(); 
                 
                 if (fetchId !== currentFetchId) {
@@ -1072,7 +1081,13 @@
                 mb_el.style.color = p.metrics.budget_remaining < 0 ? "#ff3d00" : "#00c853";
 
                 renderTradeHistory(); fetchDirectives(); renderChart();
-            } catch(e){}
+            } catch(e) {
+                // Automatically clear the loading screen and retry if it hung
+                console.error("Fetch aborted/timed out:", e);
+                if (fetchId === currentFetchId && document.getElementById('activeTitle').innerText.includes("Loading")) {
+                    document.getElementById('activeTitle').innerText = "Network Retry...";
+                }
+            }
             
             if (fetchId === currentFetchId && !silent && loader) loader.style.display = 'none';
         }

@@ -1,9 +1,13 @@
-import os, json, time, urllib.request, threading
+import os, json, time, urllib.request, threading, socket
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
 from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor
+
+# CRITICAL FIX: Force all external network connections to timeout after 5 seconds
+# This prevents Yahoo Finance throttling from hanging the background threads indefinitely.
+socket.setdefaulttimeout(5)
 
 app = Flask(__name__)
 YF_CACHE = {}
@@ -287,7 +291,8 @@ class PortfolioManager:
 
         total = 0.0
         holds = ud.get('holdings') or {}
-        with ThreadPoolExecutor(max_workers=40) as ex:
+        # Max workers adjusted to 15 to stay under Yahoo Finance rate limits
+        with ThreadPoolExecutor(max_workers=15) as ex:
             for t, val in ex.map(fetch_val, active_tickers):
                 total += val
                 if t in holds and isinstance(holds[t], dict):
@@ -581,7 +586,8 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        with ThreadPoolExecutor(max_workers=40) as ex:
+        # Reduced workers to 15 to stay completely under Yahoo's radar
+        with ThreadPoolExecutor(max_workers=15) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
@@ -808,7 +814,7 @@ def get_recommendations():
     
     def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
-    with ThreadPoolExecutor(max_workers=40) as ex:
+    with ThreadPoolExecutor(max_workers=15) as ex:
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
@@ -828,7 +834,6 @@ def get_data():
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         if not t: t = 'ALL_SHARES'
 
-        # FIX: SYNC UI WATCHLIST WITH FULL 34-ASSET BACKGROUND SCANNER LIST
         if is_momentum and not wl:
             if 'test g' in active_profile:
                 wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
@@ -856,7 +861,7 @@ def get_data():
         def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
         
         if active_holds:
-            with ThreadPoolExecutor(max_workers=40) as ex:
+            with ThreadPoolExecutor(max_workers=15) as ex:
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
                 for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
 
@@ -911,7 +916,7 @@ def get_data():
                     return tick, 'closed'
                 except: return tick, 'closed'
 
-            with ThreadPoolExecutor(max_workers=40) as ex:
+            with ThreadPoolExecutor(max_workers=15) as ex:
                 for tick, status in ex.map(check_status, wl):
                     wl_status[tick] = status
             
@@ -963,7 +968,7 @@ def get_data():
                     return tick, fetch_yf_data(tick, req_p, req_i)
                 
                 dfs = {}
-                with ThreadPoolExecutor(max_workers=40) as ex:
+                with ThreadPoolExecutor(max_workers=15) as ex:
                     for tick, df_t in ex.map(fetch_t, wl):
                         dfs[tick] = df_t
                 
