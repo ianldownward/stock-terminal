@@ -22,7 +22,6 @@
         .drawer-details summary::after { content: '▼'; color: #787e8e; font-size: 9px; }
         .drawer-details[open] summary::after { content: '▲'; }
         
-        /* LEADERBOARD CSS FIX */
         .lb-item { background: #0f1115; border: 1px solid #262b36; border-radius: 8px; padding: 10px; margin-bottom: 8px; transition: border-color 0.2s; }
         .lb-item:hover { border-color: #00d2ff; }
         .lb-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold; color: #fff; cursor: pointer; }
@@ -857,15 +856,29 @@
             if (currentTicker === 'ALL_SHARES') {
                 tvChart.applyOptions({ leftPriceScale: { visible: false } });
                 let avgDataMap = {};
+                
+                let timeSet = new Set();
+                masterData.forEach(line => {
+                    line.data.forEach(pt => timeSet.add(pt.time));
+                });
+                let sortedTimes = Array.from(timeSet).sort((a, b) => (typeof a === 'number' ? a - b : a.localeCompare(b)));
+
                 masterData.forEach(line => {
                     let sr = tvChart.addLineSeries({ color: line.color, lineWidth: 2 });
                     sr.setData(line.data);
                     multiSeries.push(sr);
                     
-                    line.data.forEach(pt => {
-                        if (!avgDataMap[pt.time]) avgDataMap[pt.time] = { sum: 0, count: 0 };
-                        avgDataMap[pt.time].sum += pt.value;
-                        avgDataMap[pt.time].count += 1;
+                    let stockMap = {};
+                    line.data.forEach(pt => { stockMap[pt.time] = pt.value; });
+                    
+                    let lastVal = 0;
+                    sortedTimes.forEach(t => {
+                        if (stockMap[t] !== undefined) { lastVal = stockMap[t]; }
+                        if (lastVal !== 0) {
+                            if (!avgDataMap[t]) avgDataMap[t] = { sum: 0, count: 0 };
+                            avgDataMap[t].sum += lastVal;
+                            avgDataMap[t].count += 1;
+                        }
                     });
                     
                     let finalVal = line.data.length > 0 ? line.data[line.data.length-1].value : 0;
@@ -873,12 +886,12 @@
                     lg.innerHTML += `<div style="font-size: 11px; color: ${line.color}; font-weight: bold; text-shadow: 1px 1px 2px #000;">${line.ticker} (${sign}${finalVal.toFixed(2)}%)</div>`;
                 });
                 
-                let avgDataKeys = Object.keys(avgDataMap).sort();
-                if (avgDataKeys.length > 0) {
-                    let avgData = avgDataKeys.map(t => ({
-                        time: parseInt(t) || t,
-                        value: avgDataMap[t].sum / avgDataMap[t].count
-                    }));
+                let avgData = sortedTimes.filter(t => avgDataMap[t] && avgDataMap[t].count > 0).map(t => ({
+                    time: t,
+                    value: Math.round((avgDataMap[t].sum / avgDataMap[t].count + Number.EPSILON) * 100) / 100
+                }));
+
+                if (avgData.length > 0) {
                     let avgSeries = tvChart.addLineSeries({ color: '#ffffff', lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Dashed });
                     avgSeries.setData(avgData);
                     multiSeries.push(avgSeries);
