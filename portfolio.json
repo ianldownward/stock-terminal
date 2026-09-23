@@ -1,0 +1,59 @@
+{
+  "master_budget": 5000.0,
+  "watchlist": [
+    "YCA.L",
+    "SGLN.L",
+    "U-UN.TO"
+  ],
+  "initial_positions": {},
+  "holdings": {
+    "YCA.L": {
+      "shares": 357,
+      "manual_val": 1997.42
+    }
+  },
+  "history": [
+    {
+      "id": "1789579013545",
+      "ticker": "U-UN.TO",
+      "action": "SELL",
+      "shares": 37,
+      "price": 26.96,
+      "amount": 997.52,
+      "time": "16 Sep 18:16"
+    },
+    {
+      "id": "1789574707276",
+      "ticker": "U-UN.TO",
+      "action": "BUY",
+      "shares": 1,
+      "price": 27.0,
+      "amount": 27.0,
+      "time": "16 Sep 17:05"
+    },
+    {
+      "id": "1789574212344",
+      "ticker": "U-UN.TO",
+      "action": "BUY",
+      "shares": 36,
+      "price": 27.03,
+      "amount": 973.08,
+      "time": "16 Sep 16:56"
+    },
+    {
+      "id": "1789573723833",
+      "ticker": "YCA.L",
+      "action": "BUY",
+      "shares": 357,
+      "price": 560.0,
+      "amount": 1999.2,
+      "time": "16 Sep 16:48"
+    }
+  ],
+  "settings": {
+    "period": "1d",
+    "interval": "5m",
+    "style": "candlestick",
+    "refresh": "300000"
+  }
+}
