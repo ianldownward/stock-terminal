@@ -16,6 +16,18 @@
         .sidebar h2 { margin-top: 0; }
         .drawer-card { background: #1a1d24; border: 1px solid #262b36; border-radius: 8px; padding: 12px; margin-bottom: 10px; text-align: center; position: relative; }
         .drawer-card h3 { font-size: 10px; color: #787e8e; margin: 0 0 6px 0; text-transform: uppercase; }
+        .drawer-details { background: #1a1d24; border: 1px solid #262b36; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+        .drawer-details summary { font-size: 11px; color: #00d2ff; text-transform: uppercase; font-weight: bold; cursor: pointer; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
+        .drawer-details summary::-webkit-details-marker { display: none; }
+        .drawer-details summary::after { content: '▼'; color: #787e8e; font-size: 9px; }
+        .drawer-details[open] summary::after { content: '▲'; }
+        
+        /* LEADERBOARD CSS FIX */
+        .lb-item { background: #0f1115; border: 1px solid #262b36; border-radius: 8px; padding: 10px; margin-bottom: 8px; transition: border-color 0.2s; }
+        .lb-item:hover { border-color: #00d2ff; }
+        .lb-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold; color: #fff; cursor: pointer; }
+        .lb-desc { font-size: 11px; color: #8a8a9e; margin-top: 8px; display: none; line-height: 1.4; border-top: 1px solid #262b36; padding-top: 8px; }
+
         .total-shares-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #00d2ff; margin-bottom: 10px; text-align: center; }
         .total-shares-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px; }
         .total-shares-box div.total-val { font-size: 18px; font-weight: bold; color: #fff; }
@@ -50,7 +62,7 @@
         .main-content { flex: 1; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; position: relative; }
         .top-nav { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; background: #171a21; padding: 12px 16px; border-radius: 10px; border: 1px solid #262b36; }
         .top-nav-row1 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-        .top-nav-row2 { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid #262b36; padding-top: 8px; }
+        .top-nav-row2 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid #262b36; padding-top: 8px; }
         .action-buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         select, button.btn-control { background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
         select:hover, button.btn-control:hover { border-color: #00d2ff; }
@@ -105,14 +117,14 @@
         .rec-desc { font-size: 13px; color: #8a8a9e; line-height: 1.4; margin-bottom: 15px; }
         .btn-load { background: #00c853; border: none; color: #fff; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 13px; }
         .btn-load:hover { background: #00e676; }
-        .history-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+        .history-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; max-height: 250px; }
         .history-item { background: #1e222d; border: 1px solid #262b36; border-radius: 6px; padding: 10px; margin-bottom: 8px; position: relative; }
         .history-item .h-action { font-weight: bold; font-size: 12px; }
         .history-item .h-buy { color: #00c853; }
         .history-item .h-sell { color: #ff3d00; }
         .history-item .h-meta { font-size: 11px; color: #787e8e; margin-top: 4px; }
         .history-item .btn-undo { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; }
-        .pagination-row { display:none; justify-content:space-between; align-items:center; margin-top:15px; border-top:1px solid #262b36; padding-top:15px; }
+        .pagination-row { display: none; justify-content: space-between; align-items: center; margin-top: 15px; border-top: 1px solid #262b36; padding-top: 15px; }
         .quick-check-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 10px; }
         .qc-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
         .qc-header-row h3 { font-size: 11px; color: #787e8e; margin: 0; text-transform: uppercase; }
@@ -143,6 +155,7 @@
     <div class="modal-overlay" id="recModal"><div class="modal"><h2><span>Market Anomaly Screener</span><button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('recModal').style.display='none'">Close</button></h2><div id="recLoader" style="text-align:center; padding: 20px; color:#00d2ff;">Scanning global assets for anomalies...</div><div id="recContent"></div><div class="pagination-row" id="recPagination"><button id="btnPrevPage" class="btn-cancel" onclick="changeRecPage(-1)" style="padding: 6px 12px; font-size:12px;">← Previous 5</button><span id="pageInfo" style="font-size:12px; color:#8a8a9e;"></span><button id="btnNextPage" class="btn-cancel" onclick="changeRecPage(1)" style="padding: 6px 12px; font-size:12px;">Next 5 →</button></div></div></div>
     <div class="modal-overlay" id="alertModal"><div class="modal"><h2><span id="modalTitle">Configure Alerts</span></h2><div class="alert-section" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;"><h3 style="font-size:13px; color:#00d2ff; margin-bottom:10px; text-transform:uppercase;">iPhone Lock Screen Alerts (ntfy.sh)</h3><p style="font-size:11px; color:#8a8a9e; margin-top:0; margin-bottom:10px; line-height:1.4;">1. Install free <b>ntfy</b> app on iPhone.<br>2. Subscribe to a topic name (e.g. <code>ian_stock_terminal</code>).<br>3. Enter exact topic name below:</p><div style="display:flex; gap:8px;"><input type="text" id="ntfyTopicInput" placeholder="e.g. ian_stock_terminal" style="background:#0f1115; border:1px solid #262b36; color:#00d2ff; padding:8px; border-radius:6px; flex:1; font-weight:bold;"><button onclick="testPushNotification()" style="background:#00d2ff; color:#000; border:none; font-weight:bold; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:11px;">Test Push</button></div></div><div class="alert-section" id="smartAlertsSection" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;"><h3 style="font-size:13px; color:#00d2ff; margin-bottom:15px; text-transform:uppercase;">Smart Tranche Alerts</h3><div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;"><input type="checkbox" id="chkBuy" style="margin-right:12px; margin-top:3px;" checked><div><b style="color:#fff;">Anomaly Buy Signal</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when mathematical deviation dictates scaling into next tranche.</span></div></div><div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;"><input type="checkbox" id="chkSell" style="margin-right:12px; margin-top:3px;" checked><div><b style="color:#fff;">Take Profit Target</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when baseline discount shrinks and premium returns.</span></div></div></div><div class="modal-actions" style="display:flex; justify-content:flex-end; gap:10px;"><button class="btn-cancel" onclick="document.getElementById('alertModal').style.display='none'">Cancel</button><button class="btn-save" style="background:#00d2ff; border:none; color:#000; font-weight:bold; padding:10px 18px; border-radius:6px; cursor:pointer;" onclick="saveAlerts()">Save Alerts</button></div></div></div>
     <div class="modal-overlay" id="reasonModal"><div class="modal" style="width: 420px;"><h2>Anomaly Breakdown <button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('reasonModal').style.display='none'">Close</button></h2><p id="reasonText" style="color: #e1e3e6; line-height: 1.6; font-size: 14px; margin-top: 10px;"></p></div></div>
+    
     <div class="sidebar">
         <div class="sidebar-top">
             <div class="user-profile-box"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><label>Active Profile</label><div style="display:flex; gap:4px;"><button onclick="addUserPrompt()" class="user-btn new">+ New</button><button onclick="deleteUserPrompt()" class="user-btn del">Delete</button></div></div><select id="userSelect" onchange="onUserChange(this.value)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select></div>
@@ -173,6 +186,7 @@
             <button class="btn-rec" onclick="openRecommendModal()">Search for recommendations</button>
         </div>
     </div>
+    
     <div class="main-content">
         <div class="top-nav">
             <div class="top-nav-row1">
@@ -202,6 +216,7 @@
                 <div id="marketClocks" style="display:flex; gap:15px; align-items:center; margin-left:auto;"></div>
             </div>
         </div>
+        
         <div class="grid">
             <div class="card"><h3>Live Price</h3><p id="mPrice" class="val-highlight">--</p></div>
             <div class="card"><h3>Math Discount</h3><p id="mDisc" class="val-highlight">--</p></div>
@@ -224,12 +239,14 @@
             </div>
             <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Macro Status ⓘ</h3><p id="mMacro" style="font-size:12px; font-weight:bold; display:flex; justify-content:center; align-items:center; gap:6px;">--</p></div>
         </div>
+        
         <div class="chart-container">
             <div id="chartLegend" style="position: absolute; top: 15px; left: 15px; z-index: 8; display: flex; flex-direction: column; gap: 4px; pointer-events: none;"></div>
             <div id="loader">Fetching...</div>
             <div id="tvChart"></div><canvas id="chartCanvas"></canvas>
         </div>
     </div>
+    
     <div class="right-drawer">
         <div class="drawer-card" id="actionCard"><h3>Recommended Action</h3><p id="mActionMain" style="font-size:18px; font-weight:bold;">--</p><span id="mActionSub" style="font-size:11px; color:#8a8a9e; font-weight:normal; display:block; margin-bottom:2px;"></span><div id="actionBtnContainer" style="margin-top:2px;"></div></div>
         <div class="drawer-card"><h3>Recommended Rec.</h3><p id="mRecTradeAmt" style="color:#00c853; font-size:15px; font-weight:bold;">£0.00</p><span id="mRecShares" style="font-size:10px; color:#787e8e; display:block; margin-top:2px;">0 shares</span></div>
@@ -539,9 +556,6 @@
                 document.getElementById('inputHeldVal').value = currentValOwned.toFixed(2);
                 document.getElementById('inputHeldVal').disabled = true;
                 document.getElementById('mSharesOwned').innerText = "All held shares";
-                
-                // Do not hard-overwrite total_equity box here; backend fetch provides accurate live PnL.
-                // It will be overridden by p.metrics at end of fetch.
                 return;
             } else {
                 document.getElementById('inputHeldVal').disabled = false;
@@ -975,7 +989,6 @@
                 updateMarketClocks();
                 calculateSizing();
                 
-                // FORCE BACKEND ACCURACY OVER FRONTEND CALC
                 document.getElementById('mTotalSharesHeldVal').innerText = `£${p.metrics.total_equity.toFixed(2)}`;
                 document.getElementById('mTotalSharesPnL').innerText = `Cash: £${p.metrics.budget_remaining.toFixed(2)} | Shares: £${p.metrics.total_portfolio_owned.toFixed(2)}`;
                 let mb_el = document.getElementById('mBudgetRemaining'); 
