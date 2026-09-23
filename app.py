@@ -85,7 +85,8 @@ class PortfolioManager:
         try:
             default_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test B - Momentum (UK & US)', 
-                'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep'
+                'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep',
+                'Test G - Long/Short Bi-Directional'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -303,14 +304,14 @@ class MarketScoringEngine:
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
             'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
             'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ',
-            'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'TSM': 'TSMC ADR', 'SONY': 'Sony Group', 'BABA': 'Alibaba Group',
+            'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'SQQQ': 'ProShares UltraPro Short QQQ (3x Short)',
+            '3SUS.L': 'WisdomTree US NASDAQ 3x Short', 'TSM': 'TSMC ADR', 'SONY': 'Sony Group', 'BABA': 'Alibaba Group',
             'ASML': 'ASML Holding', 'SAP': 'SAP SE',
             'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
             'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
 
     def check_market_regime(self):
-        """Calculates 0-100 Sentiment Score & Thermometer State based on QQQ EMA & RSI."""
         try:
             df_qqq = fetch_yf_data('QQQ', '5d', '5m')
             if not df_qqq.empty and len(df_qqq) >= 21:
@@ -375,61 +376,40 @@ class MarketScoringEngine:
                     'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime}
 
-        if regime['code'] in ['BEAR', 'BEAR_FREEZE']:
+        # TEST G BI-DIRECTIONAL LOGIC
+        if 'test g' in prof:
+            ticker = df_5m.name if hasattr(df_5m, 'name') else ''
+            is_inverse = ticker in ['SQQQ', '3SUS.L']
+            if regime['code'] in ['BEAR', 'BEAR_FREEZE'] and not is_inverse:
+                return {'type': 'Bi-Directional', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                        'reason': "LONG BUYS BLOCKED: Market Sentiment in Pullback mode. Scanning Inverse Short ETFs.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Bearish Market - Short Mode', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeking Short)', 'action_color': '#ff9900', 'regime': regime}
+            elif regime['code'] in ['BULL', 'BULL_OVERHEAT'] and is_inverse:
+                return {'type': 'Bi-Directional', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                        'reason': "SHORT BUYS BLOCKED: Market Sentiment in Bullish mode. Inverse ETFs paused.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Bullish Market - Long Mode', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeking Long)', 'action_color': '#00c853', 'regime': regime}
+
+        elif regime['code'] in ['BEAR', 'BEAR_FREEZE']:
             return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
                     'reason': f"SENTIMENT THERMOMETER BLOCK ({regime['score']}/100 - {regime['state']}): QQQ in pullback. Tech buys blocked to defend cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': regime['state'], 'color': regime['color'], 'action_main': 'HOLD / WAIT', 'action_sub': '(Market Cooling)', 'action_color': regime['color'], 'regime': regime}
 
-        if 'test d' in prof:
-            sma20 = df_5m['Close'].rolling(20).mean().iloc[-1]
-            std20 = df_5m['Close'].rolling(20).std().iloc[-1]
-            upper_bb = sma20 + (2 * std20)
-            
-            avg_vol = df_5m['Volume'].rolling(20).mean().iloc[-1]
-            cur_vol = df_5m['Volume'].iloc[-1]
-            
-            if current_price > upper_bb and cur_vol > (1.5 * avg_vol):
-                buy_score, tranches = 85, 1
-                action_main, action_sub = "BUY", "(Vol Breakout)"
-                status, color = "Volatility Breakout", "#00c853"
-                reason = f"BREAKOUT DETECTED: Price pierced upper Bollinger Band on 1.5x average volume."
-                action_color = "#00c853"
-            else:
-                buy_score, tranches = 10, 0
-                action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
-                status, color = "Consolidating", "#8a8a9e"
-                reason = f"Awaiting volume breakout above upper Bollinger Band."
-                action_color = "#8a8a9e"
-
-        elif 'test e' in prof:
-            ret_60m = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0
-            buy_score = min(100, max(0, int(50 + (ret_60m * 15))))
-            if buy_score >= 65:
-                tranches, action_main, action_sub = 1, "BUY", "(Rel Strength)"
-                status, color, action_color = "High Relative Strength", "#00c853", "#00c853"
-                reason = f"STRONG ROTATION: 60-min return is +{ret_60m:.2f}%. Candidate for 100% allocation."
-            else:
-                tranches, action_main, action_sub = 0, "HOLD / WAIT", "(Weak Momentum)"
-                status, color, action_color = "Weak Rotation", "#8a8a9e", "#8a8a9e"
-                reason = f"60-min return is {ret_60m:.2f}%. Awaiting stronger relative performance."
-
+        ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
+        ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+        delta = df_5m['Close'].diff()
+        rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
+        
+        if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
+            buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
+            tranches, action_main, action_sub = 1, "BUY", "(Momentum Surge)"
+            status, color, action_color = "Fast Momentum Surge", "#00c853", "#00c853"
+            reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
         else:
-            ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
-            ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
-            delta = df_5m['Close'].diff()
-            rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
-            
-            if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
-                buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
-                tranches, action_main, action_sub = 1, "BUY", "(Momentum Surge)"
-                status, color, action_color = "Fast Momentum Surge", "#00c853", "#00c853"
-                reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
-            else:
-                buy_score, tranches = 10, 0
-                action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
-                status, color, action_color = "No Setup", "#8a8a9e", "#8a8a9e"
-                reason = f"Awaiting fast EMA crossover surge."
+            buy_score, tranches = 10, 0
+            action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
+            status, color, action_color = "No Setup", "#8a8a9e", "#8a8a9e"
+            reason = f"Awaiting fast EMA crossover surge."
 
         return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%",
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
@@ -519,10 +499,12 @@ def process_auto_profile(prof_name):
         ud = portfolio_store.user_data(prof_name)
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'])
         if not is_momentum: return
 
-        if 'test c' in active_profile:
+        if 'test g' in active_profile:
+            scan_list = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
+        elif 'test c' in active_profile:
             scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
         else:
             scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
@@ -554,6 +536,7 @@ def process_auto_profile(prof_name):
             try:
                 df = dfs.get(t)
                 if df is None or df.empty: continue
+                df.name = t
                 cur = df['Close'].iloc[-1]
                 sh = portfolio_store.get_shares(t, prof_name)
                 cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
@@ -620,7 +603,7 @@ def process_auto_profile(prof_name):
 def global_background_worker():
     while True:
         try:
-            auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep']
+            auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except: pass
@@ -717,9 +700,10 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'])
         df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
+        df.name = t
         cur = df['Close'].iloc[-1]
         engine = MarketScoringEngine()
         
@@ -765,11 +749,14 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'])
         if not t: t = 'ALL_SHARES'
 
         if is_momentum and not wl:
-            wl = ['SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L', 'MSTR', 'TQQQ', 'SOXL', 'NVDA', 'PLTR', 'AMZN']
+            if 'test g' in active_profile:
+                wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'MSTR']
+            else:
+                wl = ['SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L', 'MSTR', 'TQQQ', 'SOXL', 'NVDA', 'PLTR', 'AMZN']
             ud['watchlist'] = wl
             portfolio_store.save()
 
@@ -935,6 +922,7 @@ def get_data():
             }})
 
         if df.index.tz is not None: df.index = df.index.tz_convert('UTC')
+        df.name = t
         
         data = [{'time': i.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 'open': round(r['Open'],2), 'high': round(r['High'],2), 'low': round(r['Low'],2), 'close': round(r['Close'],2)} for i, r in df.iterrows()]
         seen = set(); data = [x for x in data if x['time'] not in seen and not seen.add(x['time'])]
