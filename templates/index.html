@@ -304,7 +304,8 @@
             'Test C - 24/5 Global': '24/5 Follow-the-Sun strategy. Rotates capital across Asian, European, and US markets using fast EMAs.',
             'Test D - Volatility': 'Hunts for aggressive volume spikes breaking above the upper Bollinger Band. Uses wider 0.75% trailing stops.',
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes.',
-            'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 5 minutes before the US market closes to avoid overnight gaps.'
+            'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 5 minutes before the US market closes to avoid overnight gaps.',
+            'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.'
         };
 
         function updatePnLDisplay() {
@@ -585,7 +586,7 @@
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
             let userSel = document.getElementById('userSelect');
             let activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-            let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f'].some(prefix => activeProf.includes(prefix));
+            let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'].some(prefix => activeProf.includes(prefix));
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -633,7 +634,7 @@
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let userSel = document.getElementById('userSelect');
                 let activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-                let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f'].some(prefix => activeProf.includes(prefix));
+                let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'].some(prefix => activeProf.includes(prefix));
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
@@ -868,7 +869,7 @@
             
             let s = document.getElementById('styleSelect').value;
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f'].some(prefix => activeProf.includes(prefix));
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g'].some(prefix => activeProf.includes(prefix));
 
             if (currentTicker === 'ALL_SHARES') {
                 tvChart.applyOptions({ leftPriceScale: { visible: false } });
