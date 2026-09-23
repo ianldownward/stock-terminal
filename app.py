@@ -602,6 +602,18 @@ def process_auto_profile(prof_name):
                 cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
                 vo = sh * cps
 
+                # STRICT MARKET HOURS ENFORCEMENT TO PREVENT AFTER-HOURS TIME TRAVEL GLITCH
+                now_uk = pd.Timestamp.now(tz='Europe/London')
+                is_us_stock = not t.endswith('.L')
+                current_mins = now_uk.hour * 60 + now_uk.minute
+                
+                if now_uk.weekday() >= 5:
+                    is_open = False
+                elif is_us_stock:
+                    is_open = (14 * 60 + 30) <= current_mins < (21 * 60)
+                else:
+                    is_open = (8 * 60) <= current_mins < (16 * 60 + 30)
+
                 avg_buy_p, highest_p = 0.0, cur
                 if sh > 0:
                     t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
@@ -622,14 +634,15 @@ def process_auto_profile(prof_name):
                     held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
 
                 if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
-                    dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
+                    if is_open:
+                        dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
                 elif st['action_main'] == 'BUY':
-                    buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
+                    if is_open:
+                        buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
             except: pass
 
         max_allowed_holds = 1 if 'test e' in active_profile else 2
         
-        # RELATIVE STRENGTH ROTATION
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
