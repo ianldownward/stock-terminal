@@ -12,26 +12,20 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
     if not interval or interval == 'undefined': interval = "1d"
     if not period or period == 'undefined': period = "1y"
     
-    if period in ['1y', '5y', 'max'] and interval in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']:
-        interval = '1d'
-    if period in ['1mo', '3mo', '6mo'] and interval in ['1m', '2m']:
-        interval = '5m'
+    if period in ['1y', '5y', 'max'] and interval in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: interval = '1d'
+    if period in ['1mo', '3mo', '6mo'] and interval in ['1m', '2m']: interval = '5m'
 
     cache_key = f"{ticker}_{period}_{interval}"
     now = time.time()
-    
     if cache_key in YF_CACHE:
         cached_time, df = YF_CACHE[cache_key]
-        if not df.empty and now - cached_time < 15:  
-            return df.copy()
+        if not df.empty and now - cached_time < 15: return df.copy()
             
     try:
         df = yf.Ticker(ticker).history(period=period, interval=interval)
-        if not df.empty:
-            YF_CACHE[cache_key] = (now, df)
+        if not df.empty: YF_CACHE[cache_key] = (now, df)
         return df.copy()
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def send_push_notification(topic, title, message):
     if not topic: return
@@ -58,8 +52,8 @@ class PortfolioManager:
     def default_user_state(self, username=""):
         return {
             'master_budget': 5000.0 if 'test' in username.lower() else 10000.0,
-            'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [],
-            'notified_signals': {}, 'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
+            'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [], 'notified_signals': {},
+            'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
     def load(self):
@@ -90,34 +84,51 @@ class PortfolioManager:
     def _ensure_default_user(self):
         try:
             default_profiles = [
-                'Ian', 
-                'Test A - Deep Value', 
-                'Test B - Momentum (UK & US)', 
-                'Test C - 24/5 Global', 
-                'Test D - Volatility', 
-                'Test E - Rotator', 
-                'Test F - EOD Sweep'
+                'Ian', 'Test A - Deep Value', 'Test B - Momentum (UK & US)', 
+                'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep'
             ]
-            if 'users' not in self.data or not isinstance(self.data['users'], dict):
-                self.data['users'] = {}
-                for p in default_profiles:
-                    self.data['users'][p] = self.default_user_state(p)
-                self.data['active_user'] = 'Ian'
-                self.save_data(self.data)
             
             needs_save = False
-            for profile in default_profiles:
-                if profile not in self.data['users']:
-                    self.data['users'][profile] = self.default_user_state(profile)
+            if 'users' not in self.data or not isinstance(self.data['users'], dict):
+                self.data['users'] = {}
+                needs_save = True
+
+            # AGGRESSIVE CLEANUP: Migrate data to new names, then brutally delete the old ones
+            rename_map = {
+                'Test': 'Test A - Deep Value',
+                'Test 2': 'Test B - Momentum (UK & US)',
+                'Test B - US Momentum': 'Test B - Momentum (UK & US)',
+                'Test 3': 'Test C - 24/5 Global',
+                'Test 4 - Volatility Breakout': 'Test D - Volatility',
+                'Test 5 - Rel Strength Rotator': 'Test E - Rotator',
+                'Test 6 - EOD Cash Sweep': 'Test F - EOD Sweep'
+            }
+            
+            for old, new in rename_map.items():
+                if old in self.data['users']:
+                    # Only move the data if the old profile actually has trades inside it
+                    if len(self.data['users'][old].get('history', [])) > len(self.data['users'].get(new, {}).get('history', [])):
+                        self.data['users'][new] = self.data['users'][old]
+                    
+                    # Delete the duplicate old name permanently
+                    del self.data['users'][old]
+                    needs_save = True
+                    
+                    if self.data.get('active_user') == old:
+                        self.data['active_user'] = new
+
+            for p in default_profiles:
+                if p not in self.data['users']:
+                    self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
                     
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = list(self.data['users'].keys())[0]
                 needs_save = True
-                
-            if needs_save:
-                self.save_data(self.data)
-        except: pass
+            
+            if needs_save: self.save_data(self.data)
+        except Exception as e:
+            print(f"Migration error: {e}")
 
     def save_data(self, data_to_save):
         if self.client:
@@ -151,16 +162,14 @@ class PortfolioManager:
         return self.data['users'][au]
 
     def add_user(self, username):
-        username = username.strip()
-        if not username: return
+        if not username.strip(): return
         self.reload()
         if 'users' not in self.data: self.data['users'] = {}
-        if username not in self.data['users']: self.data['users'][username] = self.default_user_state(username)
-        self.data['active_user'] = username
+        if username.strip() not in self.data['users']: self.data['users'][username.strip()] = self.default_user_state(username.strip())
+        self.data['active_user'] = username.strip()
         self.save_data(self.data)
 
     def delete_user(self, username):
-        username = username.strip()
         self.reload()
         if 'users' in self.data and username in self.data['users'] and len(self.data['users']) > 1:
             del self.data['users'][username]
@@ -170,15 +179,13 @@ class PortfolioManager:
         return False
 
     def switch_user(self, username):
-        username = username.strip()
         self.reload()
         if 'users' in self.data and username in self.data['users']:
             self.data['active_user'] = username
             self.save_data(self.data)
 
     def reset_all(self):
-        au = self.active_username()
-        self.data['users'][au] = self.default_user_state(au)
+        self.data['users'][self.active_username()] = self.default_user_state(self.active_username())
         self.save()
         return self.user_data()
 
@@ -189,11 +196,10 @@ class PortfolioManager:
         self.save()
 
     def add_watchlist(self, ticker):
-        ticker = ticker.upper()
         ud = self.user_data()
         if 'watchlist' not in ud or not isinstance(ud['watchlist'], list): ud['watchlist'] = []
-        if ticker not in ud['watchlist']:
-            ud['watchlist'].append(ticker)
+        if ticker.upper() not in ud['watchlist']:
+            ud['watchlist'].append(ticker.upper())
             self.save()
 
     def remove_watchlist(self, ticker):
@@ -206,35 +212,27 @@ class PortfolioManager:
         if 'notified_signals' in ud and isinstance(ud['notified_signals'], dict): ud['notified_signals'].pop(ticker, None)
         self.save()
 
-    def get_net_trade_shares(self, ticker):
-        hist = self.user_data().get('history') or []
-        return sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if isinstance(t, dict) and t.get('ticker') == ticker)
-
     def get_shares(self, ticker):
         if not ticker: return 0
         init_pos = self.user_data().get('initial_positions') or {}
         init_sh = (init_pos.get(ticker) or {}).get('shares', 0)
-        return max(0, init_sh + self.get_net_trade_shares(ticker))
-
-    def update_budget(self, budget):
-        self.user_data()['master_budget'] = float(budget)
-        self.save()
+        net_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in self.user_data().get('history', []) if isinstance(t, dict) and t.get('ticker') == ticker)
+        return max(0, init_sh + net_sh)
 
     def set_holding_value(self, ticker, value_owned, current_price):
         if not ticker: return 0
         ud = self.user_data()
         value_owned, current_price = float(value_owned), float(current_price)
         price_per_share = current_price / 100.0 if ticker.endswith('.L') and current_price > 100 else current_price
-
         target_sh = round(value_owned / price_per_share) if price_per_share > 0 else 0
-        baseline_sh = target_sh - self.get_net_trade_shares(ticker)
+        baseline_sh = target_sh - sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in ud.get('history', []) if isinstance(t, dict) and t.get('ticker') == ticker)
         
-        if 'initial_positions' not in ud or not isinstance(ud['initial_positions'], dict): ud['initial_positions'] = {}
+        if 'initial_positions' not in ud: ud['initial_positions'] = {}
         if target_sh > 0 or value_owned > 0: ud['initial_positions'][ticker] = {'shares': baseline_sh, 'manual_val': value_owned}
         else: ud['initial_positions'].pop(ticker, None)
 
         curr_tot = self.get_shares(ticker)
-        if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
+        if 'holdings' not in ud: ud['holdings'] = {}
         if curr_tot > 0: 
             hw = (ud['holdings'].get(ticker) or {}).get('high_water', current_price)
             ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * price_per_share, 2), 'high_water': max(hw, current_price)}
@@ -250,24 +248,19 @@ class PortfolioManager:
         tot_amt = round(shares * cost_per_sh, 2)
 
         now = pd.Timestamp.now(tz='Europe/London')
-        entry = {
-            'id': str(int(time.time() * 1000)), 'ticker': ticker, 'action': 'BUY' if 'BUY' in action_type.upper() else 'SELL',
-            'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'),
-            'date_str': now.strftime('%Y-%m-%d'), 'timestamp': int(now.timestamp())
-        }
-        if 'history' not in ud or not isinstance(ud['history'], list): ud['history'] = []
+        entry = {'id': str(int(time.time() * 1000)), 'ticker': ticker, 'action': 'BUY' if 'BUY' in action_type.upper() else 'SELL', 'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'), 'date_str': now.strftime('%Y-%m-%d'), 'timestamp': int(now.timestamp())}
+        if 'history' not in ud: ud['history'] = []
         ud['history'].insert(0, entry)
 
         curr_tot = self.get_shares(ticker)
-        if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
+        if 'holdings' not in ud: ud['holdings'] = {}
         if curr_tot > 0: 
             hw = (ud['holdings'].get(ticker) or {}).get('high_water', price)
             ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2), 'high_water': max(hw, price)}
         else: ud['holdings'].pop(ticker, None)
         self.save()
-
-        settings = ud.get('settings') or {}
-        ntfy_topic = settings.get('ntfy_topic', '')
+        
+        ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
         if ntfy_topic: send_push_notification(ntfy_topic, f"Trade Executed: {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
         return entry
 
@@ -280,7 +273,7 @@ class PortfolioManager:
         ud['history'] = hist
         
         curr_tot = self.get_shares(trade.get('ticker'))
-        if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
+        if 'holdings' not in ud: ud['holdings'] = {}
         if curr_tot > 0:
             cost = trade['price'] / 100.0 if trade['ticker'].endswith('.L') else trade['price']
             hw = (ud['holdings'].get(trade['ticker']) or {}).get('high_water', trade['price'])
@@ -289,222 +282,111 @@ class PortfolioManager:
         self.save()
         return True
 
-    def get_total_portfolio_value(self):
-        ud = self.user_data()
-        holds = ud.get('holdings') or {}
-        active_tickers = [t for t in list(holds.keys()) if self.get_shares(t) > 0]
-        
-        if not active_tickers:
-            return 0.0
-            
-        def fetch_val(t):
-            sh = self.get_shares(t)
-            try:
-                df = fetch_yf_data(t, "1d", "1d")
-                if not df.empty:
-                    p = df['Close'].iloc[-1]
-                    cps = p / 100.0 if t.endswith('.L') and p > 100 else p
-                    return t, round(sh * cps, 2)
-            except: pass
-            return t, (holds.get(t) or {}).get('manual_val', 0.0)
-
-        total = 0.0
-        with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_tickers)))) as ex:
-            for t, val in ex.map(fetch_val, active_tickers):
-                total += val
-                if t in holds and isinstance(holds[t], dict):
-                    holds[t]['manual_val'] = val
-        return round(total, 2)
-
 class MarketScoringEngine:
     def __init__(self):
         self.nav_bases = {'YCA.L': 634.0, 'U-UN.TO': 28.50, 'PHYS': 33.00, 'PSLV': 21.50, 'CEF': 22.00, 'SGLN.L': 3150.0, 'SSLN.L': 2350.0}
-        self.asset_names = {
-            'YCA.L': 'Yellow Cake plc', 'U-UN.TO': 'Sprott Physical Uranium Trust', 'PHYS': 'Sprott Physical Gold Trust',
-            'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares',
-            'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
-            'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
-            'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ',
-            'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'TSM': 'TSMC ADR', 'SONY': 'Sony Group', 'BABA': 'Alibaba Group',
-            'ASML': 'ASML Holding', 'SAP': 'SAP SE',
-            'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
-            'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
-        }
+        self.asset_names = {'YCA.L': 'Yellow Cake plc', 'U-UN.TO': 'Sprott Physical Uranium Trust', 'PHYS': 'Sprott Physical Gold Trust', 'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares', 'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp', 'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices', 'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ', 'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'TSM': 'TSMC ADR', 'SONY': 'Sony Group', 'BABA': 'Alibaba Group', 'ASML': 'ASML Holding', 'SAP': 'SAP SE', 'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca', 'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'}
 
     def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test b'):
-        if df_5m.empty or len(df_5m) < 21:
-            return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
-                    'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Tranche 0)', 'action_color': '#8a8a9e'}
-
+        if df_5m.empty or len(df_5m) < 21: return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Tranche 0)', 'action_color': '#8a8a9e'}
         prof = profile.lower()
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
-        # --- EOD CASH SWEEP RULE (TEST F) ---
         now_uk = pd.Timestamp.now(tz='Europe/London')
         if 'test f' in prof and now_uk.hour == 20 and now_uk.minute >= 55:
-            return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                    'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900'}
+            return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900'}
 
-        # --- DYNAMIC RISK PARAMETERS BY PROFILE ---
-        trail_pct = 0.50
-        hard_pct = -1.00
-        if 'test d' in prof:
-            trail_pct = 0.75
-            hard_pct = -0.50
-        elif 'test e' in prof or 'test f' in prof:
-            trail_pct = 1.00
+        trail_pct = 0.75 if 'test d' in prof else (1.00 if 'test e' in prof or 'test f' in prof else 0.50)
+        hard_pct = -0.50 if 'test d' in prof else -1.00
 
         if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
 
-            if drop_from_peak_pct >= trail_pct:
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%" if pnl_pct > 0 else f"{pnl_pct:.2f}%",
-                        'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                        'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff'}
-            
-            if pnl_pct <= hard_pct: 
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
-                        'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%). Cutting losses immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                        'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00'}
+            if drop_from_peak_pct >= trail_pct: return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%" if pnl_pct > 0 else f"{pnl_pct:.2f}%", 'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff'}
+            if pnl_pct <= hard_pct: return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%). Cutting losses immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00'}
+            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
 
-            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
-                    'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
-
-        # --- ENTRY CONDITIONS BY PROFILE ---
         if 'test d' in prof:
             sma20 = df_5m['Close'].rolling(20).mean().iloc[-1]
             std20 = df_5m['Close'].rolling(20).std().iloc[-1]
-            upper_bb = sma20 + (2 * std20)
-            
             avg_vol = df_5m['Volume'].rolling(20).mean().iloc[-1]
-            cur_vol = df_5m['Volume'].iloc[-1]
-            
-            if current_price > upper_bb and cur_vol > (1.5 * avg_vol):
-                buy_score, tranches = 85, 1
-                action_main, action_sub = "BUY", "(Vol Breakout)"
-                status, color = "Volatility Breakout", "#00c853"
+            if current_price > (sma20 + (2 * std20)) and df_5m['Volume'].iloc[-1] > (1.5 * avg_vol):
+                buy_score, tranches, action_main, action_sub, status, color, action_color = 85, 1, "BUY", "(Vol Breakout)", "Volatility Breakout", "#00c853", "#00c853"
                 reason = f"BREAKOUT DETECTED: Price pierced upper Bollinger Band on 1.5x average volume."
-                action_color = "#00c853"
             else:
-                buy_score, tranches = 10, 0
-                action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
-                status, color = "Consolidating", "#8a8a9e"
+                buy_score, tranches, action_main, action_sub, status, color, action_color = 10, 0, "HOLD / WAIT", "(Awaiting Setup)", "Consolidating", "#8a8a9e", "#8a8a9e"
                 reason = f"Awaiting volume breakout above upper Bollinger Band."
-                action_color = "#8a8a9e"
-
         elif 'test e' in prof:
             ret_60m = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0
             buy_score = min(100, max(0, int(50 + (ret_60m * 15))))
             if buy_score >= 65:
-                tranches, action_main, action_sub = 1, "BUY", "(Rel Strength)"
-                status, color, action_color = "High Relative Strength", "#00c853", "#00c853"
+                tranches, action_main, action_sub, status, color, action_color = 1, "BUY", "(Rel Strength)", "High Relative Strength", "#00c853", "#00c853"
                 reason = f"STRONG ROTATION: 60-min return is +{ret_60m:.2f}%. Candidate for 100% allocation."
             else:
-                tranches, action_main, action_sub = 0, "HOLD / WAIT", "(Weak Momentum)"
-                status, color, action_color = "Weak Rotation", "#8a8a9e", "#8a8a9e"
+                tranches, action_main, action_sub, status, color, action_color = 0, "HOLD / WAIT", "(Weak Momentum)", "Weak Rotation", "#8a8a9e", "#8a8a9e"
                 reason = f"60-min return is {ret_60m:.2f}%. Awaiting stronger relative performance."
-
         else:
             ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
             ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
             delta = df_5m['Close'].diff()
             rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
             rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
-            
             if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
                 buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
-                tranches, action_main, action_sub = 1, "BUY", "(Momentum Surge)"
-                status, color, action_color = "Fast Momentum Surge", "#00c853", "#00c853"
-                reason = f"SURGE DETECTED: 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
+                tranches, action_main, action_sub, status, color, action_color = 1, "BUY", "(Momentum Surge)", "Fast Momentum Surge", "#00c853", "#00c853"
+                reason = f"SURGE DETECTED: 9-EMA > 21-EMA, RSI {rsi:.1f}."
             else:
-                buy_score, tranches = 10, 0
-                action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
-                status, color, action_color = "No Setup", "#8a8a9e", "#8a8a9e"
+                buy_score, tranches, action_main, action_sub, status, color, action_color = 10, 0, "HOLD / WAIT", "(Awaiting Setup)", "No Setup", "#8a8a9e", "#8a8a9e"
                 reason = f"Awaiting fast EMA crossover surge."
 
-        return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%",
-                'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
-                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
+        return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%", 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
 
     def score_nav_asset(self, ticker, current_price, volume_ratio):
         nav = self.nav_bases.get(ticker, current_price * 1.10)
         implied_discount = ((nav - current_price) / nav) * 100.0
         buy_score = min(max(round(min(max((implied_discount/20.0)*80.0, 0), 80) + min(max((volume_ratio/2.0)*20.0, 0), 20), 2), 0), 100)
         tranches = 0 if implied_discount <= 0 else min(5, int(buy_score // 20) + 1)
-            
         macro_triggered, uun_discount = False, 0.0
         if ticker == 'YCA.L':
             try:
                 u_df = fetch_yf_data('U-UN.TO', '1d', '1d')
                 if not u_df.empty:
-                    u_price = u_df['Close'].iloc[-1]
-                    u_nav = self.nav_bases.get('U-UN.TO', 28.50)
-                    uun_discount = ((u_nav - u_price) / u_nav) * 100.0
+                    uun_discount = ((self.nav_bases.get('U-UN.TO', 28.50) - u_df['Close'].iloc[-1]) / self.nav_bases.get('U-UN.TO', 28.50)) * 100.0
                     if uun_discount > 10.0: macro_triggered = True
             except: pass
 
         if macro_triggered:
-            action_main, action_sub, status, color, tranches = "SELL", "(Sentinel Active)", "MACRO SENTINEL TRIPPED", "#ff3d00", 0
-            reason = f"EMERGENCY STOP: Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Liquidating to 0 tranches."
-            action_color = "#ff3d00"
+            action_main, action_sub, status, color, tranches, reason, action_color = "SELL", "(Sentinel Active)", "MACRO SENTINEL TRIPPED", "#ff3d00", 0, f"EMERGENCY STOP: Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Liquidating.", "#ff3d00"
         elif implied_discount <= 5.0 and implied_discount > -50.0:
-            action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", "Target Reached", "#ff3d00", 0
-            reason = f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%."
-            action_color = "#ff3d00"
+            action_main, action_sub, status, color, tranches, reason, action_color = "SELL", "(Take Profit)", "Target Reached", "#ff3d00", 0, f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%.", "#ff3d00"
         elif buy_score >= 40:
-            action_main, action_sub = "BUY", f"(Tranche {tranches})"
-            status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
-            reason = f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav})."
-            action_color = "#00c853"
+            action_main, action_sub, status, color, action_color, reason = "BUY", f"(Tranche {tranches})", ('Deep Value Anomaly' if buy_score >= 60 else 'Moderate Value'), ('#00c853' if buy_score >= 60 else '#ff9900'), "#00c853", f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav})."
         else:
-            action_main, action_sub = "HOLD / WAIT", f"(Tranche {tranches})"
-            status, color = ('Trading at Premium', '#ff4a4a') if implied_discount < 0 else ('Low Value', '#8a8a9e')
-            reason = f"Trading at {implied_discount:.1f}% NAV discount. Active Tranches: {tranches}."
-            action_color = "#8a8a9e"
+            action_main, action_sub, status, color, action_color, reason = "HOLD / WAIT", f"(Tranche {tranches})", ('Trading at Premium' if implied_discount < 0 else 'Low Value'), ('#ff4a4a' if implied_discount < 0 else '#8a8a9e'), "#8a8a9e", f"Trading at {implied_discount:.1f}% NAV discount. Active Tranches: {tranches}."
 
-        return {'type': 'Physical Trust', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 
-                'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.98, 2), 'rec_sell': round(nav*0.95, 2),
-                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
+        return {'type': 'Physical Trust', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.98, 2), 'rec_sell': round(nav*0.95, 2), 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
 
     def score_equity(self, df, current_price):
-        if df.empty or 'Close' not in df:
-            return {'type': 'Global Equity', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
-                    'reason': 'Awaiting data.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '', 'action_color': '#8a8a9e'}
-            
+        if df.empty or 'Close' not in df: return {'type': 'Global Equity', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Awaiting data.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '', 'action_color': '#8a8a9e'}
         dma = df['Close'].tail(200).mean() if len(df) >= 200 else df['Close'].mean()
         implied_discount = ((dma - current_price) / dma) * 100.0
         delta = df['Close'].diff()
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1]))
-        
         avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
         vol_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
-        
         buy_score = min(max(round(min(max((implied_discount/25.0)*50.0, 0), 50) + (max(0, (40-rsi)/40*30) if pd.notna(rsi) else 0) + min(max((vol_rat/2.0)*20.0, 0), 20), 2), 0), 100)
         tranches = 0 if implied_discount < 0 else min(5, int(buy_score // 20) + 1)
         
         if buy_score >= 40:
-            action_main, action_sub = "BUY", f"(Tranche {tranches})"
-            status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
-            reason = f"Value Anomaly. Trading at {implied_discount:.1f}% discount to 200d-DMA."
-            action_color = "#00c853"
+            action_main, action_sub, status, color, action_color, reason = "BUY", f"(Tranche {tranches})", ('Deep Value Anomaly' if buy_score >= 60 else 'Moderate Value'), ('#00c853' if buy_score >= 60 else '#ff9900'), "#00c853", f"Value Anomaly. Trading at {implied_discount:.1f}% discount to 200d-DMA."
         elif implied_discount <= -10.0:
-            action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", 'Overextended (High)', '#ff3d00', 0
-            reason = f"Overextended ({abs(implied_discount):.1f}% above 200d-DMA). Take profits."
-            action_color = "#ff3d00"
+            action_main, action_sub, status, color, tranches, action_color, reason = "SELL", "(Take Profit)", 'Overextended (High)', '#ff3d00', 0, "#ff3d00", f"Overextended ({abs(implied_discount):.1f}% above 200d-DMA). Take profits."
         else:
-            action_main, action_sub, status, color = "HOLD / WAIT", f"(Tranche {tranches})", 'Fair Value', '#8a8a9e'
-            reason = f"No Value Anomaly. Near 200d-DMA."
-            action_color = "#8a8a9e"
+            action_main, action_sub, status, color, action_color, reason = "HOLD / WAIT", f"(Tranche {tranches})", 'Fair Value', '#8a8a9e', "#8a8a9e", f"No Value Anomaly. Near 200d-DMA."
             
-        return {'type': 'Global Equity', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 
-                'reason': reason, 'is_smart': True, 'rec_buy': round(dma*0.9, 2), 'rec_sell': round(dma*1.05, 2),
-                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
+        return {'type': 'Global Equity', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 'reason': reason, 'is_smart': True, 'rec_buy': round(dma*0.9, 2), 'rec_sell': round(dma*1.05, 2), 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color}
 
 portfolio_store = PortfolioManager()
 
@@ -519,19 +401,16 @@ def get_users():
 
 @app.route('/api/users/select', methods=['POST'])
 def select_user():
-    portfolio_store.reload()
     portfolio_store.switch_user((request.get_json() or {}).get('username', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/users/add', methods=['POST'])
 def add_user():
-    portfolio_store.reload()
     portfolio_store.add_user((request.get_json() or {}).get('username', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/users/delete', methods=['POST'])
 def delete_user():
-    portfolio_store.reload()
     return jsonify({'status': 'ok' if portfolio_store.delete_user((request.get_json() or {}).get('username', '')) else 'error'})
 
 @app.route('/api/push_test', methods=['POST'])
@@ -547,49 +426,41 @@ def get_portfolio():
 
 @app.route('/api/portfolio/reset', methods=['POST'])
 def reset_portfolio():
-    portfolio_store.reload()
     return jsonify({'status': 'ok', 'portfolio': portfolio_store.reset_all()})
 
 @app.route('/api/portfolio/settings', methods=['POST'])
 def update_settings():
-    portfolio_store.reload()
     portfolio_store.update_settings((request.get_json() or {}).get('settings', {}))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/budget', methods=['POST'])
 def update_budget():
-    portfolio_store.reload()
     portfolio_store.update_budget((request.get_json() or {}).get('budget', 10000))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/watchlist/add', methods=['POST'])
 def add_watchlist():
-    portfolio_store.reload()
     portfolio_store.add_watchlist((request.get_json() or {}).get('ticker', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/watchlist/delete', methods=['POST'])
 def delete_watchlist():
-    portfolio_store.reload()
     portfolio_store.remove_watchlist((request.get_json() or {}).get('ticker', ''))
     return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/holding', methods=['POST'])
 def update_holding():
-    portfolio_store.reload()
     b = request.get_json() or {}
     shares = portfolio_store.set_holding_value(b.get('ticker'), b.get('value_owned', 0), b.get('price', 1))
     return jsonify({'status': 'ok', 'shares': shares})
 
 @app.route('/api/trade/execute', methods=['POST'])
 def execute_trade():
-    portfolio_store.reload()
     b = request.get_json() or {}
     return jsonify({'status': 'ok', 'entry': portfolio_store.execute_trade(b.get('ticker'), b.get('action'), b.get('shares'), b.get('price'))})
 
 @app.route('/api/trade/undo', methods=['POST'])
 def undo_trade(): 
-    portfolio_store.reload()
     return jsonify({'status': 'ok' if portfolio_store.undo_trade((request.get_json() or {}).get('id')) else 'error'})
 
 @app.route('/api/score', methods=['GET'])
@@ -602,14 +473,10 @@ def get_score():
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         cur = df['Close'].iloc[-1]
         engine = MarketScoringEngine()
-        
-        if is_momentum:
-            res = engine.score_momentum(df, cur, profile=active_profile)
+        if is_momentum: res = engine.score_momentum(df, cur, profile=active_profile)
         else:
             avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-            v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
-            res = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
-            
+            res = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
         res.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
         return jsonify(res)
     except Exception as e: return jsonify({'error': str(e)}), 500
@@ -622,23 +489,18 @@ def get_directives():
     active_profile = portfolio_store.active_username().strip().lower()
     is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
     
-    if 'test c' in active_profile:
-        scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
-    elif is_momentum:
-        scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
-    else:
-        scan_list = ud.get('watchlist', [])
+    if 'test c' in active_profile: scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+    elif is_momentum: scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+    else: scan_list = ud.get('watchlist') or []
     
     holds = ud.get('holdings') or {}
     active_holds = [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0]
-    
     mb = ud.get('master_budget', 10000.0)
     hist = ud.get('history') or []
     init_pos = ud.get('initial_positions') or {}
     
     net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
     init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
-    
     cash_balance = mb + net_history - init_manual
     rem_cash = max(0, cash_balance)
     
@@ -650,9 +512,7 @@ def get_directives():
     MIN_BUY_VALUE = 20.0
 
     dfs = {}
-    def fetch_data_thread(tick): 
-        return tick, fetch_yf_data(tick, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
-        
+    def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
     with ThreadPoolExecutor(max_workers=min(5, max(1, len(scan_list)))) as ex:
         for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
@@ -671,51 +531,39 @@ def get_directives():
             if sh > 0:
                 t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
                 if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
-                
                 highest_p = (holds.get(t) or {}).get('high_water', cur)
                 if cur > highest_p:
                     highest_p = cur
                     if t not in ud['holdings']: ud['holdings'][t] = {}
                     ud['holdings'][t]['high_water'] = highest_p
 
-            if is_momentum:
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile)
+            if is_momentum: st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile)
             else:
                 avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-                v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
-                st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
+                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
 
             last_trade_time = next((h.get('timestamp', 0) for h in hist if isinstance(h, dict) and h.get('ticker') == t), 0)
-            is_auto = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
-            if is_auto and (int(time.time()) - last_trade_time < 300):
-                continue
+            if any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f']) and (int(time.time()) - last_trade_time < 300): continue
 
-            if sh > 0:
-                held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
+            if sh > 0: held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
 
             if st['action_main'] == 'SELL':
-                if sh > 0 and vo >= MIN_BUY_VALUE:
-                    dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
+                if sh > 0 and vo >= MIN_BUY_VALUE: dirs.append({'ticker': t, 'name': engine.asset_names.get(t, t), 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
             elif st['action_main'] == 'BUY' and rem_cash >= MIN_BUY_VALUE:
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
         except: pass
 
-    # --- TEST E RELATIVE STRENGTH ROTATION LOGIC ---
     if 'test e' in active_profile and buys:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_candidate = buys[0]
-        
         held_scores.sort(key=lambda x: x['score'])
         if held_scores:
             weakest = held_scores[0]
             if top_candidate['s'] > (weakest['score'] + 20) and weakest['shares'] > 0 and weakest['ticker'] != top_candidate['t']:
                 dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
-    
-    # --- STANDARD MOMENTUM ROTATION LOGIC ---
     elif is_momentum and buys and 'test e' not in active_profile:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_candidate = buys[0]
-        
         held_scores.sort(key=lambda x: x['score'])
         if held_scores and top_candidate['s'] > (held_scores[0]['score'] + 15):
             weakest = held_scores[0]
@@ -723,21 +571,15 @@ def get_directives():
                 dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
                 alloc_amount = max(weakest['value'], 1000.0)
                 buy_sh = int(alloc_amount // top_candidate['cps'])
-                if buy_sh > 0:
-                    dirs.append({'ticker': top_candidate['t'], 'name': top_candidate['n'], 'action': 'BUY', 'shares': buy_sh, 'price': top_candidate['p'], 'amount': round(buy_sh * top_candidate['cps'], 2)})
+                if buy_sh > 0: dirs.append({'ticker': top_candidate['t'], 'name': top_candidate['n'], 'action': 'BUY', 'shares': buy_sh, 'price': top_candidate['p'], 'amount': round(buy_sh * top_candidate['cps'], 2)})
 
-    # --- BUY ALLOCATION LOGIC ---
     now_uk = pd.Timestamp.now(tz='Europe/London')
     is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
     
     if buys and rem_cash >= MIN_BUY_VALUE and not is_eod_blocked:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_buys = buys[:1] if 'test e' in active_profile else buys[:2]  
-        
-        if 'test e' in active_profile:
-            per_stock_budget = min(rem_cash, total_equity * 0.98) 
-        else:
-            per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.50) 
+        per_stock_budget = min(rem_cash, total_equity * 0.98) if 'test e' in active_profile else min(rem_cash / len(top_buys), total_equity * 0.50) 
         
         for b in top_buys:
             bs = int(per_stock_budget // b['cps'])
@@ -745,25 +587,17 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
-    is_auto = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
-    if is_auto and dirs:
+    if any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f']) and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
                 curr_cb = sum((init_pos.get(w) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if isinstance(tr, dict) and tr.get('ticker')==w) for w in [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0])
                 curr_cash = mb - curr_cb
-                if curr_cash < MIN_BUY_VALUE:
-                    continue
+                if curr_cash < MIN_BUY_VALUE: continue
                 if d['amount'] > curr_cash:
                     d['shares'] = int(curr_cash // (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']))
                     d['amount'] = round(d['shares'] * (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']), 2)
-            if d['shares'] > 0:
-                portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
+            if d['shares'] > 0: portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'])
         dirs = [] 
-        
-    if is_momentum:
-        ud = portfolio_store.user_data()
-        current_holdings = [t for t, h_data in (ud.get('holdings') or {}).items() if isinstance(h_data, dict) and h_data.get('shares', 0) > 0]
-        ud['watchlist'] = current_holdings
 
     portfolio_store.save()
 
@@ -785,14 +619,12 @@ def get_directives():
 def get_recommendations():
     res, engine = [], MarketScoringEngine()
     tickers = ['YCA.L', 'U-UN.TO', 'SGLN.L', 'SSLN.L', 'PHYS', 'PSLV', 'CEF', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'BHP', 'RIO', 'VALE', 'XOM', 'CVX', 'OXY', 'JPM', 'BAC', 'GS', 'PFE', 'JNJ', 'UNH', 'DIS', 'NKE', 'SBUX', 'BA', 'LMT']
-    
     def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
-        
     with ThreadPoolExecutor(max_workers=10) as ex:
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol>0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
+                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
                 st.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
                 res.append(st)
     return jsonify({'recommendations': sorted(res, key=lambda x: x['score'], reverse=True)})
@@ -808,7 +640,6 @@ def get_data():
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
         if not t: t = 'ALL_SHARES'
         
-        # Watchlist Recovery Script: Repopulate if empty
         if is_momentum and not wl:
             wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'PLTR', 'RR.L']
             ud['watchlist'] = wl
@@ -821,8 +652,7 @@ def get_data():
 
         active_holds = [tk for tk, hd in holds.items() if isinstance(hd, dict) and hd.get('shares', 0) > 0]
 
-        pnl_dfs_5m = {}
-        pnl_dfs_1d = {}
+        pnl_dfs_5m, pnl_dfs_1d = {}, {}
         def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
         def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
         
@@ -839,8 +669,7 @@ def get_data():
         for tk in active_holds:
             sh = (holds.get(tk) or {}).get('shares', 0)
             df_5m = pnl_dfs_5m.get(tk)
-            if df_5m is not None and not df_5m.empty:
-                cp = df_5m['Close'].iloc[-1]
+            if df_5m is not None and not df_5m.empty: cp = df_5m['Close'].iloc[-1]
             else:
                 df1 = pnl_dfs_1d.get(tk)
                 cp = df1['Close'].iloc[-1] if df1 is not None and not df1.empty else 0.0
@@ -855,15 +684,11 @@ def get_data():
         for u, u_data in portfolio_store.data.get('users', {}).items():
             if not isinstance(u_data, dict): continue
             mb_lb = u_data.get('master_budget', 10000.0)
-            hist_lb = u_data.get('history') or []
-            init_pos_lb = u_data.get('initial_positions') or {}
-            holds_lb_dict = u_data.get('holdings') or {}
-            
-            nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist_lb if isinstance(tr, dict))
-            im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos_lb.values() if isinstance(pos, dict))
+            nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in (u_data.get('history') or []) if isinstance(tr, dict))
+            im_lb = sum(pos.get('manual_val', 0.0) for pos in (u_data.get('initial_positions') or {}).values() if isinstance(pos, dict))
             cash_lb = mb_lb + nh_lb - im_lb
             
-            holds_lb_val = sum(hd.get('manual_val', 0.0) for hd in holds_lb_dict.values() if isinstance(hd, dict))
+            holds_lb_val = sum(hd.get('manual_val', 0.0) for hd in (u_data.get('holdings') or {}).values() if isinstance(hd, dict))
             leaderboard.append({'user': u, 'equity': round(max(0, cash_lb) + holds_lb_val, 2)})
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
 
@@ -872,7 +697,6 @@ def get_data():
         if not req_p or req_p == 'undefined': req_p = settings.get('period', '5d' if is_momentum else '1mo')
         req_i = request.args.get('i')
         if not req_i or req_i == 'undefined': req_i = settings.get('interval', '5m' if is_momentum else '1d')
-
         if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
         elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
 
@@ -889,10 +713,8 @@ def get_data():
                         elif df_stat['Close'].iloc[-1] < df_stat['Close'].iloc[-2]: return tick, 'down'
                     return tick, 'closed'
                 except: return tick, 'closed'
-
             with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
-                for tick, status in ex.map(check_status, wl):
-                    wl_status[tick] = status
+                for tick, status in ex.map(check_status, wl): wl_status[tick] = status
             
         tot_today_diff, tot_1h_diff = 0.0, 0.0
         now_utc = pd.Timestamp.now(tz='UTC')
@@ -901,7 +723,6 @@ def get_data():
         for tk in active_holds:
             df_5m = pnl_dfs_5m.get(tk)
             if df_5m is None or df_5m.empty: continue
-                
             if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
             else: df_5m.index = df_5m.index.tz_convert('UTC')
                 
@@ -909,16 +730,12 @@ def get_data():
             last_ts = df_5m.index[-1]
             last_lon = last_ts.tz_convert('Europe/London')
             
-            if now_lon.date() > last_lon.date():
-                p_today = cur_price 
-                p_1h = cur_price
+            if now_lon.date() > last_lon.date(): p_today, p_1h = cur_price, cur_price
             else:
                 last_date_str = last_lon.strftime('%Y-%m-%d')
                 prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
                 p_today = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                
-                if (now_utc - last_ts).total_seconds() > 4200:
-                    p_1h = cur_price 
+                if (now_utc - last_ts).total_seconds() > 4200: p_1h = cur_price 
                 else:
                     target_ts = now_utc - pd.Timedelta(hours=1)
                     prior_df = df_5m[df_5m.index <= target_ts]
@@ -926,13 +743,11 @@ def get_data():
                     
             div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
             sh_h = (holds.get(tk) or {}).get('shares', 0)
-            
             tot_today_diff += sh_h * ((cur_price - p_today)/div)
             tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
 
         prev_equity_today = total_equity - tot_today_diff
         master_today_pct = (tot_today_diff / prev_equity_today * 100.0) if prev_equity_today > 0 else 0.0
-        
         prev_equity_1h = total_equity - tot_1h_diff
         master_1h_pct = (tot_1h_diff / prev_equity_1h * 100.0) if prev_equity_1h > 0 else 0.0
 
@@ -945,13 +760,10 @@ def get_data():
         if t == 'ALL_SHARES':
             lines = []
             if wl:
-                def fetch_t(tick):
-                    return tick, fetch_yf_data(tick, req_p, req_i)
-                
+                def fetch_t(tick): return tick, fetch_yf_data(tick, req_p, req_i)
                 dfs = {}
                 with ThreadPoolExecutor(max_workers=min(5, max(1, len(wl)))) as ex:
-                    for tick, df_t in ex.map(fetch_t, wl):
-                        dfs[tick] = df_t
+                    for tick, df_t in ex.map(fetch_t, wl): dfs[tick] = df_t
                 
                 colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
                 c_idx = 0
@@ -959,7 +771,6 @@ def get_data():
                     df_t = dfs.get(tick)
                     if df_t is not None and not df_t.empty:
                         if df_t.index.tz is not None: df_t.index = df_t.index.tz_convert('UTC')
-                        
                         base_price = df_t['Close'].iloc[0]
                         if base_price > 0:
                             line_data = []
@@ -968,32 +779,15 @@ def get_data():
                                 ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
                                 if ts not in seen:
                                     seen.add(ts)
-                                    pct_change = ((row['Close'] - base_price) / base_price) * 100.0
-                                    line_data.append({'time': ts, 'value': round(pct_change, 2)})
-                            
+                                    line_data.append({'time': ts, 'value': round(((row['Close'] - base_price) / base_price) * 100.0, 2)})
                             lines.append({ 'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data })
                             c_idx += 1
             
-            return jsonify({'is_multi': True, 'lines': lines, 'wl_status': wl_status, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
-                'price': 0, 'price_display': f"Normalized %",
-                'discount': '--', 'buy_score': '--', 'tranches': 0,
-                'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
-                'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
-                'shares_owned': sum(h.get('shares',0) for h in holds.values() if isinstance(h, dict)), 'value_owned': tot_own, 
-                'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data,
-                'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
-                'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
-            }})
+            return jsonify({'is_multi': True, 'lines': lines, 'wl_status': wl_status, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {'price': 0, 'price_display': "Normalized %", 'discount': '--', 'buy_score': '--', 'tranches': 0, 'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.', 'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e', 'shares_owned': sum(h.get('shares',0) for h in holds.values() if isinstance(h, dict)), 'value_owned': tot_own, 'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)}})
 
         df = fetch_yf_data(t, req_p, req_i)
         if df.empty:
-            return jsonify({'ohlc': [], 'wl_status': wl_status, 'name': f'{t} Data Loading...', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
-                'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
-                'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.',
-                'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
-                'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data,
-                'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
-            }})
+            return jsonify({'ohlc': [], 'wl_status': wl_status, 'name': f'{t} Data Loading...', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0, 'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.', 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0, 'pnl_display': '£0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)}})
 
         if df.index.tz is not None: df.index = df.index.tz_convert('UTC')
         
@@ -1010,7 +804,6 @@ def get_data():
         if sh_own > 0:
             t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
             if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
-
             highest_p = (holds.get(t) or {}).get('high_water', last_p)
             if last_p > highest_p:
                 highest_p = last_p
@@ -1019,8 +812,7 @@ def get_data():
                 ud['holdings'][t]['high_water'] = highest_p
                 portfolio_store.save()
 
-        if is_momentum:
-            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile)
+        if is_momentum: st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile)
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
@@ -1037,48 +829,33 @@ def get_data():
             if df_5m is not None and not df_5m.empty:
                 if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
                 else: df_5m.index = df_5m.index.tz_convert('UTC')
-                
                 cur_p = df_5m['Close'].iloc[-1]
                 last_ts = df_5m.index[-1]
                 last_lon = last_ts.tz_convert('Europe/London')
                 
-                if now_lon.date() > last_lon.date():
-                    p_today = cur_p
-                    p_1h = cur_p
+                if now_lon.date() > last_lon.date(): p_today, p_1h = cur_p, cur_p
                 else:
                     last_date_str = last_lon.strftime('%Y-%m-%d')
                     prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
                     p_today = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                    
-                    if (now_utc - last_ts).total_seconds() > 4200:
-                        p_1h = cur_p
+                    if (now_utc - last_ts).total_seconds() > 4200: p_1h = cur_p
                     else:
                         target_ts = now_utc - pd.Timedelta(hours=1)
                         prior_df = df_5m[df_5m.index <= target_ts]
                         p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
                 
                 div = 100.0 if t.endswith('.L') and cur_p > 100 else 1.0
-                
                 pv_today = sh_own * ((cur_p - p_today)/div)
                 pv_1h = sh_own * ((cur_p - p_1h)/div)
-                
                 val_today_start = sh_own * (p_today/div)
                 val_1h_start = sh_own * (p_1h/div)
-                
                 pp_today = (pv_today / val_today_start * 100.0) if val_today_start > 0 else 0.0
                 pp_1h = (pv_1h / val_1h_start * 100.0) if val_1h_start > 0 else 0.0
                 
-                ticker_pnl_data = {
-                    'all': {'val': pnl_d, 'color': c},
-                    'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')},
-                    '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}
-                }
-            else:
-                ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': {'val': pnl_d, 'color': c}, '1h': {'val': pnl_d, 'color': c}}
+                ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')}, '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}}
+            else: ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': {'val': pnl_d, 'color': c}, '1h': {'val': pnl_d, 'color': c}}
         else: 
-            pnl_d, c = "£0.00 (0.00%)", '#8a8a9e'
-            empty_pnl = {'val': pnl_d, 'color': c}
-            ticker_pnl_data = {'all': empty_pnl, 'today': empty_pnl, '1h': empty_pnl}
+            ticker_pnl_data = {'all': {'val': "£0.00 (0.00%)", 'color': '#8a8a9e'}, 'today': {'val': "£0.00 (0.00%)", 'color': '#8a8a9e'}, '1h': {'val': "£0.00 (0.00%)", 'color': '#8a8a9e'}}
 
         if sh_own > 0:
             if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
@@ -1092,47 +869,27 @@ def get_data():
         try:
             if is_momentum:
                 ema21_series = df['Close'].ewm(span=21, adjust=False).mean()
-                ema21_dict = {}
-                for idx, val in ema21_series.items():
-                    ts = idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp())
-                    ema21_dict[ts] = val
-                for d in data:
-                    if d['time'] in ema21_dict:
-                        mathLine.append({'time': d['time'], 'value': round(ema21_dict[d['time']], 2)})
+                ema21_dict = {idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp()): val for idx, val in ema21_series.items()}
+                mathLine = [{'time': d['time'], 'value': round(ema21_dict[d['time']], 2)} for d in data if d['time'] in ema21_dict]
             else:
                 if t in engine.nav_bases:
                     target = engine.nav_bases[t]
-                    for d in data:
-                        disc = ((target - d['close']) / target) * 100.0
-                        mathLine.append({'time': d['time'], 'value': round(disc, 2)})
+                    mathLine = [{'time': d['time'], 'value': round(((target - d['close']) / target) * 100.0, 2)} for d in data]
                 else:
                     df_1y = fetch_yf_data(t, "1y", "1d")
                     if not df_1y.empty:
                         sma200 = df_1y['Close'].rolling(200, min_periods=1).mean()
                         sma_dict = {idx.strftime('%Y-%m-%d'): val for idx, val in sma200.items() if pd.notna(val)}
                         last_valid = sma200.dropna().iloc[-1] if not sma200.dropna().empty else last_p
-                    else:
-                        sma_dict, last_valid = {}, last_p
-                        
+                    else: sma_dict, last_valid = {}, last_p
                     for d in data:
                         time_str = d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d')
                         val = sma_dict.get(time_str, last_valid)
-                        disc = ((val - d['close']) / val) * 100.0 if val > 0 else 0
-                        mathLine.append({'time': d['time'], 'value': round(disc, 2)})
-        except:
-            mathLine = []
+                        mathLine.append({'time': d['time'], 'value': round(((val - d['close']) / val) * 100.0 if val > 0 else 0, 2)})
+        except: mathLine = []
 
-        return jsonify({'ohlc': data, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
-            'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
-            'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
-            'status': st['status'], 'color': st['color'], 'reason': st['reason'],
-            'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'],
-            'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': ticker_pnl_data['all']['val'], 'pnl_color': ticker_pnl_data['all']['color'], 'pnl_data': ticker_pnl_data,
-            'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
-            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)
-        }})
-    except Exception as e: 
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'ohlc': data, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}", 'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'], 'status': st['status'], 'color': st['color'], 'reason': st['reason'], 'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'], 'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': ticker_pnl_data['all']['val'], 'pnl_color': ticker_pnl_data['all']['color'], 'pnl_data': ticker_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2)}})
+    except Exception as e: return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8095))
