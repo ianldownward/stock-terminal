@@ -97,6 +97,13 @@
         .tranche-bar { width: 80%; height: 5px; border-radius: 2px; transition: background 0.3s; }
         .tranche-bar.active { background: #00c853; }
         .tranche-bar.inactive { background: #363c4a; }
+
+        /* SENTIMENT THERMOMETER STYLING */
+        .thermo-container { margin-top: 6px; width: 100%; background: #0f1115; border: 1px solid #262b36; border-radius: 6px; padding: 4px; }
+        .thermo-bar-bg { width: 100%; height: 8px; background: #262b36; border-radius: 4px; overflow: hidden; position: relative; }
+        .thermo-bar-fill { height: 100%; width: 50%; background: #8a8a9e; transition: width 0.4s ease, background-color 0.4s ease; border-radius: 4px; }
+        .thermo-text { font-size: 10px; font-weight: bold; margin-top: 4px; display: block; }
+
         .btn-execute { background: #00c853; color: #fff; border: none; font-weight: bold; padding: 6px 10px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 11px; margin-top: 4px; }
         .btn-execute:hover { background: #00e676; }
         .btn-execute.sell-btn { background: #ff3d00; }
@@ -236,7 +243,17 @@
                     </div>
                 </div>
             </div>
-            <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Macro Status ⓘ</h3><p id="mMacro" style="font-size:12px; font-weight:bold; display:flex; justify-content:center; align-items:center; gap:6px;">--</p></div>
+            
+            <!-- SENTIMENT THERMOMETER CARD -->
+            <div class="card clickable-card" onclick="showAnomalyReason()">
+                <h3>Market Sentiment ⓘ</h3>
+                <div class="thermo-container">
+                    <div class="thermo-bar-bg">
+                        <div id="thermoFill" class="thermo-bar-fill"></div>
+                    </div>
+                    <span id="thermoText" class="thermo-text">Room Temp (Neutral)</span>
+                </div>
+            </div>
         </div>
         
         <div class="chart-container">
@@ -997,8 +1014,17 @@
                 currentPnLData = p.metrics.pnl_data || { 'all': {val: p.metrics.pnl_display, color: p.metrics.pnl_color} };
                 updatePnLDisplay();
 
-                document.getElementById('mMacro').innerHTML = `<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:${p.metrics.color};"></span> ${p.metrics.status}`;
-                
+                // UPDATE SENTIMENT THERMOMETER UI
+                if (p.metrics.regime) {
+                    let reg = p.metrics.regime;
+                    let fillEl = document.getElementById('thermoFill');
+                    let textEl = document.getElementById('thermoText');
+                    fillEl.style.width = `${reg.score}%`;
+                    fillEl.style.backgroundColor = reg.color;
+                    textEl.innerText = `${reg.score}/100 - ${reg.state}`;
+                    textEl.style.color = reg.color;
+                }
+
                 updateMarketClocks();
                 calculateSizing();
                 
