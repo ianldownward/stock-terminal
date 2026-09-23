@@ -295,7 +295,6 @@
         let autoRefreshTimer = null; let isSettingsLoaded = false;
         let currentPnLData = {}; let currentMasterPnLData = {};
         
-        // UNIQUE REQUEST ID FOR PREVENTING STALE UI RENDERS
         let currentFetchId = 0;
 
         let manualLines = {}; 
@@ -444,7 +443,6 @@
             if (!username) return;
             if (autoRefreshTimer) clearInterval(autoRefreshTimer);
             
-            // Increment fetch ID and show immediate UI feedback to kill stale request hangovers
             currentFetchId++;
             document.getElementById('activeTitle').innerText = "Loading " + username + "...";
             document.getElementById('loader').style.display = 'block';
@@ -494,7 +492,7 @@
 
         async function resetTerminalData() {
             if (confirm("Reset all portfolio data for this user?")) {
-                currentFetchId++; // Cancel pending slow fetches immediately
+                currentFetchId++; 
                 document.getElementById('loader').style.display = 'block';
                 await fetch('/api/portfolio/reset', { method: 'POST' });
                 currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; 
@@ -531,7 +529,13 @@
                 let isShort = ['SQQQ', '3SUS.L'].includes(symbol);
                 let shortTag = isShort ? `<span class="short-tag">(S)</span>` : '';
 
-                li.innerHTML = `<div style="display:flex; align-items:center;">${arrow}<span class="ticker">${symbol}</span></div><div style="display:flex; align-items:center;">${shortTag}<button class="btn-delete">✕</button></div>`; 
+                // NEW: HELD BADGE INDICATOR
+                let heldTag = '';
+                if (globalPortfolioData && globalPortfolioData.holdings && globalPortfolioData.holdings[symbol] && globalPortfolioData.holdings[symbol].shares > 0) {
+                    heldTag = `<span style="background:#00d2ff; color:#000; padding:2px 5px; border-radius:4px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>`;
+                }
+
+                li.innerHTML = `<div style="display:flex; align-items:center;">${arrow}<span class="ticker">${symbol}</span>${heldTag}</div><div style="display:flex; align-items:center;">${shortTag}<button class="btn-delete">✕</button></div>`; 
                 ul.appendChild(li);
             });
         }
@@ -980,7 +984,7 @@
         }
 
         async function fetchData(silent = false) {
-            let fetchId = ++currentFetchId; // Increment fetch tracker
+            let fetchId = ++currentFetchId; 
             
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
@@ -988,7 +992,6 @@
                 let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`);
                 let p = await res.json(); 
                 
-                // CRITICAL FIX: If the user hit reset or changed profiles while this request was running, discard the stale data immediately!
                 if (fetchId !== currentFetchId) {
                     return; 
                 }
@@ -996,7 +999,6 @@
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 
-                // DYNAMIC COLOR LEADERBOARD
                 if (p.leaderboard) {
                     let lbHtml = p.leaderboard.map(lb => {
                         let isProfit = lb.equity >= lb.budget;
@@ -1050,7 +1052,6 @@
                 currentPnLData = p.metrics.pnl_data || { 'all': {val: p.metrics.pnl_display, color: p.metrics.pnl_color} };
                 updatePnLDisplay();
 
-                // UPDATE SENTIMENT THERMOMETER UI
                 if (p.metrics.regime) {
                     let reg = p.metrics.regime;
                     let fillEl = document.getElementById('thermoFill');
@@ -1073,7 +1074,6 @@
                 renderTradeHistory(); fetchDirectives(); renderChart();
             } catch(e){}
             
-            // Only hide the loader if this fetch wasn't superseded by a faster user interaction
             if (fetchId === currentFetchId && !silent && loader) loader.style.display = 'none';
         }
 

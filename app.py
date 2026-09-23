@@ -581,7 +581,6 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        # Increase threading limit to process 40 parallel requests to eliminate loading bottlenecks
         with ThreadPoolExecutor(max_workers=40) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
@@ -597,7 +596,6 @@ def process_auto_profile(prof_name):
                 cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
                 vo = sh * cps
 
-                # STRICT MARKET HOURS ENFORCEMENT TO PREVENT AFTER-HOURS TIME TRAVEL GLITCH
                 now_uk = pd.Timestamp.now(tz='Europe/London')
                 is_us_stock = not t.endswith('.L')
                 current_mins = now_uk.hour * 60 + now_uk.minute
@@ -830,14 +828,19 @@ def get_data():
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         if not t: t = 'ALL_SHARES'
 
+        # FIX: SYNC UI WATCHLIST WITH FULL 34-ASSET BACKGROUND SCANNER LIST
         if is_momentum and not wl:
             if 'test g' in active_profile:
-                wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'MSTR']
+                wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
             elif 'test h' in active_profile:
-                wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR']
+                wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
+            elif 'test c' in active_profile:
+                wl = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
             else:
-                wl = ['SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L', 'MSTR', 'TQQQ', 'SOXL', 'NVDA', 'PLTR', 'AMZN']
-            for w in wl: portfolio_store.add_watchlist(w)
+                wl = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'SMCI', 'ARM', 'AVGO', 'CONL', 'MSTX', 'BITX']
+            
+            for w in wl: 
+                portfolio_store.add_watchlist(w)
             portfolio_store.reload()
             ud = portfolio_store.user_data()
 
@@ -1026,7 +1029,6 @@ def get_data():
             highest_p = (holds_dict.get(t) or {}).get('high_water', last_p)
             if last_p > highest_p:
                 highest_p = last_p
-                # Removed dangerous DB save from read-only function
 
         if is_momentum:
             st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
