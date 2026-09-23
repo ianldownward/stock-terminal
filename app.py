@@ -105,15 +105,29 @@ class PortfolioManager:
 
     def _ensure_default_user(self):
         try:
-            default_profiles = ['Ian', 'Test', 'Test 2', 'Test 3', 'Test 4 - Volatility Breakout', 'Test 5 - Rel Strength Rotator', 'Test 6 - EOD Cash Sweep']
-            if 'users' not in self.data or not self.data['users']:
-                self.data['users'] = {}
-                for p in default_profiles:
-                    self.data['users'][p] = self.default_user_state(p)
-                self.data['active_user'] = 'Ian'
-                self.save_data(self.data)
+            # Migration map for old profile names
+            rename_map = {
+                'Test': 'Test A - Deep Value',
+                'Test 2': 'Test B - US Momentum',
+                'Test 3': 'Test C - 24/5 Global',
+                'Test 4 - Volatility Breakout': 'Test D - Volatility',
+                'Test 5 - Rel Strength Rotator': 'Test E - Rotator',
+                'Test 6 - EOD Cash Sweep': 'Test F - EOD Sweep'
+            }
             
             needs_save = False
+            if 'users' not in self.data or not self.data['users']:
+                self.data['users'] = {}
+                needs_save = True
+                
+            for old, new in rename_map.items():
+                if old in self.data['users']:
+                    self.data['users'][new] = self.data['users'].pop(old)
+                    if self.data.get('active_user') == old:
+                        self.data['active_user'] = new
+                    needs_save = True
+
+            default_profiles = ['Ian'] + list(rename_map.values())
             for profile in default_profiles:
                 if profile not in self.data['users']:
                     self.data['users'][profile] = self.default_user_state(profile)
@@ -334,7 +348,7 @@ class MarketScoringEngine:
             'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co'
         }
 
-    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test 2'):
+    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test b'):
         if df_5m.empty or len(df_5m) < 21:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
@@ -343,9 +357,9 @@ class MarketScoringEngine:
         prof = profile.lower()
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
 
-        # --- EOD CASH SWEEP RULE (TEST 6) ---
+        # --- EOD CASH SWEEP RULE (TEST F) ---
         now_uk = pd.Timestamp.now(tz='Europe/London')
-        if 'test 6' in prof and now_uk.hour == 20 and now_uk.minute >= 55: # 8:55 PM BST
+        if 'test f' in prof and now_uk.hour == 20 and now_uk.minute >= 55: # 8:55 PM BST
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
                     'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900'}
@@ -353,10 +367,10 @@ class MarketScoringEngine:
         # --- DYNAMIC RISK PARAMETERS BY PROFILE ---
         trail_pct = 0.50
         hard_pct = -1.00
-        if 'test 4' in prof:
+        if 'test d' in prof:
             trail_pct = 0.75
             hard_pct = -0.50
-        elif 'test 5' in prof or 'test 6' in prof:
+        elif 'test e' in prof or 'test f' in prof:
             trail_pct = 1.00
 
         if avg_buy_price > 0 and highest_price > 0:
@@ -378,7 +392,7 @@ class MarketScoringEngine:
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff'}
 
         # --- ENTRY CONDITIONS BY PROFILE ---
-        if 'test 4' in prof:
+        if 'test d' in prof:
             sma20 = df_5m['Close'].rolling(20).mean().iloc[-1]
             std20 = df_5m['Close'].rolling(20).std().iloc[-1]
             upper_bb = sma20 + (2 * std20)
@@ -399,7 +413,7 @@ class MarketScoringEngine:
                 reason = f"Awaiting volume breakout above upper Bollinger Band."
                 action_color = "#8a8a9e"
 
-        elif 'test 5' in prof:
+        elif 'test e' in prof:
             ret_60m = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0
             buy_score = min(100, max(0, int(50 + (ret_60m * 15))))
             if buy_score >= 65:
@@ -599,7 +613,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
         df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         cur = df['Close'].iloc[-1]
@@ -622,9 +636,9 @@ def get_directives():
     ud = portfolio_store.user_data()
     engine = MarketScoringEngine()
     active_profile = portfolio_store.active_username().strip().lower()
-    is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
+    is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
     
-    if 'test 3' in active_profile:
+    if 'test c' in active_profile:
         scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
     elif is_momentum:
         scan_list = ['RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'AZN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
@@ -679,7 +693,7 @@ def get_directives():
                 st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
 
             last_trade_time = next((h['timestamp'] for h in ud.get('history', []) if h['ticker'] == t), 0)
-            is_auto = any(x in active_profile for x in ['test', 'test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
+            is_auto = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
             if is_auto and (int(time.time()) - last_trade_time < 300):
                 continue
 
@@ -693,8 +707,8 @@ def get_directives():
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
         except: pass
 
-    # --- TEST 5 RELATIVE STRENGTH ROTATION LOGIC ---
-    if 'test 5' in active_profile and buys:
+    # --- TEST E RELATIVE STRENGTH ROTATION LOGIC ---
+    if 'test e' in active_profile and buys:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_candidate = buys[0]
         
@@ -705,7 +719,7 @@ def get_directives():
                 dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
     
     # --- STANDARD MOMENTUM ROTATION LOGIC ---
-    elif is_momentum and buys and 'test 5' not in active_profile:
+    elif is_momentum and buys and 'test e' not in active_profile:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_candidate = buys[0]
         
@@ -721,13 +735,13 @@ def get_directives():
 
     # --- BUY ALLOCATION LOGIC ---
     now_uk = pd.Timestamp.now(tz='Europe/London')
-    is_eod_blocked = ('test 6' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
+    is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
     
     if buys and rem_cash >= MIN_BUY_VALUE and not is_eod_blocked:
         buys.sort(key=lambda x: x['s'], reverse=True)
-        top_buys = buys[:1] if 'test 5' in active_profile else buys[:2]  
+        top_buys = buys[:1] if 'test e' in active_profile else buys[:2]  
         
-        if 'test 5' in active_profile:
+        if 'test e' in active_profile:
             per_stock_budget = min(rem_cash, total_equity * 0.98) # 100% allocation for Rotator
         else:
             per_stock_budget = min(rem_cash / len(top_buys), total_equity * 0.50) # 50% allocation for standard momentum
@@ -738,7 +752,7 @@ def get_directives():
             if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
                 dirs.append({'ticker': b['t'], 'name': b['n'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
-    is_auto = any(x in active_profile for x in ['test', 'test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
+    is_auto = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
     if is_auto and dirs:
         for d in dirs:
             if d['action'] == 'BUY':
@@ -796,8 +810,16 @@ def get_data():
     wl = ud.get('watchlist', [])
     t = request.args.get('t', '').upper().strip()
     active_profile = portfolio_store.active_username().strip().lower()
-    is_momentum = any(x in active_profile for x in ['test 2', 'test 3', 'test 4', 'test 5', 'test 6'])
+    is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
     if not t: t = 'ALL_SHARES'
+
+    # Leaderboard Generation
+    leaderboard = []
+    for u, u_data in portfolio_store.data.get('users', {}).items():
+        lb_cash = u_data.get('master_budget', 0) - sum(u_data.get('initial_positions',{}).get(w,{}).get('manual_val',0) + sum(tr['amount'] if tr['action']=='BUY' else -tr['amount'] for tr in u_data.get('history',[]) if tr.get('ticker')==w) for w in [tk for tk, hd in u_data.get('holdings',{}).items() if hd.get('shares',0)>0])
+        lb_holds = sum(hd.get('manual_val', 0) for hd in u_data.get('holdings', {}).values())
+        leaderboard.append({'user': u, 'equity': round(max(0, lb_cash) + lb_holds, 2)})
+    leaderboard.sort(key=lambda x: x['equity'], reverse=True)
 
     tot_own = portfolio_store.get_total_portfolio_value()
     mb = ud.get('master_budget', 10000.0)
@@ -845,30 +867,37 @@ def get_data():
             for tick, status in ex.map(check_status, wl):
                 wl_status[tick] = status
 
-    # --- PNL TIMEFRAME CALCULATIONS ---
-    pnl_dfs = {}
-    def fetch_pnl_data(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-    with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds)))) as ex:
-        for tick, df_pnl in ex.map(fetch_pnl_data, active_holds): pnl_dfs[tick] = df_pnl
+    # --- TRUE PNL TIMEFRAME CALCULATIONS ---
+    pnl_dfs_1d = {}
+    pnl_dfs_5m = {}
+    def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
+    def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
+    
+    with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds) * 2))) as ex:
+        for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
+        for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
         
     tot_today_diff, tot_1h_diff = 0.0, 0.0
     for tk in active_holds:
-        df_ch = pnl_dfs.get(tk)
-        if df_ch is not None and not df_ch.empty and len(df_ch) >= 2:
-            cur_price = df_ch['Close'].iloc[-1]
-            last_date = df_ch.index[-1].date()
-            today_df = df_ch[df_ch.index.date == last_date]
-            p_today = today_df['Close'].iloc[0] if not today_df.empty else cur_price
-            
-            target_ts = df_ch.index[-1] - pd.Timedelta(hours=1)
-            prior_df = df_ch[df_ch.index <= target_ts]
-            p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
-            
-            div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
-            sh_h = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
-            
-            tot_today_diff += sh_h * ((cur_price - p_today)/div)
-            tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
+        df_5m = pnl_dfs_5m.get(tk)
+        cur_price = df_5m['Close'].iloc[-1] if df_5m is not None and not df_5m.empty else 0
+        if cur_price == 0: continue
+        
+        df_1d = pnl_dfs_1d.get(tk)
+        yday_close = df_1d['Close'].iloc[-2] if df_1d is not None and len(df_1d) >= 2 else cur_price
+        
+        p_1h = yday_close
+        if df_5m is not None and not df_5m.empty:
+            target_ts = df_5m.index[-1] - pd.Timedelta(hours=1)
+            prior_df = df_5m[df_5m.index <= target_ts]
+            if not prior_df.empty:
+                p_1h = prior_df['Close'].iloc[-1]
+                
+        div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
+        sh_h = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
+        
+        tot_today_diff += sh_h * ((cur_price - yday_close)/div)
+        tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
 
     prev_equity_today = total_equity - tot_today_diff
     master_today_pct = (tot_today_diff / prev_equity_today * 100.0) if prev_equity_today > 0 else 0.0
@@ -914,7 +943,7 @@ def get_data():
                         lines.append({ 'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data })
                         c_idx += 1
         
-        return jsonify({'is_multi': True, 'lines': lines, 'wl_status': wl_status, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'metrics': {
+        return jsonify({'is_multi': True, 'lines': lines, 'wl_status': wl_status, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
             'price': 0, 'price_display': f"Normalized %",
             'discount': '--', 'buy_score': '--', 'tranches': 0,
             'status': 'Comparative View', 'color': '#00d2ff', 'reason': 'Viewing normalized percentage growth of all watchlist assets to compare relative momentum.',
@@ -928,7 +957,7 @@ def get_data():
     try:
         df = fetch_yf_data(t, req_p, req_i)
         if df.empty:
-            return jsonify({'ohlc': [], 'wl_status': wl_status, 'name': f'{t} Data Loading...', 'portfolio': ud, 'metrics': {
+            return jsonify({'ohlc': [], 'wl_status': wl_status, 'name': f'{t} Data Loading...', 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
                 'price': 0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
                 'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.',
                 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
@@ -974,35 +1003,32 @@ def get_data():
             c = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
             pnl_d = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
 
-            df_ch = fetch_yf_data(t, "5d", "5m")
-            if not df_ch.empty and len(df_ch) >= 2:
-                cur_p = df_ch['Close'].iloc[-1]
-                last_date = df_ch.index[-1].date()
-                today_df = df_ch[df_ch.index.date == last_date]
-                p_today = today_df['Close'].iloc[0] if not today_df.empty else cur_p
-                
-                target_ts = df_ch.index[-1] - pd.Timedelta(hours=1)
-                prior_df = df_ch[df_ch.index <= target_ts]
-                p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
-                
-                div = 100.0 if t.endswith('.L') and cur_p > 100 else 1.0
-                
-                pv_today = sh_own * ((cur_p - p_today)/div)
-                pv_1h = sh_own * ((cur_p - p_1h)/div)
-                
-                val_today_start = sh_own * (p_today/div)
-                val_1h_start = sh_own * (p_1h/div)
-                
-                pp_today = (pv_today / val_today_start * 100.0) if val_today_start > 0 else 0.0
-                pp_1h = (pv_1h / val_1h_start * 100.0) if val_1h_start > 0 else 0.0
-                
-                ticker_pnl_data = {
-                    'all': {'val': pnl_d, 'color': c},
-                    'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')},
-                    '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}
-                }
-            else:
-                ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': {'val': pnl_d, 'color': c}, '1h': {'val': pnl_d, 'color': c}}
+            df_1d = fetch_yf_data(t, "1mo", "1d")
+            yday_p = df_1d['Close'].iloc[-2] if not df_1d.empty and len(df_1d) >= 2 else last_p
+            
+            df_5m = fetch_yf_data(t, "5d", "5m")
+            p_1h = yday_p
+            if not df_5m.empty:
+                target_ts = df_5m.index[-1] - pd.Timedelta(hours=1)
+                prior_df = df_5m[df_5m.index <= target_ts]
+                if not prior_df.empty: p_1h = prior_df['Close'].iloc[-1]
+            
+            div = 100.0 if t.endswith('.L') and last_p > 100 else 1.0
+            
+            pv_today = sh_own * ((last_p - yday_p)/div)
+            pv_1h = sh_own * ((last_p - p_1h)/div)
+            
+            val_today_start = sh_own * (yday_p/div)
+            val_1h_start = sh_own * (p_1h/div)
+            
+            pp_today = (pv_today / val_today_start * 100.0) if val_today_start > 0 else 0.0
+            pp_1h = (pv_1h / val_1h_start * 100.0) if val_1h_start > 0 else 0.0
+            
+            ticker_pnl_data = {
+                'all': {'val': pnl_d, 'color': c},
+                'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')},
+                '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}
+            }
         else: 
             pnl_d, c = "£0.00 (0.00%)", '#8a8a9e'
             empty_pnl = {'val': pnl_d, 'color': c}
@@ -1049,7 +1075,7 @@ def get_data():
         except:
             mathLine = []
 
-        return jsonify({'ohlc': data, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'metrics': {
+        return jsonify({'ohlc': data, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
             'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
             'status': st['status'], 'color': st['color'], 'reason': st['reason'],
@@ -1076,8 +1102,14 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .right-drawer { width: 280px; background: #171a21; border-left: 1px solid #262b36; display: flex; flex-direction: column; padding: 15px; flex-shrink: 0; }
         .right-drawer h2, .sidebar h2 { font-size: 12px; color: #787e8e; margin: 10px 0; text-transform: uppercase; letter-spacing: 0.5px; }
         .sidebar h2 { margin-top: 0; }
-        .drawer-card { background: #1a1d24; border: 1px solid #262b36; border-radius: 8px; padding: 12px; margin-bottom: 10px; text-align: center; position: relative; }
-        .drawer-card h3 { font-size: 10px; color: #787e8e; margin: 0 0 6px 0; text-transform: uppercase; }
+        .drawer-details { background: #1a1d24; border: 1px solid #262b36; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+        .drawer-details summary { font-size: 11px; color: #00d2ff; text-transform: uppercase; font-weight: bold; cursor: pointer; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
+        .drawer-details summary::-webkit-details-marker { display: none; }
+        .drawer-details summary::after { content: '▼'; color: #787e8e; font-size: 9px; }
+        .drawer-details[open] summary::after { content: '▲'; }
+        .lb-item { background: #0f1115; border: 1px solid #262b36; border-radius: 6px; padding: 8px; margin-bottom: 6px; }
+        .lb-header { display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; color: #fff; cursor: pointer; }
+        .lb-desc { font-size: 10px; color: #8a8a9e; margin-top: 6px; display: none; line-height: 1.3; }
         .total-shares-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #00d2ff; margin-bottom: 10px; text-align: center; }
         .total-shares-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px; }
         .total-shares-box div.total-val { font-size: 18px; font-weight: bold; color: #fff; }
@@ -1112,7 +1144,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .main-content { flex: 1; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; position: relative; }
         .top-nav { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; background: #171a21; padding: 12px 16px; border-radius: 10px; border: 1px solid #262b36; }
         .top-nav-row1 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-        .top-nav-row2 { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid #262b36; padding-top: 8px; }
+        .top-nav-row2 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid #262b36; padding-top: 8px; }
         .action-buttons { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         select, button.btn-control { background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap; }
         select:hover, button.btn-control:hover { border-color: #00d2ff; }
@@ -1167,7 +1199,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
         .rec-desc { font-size: 13px; color: #8a8a9e; line-height: 1.4; margin-bottom: 15px; }
         .btn-load { background: #00c853; border: none; color: #fff; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 13px; }
         .btn-load:hover { background: #00e676; }
-        .history-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+        .history-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; max-height:250px; }
         .history-item { background: #1e222d; border: 1px solid #262b36; border-radius: 6px; padding: 10px; margin-bottom: 8px; position: relative; }
         .history-item .h-action { font-weight: bold; font-size: 12px; }
         .history-item .h-buy { color: #00c853; }
@@ -1245,7 +1277,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
                     <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
                     <button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="19" r="3"></circle><circle cx="19" cy="5" r="3"></circle><line x1="7.11" y1="16.89" x2="16.89" y2="7.11"></line></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
                         <span id="drawBtnText">Draw Line</span>
                     </button>
                     <button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button>
@@ -1261,6 +1293,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                     <label>Style:</label><select id="styleSelect" onchange="saveUISettings(); renderChart();"><option value="candlestick">Candlestick</option><option value="heikin-ashi">Heikin-Ashi</option><option value="line">Line</option><option value="area">Area</option><option value="bar">Bar</option></select>
                     <label>Auto Update:</label><select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();"><option value="0">Manual</option><option value="5000">5 secs</option><option value="10000" selected>10 secs</option><option value="30000">30 secs</option><option value="60000">1 min</option><option value="300000">5 mins</option></select>
                 </div>
+                <div id="marketClocks" style="display:flex; gap:15px; align-items:center; margin-left:auto;"></div>
             </div>
         </div>
         <div class="grid">
@@ -1295,13 +1328,20 @@ HTML_FRONTEND = """<!DOCTYPE html>
         <div class="drawer-card" id="actionCard"><h3>Recommended Action</h3><p id="mActionMain" style="font-size:18px; font-weight:bold;">--</p><span id="mActionSub" style="font-size:11px; color:#8a8a9e; font-weight:normal; display:block; margin-bottom:2px;"></span><div id="actionBtnContainer" style="margin-top:2px;"></div></div>
         <div class="drawer-card"><h3>Recommended Rec.</h3><p id="mRecTradeAmt" style="color:#00c853; font-size:15px; font-weight:bold;">£0.00</p><span id="mRecShares" style="font-size:10px; color:#787e8e; display:block; margin-top:2px;">0 shares</span></div>
         
-        <h2>Trade Log History</h2>
-        <ul class="history-list" id="historyUI"></ul>
+        <details class="drawer-details" open>
+            <summary>Active Profiles Leaderboard</summary>
+            <div id="leaderboardUI" style="margin-top:8px;"></div>
+        </details>
         
-        <h2 style="cursor:pointer; margin-top:15px; border-top:1px solid #262b36; padding-top:10px;" onclick="document.getElementById('allHistoryUI').style.display = document.getElementById('allHistoryUI').style.display === 'none' ? 'block' : 'none'; this.querySelector('span').innerText = document.getElementById('allHistoryUI').style.display === 'none' ? '▼' : '▲';">
-            All Trades History <span style="float:right;">▼</span>
-        </h2>
-        <ul class="history-list" id="allHistoryUI" style="display:none; margin-top:10px;"></ul>
+        <details class="drawer-details" open>
+            <summary>Asset Trade Log</summary>
+            <ul class="history-list" id="historyUI" style="margin-top:8px;"></ul>
+        </details>
+        
+        <details class="drawer-details">
+            <summary>All Trades History</summary>
+            <ul class="history-list" id="allHistoryUI" style="margin-top:8px;"></ul>
+        </details>
     </div>
 
     <script>
@@ -1318,6 +1358,16 @@ HTML_FRONTEND = """<!DOCTYPE html>
         let isDrawing = false; 
         let currentLine = null;
         let showManual = true; 
+
+        const profileDesc = {
+            'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
+            'Test A - Deep Value': 'Manual value accumulation using physical trusts and deep-value blue chips. No automated intraday trading.',
+            'Test B - US Momentum': 'Trades 3x/2x leveraged US ETFs (SOXL, TQQQ) using fast 9/21 EMA crossovers and tight 0.5% trailing stops.',
+            'Test C - 24/5 Global': '24/5 Follow-the-Sun strategy. Rotates capital across Asian, European, and US markets using fast EMAs.',
+            'Test D - Volatility': 'Hunts for aggressive volume spikes breaking above the upper Bollinger Band. Uses wider 0.75% trailing stops.',
+            'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes.',
+            'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 5 minutes before the US market closes to avoid overnight gaps.'
+        };
 
         function updatePnLDisplay() {
             if (!currentPnLData || !currentPnLData['all']) return;
@@ -1336,6 +1386,38 @@ HTML_FRONTEND = """<!DOCTYPE html>
             pnlEl.innerText = data.val;
             pnlEl.style.color = data.color;
         }
+
+        function updateMarketClocks() {
+            if(!globalPortfolioData || !globalPortfolioData.holdings) return;
+            let holds = Object.keys(globalPortfolioData.holdings);
+            let hasUK = holds.some(t => t.endsWith('.L'));
+            let hasUS = holds.some(t => !t.endsWith('.L') && t !== 'YCA.L');
+            
+            let d = new Date();
+            let options = { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false };
+            let timeString = d.toLocaleTimeString('en-GB', options);
+            let parts = timeString.split(':');
+            let mins = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            
+            let html = '';
+            
+            if (hasUK) {
+                let open = 480; let close = 990;
+                let pct = Math.max(0, Math.min(100, ((mins - open) / (close - open)) * 100));
+                let color = (mins >= open && mins < close) ? '#00c853' : '#ff3d00';
+                if(mins >= close || mins < open) color = '#8a8a9e';
+                html += `<div style="display:flex; align-items:center; gap:6px;"><span style="font-size:12px; font-weight:bold; color:${color};">UK</span><div style="width:100px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${color};"></div></div></div>`;
+            }
+            if (hasUS) {
+                let open = 870; let close = 1260;
+                let pct = Math.max(0, Math.min(100, ((mins - open) / (close - open)) * 100));
+                let color = (mins >= open && mins < close) ? '#00c853' : '#ff3d00';
+                if(mins >= close || mins < open) color = '#8a8a9e';
+                html += `<div style="display:flex; align-items:center; gap:6px;"><span style="font-size:12px; font-weight:bold; color:${color};">US</span><div style="width:100px; height:10px; background:#262b36; border-radius:5px; overflow:hidden;"><div style="width:${pct}%; height:100%; background:${color};"></div></div></div>`;
+            }
+            document.getElementById('marketClocks').innerHTML = html;
+        }
+        setInterval(updateMarketClocks, 60000);
 
         function toggleFullScreen() {
             let elem = document.documentElement;
@@ -1571,7 +1653,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isAuto = ['test', 'test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator', 'test 6 - eod cash sweep'].includes(activeProf);
+            let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f'].includes(activeProf);
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -1623,7 +1705,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 let res = await fetch(`/api/directives`); let data = await res.json();
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-                let isAuto = ['test', 'test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator', 'test 6 - eod cash sweep'].includes(activeProf);
+                let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f'].includes(activeProf);
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
@@ -1642,34 +1724,35 @@ HTML_FRONTEND = """<!DOCTYPE html>
             let aui = document.getElementById('allHistoryUI'); aui.innerHTML = "";
             let hist = globalPortfolioData.history || [];
             
-            if (!hist.length) { aui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; }
+            if (!hist.length) { 
+                aui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; 
+                ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`;
+            }
             else {
                 hist.forEach(i => {
                     let buy = i.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
                     li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${i.ticker}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
                     aui.appendChild(li);
                 });
+                
+                if (currentTicker === 'ALL_SHARES') {
+                    hist.forEach(item => {
+                        let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
+                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${item.ticker}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                        ui.appendChild(li);
+                    });
+                } else {
+                    let th = hist.filter(h => h.ticker === currentTicker);
+                    if (!th.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; }
+                    else {
+                        th.forEach(item => {
+                            let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
+                            li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                            ui.appendChild(li);
+                        });
+                    }
+                }
             }
-
-            if (!currentTicker) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No stock loaded.</li>`; return; }
-            
-            if (currentTicker === 'ALL_SHARES') {
-                if (!hist.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; return; }
-                hist.forEach(item => {
-                    let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
-                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${item.ticker}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
-                    ui.appendChild(li);
-                });
-                return;
-            }
-
-            let th = hist.filter(h => h.ticker === currentTicker);
-            if (!th.length) { ui.innerHTML = `<li style="font-size:11px; color:#787e8e; text-align:center; padding:20px;">No trades logged.</li>`; return; }
-            th.forEach(item => {
-                let isBuy = item.action === 'BUY'; let li = document.createElement('li'); li.className = 'history-item';
-                li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
-                ui.appendChild(li);
-            });
         }
 
         function showAnomalyReason() { if (currentAnomalyReason) { document.getElementById('reasonText').innerText = currentAnomalyReason; document.getElementById('reasonModal').style.display = 'flex'; } }
@@ -1860,18 +1943,43 @@ HTML_FRONTEND = """<!DOCTYPE html>
             
             let s = document.getElementById('styleSelect').value;
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test 2', 'test 3', 'test 4 - volatility breakout', 'test 5 - rel strength rotator', 'test 6 - eod cash sweep'].includes(activeProf);
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f'].includes(activeProf);
 
             if (currentTicker === 'ALL_SHARES') {
                 tvChart.applyOptions({ leftPriceScale: { visible: false } });
+                let avgDataMap = {};
                 masterData.forEach(line => {
                     let sr = tvChart.addLineSeries({ color: line.color, lineWidth: 2 });
                     sr.setData(line.data);
                     multiSeries.push(sr);
+                    
+                    line.data.forEach(pt => {
+                        if (!avgDataMap[pt.time]) avgDataMap[pt.time] = { sum: 0, count: 0 };
+                        avgDataMap[pt.time].sum += pt.value;
+                        avgDataMap[pt.time].count += 1;
+                    });
+                    
                     let finalVal = line.data.length > 0 ? line.data[line.data.length-1].value : 0;
                     let sign = finalVal > 0 ? '+' : '';
                     lg.innerHTML += `<div style="font-size: 11px; color: ${line.color}; font-weight: bold; text-shadow: 1px 1px 2px #000;">${line.ticker} (${sign}${finalVal.toFixed(2)}%)</div>`;
                 });
+                
+                // Plotted Benchmark Average Line
+                let avgDataKeys = Object.keys(avgDataMap).sort();
+                if (avgDataKeys.length > 0) {
+                    let avgData = avgDataKeys.map(t => ({
+                        time: parseInt(t) || t,
+                        value: avgDataMap[t].sum / avgDataMap[t].count
+                    }));
+                    let avgSeries = tvChart.addLineSeries({ color: '#ffffff', lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Dashed });
+                    avgSeries.setData(avgData);
+                    multiSeries.push(avgSeries);
+                    
+                    let fAvg = avgData[avgData.length-1].value;
+                    let fSign = fAvg > 0 ? '+' : '';
+                    lg.innerHTML += `<div style="font-size: 12px; color: #ffffff; font-weight: bold; text-shadow: 1px 1px 2px #000; margin-top: 6px;">PORTFOLIO AVG (${fSign}${fAvg.toFixed(2)}%)</div>`;
+                }
+
                 if (currentChartStyle !== 'multi' || lastRenderedTicker !== 'ALL_SHARES') { tvChart.timeScale().fitContent(); }
                 currentChartStyle = 'multi'; lastRenderedTicker = 'ALL_SHARES';
             } else {
@@ -1920,6 +2028,20 @@ HTML_FRONTEND = """<!DOCTYPE html>
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 
+                // Populate Leaderboard
+                if (p.leaderboard) {
+                    let lbHtml = p.leaderboard.map(lb => `
+                        <div class="lb-item">
+                            <div class="lb-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'">
+                                <span>${lb.user}</span>
+                                <span style="color:#00c853">£${lb.equity.toFixed(2)}</span>
+                            </div>
+                            <div class="lb-desc">${profileDesc[lb.user] || 'Custom execution profile.'}</div>
+                        </div>
+                    `).join('');
+                    document.getElementById('leaderboardUI').innerHTML = lbHtml;
+                }
+
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
                     let s = globalPortfolioData.settings;
                     if (s.period) document.getElementById('periodSelect').value = s.period; updateIntervals();
@@ -1957,6 +2079,7 @@ HTML_FRONTEND = """<!DOCTYPE html>
 
                 document.getElementById('mMacro').innerHTML = `<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:${p.metrics.color};"></span> ${p.metrics.status}`;
                 
+                updateMarketClocks();
                 calculateSizing(); renderTradeHistory(); fetchDirectives(); renderChart();
             } catch(e){}
             if (!silent && loader) loader.style.display = 'none';
