@@ -87,7 +87,6 @@ class PortfolioManager:
                 'Ian', 'Test A - Deep Value', 'Test B - Momentum (UK & US)', 
                 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep'
             ]
-            
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
                 self.data['users'] = {}
@@ -685,7 +684,6 @@ def get_directives():
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
         except: pass
 
-    # --- HARD HOLDING CAP & EXCESS PRUNING ---
     max_allowed_holds = 1 if 'test e' in active_profile else 2
     if is_momentum and len(held_scores) > max_allowed_holds:
         held_scores.sort(key=lambda x: x['score'])
@@ -694,7 +692,6 @@ def get_directives():
             weakest = held_scores[i]
             dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
 
-    # --- ROTATION LOGIC ---
     if 'test e' in active_profile and buys:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_candidate = buys[0]
@@ -713,7 +710,6 @@ def get_directives():
             if weakest['shares'] > 0 and weakest['ticker'] != top_candidate['t']:
                 dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
 
-    # --- NEW BUY ALLOCATION LOGIC ---
     now_uk = pd.Timestamp.now(tz='Europe/London')
     is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
     current_hold_count = len([x for x in held_scores if x['shares'] > 0])
@@ -772,7 +768,7 @@ def get_recommendations():
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
+                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol>0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
                 st.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
                 res.append(st)
     return jsonify({'recommendations': sorted(res, key=lambda x: x['score'], reverse=True)})
@@ -787,6 +783,12 @@ def get_data():
         active_profile = portfolio_store.active_username().strip().lower()
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f'])
         if not t: t = 'ALL_SHARES'
+
+        # Ensure the watchlist auto-populates for momentum profiles, but NEVER deletes it.
+        if is_momentum and not wl:
+            wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'PLTR', 'RR.L', 'AMZN']
+            ud['watchlist'] = wl
+            portfolio_store.save()
 
         holds = ud.get('holdings') or {}
         init_pos = ud.get('initial_positions') or {}
@@ -883,9 +885,8 @@ def get_data():
             last_ts = df_5m.index[-1]
             last_lon = last_ts.tz_convert('Europe/London')
             
-            # --- FIXED BASELINE ANCHOR FOR SHARES BOUGHT TODAY ---
-            t_buys_today = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == tk and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
-            avg_buy_p_today = (sum(tr.get('amount', 0) for tr in t_buys_today) / sum(tr.get('shares', 1) for tr in t_buys_today)) if t_buys_today else 0.0
+            t_buys_today_t = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == tk and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
+            avg_b_today_t = (sum(tr.get('amount', 0) for tr in t_buys_today_t) / sum(tr.get('shares', 1) for tr in t_buys_today_t)) if t_buys_today_t else 0.0
 
             if now_lon.date() > last_lon.date():
                 p_today = cur_price 
@@ -894,7 +895,7 @@ def get_data():
                 last_date_str = last_lon.strftime('%Y-%m-%d')
                 prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
                 p_today_mkt = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                p_today = avg_buy_p_today if avg_buy_p_today > 0 else p_today_mkt
+                p_today = avg_b_today_t if avg_b_today_t > 0 else p_today_mkt
                 
                 if (now_utc - last_ts).total_seconds() > 4200:
                     p_1h = cur_price 
@@ -902,8 +903,8 @@ def get_data():
                     target_ts = now_utc - pd.Timedelta(hours=1)
                     prior_df = df_5m[df_5m.index <= target_ts]
                     p_1h_mkt = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
-                    p_1h = avg_buy_p_today if avg_buy_p_today > 0 else p_1h_mkt
-                    
+                    p_1h = avg_b_today_t if avg_b_today_t > 0 else p_1h_mkt
+            
             div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
             sh_h = (holds.get(tk) or {}).get('shares', 0)
             
