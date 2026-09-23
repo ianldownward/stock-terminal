@@ -440,6 +440,11 @@
         async function onUserChange(username) {
             if (!username) return;
             if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+            
+            // Instant UI Feedback
+            document.getElementById('activeTitle').innerText = "Loading " + username + "...";
+            document.getElementById('loader').style.display = 'block';
+
             await fetch('/api/users/select', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: username})});
             currentTicker = 'ALL_SHARES'; isSettingsLoaded = false;
             await fetchData(false);

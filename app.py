@@ -17,9 +17,10 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
 
     cache_key = f"{ticker}_{period}_{interval}"
     now = time.time()
+    # Shared global cache across all background profiles to prevent Yahoo Finance API throttling
     if cache_key in YF_CACHE:
         cached_time, df = YF_CACHE[cache_key]
-        if not df.empty and now - cached_time < 15: return df.copy()
+        if not df.empty and (now - cached_time < 30): return df.copy()
             
     try:
         df = yf.Ticker(ticker).history(period=period, interval=interval)
@@ -365,7 +366,7 @@ class MarketScoringEngine:
         if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                if pnl_pct < 0.30:  # Liquidate non-stellar US holdings before US close to free capital for UK open
+                if pnl_pct < 0.30:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
                             'reason': "US PRE-CLOSE CAPITAL UNLOCK: Liquidating weak US stock before 9:00 PM BST close to free capital for UK morning open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'US Pre-Close Unlock', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(UK Capital Unlock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
@@ -559,7 +560,6 @@ def process_auto_profile(prof_name):
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         if not is_momentum: return
 
-        # EXPANDED 30+ CANDIDATE SCAN UNIVERSE
         if 'test g' in active_profile:
             scan_list = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
         elif 'test h' in active_profile:
@@ -629,12 +629,11 @@ def process_auto_profile(prof_name):
 
         max_allowed_holds = 1 if 'test e' in active_profile else 2
         
-        # RELATIVE STRENGTH ROTATION FOR TEST H AND OTHERS
+        # RELATIVE STRENGTH ROTATION
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
             
-            # Rotate if new candidate score exceeds current holding by at least 15 points
             if top_candidate['s'] >= (weakest_holding['score'] + 15) and top_candidate['s'] >= 65:
                 dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
                 rem_cash += weakest_holding['value']
