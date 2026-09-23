@@ -695,7 +695,6 @@ def get_directives():
                 buys.append({'t': t, 'n': engine.asset_names.get(t, t), 'cps': cps, 'p': cur, 's': st['score']})
         except: pass
 
-    # --- TEST E RELATIVE STRENGTH ROTATION LOGIC ---
     if 'test e' in active_profile and buys:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_candidate = buys[0]
@@ -706,7 +705,6 @@ def get_directives():
             if top_candidate['s'] > (weakest['score'] + 20) and weakest['shares'] > 0 and weakest['ticker'] != top_candidate['t']:
                 dirs.append({'ticker': weakest['ticker'], 'name': engine.asset_names.get(weakest['ticker'], weakest['ticker']), 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
     
-    # --- STANDARD MOMENTUM ROTATION LOGIC ---
     elif is_momentum and buys and 'test e' not in active_profile:
         buys.sort(key=lambda x: x['s'], reverse=True)
         top_candidate = buys[0]
@@ -721,7 +719,6 @@ def get_directives():
                 if buy_sh > 0:
                     dirs.append({'ticker': top_candidate['t'], 'name': top_candidate['n'], 'action': 'BUY', 'shares': buy_sh, 'price': top_candidate['p'], 'amount': round(buy_sh * top_candidate['cps'], 2)})
 
-    # --- BUY ALLOCATION LOGIC ---
     now_uk = pd.Timestamp.now(tz='Europe/London')
     is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
     
@@ -854,35 +851,47 @@ def get_data():
                 wl_status[tick] = status
 
     # --- TRUE PNL TIMEFRAME CALCULATIONS ---
-    pnl_dfs_1d = {}
     pnl_dfs_5m = {}
-    def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
     def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
     
-    with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds) * 2))) as ex:
-        for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
+    with ThreadPoolExecutor(max_workers=min(5, max(1, len(active_holds)))) as ex:
         for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
         
     tot_today_diff, tot_1h_diff = 0.0, 0.0
+    now_utc = pd.Timestamp.now(tz='UTC')
+    now_lon = pd.Timestamp.now(tz='Europe/London')
+    
     for tk in active_holds:
         df_5m = pnl_dfs_5m.get(tk)
-        cur_price = df_5m['Close'].iloc[-1] if df_5m is not None and not df_5m.empty else 0
-        if cur_price == 0: continue
+        if df_5m is None or df_5m.empty: continue
+            
+        if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
+        else: df_5m.index = df_5m.index.tz_convert('UTC')
+            
+        cur_price = df_5m['Close'].iloc[-1]
+        last_ts = df_5m.index[-1]
+        last_lon = last_ts.tz_convert('Europe/London')
         
-        df_1d = pnl_dfs_1d.get(tk)
-        yday_close = df_1d['Close'].iloc[-2] if df_1d is not None and len(df_1d) >= 2 else cur_price
-        
-        p_1h = yday_close
-        if df_5m is not None and not df_5m.empty:
-            if len(df_5m) >= 12:
-                p_1h = df_5m['Close'].iloc[-12]
-            else:
-                p_1h = df_5m['Close'].iloc[0]
+        # Today PnL Baseline
+        if now_lon.date() > last_lon.date():
+            p_today = cur_price # Market closed today, £0 profit
+        else:
+            last_date_str = last_lon.strftime('%Y-%m-%d')
+            prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
+            p_today = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
+            
+        # 1 Hour PnL Baseline
+        if (now_utc - last_ts).total_seconds() > 4200:
+            p_1h = cur_price # Market closed for over 70 mins, £0 profit
+        else:
+            target_ts = now_utc - pd.Timedelta(hours=1)
+            prior_df = df_5m[df_5m.index <= target_ts]
+            p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else df_5m['Close'].iloc[0]
                 
         div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
         sh_h = ud.get('holdings', {}).get(tk, {}).get('shares', 0)
         
-        tot_today_diff += sh_h * ((cur_price - yday_close)/div)
+        tot_today_diff += sh_h * ((cur_price - p_today)/div)
         tot_1h_diff += sh_h * ((cur_price - p_1h)/div)
 
     prev_equity_today = total_equity - tot_today_diff
@@ -989,33 +998,47 @@ def get_data():
             c = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
             pnl_d = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
 
-            df_1d = pnl_dfs_1d.get(t)
-            yday_p = df_1d['Close'].iloc[-2] if df_1d is not None and len(df_1d) >= 2 else last_p
-            
-            df_5m = pnl_dfs_5m.get(t)
-            p_1h = yday_p
-            if df_5m is not None and not df_5m.empty:
-                if len(df_5m) >= 12:
-                    p_1h = df_5m['Close'].iloc[-12]
+            df_5m = fetch_yf_data(t, "5d", "5m")
+            if not df_5m.empty:
+                if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
+                else: df_5m.index = df_5m.index.tz_convert('UTC')
+                
+                cur_p = df_5m['Close'].iloc[-1]
+                last_ts = df_5m.index[-1]
+                last_lon = last_ts.tz_convert('Europe/London')
+                
+                if now_lon.date() > last_lon.date():
+                    p_today = cur_p
                 else:
-                    p_1h = df_5m['Close'].iloc[0]
-            
-            div = 100.0 if t.endswith('.L') and last_p > 100 else 1.0
-            
-            pv_today = sh_own * ((last_p - yday_p)/div)
-            pv_1h = sh_own * ((last_p - p_1h)/div)
-            
-            val_today_start = sh_own * (yday_p/div)
-            val_1h_start = sh_own * (p_1h/div)
-            
-            pp_today = (pv_today / val_today_start * 100.0) if val_today_start > 0 else 0.0
-            pp_1h = (pv_1h / val_1h_start * 100.0) if val_1h_start > 0 else 0.0
-            
-            ticker_pnl_data = {
-                'all': {'val': pnl_d, 'color': c},
-                'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')},
-                '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}
-            }
+                    last_date_str = last_lon.strftime('%Y-%m-%d')
+                    prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
+                    p_today = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
+                    
+                if (now_utc - last_ts).total_seconds() > 4200:
+                    p_1h = cur_p
+                else:
+                    target_ts = now_utc - pd.Timedelta(hours=1)
+                    prior_df = df_5m[df_5m.index <= target_ts]
+                    p_1h = prior_df['Close'].iloc[-1] if not prior_df.empty else df_5m['Close'].iloc[0]
+                
+                div = 100.0 if t.endswith('.L') and cur_p > 100 else 1.0
+                
+                pv_today = sh_own * ((cur_p - p_today)/div)
+                pv_1h = sh_own * ((cur_p - p_1h)/div)
+                
+                val_today_start = sh_own * (p_today/div)
+                val_1h_start = sh_own * (p_1h/div)
+                
+                pp_today = (pv_today / val_today_start * 100.0) if val_today_start > 0 else 0.0
+                pp_1h = (pv_1h / val_1h_start * 100.0) if val_1h_start > 0 else 0.0
+                
+                ticker_pnl_data = {
+                    'all': {'val': pnl_d, 'color': c},
+                    'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')},
+                    '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}
+                }
+            else:
+                ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': {'val': pnl_d, 'color': c}, '1h': {'val': pnl_d, 'color': c}}
         else: 
             pnl_d, c = "£0.00 (0.00%)", '#8a8a9e'
             empty_pnl = {'val': pnl_d, 'color': c}
