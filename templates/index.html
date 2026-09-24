@@ -698,7 +698,7 @@
                     let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '';
                     
                     let li = document.createElement('li'); li.className = 'history-item';
-                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${i.ticker}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
+                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${i.ticker} ${badge}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
                     aui.appendChild(li);
                 });
                 
@@ -709,7 +709,7 @@
                         let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '';
 
                         let li = document.createElement('li'); li.className = 'history-item';
-                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${item.ticker}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${item.ticker} ${badge}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
                         ui.appendChild(li);
                     });
                 } else {

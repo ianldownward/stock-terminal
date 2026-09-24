@@ -1,4 +1,4 @@
-import os, json, time, urllib.request, threading
+import os, json, time, urllib.request, threading, requests
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
@@ -7,7 +7,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
-# CRITICAL FIX: Thundering Herd Protection
+# CRITICAL FIX: Custom requests session with strict timeout to prevent yfinance deadlocks
+yf_session = requests.Session()
+yf_session.request = lambda method, url, **kwargs: requests.Session.request(yf_session, method, url, timeout=5, **kwargs)
+
+# Thundering Herd Protection
 YF_CACHE = {}
 FETCH_LOCKS = {}
 GLOBAL_LOCK = threading.Lock()
@@ -21,8 +25,6 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
 
     cache_key = f"{ticker}_{period}_{interval}"
     
-    # Thread locking ensures only 1 API request goes out to Yahoo Finance per ticker, 
-    # preventing immediate IP bans when the 34-asset list triggers simultaneously.
     with GLOBAL_LOCK:
         if cache_key not in FETCH_LOCKS:
             FETCH_LOCKS[cache_key] = threading.Lock()
@@ -30,16 +32,14 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
-        # Cache increased to 45 seconds to drastically reduce network load on 34 items
+        # Increased cache to 45 seconds to minimize network hits across profiles
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
-            if not df.empty and (now - cached_time < 45): 
-                return df.copy()
+            if not df.empty and (now - cached_time < 45): return df.copy()
                 
         try:
-            df = yf.Ticker(ticker).history(period=period, interval=interval)
-            if not df.empty: 
-                YF_CACHE[cache_key] = (time.time(), df)
+            df = yf.Ticker(ticker, session=yf_session).history(period=period, interval=interval)
+            if not df.empty: YF_CACHE[cache_key] = (time.time(), df)
             return df.copy()
         except: 
             return pd.DataFrame()
@@ -289,26 +289,22 @@ class PortfolioManager:
         
         if not active_tickers:
             return 0.0
-            
-        def fetch_val(t):
+
+        # CRITICAL FIX: Removed thread explosion to prevent deadlock during leaderboard build
+        total = 0.0
+        holds = ud.get('holdings') or {}
+        for t in active_tickers:
             sh = self.get_shares(t, username)
             try:
                 df = fetch_yf_data(t, "1d", "1d")
                 if not df.empty:
                     p = df['Close'].iloc[-1]
                     cps = p / 100.0 if t.endswith('.L') and p > 100 else p
-                    return t, round(sh * cps, 2)
+                    val = round(sh * cps, 2)
+                    total += val
+                    if t in holds and isinstance(holds[t], dict):
+                        holds[t]['manual_val'] = val
             except: pass
-            return t, 0.0
-
-        total = 0.0
-        holds = ud.get('holdings') or {}
-        # Max workers capped at 8 to strictly prevent thread exhaustion on Render
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            for t, val in ex.map(fetch_val, active_tickers):
-                total += val
-                if t in holds and isinstance(holds[t], dict):
-                    holds[t]['manual_val'] = val
         return round(total, 2)
 
 class MarketScoringEngine:
@@ -374,7 +370,6 @@ class MarketScoringEngine:
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_us_stock = not ticker.endswith('.L')
 
-        # TEST B PRE-CLOSE CAPITAL UNLOCK RULE
         if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -388,7 +383,6 @@ class MarketScoringEngine:
                     'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
-        # TEST H WICK REVERSAL SPECIFIC SCORING ENGINE
         if 'test h' in prof:
             last_candle = df_5m.iloc[-2]
             c_open, c_close = last_candle['Open'], last_candle['Close']
@@ -448,7 +442,6 @@ class MarketScoringEngine:
                     'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
-        # TEST G BI-DIRECTIONAL LOGIC
         if 'test g' in prof:
             if regime['code'] in ['BEAR', 'BEAR_FREEZE'] and not is_inverse:
                 return {'type': 'Bi-Directional', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
@@ -598,8 +591,8 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        # Kept at safe levels to ensure stability
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        # Reduced background workers to safe minimum (5) to avoid throttling
+        with ThreadPoolExecutor(max_workers=5) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
@@ -826,7 +819,7 @@ def get_recommendations():
     
     def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=5) as ex:
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
@@ -873,7 +866,7 @@ def get_data():
         def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
         
         if active_holds:
-            with ThreadPoolExecutor(max_workers=8) as ex:
+            with ThreadPoolExecutor(max_workers=5) as ex:
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
                 for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
 
@@ -928,7 +921,7 @@ def get_data():
                     return tick, 'closed'
                 except: return tick, 'closed'
 
-            with ThreadPoolExecutor(max_workers=8) as ex:
+            with ThreadPoolExecutor(max_workers=5) as ex:
                 for tick, status in ex.map(check_status, wl):
                     wl_status[tick] = status
             
@@ -980,7 +973,7 @@ def get_data():
                     return tick, fetch_yf_data(tick, req_p, req_i)
                 
                 dfs = {}
-                with ThreadPoolExecutor(max_workers=8) as ex:
+                with ThreadPoolExecutor(max_workers=5) as ex:
                     for tick, df_t in ex.map(fetch_t, wl):
                         dfs[tick] = df_t
                 
