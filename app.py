@@ -1,4 +1,4 @@
-import os, json, time, urllib.request, threading, requests
+import os, json, time, urllib.request, threading
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
@@ -7,13 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
-class TimeoutSession(requests.Session):
-    def request(self, method, url, **kwargs):
-        kwargs.setdefault('timeout', 5.0)
-        return super(TimeoutSession, self).request(method, url, **kwargs)
-
-yf_session = TimeoutSession()
-
+# Thundering Herd Protection RAM Cache (No broken TimeoutSession objects!)
 YF_CACHE = {}
 FETCH_LOCKS = {}
 GLOBAL_LOCK = threading.Lock()
@@ -34,6 +28,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
+        # 5m intraday cached for 115s (syncs with 120s bg loop), daily cached for 5 mins
         cache_duration = 115 if interval in ['1m', '2m', '5m'] else 300
         
         if cache_key in YF_CACHE:
@@ -41,7 +36,8 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             if not df.empty and (now - cached_time < cache_duration): return df.copy()
                 
         try:
-            df = yf.Ticker(ticker, session=yf_session).history(period=period, interval=interval)
+            # Pure, stable yfinance call. No custom sessions to crash the app!
+            df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty: YF_CACHE[cache_key] = (now, df)
             return df.copy()
         except Exception: 
@@ -57,7 +53,7 @@ def send_push_notification(topic, title, message):
 
 class PortfolioManager:
     def __init__(self):
-        self.trade_lock = threading.Lock()
+        self.trade_lock = threading.Lock() # Atomic safety lock for concurrent bots
         self.mongo_uri = os.environ.get('MONGO_URI')
         if self.mongo_uri:
             try:
@@ -319,18 +315,23 @@ class PortfolioManager:
 
         total = 0.0
         holds = ud.get('holdings') or {}
-        for t in active_tickers:
+        
+        def fetch_val(t):
             sh = self.get_shares(t, username)
             try:
                 df = fetch_yf_data(t, "1d", "1d")
                 if not df.empty:
                     p = df['Close'].iloc[-1]
                     cps = p / 100.0 if t.endswith('.L') and p > 100 else p
-                    val = round(sh * cps, 2)
-                    total += val
-                    if t in holds and isinstance(holds[t], dict):
-                        holds[t]['manual_val'] = val
+                    return t, round(sh * cps, 2)
             except Exception: pass
+            return t, 0.0
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for t, val in ex.map(fetch_val, active_tickers):
+                total += val
+                if t in holds and isinstance(holds[t], dict):
+                    holds[t]['manual_val'] = val
         return round(total, 2)
 
 class MarketScoringEngine:
@@ -437,7 +438,6 @@ class MarketScoringEngine:
                             'reason': f"HOLDING WICK REVERSAL. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'Holding Reversal', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Reversal)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
-                # OPTIMIZED: Lowered lower-wick entry threshold from 50% to 35% to eliminate cash drag during steady uptrends
                 if (lower_wick / total_range) >= 0.35 and current_price > c_low:
                     wick_score = min(100, max(60, round(50 + (lower_wick / total_range) * 50)))
                     return {'type': 'Wick Reversal', 'score': wick_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
@@ -445,7 +445,7 @@ class MarketScoringEngine:
                             'status': 'Bottom Wick Reversal', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Wick Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
 
             return {'type': 'Wick Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars (threshold: >= 35%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Scanning Wicks', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Wick Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof or 'test f' in prof else 0.50))
