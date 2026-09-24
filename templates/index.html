@@ -10,7 +10,6 @@
         body { font-family: -apple-system, sans-serif; background: #0f1115; color: #e1e3e6; margin: 0; display: flex; height: 100vh; overflow: hidden; }
         .sidebar { width: 300px; background: #171a21; border-right: 1px solid #262b36; display: flex; flex-direction: column; flex-shrink: 0; }
         
-        /* CSS FIX: Made the sidebar-top pin to the top and ONLY the watchlist scrolls */
         .sidebar-top { padding: 15px 15px 0 15px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .sidebar-bottom { padding: 15px; border-top: 1px solid #262b36; background: #1a1d24; flex-shrink: 0; }
         
@@ -58,7 +57,6 @@
         .search-box input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; }
         .search-box button { background: #00d2ff; border: none; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
         
-        /* CSS FIX: The watchlist explicitly scrolls now, with custom scrollbars */
         .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; overflow-y: auto; padding-bottom: 15px; padding-right: 5px; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -700,7 +698,7 @@
                     let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '';
                     
                     let li = document.createElement('li'); li.className = 'history-item';
-                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${i.ticker} ${badge}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
+                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${i.ticker}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
                     aui.appendChild(li);
                 });
                 
@@ -711,7 +709,7 @@
                         let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '';
 
                         let li = document.createElement('li'); li.className = 'history-item';
-                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${item.ticker} ${badge}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
+                        li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${item.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${item.ticker}</div><div class="h-action ${isBuy?'h-buy':'h-sell'}">${item.action} ${item.shares} Shares</div><div class="h-meta">Total: £${item.amount.toFixed(2)} @ ${parseFloat(item.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${item.time}</div>`;
                         ui.appendChild(li);
                     });
                 } else {
@@ -1011,8 +1009,9 @@
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
+                // INCREASED TIMEOUT TO 25 SECONDS FOR COLD WAKES
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                const timeoutId = setTimeout(() => controller.abort(), 25000);
 
                 let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`, { signal: controller.signal });
                 clearTimeout(timeoutId);

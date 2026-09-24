@@ -6,7 +6,11 @@ from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
+
+# CRITICAL FIX: Thundering Herd Protection
 YF_CACHE = {}
+FETCH_LOCKS = {}
+GLOBAL_LOCK = threading.Lock()
 
 def fetch_yf_data(ticker, period="1y", interval="1d"):
     if not interval or interval == 'undefined': interval = "1d"
@@ -16,17 +20,29 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
     if period in ['1mo', '3mo', '6mo'] and interval in ['1m', '2m']: interval = '5m'
 
     cache_key = f"{ticker}_{period}_{interval}"
-    now = time.time()
     
-    if cache_key in YF_CACHE:
-        cached_time, df = YF_CACHE[cache_key]
-        if not df.empty and (now - cached_time < 30): return df.copy()
-            
-    try:
-        df = yf.Ticker(ticker).history(period=period, interval=interval)
-        if not df.empty: YF_CACHE[cache_key] = (now, df)
-        return df.copy()
-    except: return pd.DataFrame()
+    # Thread locking ensures only 1 API request goes out to Yahoo Finance per ticker, 
+    # preventing immediate IP bans when the 34-asset list triggers simultaneously.
+    with GLOBAL_LOCK:
+        if cache_key not in FETCH_LOCKS:
+            FETCH_LOCKS[cache_key] = threading.Lock()
+        lock = FETCH_LOCKS[cache_key]
+        
+    with lock:
+        now = time.time()
+        # Cache increased to 45 seconds to drastically reduce network load on 34 items
+        if cache_key in YF_CACHE:
+            cached_time, df = YF_CACHE[cache_key]
+            if not df.empty and (now - cached_time < 45): 
+                return df.copy()
+                
+        try:
+            df = yf.Ticker(ticker).history(period=period, interval=interval)
+            if not df.empty: 
+                YF_CACHE[cache_key] = (time.time(), df)
+            return df.copy()
+        except: 
+            return pd.DataFrame()
 
 def send_push_notification(topic, title, message):
     if not topic: return
@@ -287,7 +303,8 @@ class PortfolioManager:
 
         total = 0.0
         holds = ud.get('holdings') or {}
-        with ThreadPoolExecutor(max_workers=15) as ex:
+        # Max workers capped at 8 to strictly prevent thread exhaustion on Render
+        with ThreadPoolExecutor(max_workers=8) as ex:
             for t, val in ex.map(fetch_val, active_tickers):
                 total += val
                 if t in holds and isinstance(holds[t], dict):
@@ -581,7 +598,8 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        with ThreadPoolExecutor(max_workers=15) as ex:
+        # Kept at safe levels to ensure stability
+        with ThreadPoolExecutor(max_workers=8) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
@@ -808,7 +826,7 @@ def get_recommendations():
     
     def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
-    with ThreadPoolExecutor(max_workers=15) as ex:
+    with ThreadPoolExecutor(max_workers=8) as ex:
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
@@ -828,7 +846,6 @@ def get_data():
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         if not t: t = 'ALL_SHARES'
 
-        # FIX: SYNC UI WATCHLIST WITH FULL 34-ASSET BACKGROUND SCANNER LIST
         if is_momentum and not wl:
             if 'test g' in active_profile:
                 wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
@@ -856,7 +873,7 @@ def get_data():
         def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
         
         if active_holds:
-            with ThreadPoolExecutor(max_workers=15) as ex:
+            with ThreadPoolExecutor(max_workers=8) as ex:
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
                 for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
 
@@ -911,7 +928,7 @@ def get_data():
                     return tick, 'closed'
                 except: return tick, 'closed'
 
-            with ThreadPoolExecutor(max_workers=15) as ex:
+            with ThreadPoolExecutor(max_workers=8) as ex:
                 for tick, status in ex.map(check_status, wl):
                     wl_status[tick] = status
             
@@ -963,7 +980,7 @@ def get_data():
                     return tick, fetch_yf_data(tick, req_p, req_i)
                 
                 dfs = {}
-                with ThreadPoolExecutor(max_workers=15) as ex:
+                with ThreadPoolExecutor(max_workers=8) as ex:
                     for tick, df_t in ex.map(fetch_t, wl):
                         dfs[tick] = df_t
                 
@@ -1029,7 +1046,6 @@ def get_data():
             highest_p = (holds_dict.get(t) or {}).get('high_water', last_p)
             if last_p > highest_p:
                 highest_p = last_p
-                # Removed dangerous DB save from read-only function
 
         if is_momentum:
             st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
