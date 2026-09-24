@@ -547,7 +547,6 @@ class MarketScoringEngine:
 
                 ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
                 
-                # Upgraded: Requires Volume Surge >= 1.2x to confirm bottom wick buyers
                 if (lower_wick / total_range) >= 0.35 and current_price > c_low and vol_ratio >= 1.2:
                     if current_price >= ema21:
                         wick_score = min(100, max(60, round(50 + (lower_wick / total_range) * 50)))
@@ -950,7 +949,65 @@ def get_score():
 @app.route('/api/directives', methods=['GET'])
 def get_directives():
     portfolio_store.reload()
+    ud = portfolio_store.user_data()
+    prof_name = portfolio_store.active_username()
+    active_profile = prof_name.strip().lower()
+    engine = MarketScoringEngine()
+    
+    mb = ud.get('master_budget', 10000.0)
+    hist = ud.get('history') or []
+    init_pos = ud.get('initial_positions') or {}
+
+    net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
+    init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
+    cash_balance = mb + net_history - init_manual
+    rem_cash = max(0, cash_balance)
+    
+    wl = ud.get('watchlist') or []
+    if not wl and 'test a' in active_profile:
+        wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L']
+        
+    active_holds = list(set([tr.get('ticker') for tr in hist if isinstance(tr, dict) and portfolio_store.get_shares(tr.get('ticker')) > 0]))
+    scan_list = list(set(wl + active_holds))
+    
     dirs = []
+    if scan_list:
+        regime = engine.check_market_regime()
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
+        
+        dfs = {}
+        def fetch_t(tick): return tick, fetch_yf_data(tick, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for tick, df_t in ex.map(fetch_t, scan_list): dfs[tick] = df_t
+            
+        for t in scan_list:
+            df = dfs.get(t)
+            if df is None or df.empty: continue
+            cur = df['Close'].iloc[-1]
+            sh = portfolio_store.get_shares(t)
+            cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
+            
+            if is_momentum:
+                avg_buy_p, highest_p = 0.0, cur
+                if sh > 0:
+                    t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY']
+                    if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
+                    highest_p = (ud.get('holdings', {}).get(t) or {}).get('high_water', cur)
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
+            else:
+                avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
+                v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
+                st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
+            
+            if st['action_main'] == 'BUY' and sh == 0 and rem_cash >= 20:
+                bs = int((rem_cash * 0.25) // cps) 
+                if bs > 0:
+                    dirs.append({'ticker': t, 'action': 'BUY', 'shares': bs, 'price': cur, 'amount': bs * cps, 'score': st['score']})
+            elif st['action_main'] == 'SELL' and sh > 0:
+                dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': sh * cps, 'score': st['score']})
+
+    dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
+
     return jsonify({'directives': dirs})
 
 @app.route('/api/recommend', methods=['GET'])
