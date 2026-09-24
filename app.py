@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
-# Thundering Herd Protection RAM Cache (No broken TimeoutSession objects!)
 YF_CACHE = {}
 FETCH_LOCKS = {}
 GLOBAL_LOCK = threading.Lock()
@@ -28,7 +27,6 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
-        # 5m intraday cached for 115s (syncs with 120s bg loop), daily cached for 5 mins
         cache_duration = 115 if interval in ['1m', '2m', '5m'] else 300
         
         if cache_key in YF_CACHE:
@@ -36,7 +34,6 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             if not df.empty and (now - cached_time < cache_duration): return df.copy()
                 
         try:
-            # Pure, stable yfinance call. No custom sessions to crash the app!
             df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty: YF_CACHE[cache_key] = (now, df)
             return df.copy()
@@ -53,7 +50,7 @@ def send_push_notification(topic, title, message):
 
 class PortfolioManager:
     def __init__(self):
-        self.trade_lock = threading.Lock() # Atomic safety lock for concurrent bots
+        self.trade_lock = threading.Lock()
         self.mongo_uri = os.environ.get('MONGO_URI')
         if self.mongo_uri:
             try:
@@ -438,14 +435,22 @@ class MarketScoringEngine:
                             'reason': f"HOLDING WICK REVERSAL. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'Holding Reversal', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Reversal)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
+                # 21-EMA TREND FILTER: Blocks buying "falling knives" in active downtrends
+                ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+                
                 if (lower_wick / total_range) >= 0.35 and current_price > c_low:
-                    wick_score = min(100, max(60, round(50 + (lower_wick / total_range) * 50)))
-                    return {'type': 'Wick Reversal', 'score': wick_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
-                            'reason': f"BOTTOM WICK REVERSAL: Buyers rejected low prices. Lower wick ratio is {((lower_wick/total_range)*100):.1f}%.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
-                            'status': 'Bottom Wick Reversal', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Wick Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+                    if current_price >= ema21:
+                        wick_score = min(100, max(60, round(50 + (lower_wick / total_range) * 50)))
+                        return {'type': 'Wick Reversal', 'score': wick_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
+                                'reason': f"BOTTOM WICK REVERSAL: Buyers rejected low prices. Lower wick ratio is {((lower_wick/total_range)*100):.1f}%. Trend supported (> 21-EMA).", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
+                                'status': 'Bottom Wick Reversal', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Wick Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+                    else:
+                        return {'type': 'Wick Reversal', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                                'reason': f"DOWNTREND BLOCKED: Bottom wick detected ({(lower_wick/total_range)*100:.1f}%), but price is actively falling below the 21-EMA. Avoiding falling knife.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                                'status': 'Trend Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Downtrend)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
             return {'type': 'Wick Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars (threshold: >= 35%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Scanning Wicks', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Wick Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof or 'test f' in prof else 0.50))
@@ -967,20 +972,23 @@ def get_data():
             if df_5m is not None and not df_5m.empty:
                 cur_price = df_5m['Close'].iloc[-1]
                 div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
+                cur_price_pounds = cur_price / div
                 
                 if t_buys_today:
-                    p_today_base = sum(tr.get('amount', 0) for tr in t_buys_today) / sum(tr.get('shares', 1) for tr in t_buys_today)
+                    p_today_base_pounds = sum(tr.get('amount', 0) for tr in t_buys_today) / sum(tr.get('shares', 1) for tr in t_buys_today)
                 else:
                     last_date_str = now_lon.strftime('%Y-%m-%d')
                     prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-                    p_today_base = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
+                    p_today_base_pence = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
+                    p_today_base_pounds = p_today_base_pence / div
 
                 target_ts = now_utc - pd.Timedelta(hours=1)
                 prior_df = df_5m[df_5m.index <= target_ts]
-                p_1h_base = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today_base
+                p_1h_base_pence = prior_df['Close'].iloc[-1] if not prior_df.empty else (df_5m['Close'].iloc[0] if not df_5m.empty else cur_price)
+                p_1h_base_pounds = p_1h_base_pence / div
 
-                tot_today_diff += sh_h * ((cur_price - p_today_base) / div)
-                tot_1h_diff += sh_h * ((cur_price - p_1h_base) / div)
+                tot_today_diff += sh_h * (cur_price_pounds - p_today_base_pounds)
+                tot_1h_diff += sh_h * (cur_price_pounds - p_1h_base_pounds)
 
         master_today_pct = (tot_today_diff / mb * 100.0) if mb > 0 else 0.0
         master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
@@ -1082,36 +1090,36 @@ def get_data():
                 else: df_5m.index = df_5m.index.tz_convert('UTC')
                 
                 cur_p = df_5m['Close'].iloc[-1]
+                div = 100.0 if t.endswith('.L') and cur_p > 100 else 1.0
+                cur_p_pounds = cur_p / div
                 last_ts = df_5m.index[-1]
                 last_lon = last_ts.tz_convert('Europe/London')
                 
                 t_buys_today_t = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
-                avg_b_today_t = (sum(tr.get('amount', 0) for tr in t_buys_today_t) / sum(tr.get('shares', 1) for tr in t_buys_today_t)) if t_buys_today_t else 0.0
+                avg_b_today_t_pounds = (sum(tr.get('amount', 0) for tr in t_buys_today_t) / sum(tr.get('shares', 1) for tr in t_buys_today_t)) if t_buys_today_t else 0.0
 
                 if now_lon.date() > last_lon.date():
-                    p_today = cur_p
-                    p_1h = cur_p
+                    p_today_pounds = cur_p_pounds
+                    p_1h_pounds = cur_p_pounds
                 else:
                     last_date_str = last_lon.strftime('%Y-%m-%d')
                     prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-                    p_today_mkt = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                    p_today = avg_b_today_t if avg_b_today_t > 0 else p_today_mkt
+                    p_today_mkt_pence = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
+                    p_today_pounds = avg_b_today_t_pounds if avg_b_today_t_pounds > 0 else (p_today_mkt_pence / div)
                     
                     if (now_utc - last_ts).total_seconds() > 4200:
-                        p_1h = cur_p
+                        p_1h_pounds = cur_p_pounds
                     else:
                         target_ts = now_utc - pd.Timedelta(hours=1)
                         prior_df = df_5m[df_5m.index <= target_ts]
-                        p_1h_mkt = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today
-                        p_1h = avg_b_today_t if avg_b_today_t > 0 else p_1h_mkt
+                        p_1h_mkt_pence = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today_mkt_pence
+                        p_1h_pounds = avg_b_today_t_pounds if avg_b_today_t_pounds > 0 else (p_1h_mkt_pence / div)
                 
-                div = 100.0 if t.endswith('.L') and cur_p > 100 else 1.0
+                pv_today = sh_own * (cur_p_pounds - p_today_pounds)
+                pv_1h = sh_own * (cur_p_pounds - p_1h_pounds)
                 
-                pv_today = sh_own * ((cur_p - p_today)/div)
-                pv_1h = sh_own * ((cur_p - p_1h)/div)
-                
-                val_today_start = sh_own * (p_today/div)
-                val_1h_start = sh_own * (p_1h/div)
+                val_today_start = sh_own * p_today_pounds
+                val_1h_start = sh_own * p_1h_pounds
                 
                 pp_today = (pv_today / val_today_start * 100.0) if val_today_start > 0 else 0.0
                 pp_1h = (pv_1h / val_1h_start * 100.0) if val_1h_start > 0 else 0.0
