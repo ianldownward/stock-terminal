@@ -371,15 +371,42 @@
         }
 
         function initGridCharts() {
-            let wl = (globalPortfolioData.watchlist || []).slice(0, 4);
-            if (!wl.length) wl = ['MSTR', 'NVDA', 'TSLA', 'TQQQ'];
+            // 1. Find all stocks currently owned
+            let heldTickers = [];
+            if (globalPortfolioData && globalPortfolioData.holdings) {
+                heldTickers = Object.keys(globalPortfolioData.holdings).filter(t => globalPortfolioData.holdings[t].shares > 0);
+            }
+            
+            // 2. Grab watchlist
+            let wl = globalPortfolioData.watchlist || [];
+            
+            // 3. Prioritize held stocks, fill remainder with watchlist
+            let displayList = [...heldTickers];
+            for (let t of wl) {
+                if (!displayList.includes(t)) displayList.push(t);
+                if (displayList.length >= 4) break;
+            }
+            
+            displayList = displayList.slice(0, 4);
+            if (!displayList.length) displayList = ['MSTR', 'NVDA', 'TSLA', 'TQQQ'];
 
-            wl.forEach((tick, idx) => {
-                let paneEl = document.getElementById(`chart${idx}`);
-                document.getElementById(`title${idx}`).innerText = tick;
-                if (!paneEl) return;
+            // 4. Render 4 panes
+            for (let i = 0; i < 4; i++) {
+                let paneEl = document.getElementById(`chart${i}`);
+                let titleEl = document.getElementById(`title${i}`);
+                if (!paneEl || !titleEl) continue;
+                
+                paneEl.innerHTML = ''; 
+                
+                if (i >= displayList.length) {
+                    titleEl.innerText = 'Empty';
+                    paneEl.innerHTML = '<div style="color:#787e8e; display:flex; justify-content:center; align-items:center; height:100%; font-size:11px;">No Asset</div>';
+                    continue;
+                }
+                
+                let tick = displayList[i];
+                titleEl.innerText = tick;
 
-                paneEl.innerHTML = '';
                 let gc = LightweightCharts.createChart(paneEl, {
                     width: paneEl.clientWidth,
                     height: paneEl.clientHeight,
@@ -391,8 +418,8 @@
                 });
 
                 let gs = gc.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
-                gridCharts[idx] = gc;
-                gridSeries[idx] = gs;
+                gridCharts[i] = gc;
+                gridSeries[i] = gs;
 
                 fetch(`/api/data?t=${tick}&p=5d&i=5m`).then(res => res.json()).then(data => {
                     if (data.ohlc && data.ohlc.length) {
@@ -400,7 +427,7 @@
                         gc.timeScale().fitContent();
                     }
                 });
-            });
+            }
         }
 
         function updateMarketClocks() {
