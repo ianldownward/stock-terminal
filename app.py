@@ -421,12 +421,14 @@ class MarketScoringEngine:
                     pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                     drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
 
-                    if (upper_wick / total_range) >= 0.45:
+                    # RELAXED: Top wick exhaustion increased to 60% to avoid premature exits on volatile crypto/3x assets
+                    if (upper_wick / total_range) >= 0.60:
                         return {'type': 'Wick Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
                                 'reason': f"TOP WICK EXHAUSTION DETECTED. Upper wick made up {((upper_wick/total_range)*100):.1f}% of candle range. Selling peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                                 'status': 'Top Wick Rejection', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Top Exhaustion)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
                     
-                    if drop_from_peak >= 0.40:
+                    # WIDENED: Trailing stop increased to 1.25% to prevent whipsaw noise from killing early runs
+                    if drop_from_peak >= 1.25:
                         return {'type': 'Wick Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
                                 'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                                 'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
@@ -435,7 +437,6 @@ class MarketScoringEngine:
                             'reason': f"HOLDING WICK REVERSAL. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'Holding Reversal', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Reversal)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
-                # 21-EMA TREND FILTER: Blocks buying "falling knives" in active downtrends
                 ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
                 
                 if (lower_wick / total_range) >= 0.35 and current_price > c_low:
