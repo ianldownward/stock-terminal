@@ -1,4 +1,4 @@
-import os, json, time, urllib.request, threading
+import os, json, time, urllib.request, threading, requests
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
@@ -591,9 +591,9 @@ def process_auto_profile(prof_name):
         regime = engine.check_market_regime()
 
         dfs = {}
-        for t in scan_list:
-            df = fetch_yf_data(t, "5d", "5m")
-            if not df.empty: dfs[t] = df
+        def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
             t = t.strip().upper()
@@ -688,16 +688,23 @@ def process_auto_profile(prof_name):
     except Exception: pass
 
 def global_background_worker():
-    # Let Flask server complete startup first
     time.sleep(3)
     while True:
         try:
+            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'SGLN.L', 'SSLN.L', 'GOOGL', 'NFLX', 'TQQQ', 'SOXL', 'NVDL', 'QQQ']
+            
+            def prefetch(tk): 
+                fetch_yf_data(tk, "5d", "5m")
+            
+            with ThreadPoolExecutor(max_workers=5) as ex:
+                ex.map(prefetch, set(bot_tickers))
+
             auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal']
             for prof in auto_profiles:
                 process_auto_profile(prof)
-        except Exception as e:
-            print(f"Background worker error: {e}")
-        time.sleep(15)
+        except Exception as e: 
+            print(f"Background Loop Error: {e}")
+        time.sleep(120)
 
 threading.Thread(target=global_background_worker, daemon=True).start()
 
@@ -820,13 +827,15 @@ def get_recommendations():
     res, engine = [], MarketScoringEngine()
     tickers = ['YCA.L', 'U-UN.TO', 'SGLN.L', 'SSLN.L', 'PHYS', 'PSLV', 'CEF', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'BHP', 'RIO', 'VALE', 'XOM', 'CVX', 'OXY', 'JPM', 'BAC', 'GS', 'PFE', 'JNJ', 'UNH', 'DIS', 'NKE', 'SBUX', 'BA', 'LMT']
     
-    for t in tickers:
-        df = fetch_yf_data(t, "1y", "1d")
-        if not df.empty:
-            cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-            st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
-            st.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
-            res.append(st)
+    def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
+        
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        for t, df in ex.map(fetch_rec, tickers):
+            if not df.empty:
+                cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
+                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
+                st.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
+                res.append(st)
     return jsonify({'recommendations': sorted(res, key=lambda x: x['score'], reverse=True)})
 
 @app.route('/api/data', methods=['GET'])
@@ -840,7 +849,6 @@ def get_data():
         is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
         if not t: t = 'ALL_SHARES'
 
-        # CRITICAL FIX: Update in-memory watchlist and save to DB in ONE single call (eliminates 34 synchronous DB write deadlocks)
         if is_momentum and not wl:
             if 'test g' in active_profile:
                 wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
@@ -902,7 +910,6 @@ def get_data():
         elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
 
         wl_status = {}
-        # Fetch status sequentially using RAM cache for instant UI response
         for tick in wl:
             try:
                 df_stat = fetch_yf_data(tick, "5d", "5m")
@@ -966,7 +973,7 @@ def get_data():
             if wl:
                 colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
                 c_idx = 0
-                for tick in wl[:15]: # Limit performance comparison chart to top 15 tickers for speed
+                for tick in wl[:15]: 
                     df_t = fetch_yf_data(tick, req_p, req_i)
                     if not df_t.empty:
                         if df_t.index.tz is not None: df_t.index = df_t.index.tz_convert('UTC')
