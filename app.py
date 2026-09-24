@@ -36,7 +36,6 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
-        # 5m intraday cached for 115s (syncs with 120s bg loop), daily cached for 5 mins
         cache_duration = 115 if interval in ['1m', '2m', '5m'] else 300
         
         if cache_key in YF_CACHE:
@@ -47,7 +46,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             df = yf.Ticker(ticker, session=yf_session).history(period=period, interval=interval)
             if not df.empty: YF_CACHE[cache_key] = (now, df)
             return df.copy()
-        except: 
+        except Exception: 
             return pd.DataFrame()
 
 def send_push_notification(topic, title, message):
@@ -56,7 +55,7 @@ def send_push_notification(topic, title, message):
         url = f"https://ntfy.sh/{topic.strip()}"
         req = urllib.request.Request(url, data=message.encode('utf-8'), headers={'Title': title})
         urllib.request.urlopen(req, timeout=5)
-    except: pass
+    except Exception: pass
 
 class PortfolioManager:
     def __init__(self):
@@ -65,7 +64,7 @@ class PortfolioManager:
             try:
                 self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
                 self.collection = self.client['stock_terminal']['portfolio']
-            except: self.client = None
+            except Exception: self.client = None
         else:
             self.client = None
             self.filename = 'portfolio.json'
@@ -86,7 +85,7 @@ class PortfolioManager:
                 if doc:
                     doc.pop('_id', None)
                     return doc
-            except: pass
+            except Exception: pass
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, 'r') as f:
@@ -95,7 +94,7 @@ class PortfolioManager:
                         data = {'active_user': 'Ian', 'users': { 'Ian': data }}
                         self.save_data(data)
                     return data
-            except: pass
+            except Exception: pass
         initial = {'active_user': 'Ian', 'users': {'Ian': self.default_user_state('Ian')}}
         self.save_data(initial)
         return initial
@@ -138,11 +137,11 @@ class PortfolioManager:
     def save_data(self, data_to_save):
         if self.client:
             try: self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
-            except: pass
+            except Exception: pass
         else:
             try:
                 with open(self.filename, 'w') as f: json.dump(data_to_save, f, indent=2)
-            except: pass
+            except Exception: pass
 
     def active_username(self): 
         return self.data.get('active_user', 'Ian')
@@ -298,18 +297,23 @@ class PortfolioManager:
 
         total = 0.0
         holds = ud.get('holdings') or {}
-        for t in active_tickers:
+        
+        def fetch_val(t):
             sh = self.get_shares(t, username)
             try:
                 df = fetch_yf_data(t, "1d", "1d")
                 if not df.empty:
                     p = df['Close'].iloc[-1]
                     cps = p / 100.0 if t.endswith('.L') and p > 100 else p
-                    val = round(sh * cps, 2)
-                    total += val
-                    if t in holds and isinstance(holds[t], dict):
-                        holds[t]['manual_val'] = val
-            except: pass
+                    return t, round(sh * cps, 2)
+            except Exception: pass
+            return t, 0.0
+
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            for t, val in ex.map(fetch_val, active_tickers):
+                total += val
+                if t in holds and isinstance(holds[t], dict):
+                    holds[t]['manual_val'] = val
         return round(total, 2)
 
 class MarketScoringEngine:
@@ -354,7 +358,7 @@ class MarketScoringEngine:
                 else: state, color, code = "Overheating (Euphoria)", "#b388ff", "BULL_OVERHEAT"
                 
                 return {'score': score, 'state': state, 'color': color, 'code': code}
-        except: pass
+        except Exception: pass
         return {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL'}
 
     def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test b', regime=None):
@@ -498,7 +502,7 @@ class MarketScoringEngine:
                     u_nav = self.nav_bases.get('U-UN.TO', 28.50)
                     uun_discount = ((u_nav - u_price) / u_nav) * 100.0
                     if uun_discount > 10.0: macro_triggered = True
-            except: pass
+            except Exception: pass
 
         if macro_triggered:
             action_main, action_sub, status, color, tranches = "SELL", "(Sentinel Active)", "MACRO SENTINEL TRIPPED", "#ff3d00", 0
@@ -595,9 +599,9 @@ def process_auto_profile(prof_name):
         regime = engine.check_market_regime()
 
         dfs = {}
-        for t in scan_list:
-            df = fetch_yf_data(t, "5d", "5m")
-            if not df.empty: dfs[t] = df
+        def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
             t = t.strip().upper()
@@ -647,7 +651,7 @@ def process_auto_profile(prof_name):
                 elif st['action_main'] == 'BUY':
                     if is_open:
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
-            except: pass
+            except Exception: pass
 
         max_allowed_holds = 1 if 'test e' in active_profile else 2
         
@@ -689,10 +693,9 @@ def process_auto_profile(prof_name):
                     d['shares'] = int(curr_cash // (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']))
             if d['shares'] > 0:
                 portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'], prof_name)
-    except: pass
+    except Exception: pass
 
 def global_background_worker():
-    # Let Flask server complete startup first
     time.sleep(3)
     while True:
         try:
@@ -707,8 +710,8 @@ def global_background_worker():
             auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal']
             for prof in auto_profiles:
                 process_auto_profile(prof)
-        except Exception as e:
-            print(f"Background worker error: {e}")
+        except Exception as e: 
+            print(f"Background Loop Error: {e}")
         time.sleep(120)
 
 threading.Thread(target=global_background_worker, daemon=True).start()
@@ -832,13 +835,15 @@ def get_recommendations():
     res, engine = [], MarketScoringEngine()
     tickers = ['YCA.L', 'U-UN.TO', 'SGLN.L', 'SSLN.L', 'PHYS', 'PSLV', 'CEF', 'AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'BHP', 'RIO', 'VALE', 'XOM', 'CVX', 'OXY', 'JPM', 'BAC', 'GS', 'PFE', 'JNJ', 'UNH', 'DIS', 'NKE', 'SBUX', 'BA', 'LMT']
     
-    for t in tickers:
-        df = fetch_yf_data(t, "1y", "1d")
-        if not df.empty:
-            cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-            st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
-            st.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
-            res.append(st)
+    def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
+        
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        for t, df in ex.map(fetch_rec, tickers):
+            if not df.empty:
+                cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
+                st = engine.score_nav_asset(t, cur, (df['Volume'].iloc[-1]/avg_vol) if avg_vol > 0 else 1.0) if t in engine.nav_bases else engine.score_equity(df, cur)
+                st.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
+                res.append(st)
     return jsonify({'recommendations': sorted(res, key=lambda x: x['score'], reverse=True)})
 
 @app.route('/api/data', methods=['GET'])
@@ -872,8 +877,15 @@ def get_data():
         active_holds = list(set([tr.get('ticker') for tr in hist if isinstance(tr, dict) and portfolio_store.get_shares(tr.get('ticker')) > 0]))
 
         pnl_dfs_5m = {}
-        for tk in active_holds:
-            pnl_dfs_5m[tk] = fetch_yf_data(tk, "5d", "5m")
+        pnl_dfs_1d = {}
+        # CRITICAL FIX: Safe parallel fetching reinstated to prevent cold-boot timeouts
+        def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
+        def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
+        
+        if active_holds:
+            with ThreadPoolExecutor(max_workers=10) as ex:
+                for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
+                for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
 
         net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
         init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
@@ -913,23 +925,23 @@ def get_data():
         elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
 
         wl_status = {}
-        for tick in wl:
-            try:
-                df_stat = fetch_yf_data(tick, "5d", "5m")
-                if df_stat.empty:
-                    wl_status[tick] = 'closed'
-                    continue
-                if df_stat.index.tz is not None: df_stat.index = df_stat.index.tz_convert('UTC')
-                if (time.time() - df_stat.index[-1].timestamp()) > 1800:
-                    wl_status[tick] = 'closed'
-                elif len(df_stat) > 1:
-                    if df_stat['Close'].iloc[-1] > df_stat['Close'].iloc[-2]: wl_status[tick] = 'up'
-                    elif df_stat['Close'].iloc[-1] < df_stat['Close'].iloc[-2]: wl_status[tick] = 'down'
-                    else: wl_status[tick] = 'closed'
-                else: wl_status[tick] = 'closed'
-            except:
-                wl_status[tick] = 'closed'
+        if wl:
+            def check_status(tick):
+                try:
+                    df_stat = fetch_yf_data(tick, "5d", "5m")
+                    if df_stat.empty: return tick, 'closed'
+                    if df_stat.index.tz is not None: df_stat.index = df_stat.index.tz_convert('UTC')
+                    if (time.time() - df_stat.index[-1].timestamp()) > 1800: return tick, 'closed' 
+                    if len(df_stat) > 1:
+                        if df_stat['Close'].iloc[-1] > df_stat['Close'].iloc[-2]: return tick, 'up'
+                        elif df_stat['Close'].iloc[-1] < df_stat['Close'].iloc[-2]: return tick, 'down'
+                    return tick, 'closed'
+                except Exception: return tick, 'closed'
 
+            with ThreadPoolExecutor(max_workers=10) as ex:
+                for tick, status in ex.map(check_status, wl):
+                    wl_status[tick] = status
+            
         tot_today_diff, tot_1h_diff = 0.0, 0.0
         now_utc = pd.Timestamp.now(tz='UTC')
         now_lon = pd.Timestamp.now(tz='Europe/London')
@@ -974,11 +986,16 @@ def get_data():
         if t == 'ALL_SHARES':
             lines = []
             if wl:
+                def fetch_t(tick): return tick, fetch_yf_data(tick, req_p, req_i)
+                dfs = {}
+                with ThreadPoolExecutor(max_workers=10) as ex:
+                    for tick, df_t in ex.map(fetch_t, wl[:15]): dfs[tick] = df_t
+                
                 colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
                 c_idx = 0
                 for tick in wl[:15]: 
-                    df_t = fetch_yf_data(tick, req_p, req_i)
-                    if not df_t.empty:
+                    df_t = dfs.get(tick)
+                    if df_t is not None and not df_t.empty:
                         if df_t.index.tz is not None: df_t.index = df_t.index.tz_convert('UTC')
                         
                         base_price = df_t['Close'].iloc[0]
