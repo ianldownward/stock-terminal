@@ -1,4 +1,4 @@
-import os, json, time, urllib.request, threading
+import os, json, time, urllib.request, threading, requests
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
@@ -7,7 +7,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
-# Thundering Herd Protection RAM Cache
+class TimeoutSession(requests.Session):
+    def request(self, method, url, **kwargs):
+        kwargs.setdefault('timeout', 5.0)
+        return super(TimeoutSession, self).request(method, url, **kwargs)
+
+yf_session = TimeoutSession()
+
 YF_CACHE = {}
 FETCH_LOCKS = {}
 GLOBAL_LOCK = threading.Lock()
@@ -28,29 +34,18 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
-        # Intraday cached for 115s (syncs with 120s bg loop), daily cached for 5 mins
         cache_duration = 115 if interval in ['1m', '2m', '5m'] else 300
         
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
-            if not df.empty and (now - cached_time < cache_duration): 
-                return df.copy()
+            if not df.empty and (now - cached_time < cache_duration): return df.copy()
                 
         try:
-            # Pure, crash-proof yfinance fetch. Rate limits avoided by capping max_workers globally.
-            df = yf.Ticker(ticker).history(period=period, interval=interval)
-            if not df.empty: 
-                YF_CACHE[cache_key] = (time.time(), df)
+            df = yf.Ticker(ticker, session=yf_session).history(period=period, interval=interval)
+            if not df.empty: YF_CACHE[cache_key] = (now, df)
             return df.copy()
         except Exception: 
-            pass
-
-    # Fallback to stale data if available
-    with GLOBAL_LOCK:
-        if cache_key in YF_CACHE:
-            return YF_CACHE[cache_key][1].copy()
-            
-    return pd.DataFrame()
+            return pd.DataFrame()
 
 def send_push_notification(topic, title, message):
     if not topic: return
@@ -62,6 +57,7 @@ def send_push_notification(topic, title, message):
 
 class PortfolioManager:
     def __init__(self):
+        self.trade_lock = threading.Lock()
         self.mongo_uri = os.environ.get('MONGO_URI')
         if self.mongo_uri:
             try:
@@ -244,32 +240,55 @@ class PortfolioManager:
         return curr_tot
 
     def execute_trade(self, ticker, action_type, shares, price, username=None):
-        self.reload()
-        if not ticker or shares <= 0: return None
-        ud = self.user_data(username)
-        shares, price = int(shares), round(float(price), 2)
-        cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
-        tot_amt = round(shares * cost_per_sh, 2)
-        
-        is_short = ticker in ['SQQQ', '3SUS.L']
-        trade_type = 'SHORT' if is_short else 'LONG'
+        with self.trade_lock:
+            self.reload()
+            if not ticker or shares <= 0: return None
+            
+            ud = self.user_data(username)
+            action = 'BUY' if 'BUY' in action_type.upper() else 'SELL'
+            cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
+            
+            if action == 'SELL':
+                curr_tot = self.get_shares(ticker, username)
+                if curr_tot < shares: 
+                    shares = curr_tot
+                if shares <= 0: return None
+                
+            if action == 'BUY':
+                mb = ud.get('master_budget', 5000.0 if 'test' in (username or '').lower() else 10000.0)
+                hist = ud.get('history') or []
+                init_pos = ud.get('initial_positions') or {}
+                net_hist = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if isinstance(tr, dict))
+                init_man = sum(pos.get('manual_val', 0.0) for pos in init_pos.values() if isinstance(pos, dict))
+                avail_cash = mb + net_hist - init_man
+                
+                if (shares * cost_per_sh) > avail_cash:
+                    shares = int(avail_cash // cost_per_sh)
+                if shares <= 0: return None
+                
+            tot_amt = round(shares * cost_per_sh, 2)
+            
+            is_short = ticker in ['SQQQ', '3SUS.L']
+            trade_type = 'SHORT' if is_short else 'LONG'
 
-        now = pd.Timestamp.now(tz='Europe/London')
-        entry = {'id': str(int(time.time() * 1000)), 'ticker': ticker, 'trade_type': trade_type, 'action': 'BUY' if 'BUY' in action_type.upper() else 'SELL', 'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'), 'date_str': now.strftime('%Y-%m-%d'), 'timestamp': int(now.timestamp())}
-        if 'history' not in ud: ud['history'] = []
-        ud['history'].insert(0, entry)
+            now = pd.Timestamp.now(tz='Europe/London')
+            entry = {'id': str(int(time.time() * 1000)), 'ticker': ticker, 'trade_type': trade_type, 'action': action, 'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'), 'date_str': now.strftime('%Y-%m-%d'), 'timestamp': int(now.timestamp())}
+            
+            if 'history' not in ud: ud['history'] = []
+            ud['history'].insert(0, entry)
 
-        curr_tot = self.get_shares(ticker, username)
-        if 'holdings' not in ud: ud['holdings'] = {}
-        if curr_tot > 0: 
-            hw = (ud['holdings'].get(ticker) or {}).get('high_water', price)
-            ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2), 'high_water': max(hw, price)}
-        else: ud['holdings'].pop(ticker, None)
-        self.save_data(self.data)
-        
-        ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
-        if ntfy_topic: send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
-        return entry
+            curr_tot = self.get_shares(ticker, username)
+            if 'holdings' not in ud: ud['holdings'] = {}
+            if curr_tot > 0: 
+                hw = (ud['holdings'].get(ticker) or {}).get('high_water', price)
+                ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2), 'high_water': max(hw, price)}
+            else: ud['holdings'].pop(ticker, None)
+            
+            self.save_data(self.data)
+            
+            ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
+            if ntfy_topic: send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
+            return entry
 
     def undo_trade(self, trade_id):
         self.reload()
@@ -300,23 +319,18 @@ class PortfolioManager:
 
         total = 0.0
         holds = ud.get('holdings') or {}
-        
-        def fetch_val(t):
+        for t in active_tickers:
             sh = self.get_shares(t, username)
             try:
                 df = fetch_yf_data(t, "1d", "1d")
                 if not df.empty:
                     p = df['Close'].iloc[-1]
                     cps = p / 100.0 if t.endswith('.L') and p > 100 else p
-                    return t, round(sh * cps, 2)
+                    val = round(sh * cps, 2)
+                    total += val
+                    if t in holds and isinstance(holds[t], dict):
+                        holds[t]['manual_val'] = val
             except Exception: pass
-            return t, 0.0
-
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            for t, val in ex.map(fetch_val, active_tickers):
-                total += val
-                if t in holds and isinstance(holds[t], dict):
-                    holds[t]['manual_val'] = val
         return round(total, 2)
 
 class MarketScoringEngine:
@@ -409,7 +423,7 @@ class MarketScoringEngine:
                     pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                     drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
 
-                    if (upper_wick / total_range) >= 0.50:
+                    if (upper_wick / total_range) >= 0.45:
                         return {'type': 'Wick Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
                                 'reason': f"TOP WICK EXHAUSTION DETECTED. Upper wick made up {((upper_wick/total_range)*100):.1f}% of candle range. Selling peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                                 'status': 'Top Wick Rejection', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Top Exhaustion)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
@@ -423,14 +437,15 @@ class MarketScoringEngine:
                             'reason': f"HOLDING WICK REVERSAL. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'Holding Reversal', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Reversal)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
-                if (lower_wick / total_range) >= 0.50 and current_price > c_low:
-                    wick_score = min(100, max(65, round(60 + (lower_wick / total_range) * 40)))
+                # OPTIMIZED: Lowered lower-wick entry threshold from 50% to 35% to eliminate cash drag during steady uptrends
+                if (lower_wick / total_range) >= 0.35 and current_price > c_low:
+                    wick_score = min(100, max(60, round(50 + (lower_wick / total_range) * 50)))
                     return {'type': 'Wick Reversal', 'score': wick_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
                             'reason': f"BOTTOM WICK REVERSAL: Buyers rejected low prices. Lower wick ratio is {((lower_wick/total_range)*100):.1f}%.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
                             'status': 'Bottom Wick Reversal', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Wick Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
 
             return {'type': 'Wick Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars (threshold: >= 35%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Scanning Wicks', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Wick Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof or 'test f' in prof else 0.50))
@@ -600,13 +615,10 @@ def process_auto_profile(prof_name):
         dirs, buys, held_scores = [], [], []
         MIN_BUY_VALUE = 20.0
         regime = engine.check_market_regime()
-        
-        # FIX: Track what is being sold to prevent Phantom Double-Sells
-        pending_sells = set()
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        with ThreadPoolExecutor(max_workers=3) as ex:
+        with ThreadPoolExecutor(max_workers=4) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
@@ -654,7 +666,6 @@ def process_auto_profile(prof_name):
                 if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
                     if is_open:
                         dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
-                        pending_sells.add(t) # Mark as sold
                 elif st['action_main'] == 'BUY':
                     if is_open:
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
@@ -662,27 +673,18 @@ def process_auto_profile(prof_name):
 
         max_allowed_holds = 1 if 'test e' in active_profile else 2
         
-        # Rotation logic
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
             
             if top_candidate['s'] >= (weakest_holding['score'] + 15) and top_candidate['s'] >= 65:
-                # FIX: Only rotate if the weakest holding wasn't already sold this cycle
-                if weakest_holding['ticker'] not in pending_sells:
-                    dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
-                    rem_cash += weakest_holding['value']
-                    pending_sells.add(weakest_holding['ticker'])
+                dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
 
-        # Over-capacity logic
         if len(held_scores) > max_allowed_holds:
             held_scores.sort(key=lambda x: x['score'])
             for i in range(len(held_scores) - max_allowed_holds):
                 weakest = held_scores[i]
-                # FIX: Only trim if the holding wasn't already sold this cycle
-                if weakest['ticker'] not in pending_sells:
-                    dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
-                    pending_sells.add(weakest['ticker'])
+                dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
 
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
@@ -700,12 +702,6 @@ def process_auto_profile(prof_name):
                     dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
         for d in dirs:
-            if d['action'] == 'BUY':
-                curr_cb = sum((init_pos.get(w) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if isinstance(tr, dict) and tr.get('ticker')==w) for w in [tk for tk, hd in ud.get('holdings', {}).items() if isinstance(hd, dict) and hd.get('shares', 0) > 0])
-                curr_cash = mb - curr_cb
-                if curr_cash < MIN_BUY_VALUE: continue
-                if d['amount'] > curr_cash:
-                    d['shares'] = int(curr_cash // (d['price'] / 100.0 if d['ticker'].endswith('.L') else d['price']))
             if d['shares'] > 0:
                 portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'], prof_name)
     except Exception: pass
@@ -719,8 +715,7 @@ def global_background_worker():
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
             
-            # SAFE THREAD CAP: Max 3 to prevent OOM/CPU crash
-            with ThreadPoolExecutor(max_workers=3) as ex:
+            with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
             auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal']
@@ -899,7 +894,6 @@ def get_data():
         def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
         
         if active_holds:
-            # SAFE THREAD CAP
             with ThreadPoolExecutor(max_workers=4) as ex:
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
                 for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
