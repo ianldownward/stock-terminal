@@ -106,7 +106,6 @@
         .tranche-bar.active { background: #00c853; }
         .tranche-bar.inactive { background: #363c4a; }
 
-        /* SENTIMENT THERMOMETER STYLING */
         .thermo-container { margin-top: 6px; width: 100%; background: #0f1115; border: 1px solid #262b36; border-radius: 6px; padding: 4px; }
         .thermo-bar-bg { width: 100%; height: 8px; background: #262b36; border-radius: 4px; overflow: hidden; position: relative; }
         .thermo-bar-fill { height: 100%; width: 50%; background: #8a8a9e; transition: width 0.4s ease, background-color 0.4s ease; border-radius: 4px; }
@@ -259,7 +258,6 @@
                 </div>
             </div>
             
-            <!-- SENTIMENT THERMOMETER CARD -->
             <div class="card clickable-card" onclick="showAnomalyReason()">
                 <h3>Market Sentiment ⓘ</h3>
                 <div class="thermo-container">
@@ -698,7 +696,7 @@
                     let badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '';
                     
                     let li = document.createElement('li'); li.className = 'history-item';
-                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${i.ticker} ${badge}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
+                    li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px;">${i.ticker}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`;
                     aui.appendChild(li);
                 });
                 
@@ -1009,7 +1007,6 @@
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
-                // INCREASED TIMEOUT TO 25 SECONDS FOR COLD WAKES
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 25000);
 
@@ -1066,7 +1063,6 @@
 
                 document.getElementById('activeTitle').innerText = p.name; currentAnomalyReason = p.metrics.reason;
 
-                // HEADER BADGE UPDATE
                 let dirBadgeEl = document.getElementById('activeDirectionBadge');
                 if (currentTicker !== 'ALL_SHARES') {
                     let isShort = p.metrics.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(currentTicker);
