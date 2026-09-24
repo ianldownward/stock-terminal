@@ -7,9 +7,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
-# CRITICAL FIX: Custom requests session with strict timeout to prevent yfinance deadlocks
-yf_session = requests.Session()
-yf_session.request = lambda method, url, **kwargs: requests.Session.request(yf_session, method, url, timeout=5, **kwargs)
+# CRITICAL FIX: Safe requests.Session subclass to enforce timeouts without causing TypeErrors in yfinance
+class TimeoutSession(requests.Session):
+    def request(self, method, url, **kwargs):
+        kwargs.setdefault('timeout', 5.0)
+        return super(TimeoutSession, self).request(method, url, **kwargs)
+
+yf_session = TimeoutSession()
 
 # Thundering Herd Protection
 YF_CACHE = {}
@@ -32,7 +36,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
-        # Increased cache to 45 seconds to minimize network hits across profiles
+        # Cache length set to 45 seconds to drastically reduce network load on 34 items
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
             if not df.empty and (now - cached_time < 45): return df.copy()
@@ -289,22 +293,25 @@ class PortfolioManager:
         
         if not active_tickers:
             return 0.0
-
-        # CRITICAL FIX: Removed thread explosion to prevent deadlock during leaderboard build
-        total = 0.0
-        holds = ud.get('holdings') or {}
-        for t in active_tickers:
+            
+        def fetch_val(t):
             sh = self.get_shares(t, username)
             try:
                 df = fetch_yf_data(t, "1d", "1d")
                 if not df.empty:
                     p = df['Close'].iloc[-1]
                     cps = p / 100.0 if t.endswith('.L') and p > 100 else p
-                    val = round(sh * cps, 2)
-                    total += val
-                    if t in holds and isinstance(holds[t], dict):
-                        holds[t]['manual_val'] = val
+                    return t, round(sh * cps, 2)
             except: pass
+            return t, 0.0
+
+        total = 0.0
+        holds = ud.get('holdings') or {}
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            for t, val in ex.map(fetch_val, active_tickers):
+                total += val
+                if t in holds and isinstance(holds[t], dict):
+                    holds[t]['manual_val'] = val
         return round(total, 2)
 
 class MarketScoringEngine:
@@ -591,8 +598,7 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        # Reduced background workers to safe minimum (5) to avoid throttling
-        with ThreadPoolExecutor(max_workers=5) as ex:
+        with ThreadPoolExecutor(max_workers=8) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
@@ -819,7 +825,7 @@ def get_recommendations():
     
     def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
-    with ThreadPoolExecutor(max_workers=5) as ex:
+    with ThreadPoolExecutor(max_workers=8) as ex:
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
@@ -866,7 +872,7 @@ def get_data():
         def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
         
         if active_holds:
-            with ThreadPoolExecutor(max_workers=5) as ex:
+            with ThreadPoolExecutor(max_workers=8) as ex:
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
                 for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
 
@@ -921,7 +927,7 @@ def get_data():
                     return tick, 'closed'
                 except: return tick, 'closed'
 
-            with ThreadPoolExecutor(max_workers=5) as ex:
+            with ThreadPoolExecutor(max_workers=8) as ex:
                 for tick, status in ex.map(check_status, wl):
                     wl_status[tick] = status
             
@@ -973,7 +979,7 @@ def get_data():
                     return tick, fetch_yf_data(tick, req_p, req_i)
                 
                 dfs = {}
-                with ThreadPoolExecutor(max_workers=5) as ex:
+                with ThreadPoolExecutor(max_workers=8) as ex:
                     for tick, df_t in ex.map(fetch_t, wl):
                         dfs[tick] = df_t
                 
