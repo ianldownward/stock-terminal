@@ -600,10 +600,12 @@ def process_auto_profile(prof_name):
         dirs, buys, held_scores = [], [], []
         MIN_BUY_VALUE = 20.0
         regime = engine.check_market_regime()
+        
+        # FIX: Track what is being sold to prevent Phantom Double-Sells
+        pending_sells = set()
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        # SAFE THREAD CAP: Max 3 to prevent memory/CPU exhaustion on Render
         with ThreadPoolExecutor(max_workers=3) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
@@ -652,6 +654,7 @@ def process_auto_profile(prof_name):
                 if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
                     if is_open:
                         dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
+                        pending_sells.add(t) # Mark as sold
                 elif st['action_main'] == 'BUY':
                     if is_open:
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
@@ -659,19 +662,27 @@ def process_auto_profile(prof_name):
 
         max_allowed_holds = 1 if 'test e' in active_profile else 2
         
+        # Rotation logic
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
             
             if top_candidate['s'] >= (weakest_holding['score'] + 15) and top_candidate['s'] >= 65:
-                dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
-                rem_cash += weakest_holding['value']
+                # FIX: Only rotate if the weakest holding wasn't already sold this cycle
+                if weakest_holding['ticker'] not in pending_sells:
+                    dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
+                    rem_cash += weakest_holding['value']
+                    pending_sells.add(weakest_holding['ticker'])
 
+        # Over-capacity logic
         if len(held_scores) > max_allowed_holds:
             held_scores.sort(key=lambda x: x['score'])
             for i in range(len(held_scores) - max_allowed_holds):
                 weakest = held_scores[i]
-                dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
+                # FIX: Only trim if the holding wasn't already sold this cycle
+                if weakest['ticker'] not in pending_sells:
+                    dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
+                    pending_sells.add(weakest['ticker'])
 
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
