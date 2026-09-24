@@ -1,4 +1,5 @@
-import os, json, time, urllib.request, threading
+import os, json, time, urllib.request, threading, re
+import xml.etree.ElementTree as ET
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
@@ -10,6 +11,7 @@ app = Flask(__name__)
 YF_CACHE = {}
 FETCH_LOCKS = {}
 GLOBAL_LOCK = threading.Lock()
+NEWS_CACHE = {}
 
 def fetch_yf_data(ticker, period="1y", interval="1d"):
     if not interval or interval == 'undefined': interval = "1d"
@@ -39,6 +41,47 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             return df.copy()
         except Exception: 
             return pd.DataFrame()
+
+def fetch_news_sentiment(ticker):
+    now = time.time()
+    if ticker in NEWS_CACHE:
+        cached_time, score, headline_count, top_headline = NEWS_CACHE[ticker]
+        if now - cached_time < 900: # Cache news for 15 mins
+            return score, headline_count, top_headline
+
+    clean_ticker = ticker.split('.')[0]
+    rss_url = f"https://news.google.com/rss/search?q={clean_ticker}+stock+when:1d&hl=en-US&gl=US&ceid=US:en"
+    
+    bullish_words = ['surge', 'surges', 'jump', 'jumps', 'record', 'high', 'rally', 'rallies', 'beat', 'beats', 'upgrade', 'upgraded', 'breakout', 'bullish', 'growth', 'gain', 'gains', 'soar', 'soars', 'ai', 'partnership', 'revenue']
+    bearish_words = ['plunge', 'plunges', 'drop', 'drops', 'fall', 'falls', 'crash', 'downgrade', 'downgraded', 'miss', 'misses', 'lawsuit', 'investigation', 'slump', 'bearish', 'decline', 'declines', 'sink', 'sinks', 'warning', 'risk']
+
+    score = 0
+    headline_count = 0
+    top_headline = "No recent headlines found."
+
+    try:
+        req = urllib.request.Request(rss_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=4) as response:
+            xml_data = response.read()
+            root = ET.fromstring(xml_data)
+            items = root.findall('.//item')
+            
+            headline_count = len(items)
+            if items:
+                top_headline = items[0].find('title').text if items[0].find('title') is not None else top_headline
+
+            for item in items[:10]: # Analyze top 10 headlines
+                title = item.find('title').text.lower() if item.find('title') is not None else ''
+                words = re.findall(r'\b\w+\b', title)
+                for w in words:
+                    if w in bullish_words: score += 12
+                    elif w in bearish_words: score -= 15
+                    
+        score = min(100, max(-100, score))
+        NEWS_CACHE[ticker] = (now, score, headline_count, top_headline)
+        return score, headline_count, top_headline
+    except Exception:
+        return 0, 0, "News feed temporarily unavailable."
 
 def send_push_notification(topic, title, message):
     if not topic: return
@@ -100,7 +143,8 @@ class PortfolioManager:
             default_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test B - Momentum (UK & US)', 
                 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep',
-                'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal'
+                'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal',
+                'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -119,7 +163,7 @@ class PortfolioManager:
                     needs_save = True
                     
             if self.data.get('active_user') not in self.data['users']:
-                self.data['active_user'] = 'Test B - Momentum (UK & US)'
+                self.data['active_user'] = 'Test I - Ultimate Hybrid'
                 needs_save = True
             
             if needs_save: self.save_data(self.data)
@@ -338,7 +382,7 @@ class MarketScoringEngine:
             'YCA.L': 'Yellow Cake plc', 'U-UN.TO': 'Sprott Physical Uranium Trust', 'PHYS': 'Sprott Physical Gold Trust',
             'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares',
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
-            'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
+            'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta Platforms', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
             'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ',
             'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'SQQQ': 'ProShares UltraPro Short QQQ (3x Short)',
             '3SUS.L': 'WisdomTree US NASDAQ 3x Short', 'TSM': 'TSMC ADR', 'SONY': 'Sony Group', 'BABA': 'Alibaba Group',
@@ -390,28 +434,94 @@ class MarketScoringEngine:
 
         prof = profile.lower()
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
-
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_us_stock = not ticker.endswith('.L')
 
+        # --- TEST J: NEWS SENTIMENT AI PROFILE ---
+        if 'test j' in prof:
+            sent_score, h_count, top_head = fetch_news_sentiment(ticker)
+            
+            if avg_buy_price > 0 and highest_price > 0:
+                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
+
+                if sent_score <= -30:
+                    return {'type': 'News AI', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                            'reason': f"BEARISH NEWS SENTIMENT (-{abs(sent_score)} pts). Headiness: '{top_head[:60]}...'. Exiting position immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'status': 'Bearish Media Alert', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(News Exit)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
+
+                if drop_from_peak >= 1.50:
+                    return {'type': 'News AI', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                            'reason': f"NEWS TRAILING STOP. Dropped {drop_from_peak:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
+
+                return {'type': 'News AI', 'score': 85, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
+                        'reason': f"RIDING MEDIA MOMENTUM ({sent_score:+d} pts). Top News: '{top_head[:60]}...'", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Riding News Trend', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Media Supported)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+
+            if sent_score >= 20 and pct_change_5d > 0:
+                return {'type': 'News AI', 'score': min(100, 50 + sent_score), 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
+                        'reason': f"BULLISH MEDIA CATALYST (+{sent_score} pts across {h_count} headlines). Headline: '{top_head[:60]}...'", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.03, 2),
+                        'status': 'Bullish News Surge', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Media Catalyst)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+
+            return {'type': 'News AI', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                    'reason': f"Scanning media feeds for {ticker} catalysts (Current Sentiment: {sent_score:+d} pts). Top: '{top_head[:50]}...'", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Scanning News AI', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Catalyst)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
+
+        # --- TEST I: ULTIMATE HYBRID PROFILE ---
+        if 'test i' in prof:
+            avg_vol = df_5m['Volume'].tail(20).mean()
+            cur_vol = df_5m['Volume'].iloc[-1]
+            vol_surge = (cur_vol / avg_vol) if avg_vol > 0 else 1.0
+            ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+
+            if avg_buy_price > 0 and highest_price > 0:
+                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
+
+                if drop_from_peak >= 1.00:
+                    return {'type': 'Ultimate Hybrid', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                            'reason': f"HYBRID TRAILING STOP (-1.00% from peak of £{highest_price:.2f}). Securing gains.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
+
+                return {'type': 'Ultimate Hybrid', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
+                        'reason': f"HOLDING HYBRID WINNER. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Riding Trend', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Position Active)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+
+            if regime['code'] in ['BULL', 'BULL_OVERHEAT'] and current_price >= ema21 and vol_surge >= 1.2:
+                hybrid_score = min(100, max(60, round(60 + (vol_surge - 1.0) * 20 + pct_change_5d)))
+                return {'type': 'Ultimate Hybrid', 'score': hybrid_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
+                        'reason': f"ULTIMATE HYBRID SIGNAL: Market Warm ({regime['score']}/100) + Vol Surge ({vol_surge:.1f}x) + Price > 21-EMA.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.03, 2),
+                        'status': 'Hybrid Buy Signal', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(High Conviction)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+
+            return {'type': 'Ultimate Hybrid', 'score': 15, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                    'reason': f"Awaiting Hybrid Setup (Regime: {regime['state']}, Vol Surge: {vol_surge:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Awaiting Confluence', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
+
+        # --- EOD & CAPITAL UNLOCK LOCKS ---
         if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 if pnl_pct < 0.30:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
-                            'reason': "US PRE-CLOSE CAPITAL UNLOCK: Liquidating weak US stock before 9:00 PM BST close to free capital for UK morning open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'reason': "US PRE-CLOSE CAPITAL UNLOCK: Freeing capital for UK morning open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'US Pre-Close Unlock', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(UK Capital Unlock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
-        if 'test f' in prof and now_uk.hour == 20 and now_uk.minute >= 55:
+        if ('test f' in prof or 'test i' in prof) and now_uk.hour == 20 and now_uk.minute >= 55:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                    'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating position to 100% cash before 9:00 PM BST close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating to 100% cash before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
+        # --- TEST H: WICK REVERSAL (OPTIMIZED WITH VOLUME) ---
         if 'test h' in prof:
             last_candle = df_5m.iloc[-2]
             c_open, c_close = last_candle['Open'], last_candle['Close']
             c_high, c_low = last_candle['High'], last_candle['Low']
             total_range = c_high - c_low
+
+            avg_vol = df_5m['Volume'].tail(20).mean()
+            cur_vol = df_5m['Volume'].iloc[-1]
+            vol_ratio = (cur_vol / avg_vol) if avg_vol > 0 else 1.0
 
             if total_range > 0:
                 upper_wick = c_high - max(c_open, c_close)
@@ -421,16 +531,14 @@ class MarketScoringEngine:
                     pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                     drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
 
-                    # RELAXED: Top wick exhaustion increased to 60% to avoid premature exits on volatile crypto/3x assets
                     if (upper_wick / total_range) >= 0.60:
                         return {'type': 'Wick Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
-                                'reason': f"TOP WICK EXHAUSTION DETECTED. Upper wick made up {((upper_wick/total_range)*100):.1f}% of candle range. Selling peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                                'reason': f"TOP WICK EXHAUSTION DETECTED ({((upper_wick/total_range)*100):.1f}% wick). Selling peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                                 'status': 'Top Wick Rejection', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Top Exhaustion)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
                     
-                    # WIDENED: Trailing stop increased to 1.25% to prevent whipsaw noise from killing early runs
                     if drop_from_peak >= 1.25:
                         return {'type': 'Wick Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
-                                'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                                'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                                 'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
                     return {'type': 'Wick Reversal', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
@@ -439,21 +547,19 @@ class MarketScoringEngine:
 
                 ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
                 
-                if (lower_wick / total_range) >= 0.35 and current_price > c_low:
+                # Upgraded: Requires Volume Surge >= 1.2x to confirm bottom wick buyers
+                if (lower_wick / total_range) >= 0.35 and current_price > c_low and vol_ratio >= 1.2:
                     if current_price >= ema21:
                         wick_score = min(100, max(60, round(50 + (lower_wick / total_range) * 50)))
                         return {'type': 'Wick Reversal', 'score': wick_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
-                                'reason': f"BOTTOM WICK REVERSAL: Buyers rejected low prices. Lower wick ratio is {((lower_wick/total_range)*100):.1f}%. Trend supported (> 21-EMA).", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
+                                'reason': f"CONFIRMED WICK REVERSAL: Lower wick {((lower_wick/total_range)*100):.1f}% + Volume Surge ({vol_ratio:.1f}x).", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
                                 'status': 'Bottom Wick Reversal', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Wick Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-                    else:
-                        return {'type': 'Wick Reversal', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                                'reason': f"DOWNTREND BLOCKED: Bottom wick detected ({(lower_wick/total_range)*100:.1f}%), but price is actively falling below the 21-EMA. Avoiding falling knife.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                                'status': 'Trend Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Downtrend)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
             return {'type': 'Wick Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars (threshold: >= 35%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'Scanning Wicks', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Wick Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
+                    'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars with Volume > 1.2x.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Scanning Wicks', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
+        # STANDARD MOMENTUM PROFILES
         trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof or 'test f' in prof else 0.50))
         hard_pct = -0.50 if 'test d' in prof else -1.00
 
@@ -463,7 +569,7 @@ class MarketScoringEngine:
 
             if drop_from_peak_pct >= trail_pct:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"+{pnl_pct:.2f}%" if pnl_pct > 0 else f"{pnl_pct:.2f}%",
-                        'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak of £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
             
             if pnl_pct <= hard_pct: 
@@ -472,7 +578,7 @@ class MarketScoringEngine:
                         'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
 
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
-                    'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Trailing Drop: -{drop_from_peak_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
         if 'test g' in prof:
@@ -487,7 +593,7 @@ class MarketScoringEngine:
 
         elif regime['code'] in ['BEAR', 'BEAR_FREEZE']:
             return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                    'reason': f"SENTIMENT THERMOMETER BLOCK ({regime['score']}/100 - {regime['state']}): QQQ in pullback. Tech buys blocked to defend cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'reason': f"SENTIMENT THERMOMETER BLOCK ({regime['score']}/100 - {regime['state']}): QQQ in pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': regime['state'], 'color': regime['color'], 'action_main': 'HOLD / WAIT', 'action_sub': '(Market Cooling)', 'action_color': regime['color'], 'regime': regime, 'trade_type': trade_type}
 
         ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
@@ -500,7 +606,7 @@ class MarketScoringEngine:
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
             tranches, action_main, action_sub = 1, "BUY", f"({trade_type} Surge)"
             status, color, action_color = f"Fast {trade_type} Surge", "#00c853", "#00c853"
-            reason = f"SURGE DETECTED ({trade_type}): 9-EMA ({ema9:.2f}) > 21-EMA ({ema21:.2f}), RSI {rsi:.1f}."
+            reason = f"SURGE DETECTED ({trade_type}): 9-EMA > 21-EMA, RSI {rsi:.1f}."
         else:
             buy_score, tranches = 10, 0
             action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
@@ -530,7 +636,7 @@ class MarketScoringEngine:
 
         if macro_triggered:
             action_main, action_sub, status, color, tranches = "SELL", "(Sentinel Active)", "MACRO SENTINEL TRIPPED", "#ff3d00", 0
-            reason = f"EMERGENCY STOP: Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%). Liquidating to 0 tranches."
+            reason = f"EMERGENCY STOP: Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%)."
             action_color = "#ff3d00"
         elif implied_discount <= 5.0 and implied_discount > -50.0:
             action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", "Target Reached", "#ff3d00", 0
@@ -594,13 +700,13 @@ def process_auto_profile(prof_name):
         ud = portfolio_store.user_data(prof_name)
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
         if not is_momentum: return
 
         if 'test g' in active_profile:
             scan_list = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
-        elif 'test h' in active_profile:
-            scan_list = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
+        elif 'test h' in active_profile or 'test i' in active_profile or 'test j' in active_profile:
+            scan_list = ['META', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
         elif 'test c' in active_profile:
             scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
         else:
@@ -693,7 +799,7 @@ def process_auto_profile(prof_name):
                 dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
 
         now_uk = pd.Timestamp.now(tz='Europe/London')
-        is_eod_blocked = ('test f' in active_profile and now_uk.hour == 20 and now_uk.minute >= 50)
+        is_eod_blocked = (('test f' in active_profile or 'test i' in active_profile) and now_uk.hour == 20 and now_uk.minute >= 50)
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
@@ -724,7 +830,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal']
+            auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal', 'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
@@ -822,7 +928,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
         df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         df.name = t
@@ -871,14 +977,14 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
         if not t: t = 'ALL_SHARES'
 
         if is_momentum and not wl:
             if 'test g' in active_profile:
                 wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
-            elif 'test h' in active_profile:
-                wl = ['MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
+            elif 'test h' in active_profile or 'test i' in active_profile or 'test j' in active_profile:
+                wl = ['META', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
             elif 'test c' in active_profile:
                 wl = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
             else:
