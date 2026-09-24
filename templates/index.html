@@ -1009,6 +1009,7 @@
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
+                // INCREASED TIMEOUT TO 25 SECONDS FOR COLD WAKES
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 25000);
 
