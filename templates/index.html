@@ -69,6 +69,8 @@
         select:hover, button.btn-control:hover { border-color: #00d2ff; }
         button.btn-trades { background: #0f1115; border: 1px solid #262b36; color: #787e8e; font-weight: bold; transition: background 0.2s, color 0.2s; }
         button.btn-trades.active { border-color: #00d2ff; background: #00d2ff; color: #000; }
+        button.btn-grid { background: #0f1115; border: 1px solid #00c853; color: #00c853; font-weight: bold; }
+        button.btn-grid.active { background: #00c853; color: #000; }
         button.btn-alert { background: #0f1115; border: 1px solid #ff9900; color: #ff9900; font-weight: bold; transition: background 0.2s, color 0.2s; }
         button.btn-alert:hover { background: #ff9900; color: #000; }
         button.btn-draw.active { border-color: #ffeb3b; background: #ffeb3b; color: #000; }
@@ -108,8 +110,13 @@
         .btn-execute:hover { background: #00e676; }
         .btn-execute.sell-btn { background: #ff3d00; }
         .btn-execute.sell-btn:hover { background: #ff5252; }
+        
         .chart-container { flex: 1; background: #171a21; padding: 10px; border-radius: 10px; border: 1px solid #262b36; position: relative; overflow: hidden; }
         #tvChart { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; }
+        #gridContainer { display: none; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; z-index: 6; }
+        .grid-pane { background: #171a21; border: 1px solid #262b36; border-radius: 6px; position: relative; overflow: hidden; }
+        .grid-pane-title { position: absolute; top: 6px; left: 8px; font-size: 11px; font-weight: bold; color: #00d2ff; z-index: 8; background: rgba(15,17,21,0.8); padding: 2px 6px; border-radius: 4px; }
+        
         #chartCanvas { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; pointer-events: none; z-index: 5; }
         #loader { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00d2ff; font-weight: bold; z-index: 10; background: rgba(23, 26, 33, 0.9); padding: 10px 20px; border-radius: 8px; border: 1px solid #00d2ff; }
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; }
@@ -205,6 +212,7 @@
                 <div class="action-buttons">
                     <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button>
                     <button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button>
+                    <button id="btnToggleGrid" class="btn-control btn-grid" onclick="toggleGridView()">2x2 Grid View</button>
                     <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
                     <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
                     <button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()">
@@ -263,7 +271,14 @@
         <div class="chart-container">
             <div id="chartLegend" style="position: absolute; top: 15px; left: 15px; z-index: 8; display: flex; flex-direction: column; gap: 4px; pointer-events: none;"></div>
             <div id="loader">Fetching...</div>
-            <div id="tvChart"></div><canvas id="chartCanvas"></canvas>
+            <div id="tvChart"></div>
+            <div id="gridContainer">
+                <div class="grid-pane" id="pane0"><div class="grid-pane-title" id="title0">Pane 1</div><div id="chart0" style="width:100%; height:100%;"></div></div>
+                <div class="grid-pane" id="pane1"><div class="grid-pane-title" id="title1">Pane 2</div><div id="chart1" style="width:100%; height:100%;"></div></div>
+                <div class="grid-pane" id="pane2"><div class="grid-pane-title" id="title2">Pane 3</div><div id="chart2" style="width:100%; height:100%;"></div></div>
+                <div class="grid-pane" id="pane3"><div class="grid-pane-title" id="title3">Pane 4</div><div id="chart3" style="width:100%; height:100%;"></div></div>
+            </div>
+            <canvas id="chartCanvas"></canvas>
         </div>
     </div>
     
@@ -296,8 +311,11 @@
         let autoRefreshTimer = null; let isSettingsLoaded = false;
         let currentPnLData = {}; let currentMasterPnLData = {};
         
-        let currentFetchId = 0;
+        let isGridView = false;
+        let gridCharts = [];
+        let gridSeries = [];
 
+        let currentFetchId = 0;
         let manualLines = {}; 
         let isDrawing = false; 
         let currentLine = null;
@@ -331,6 +349,58 @@
             let pnlEl = document.getElementById('mTotalPnLDisplay');
             pnlEl.innerText = data.val;
             pnlEl.style.color = data.color;
+        }
+
+        function toggleGridView() {
+            isGridView = !isGridView;
+            let btn = document.getElementById('btnToggleGrid');
+            let mainTv = document.getElementById('tvChart');
+            let gridCont = document.getElementById('gridContainer');
+
+            if (isGridView) {
+                btn.classList.add('active');
+                mainTv.style.display = 'none';
+                gridCont.style.display = 'grid';
+                initGridCharts();
+            } else {
+                btn.classList.remove('active');
+                gridCont.style.display = 'none';
+                mainTv.style.display = 'block';
+                renderChart();
+            }
+        }
+
+        function initGridCharts() {
+            let wl = (globalPortfolioData.watchlist || []).slice(0, 4);
+            if (!wl.length) wl = ['MSTR', 'NVDA', 'TSLA', 'TQQQ'];
+
+            wl.forEach((tick, idx) => {
+                let paneEl = document.getElementById(`chart${idx}`);
+                document.getElementById(`title${idx}`).innerText = tick;
+                if (!paneEl) return;
+
+                paneEl.innerHTML = '';
+                let gc = LightweightCharts.createChart(paneEl, {
+                    width: paneEl.clientWidth,
+                    height: paneEl.clientHeight,
+                    layout: { backgroundColor: '#171a21', textColor: '#787e8e' },
+                    grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } },
+                    crosshair: { mode: 0 },
+                    timeScale: { borderColor: '#262b36', timeVisible: true },
+                    rightPriceScale: { visible: true, borderColor: '#262b36' }
+                });
+
+                let gs = gc.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
+                gridCharts[idx] = gc;
+                gridSeries[idx] = gs;
+
+                fetch(`/api/data?t=${tick}&p=5d&i=5m`).then(res => res.json()).then(data => {
+                    if (data.ohlc && data.ohlc.length) {
+                        gs.setData(data.ohlc);
+                        gc.timeScale().fitContent();
+                    }
+                });
+            });
         }
 
         function updateMarketClocks() {
@@ -822,7 +892,7 @@
             let c = document.getElementById('tvChart'); cv.width = c.clientWidth; cv.height = c.clientHeight;
             let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height);
             
-            if (currentTicker === 'ALL_SHARES') return; 
+            if (currentTicker === 'ALL_SHARES' || isGridView) return; 
 
             if (showManual && tvSeries) {
                 let lines = manualLines[currentTicker] || [];
@@ -901,6 +971,8 @@
         }
 
         function renderChart() {
+            if (isGridView) return;
+
             if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
             if (tvMathSeries) { tvChart.removeSeries(tvMathSeries); tvMathSeries = null; }
             if (multiSeries && multiSeries.length) { multiSeries.forEach(s => tvChart.removeSeries(s)); multiSeries = []; }
@@ -1008,7 +1080,6 @@
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
-                // Ensure we don't hold the UI hostage forever
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 25000);
 
@@ -1065,7 +1136,6 @@
 
                 document.getElementById('activeTitle').innerText = p.name; currentAnomalyReason = p.metrics.reason;
 
-                // HEADER BADGE UPDATE
                 let dirBadgeEl = document.getElementById('activeDirectionBadge');
                 if (currentTicker !== 'ALL_SHARES') {
                     let isShort = p.metrics.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(currentTicker);
@@ -1107,14 +1177,14 @@
                 mb_el.innerText = `£${p.metrics.budget_remaining.toFixed(2)}`; 
                 mb_el.style.color = p.metrics.budget_remaining < 0 ? "#ff3d00" : "#00c853";
 
-                renderTradeHistory(); fetchDirectives(); renderChart();
+                renderTradeHistory(); fetchDirectives();
+                if (isGridView) initGridCharts(); else renderChart();
             } catch(e) {
                 console.error("Fetch aborted/timed out:", e);
                 if (fetchId === currentFetchId && document.getElementById('activeTitle').innerText.includes("Loading")) {
                     document.getElementById('activeTitle').innerText = "Network Retry...";
                 }
             } finally {
-                // ABSOLUTE GUARANTEE: If this is the fetch we are waiting for, the banner vanishes.
                 if (fetchId === currentFetchId && loader) {
                     loader.style.display = 'none';
                 }
