@@ -113,9 +113,9 @@
         
         .chart-container { flex: 1; background: #171a21; padding: 10px; border-radius: 10px; border: 1px solid #262b36; position: relative; overflow: hidden; }
         #tvChart { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; }
-        #gridContainer { display: none; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 8px; position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; z-index: 6; }
+        #gridContainer { display: none; gap: 8px; position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; z-index: 6; }
         .grid-pane { background: #171a21; border: 1px solid #262b36; border-radius: 6px; position: relative; overflow: hidden; }
-        .grid-pane-title { position: absolute; top: 6px; left: 8px; font-size: 11px; font-weight: bold; color: #00d2ff; z-index: 8; background: rgba(15,17,21,0.8); padding: 2px 6px; border-radius: 4px; }
+        .grid-pane-title { position: absolute; bottom: 6px; right: 8px; font-size: 11px; font-weight: bold; color: #00d2ff; z-index: 8; background: rgba(15,17,21,0.8); padding: 2px 6px; border-radius: 4px; }
         
         #chartCanvas { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; pointer-events: none; z-index: 5; }
         #loader { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00d2ff; font-weight: bold; z-index: 10; background: rgba(23, 26, 33, 0.9); padding: 10px 20px; border-radius: 8px; border: 1px solid #00d2ff; }
@@ -330,7 +330,9 @@
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes.',
             'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 5 minutes before the US market closes to avoid overnight gaps.',
             'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.',
-            'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.'
+            'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.',
+            'Test I - Ultimate Hybrid': 'Combines market regime filtering, volume spike confirmation, and EOD risk sweep into one profile.',
+            'Test J - News Sentiment AI': 'Scrapes live financial media to dynamically alter buy conviction based on positive or negative news trends.'
         };
 
         function updatePnLDisplay() {
@@ -371,62 +373,87 @@
         }
 
         function initGridCharts() {
-            // 1. Find all stocks currently owned
             let heldTickers = [];
             if (globalPortfolioData && globalPortfolioData.holdings) {
                 heldTickers = Object.keys(globalPortfolioData.holdings).filter(t => globalPortfolioData.holdings[t].shares > 0);
             }
             
-            // 2. Grab watchlist
             let wl = globalPortfolioData.watchlist || [];
             
-            // 3. Prioritize held stocks, fill remainder with watchlist
             let displayList = [...heldTickers];
-            for (let t of wl) {
-                if (!displayList.includes(t)) displayList.push(t);
-                if (displayList.length >= 4) break;
+            if (displayList.length === 0) {
+                for (let t of wl) {
+                    if (!displayList.includes(t)) displayList.push(t);
+                    if (displayList.length >= 4) break;
+                }
             }
             
             displayList = displayList.slice(0, 4);
-            if (!displayList.length) displayList = ['MSTR', 'NVDA', 'TSLA', 'TQQQ'];
+            if (!displayList.length) displayList = ['MSTR'];
 
-            // 4. Render 4 panes
+            let gridCont = document.getElementById('gridContainer');
+            if (displayList.length === 1) {
+                gridCont.style.gridTemplateColumns = '1fr';
+                gridCont.style.gridTemplateRows = '1fr';
+            } else if (displayList.length === 2) {
+                gridCont.style.gridTemplateColumns = '1fr 1fr';
+                gridCont.style.gridTemplateRows = '1fr';
+            } else {
+                gridCont.style.gridTemplateColumns = '1fr 1fr';
+                gridCont.style.gridTemplateRows = '1fr 1fr';
+            }
+
             for (let i = 0; i < 4; i++) {
                 let paneEl = document.getElementById(`chart${i}`);
                 let titleEl = document.getElementById(`title${i}`);
-                if (!paneEl || !titleEl) continue;
-                
-                paneEl.innerHTML = ''; 
+                let wrapperEl = document.getElementById(`pane${i}`);
+                if (!paneEl || !titleEl || !wrapperEl) continue;
                 
                 if (i >= displayList.length) {
-                    titleEl.innerText = 'Empty';
-                    paneEl.innerHTML = '<div style="color:#787e8e; display:flex; justify-content:center; align-items:center; height:100%; font-size:11px;">No Asset</div>';
+                    wrapperEl.style.display = 'none';
                     continue;
+                } else {
+                    wrapperEl.style.display = 'block';
                 }
                 
                 let tick = displayList[i];
                 titleEl.innerText = tick;
 
-                let gc = LightweightCharts.createChart(paneEl, {
-                    width: paneEl.clientWidth,
-                    height: paneEl.clientHeight,
-                    layout: { backgroundColor: '#171a21', textColor: '#787e8e' },
-                    grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } },
-                    crosshair: { mode: 0 },
-                    timeScale: { borderColor: '#262b36', timeVisible: true },
-                    rightPriceScale: { visible: true, borderColor: '#262b36' }
-                });
+                if (gridCharts[i] && paneEl.getAttribute('data-ticker') === tick) {
+                    fetch(`/api/data?t=${tick}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.ohlc && data.ohlc.length) {
+                            gridSeries[i].setData(data.ohlc);
+                        }
+                    });
+                } else {
+                    paneEl.innerHTML = '';
+                    paneEl.setAttribute('data-ticker', tick);
+                    
+                    let gc = LightweightCharts.createChart(paneEl, {
+                        width: paneEl.clientWidth,
+                        height: paneEl.clientHeight,
+                        layout: { backgroundColor: '#171a21', textColor: '#787e8e' },
+                        grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } },
+                        crosshair: { mode: 0 },
+                        timeScale: { borderColor: '#262b36', timeVisible: true },
+                        rightPriceScale: { visible: true, borderColor: '#262b36' }
+                    });
 
-                let gs = gc.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
-                gridCharts[i] = gc;
-                gridSeries[i] = gs;
+                    let gs = gc.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
+                    gridCharts[i] = gc;
+                    gridSeries[i] = gs;
 
-                fetch(`/api/data?t=${tick}&p=5d&i=5m`).then(res => res.json()).then(data => {
-                    if (data.ohlc && data.ohlc.length) {
-                        gs.setData(data.ohlc);
-                        gc.timeScale().fitContent();
-                    }
-                });
+                    fetch(`/api/data?t=${tick}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.ohlc && data.ohlc.length) {
+                            gs.setData(data.ohlc);
+                            gc.timeScale().fitContent();
+                        }
+                    });
+                }
             }
         }
 
@@ -716,7 +743,9 @@
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub');
             let userSel = document.getElementById('userSelect');
             let activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-            let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'].some(prefix => activeProf.includes(prefix));
+            
+            // FIXED: Added Test I and Test J so the UI knows they are automated
+            let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'].some(prefix => activeProf.includes(prefix));
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -764,7 +793,9 @@
                 let cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let userSel = document.getElementById('userSelect');
                 let activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-                let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'].some(prefix => activeProf.includes(prefix));
+                
+                // FIXED: Added Test I and Test J so the UI knows they are automated
+                let isAuto = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'].some(prefix => activeProf.includes(prefix));
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
                 data.directives.forEach(d => {
@@ -1000,10 +1031,7 @@
         function renderChart() {
             if (isGridView) return;
 
-            if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
-            if (tvMathSeries) { tvChart.removeSeries(tvMathSeries); tvMathSeries = null; }
-            if (multiSeries && multiSeries.length) { multiSeries.forEach(s => tvChart.removeSeries(s)); multiSeries = []; }
-            let lg = document.getElementById('chartLegend'); lg.innerHTML = '';
+            let lg = document.getElementById('chartLegend');
             
             if (!masterData.length) {
                 let cv = document.getElementById('chartCanvas');
@@ -1013,9 +1041,14 @@
             
             let s = document.getElementById('styleSelect').value;
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h'].some(prefix => activeProf.includes(prefix));
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'].some(prefix => activeProf.includes(prefix));
 
             if (currentTicker === 'ALL_SHARES') {
+                if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
+                if (tvMathSeries) { tvChart.removeSeries(tvMathSeries); tvMathSeries = null; }
+                if (multiSeries && multiSeries.length) { multiSeries.forEach(ms => tvChart.removeSeries(ms)); multiSeries = []; }
+                lg.innerHTML = '';
+                
                 tvChart.applyOptions({ leftPriceScale: { visible: false } });
                 let avgDataMap = {};
                 
@@ -1066,11 +1099,17 @@
                 if (currentChartStyle !== 'multi' || lastRenderedTicker !== 'ALL_SHARES') { tvChart.timeScale().fitContent(); }
                 currentChartStyle = 'multi'; lastRenderedTicker = 'ALL_SHARES';
             } else {
+                if (multiSeries && multiSeries.length) { multiSeries.forEach(ms => tvChart.removeSeries(ms)); multiSeries = []; }
+                lg.innerHTML = '';
+
                 let needNew = (!tvSeries || currentChartStyle !== s || lastRenderedTicker !== currentTicker);
+                
                 let md = (s === 'heikin-ashi' ? convertToHeikinAshi(masterData) : masterData).map(d => ({time: d.time, open: d.open, high: d.high, low: d.low, close: d.close}));
                 if (s === 'area' || s === 'line') md = masterData.map(d => ({time: d.time, value: d.close}));
                 
                 if (needNew) {
+                    if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
+                    
                     if (s === 'candlestick' || s === 'heikin-ashi') tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
                     else if (s === 'bar') tvSeries = tvChart.addBarSeries({ upColor: '#00c853', downColor: '#ff3d00' });
                     else if (s === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff', lineWidth: 2 });
@@ -1081,20 +1120,23 @@
                     currentChartStyle = s; 
                     lastRenderedTicker = currentTicker;
                 } else {
-                    tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
                     tvSeries.setData(md);
                 }
                 
                 if (showMath && masterMathLine && masterMathLine.length > 0) {
-                    tvChart.applyOptions({ leftPriceScale: { visible: !isMomentum } });
-                    tvMathSeries = tvChart.addLineSeries({ 
-                        color: '#ff9900', 
-                        lineWidth: 2, 
-                        lineStyle: 1,
-                        priceScaleId: isMomentum ? 'right' : 'left'
-                    });
+                    if (!tvMathSeries || needNew) {
+                        if (tvMathSeries) tvChart.removeSeries(tvMathSeries);
+                        tvChart.applyOptions({ leftPriceScale: { visible: !isMomentum } });
+                        tvMathSeries = tvChart.addLineSeries({ 
+                            color: '#ff9900', 
+                            lineWidth: 2, 
+                            lineStyle: 1,
+                            priceScaleId: isMomentum ? 'right' : 'left'
+                        });
+                    }
                     tvMathSeries.setData(masterMathLine);
                 } else {
+                    if (tvMathSeries) { tvChart.removeSeries(tvMathSeries); tvMathSeries = null; }
                     tvChart.applyOptions({ leftPriceScale: { visible: false } });
                 }
             }

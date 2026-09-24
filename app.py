@@ -46,7 +46,7 @@ def fetch_news_sentiment(ticker):
     now = time.time()
     if ticker in NEWS_CACHE:
         cached_time, score, headline_count, top_headline = NEWS_CACHE[ticker]
-        if now - cached_time < 900: # Cache news for 15 mins
+        if now - cached_time < 900: 
             return score, headline_count, top_headline
 
     clean_ticker = ticker.split('.')[0]
@@ -70,7 +70,7 @@ def fetch_news_sentiment(ticker):
             if items:
                 top_headline = items[0].find('title').text if items[0].find('title') is not None else top_headline
 
-            for item in items[:10]: # Analyze top 10 headlines
+            for item in items[:10]:
                 title = item.find('title').text.lower() if item.find('title') is not None else ''
                 words = re.findall(r'\b\w+\b', title)
                 for w in words:
@@ -437,6 +437,27 @@ class MarketScoringEngine:
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_us_stock = not ticker.endswith('.L')
 
+        # --- EOD VOLATILITY SHIELD (Applies to all Day Trading profiles F, H, I, J) ---
+        if any(x in prof for x in ['test f', 'test h', 'test i', 'test j']) and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 45:
+            if avg_buy_price > 0:
+                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                        'reason': "EOD VOLATILITY SHIELD: Liquidating 15 mins before close to avoid MOC whipsaws.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+            else:
+                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                        'reason': "EOD NO-BUY ZONE: Blocking new entries in the final 15 minutes to avoid closing volatility.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
+        # --- TEST B: CAPITAL UNLOCK (Only sells weak stocks, holds winners overnight) ---
+        if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
+            if avg_buy_price > 0:
+                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                if pnl_pct < 0.30:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                            'reason': "US PRE-CLOSE CAPITAL UNLOCK: Freeing capital for UK morning open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'status': 'US Pre-Close Unlock', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(UK Capital Unlock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
         # --- TEST J: NEWS SENTIMENT AI PROFILE ---
         if 'test j' in prof:
             sent_score, h_count, top_head = fetch_news_sentiment(ticker)
@@ -498,20 +519,6 @@ class MarketScoringEngine:
                     'reason': f"Awaiting Hybrid Setup (Regime: {regime['state']}, Vol Surge: {vol_surge:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Awaiting Confluence', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # --- EOD & CAPITAL UNLOCK LOCKS ---
-        if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
-            if avg_buy_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                if pnl_pct < 0.30:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
-                            'reason': "US PRE-CLOSE CAPITAL UNLOCK: Freeing capital for UK morning open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                            'status': 'US Pre-Close Unlock', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(UK Capital Unlock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-
-        if ('test f' in prof or 'test i' in prof) and now_uk.hour == 20 and now_uk.minute >= 55:
-            return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                    'reason': f"EOD CASH SWEEP TRIGGERED. Liquidating to 100% cash before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Cash Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-
         # --- TEST H: WICK REVERSAL (OPTIMIZED WITH VOLUME) ---
         if 'test h' in prof:
             last_candle = df_5m.iloc[-2]
@@ -559,7 +566,7 @@ class MarketScoringEngine:
                     'status': 'Scanning Wicks', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         # STANDARD MOMENTUM PROFILES
-        trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof or 'test f' in prof else 0.50))
+        trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof else 0.50))
         hard_pct = -0.50 if 'test d' in prof else -1.00
 
         if avg_buy_price > 0 and highest_price > 0:
@@ -798,7 +805,9 @@ def process_auto_profile(prof_name):
                 dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
 
         now_uk = pd.Timestamp.now(tz='Europe/London')
-        is_eod_blocked = (('test f' in active_profile or 'test i' in active_profile) and now_uk.hour == 20 and now_uk.minute >= 50)
+        # Block buys if EOD Volatility Shield is active (after 8:45 PM BST)
+        is_eod_blocked = (any(x in active_profile for x in ['test f', 'test h', 'test i', 'test j']) and now_uk.hour == 20 and now_uk.minute >= 45)
+        
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
