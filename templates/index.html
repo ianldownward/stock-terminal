@@ -9,10 +9,8 @@
         * { box-sizing: border-box; }
         body { font-family: -apple-system, sans-serif; background: #0f1115; color: #e1e3e6; margin: 0; display: flex; height: 100vh; overflow: hidden; }
         .sidebar { width: 300px; background: #171a21; border-right: 1px solid #262b36; display: flex; flex-direction: column; flex-shrink: 0; }
-        
-        .sidebar-top { padding: 15px 15px 0 15px; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .sidebar-top { padding: 15px 15px 0 15px; flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
         .sidebar-bottom { padding: 15px; border-top: 1px solid #262b36; background: #1a1d24; flex-shrink: 0; }
-        
         .right-drawer { width: 280px; background: #171a21; border-left: 1px solid #262b36; display: flex; flex-direction: column; padding: 15px; flex-shrink: 0; overflow-y: auto; }
         .right-drawer h2, .sidebar h2 { font-size: 12px; color: #787e8e; margin: 10px 0; text-transform: uppercase; letter-spacing: 0.5px; }
         .sidebar h2 { margin-top: 0; }
@@ -23,12 +21,10 @@
         .drawer-details summary::-webkit-details-marker { display: none; }
         .drawer-details summary::after { content: '▼'; color: #787e8e; font-size: 9px; }
         .drawer-details[open] summary::after { content: '▲'; }
-        
         .lb-item { background: #0f1115; border: 1px solid #262b36; border-radius: 8px; padding: 10px; margin-bottom: 8px; transition: border-color 0.2s; }
         .lb-item:hover { border-color: #00d2ff; }
         .lb-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold; color: #fff; cursor: pointer; }
         .lb-desc { font-size: 11px; color: #8a8a9e; margin-top: 8px; display: none; line-height: 1.4; border-top: 1px solid #262b36; padding-top: 8px; }
-
         .total-shares-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #00d2ff; margin-bottom: 10px; text-align: center; }
         .total-shares-box label { font-size: 10px; color: #00d2ff; text-transform: uppercase; font-weight: bold; display: block; margin-bottom: 4px; }
         .total-shares-box div.total-val { font-size: 18px; font-weight: bold; color: #fff; }
@@ -56,13 +52,11 @@
         .search-box { display: flex; gap: 8px; margin-bottom: 15px; flex-shrink: 0; }
         .search-box input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; }
         .search-box button { background: #00d2ff; border: none; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
-        
-        .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; overflow-y: auto; padding-bottom: 15px; padding-right: 5px; }
+        .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; overflow-y: auto; padding-bottom: 15px; padding-right: 5px; min-height: 0; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #363c4a; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #00d2ff; }
-
         .watchlist-item { padding: 10px 12px; border-radius: 6px; background: #1e222d; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
         .watchlist-item:hover, .watchlist-item.active { border-color: #00d2ff; background: #252a37; }
         .btn-delete { background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; padding: 0 5px; }
@@ -105,14 +99,11 @@
         .tranche-bar { width: 80%; height: 5px; border-radius: 2px; transition: background 0.3s; }
         .tranche-bar.active { background: #00c853; }
         .tranche-bar.inactive { background: #363c4a; }
-
         .thermo-container { margin-top: 6px; width: 100%; background: #0f1115; border: 1px solid #262b36; border-radius: 6px; padding: 4px; }
         .thermo-bar-bg { width: 100%; height: 8px; background: #262b36; border-radius: 4px; overflow: hidden; position: relative; }
         .thermo-bar-fill { height: 100%; width: 50%; background: #8a8a9e; transition: width 0.4s ease, background-color 0.4s ease; border-radius: 4px; }
         .thermo-text { font-size: 10px; font-weight: bold; margin-top: 4px; display: block; }
-
         .short-tag { color: #ff3d00; font-size: 11px; font-weight: bold; margin-right: 6px; }
-
         .btn-execute { background: #00c853; color: #fff; border: none; font-weight: bold; padding: 6px 10px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 11px; margin-top: 4px; }
         .btn-execute:hover { background: #00e676; }
         .btn-execute.sell-btn { background: #ff3d00; }
@@ -457,10 +448,14 @@
             document.getElementById('activeTitle').innerText = "Loading " + username + "...";
             document.getElementById('loader').style.display = 'block';
 
-            await fetch('/api/users/select', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: username})});
-            currentTicker = 'ALL_SHARES'; isSettingsLoaded = false;
-            await fetchData(false);
-            await fetchUsers();
+            try {
+                await fetch('/api/users/select', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: username})});
+                currentTicker = 'ALL_SHARES'; isSettingsLoaded = false;
+                await fetchData(false);
+                await fetchUsers();
+            } catch(e) {
+                document.getElementById('loader').style.display = 'none';
+            }
         }
 
         async function addUserPrompt() {
@@ -504,9 +499,13 @@
             if (confirm("Reset all portfolio data for this user?")) {
                 currentFetchId++; 
                 document.getElementById('loader').style.display = 'block';
-                await fetch('/api/portfolio/reset', { method: 'POST' });
-                currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; 
-                fetchData(false);
+                try {
+                    await fetch('/api/portfolio/reset', { method: 'POST' });
+                    currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; 
+                    await fetchData(false);
+                } catch(e) {
+                    document.getElementById('loader').style.display = 'none';
+                }
             }
         }
 
@@ -580,20 +579,22 @@
 
         function calculateSizing() {
             let tb = globalPortfolioData.master_budget || 10000;
-            let toa = 0; let tot_cb = 0;
+            let net_history = 0;
+            (globalPortfolioData.history || []).forEach(h => {
+                net_history += (h.action === 'BUY' ? -h.amount : h.amount);
+            });
+            
+            let cash_balance = tb + net_history;
+            let rem = Math.max(0, cash_balance);
+            
+            let toa = 0;
             if (globalPortfolioData.holdings) {
                 for (let t of Object.keys(globalPortfolioData.holdings)) { 
                     if (globalPortfolioData.holdings[t] && globalPortfolioData.holdings[t].shares > 0) {
                         toa += (globalPortfolioData.holdings[t].manual_val || 0); 
-                        let init = globalPortfolioData.initial_positions?.[t]?.manual_val || 0;
-                        let net = 0;
-                        (globalPortfolioData.history || []).forEach(h => { if(h.ticker===t) net += (h.action==='BUY'?h.amount:-h.amount); });
-                        tot_cb += (init + net);
                     }
                 }
             }
-            let cash_balance = tb - tot_cb;
-            let rem = cash_balance;
             let total_equity = cash_balance + toa;
 
             if (currentTicker === 'ALL_SHARES') {
@@ -1007,6 +1008,7 @@
             let loader = document.getElementById('loader');
             if (!silent && loader) loader.style.display = 'block';
             try {
+                // Ensure we don't hold the UI hostage forever
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 25000);
 
@@ -1112,9 +1114,9 @@
                     document.getElementById('activeTitle').innerText = "Network Retry...";
                 }
             } finally {
-                // CRITICAL FIX: Guarantee the loader is hidden no matter what happens
-                if (document.getElementById('loader')) {
-                    document.getElementById('loader').style.display = 'none';
+                // ABSOLUTE GUARANTEE: If this is the fetch we are waiting for, the banner vanishes.
+                if (fetchId === currentFetchId && loader) {
+                    loader.style.display = 'none';
                 }
             }
         }

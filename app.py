@@ -1,4 +1,4 @@
-import os, json, time, urllib.request, threading, requests
+import os, json, time, urllib.request, threading
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
@@ -6,14 +6,6 @@ from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
-
-# Safe requests.Session subclass to enforce timeouts without causing TypeErrors in yfinance
-class TimeoutSession(requests.Session):
-    def request(self, method, url, **kwargs):
-        kwargs.setdefault('timeout', 5.0)
-        return super(TimeoutSession, self).request(method, url, **kwargs)
-
-yf_session = TimeoutSession()
 
 # Thundering Herd Protection RAM Cache
 YF_CACHE = {}
@@ -36,18 +28,29 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
+        # Intraday cached for 115s (syncs with 120s bg loop), daily cached for 5 mins
         cache_duration = 115 if interval in ['1m', '2m', '5m'] else 300
         
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
-            if not df.empty and (now - cached_time < cache_duration): return df.copy()
+            if not df.empty and (now - cached_time < cache_duration): 
+                return df.copy()
                 
         try:
-            df = yf.Ticker(ticker, session=yf_session).history(period=period, interval=interval)
-            if not df.empty: YF_CACHE[cache_key] = (now, df)
+            # Pure, crash-proof yfinance fetch. Rate limits avoided by capping max_workers globally.
+            df = yf.Ticker(ticker).history(period=period, interval=interval)
+            if not df.empty: 
+                YF_CACHE[cache_key] = (time.time(), df)
             return df.copy()
         except Exception: 
-            return pd.DataFrame()
+            pass
+
+    # Fallback to stale data if available
+    with GLOBAL_LOCK:
+        if cache_key in YF_CACHE:
+            return YF_CACHE[cache_key][1].copy()
+            
+    return pd.DataFrame()
 
 def send_push_notification(topic, title, message):
     if not topic: return
@@ -309,7 +312,7 @@ class PortfolioManager:
             except Exception: pass
             return t, 0.0
 
-        with ThreadPoolExecutor(max_workers=10) as ex:
+        with ThreadPoolExecutor(max_workers=4) as ex:
             for t, val in ex.map(fetch_val, active_tickers):
                 total += val
                 if t in holds and isinstance(holds[t], dict):
@@ -600,7 +603,8 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
-        with ThreadPoolExecutor(max_workers=5) as ex:
+        # SAFE THREAD CAP: Max 3 to prevent memory/CPU exhaustion on Render
+        with ThreadPoolExecutor(max_workers=3) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
         for t in scan_list:
@@ -704,7 +708,8 @@ def global_background_worker():
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
             
-            with ThreadPoolExecutor(max_workers=5) as ex:
+            # SAFE THREAD CAP: Max 3 to prevent OOM/CPU crash
+            with ThreadPoolExecutor(max_workers=3) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
             auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal']
@@ -837,7 +842,7 @@ def get_recommendations():
     
     def fetch_rec(tick): return tick, fetch_yf_data(tick, "1y", "1d")
         
-    with ThreadPoolExecutor(max_workers=5) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         for t, df in ex.map(fetch_rec, tickers):
             if not df.empty:
                 cur, avg_vol = df['Close'].iloc[-1], df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
@@ -878,12 +883,13 @@ def get_data():
 
         pnl_dfs_5m = {}
         pnl_dfs_1d = {}
-        # CRITICAL FIX: Safe parallel fetching reinstated to prevent cold-boot timeouts
+        
         def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
         def fetch_pnl_data_1d(tick): return tick, fetch_yf_data(tick, "1mo", "1d")
         
         if active_holds:
-            with ThreadPoolExecutor(max_workers=10) as ex:
+            # SAFE THREAD CAP
+            with ThreadPoolExecutor(max_workers=4) as ex:
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
                 for tick, df_1d in ex.map(fetch_pnl_data_1d, active_holds): pnl_dfs_1d[tick] = df_1d
 
@@ -938,7 +944,7 @@ def get_data():
                     return tick, 'closed'
                 except Exception: return tick, 'closed'
 
-            with ThreadPoolExecutor(max_workers=10) as ex:
+            with ThreadPoolExecutor(max_workers=4) as ex:
                 for tick, status in ex.map(check_status, wl):
                     wl_status[tick] = status
             
@@ -988,7 +994,7 @@ def get_data():
             if wl:
                 def fetch_t(tick): return tick, fetch_yf_data(tick, req_p, req_i)
                 dfs = {}
-                with ThreadPoolExecutor(max_workers=10) as ex:
+                with ThreadPoolExecutor(max_workers=4) as ex:
                     for tick, df_t in ex.map(fetch_t, wl[:15]): dfs[tick] = df_t
                 
                 colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
