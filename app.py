@@ -163,7 +163,7 @@ class PortfolioManager:
                     needs_save = True
                     
             if self.data.get('active_user') not in self.data['users']:
-                self.data['active_user'] = 'Test I - Ultimate Hybrid'
+                self.data['active_user'] = 'Ian'
                 needs_save = True
             
             if needs_save: self.save_data(self.data)
@@ -437,7 +437,7 @@ class MarketScoringEngine:
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_us_stock = not ticker.endswith('.L')
 
-        # --- EOD VOLATILITY SHIELD (Applies to all Day Trading profiles F, H, I, J) ---
+        # --- EOD VOLATILITY SHIELD ---
         if any(x in prof for x in ['test f', 'test h', 'test i', 'test j']) and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 45:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -446,10 +446,10 @@ class MarketScoringEngine:
                         'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
             else:
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
-                        'reason': "EOD NO-BUY ZONE: Blocking new entries in the final 15 minutes to avoid closing volatility.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'reason': "EOD NO-BUY ZONE: Blocking new entries in final 15 mins.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
-        # --- TEST B: CAPITAL UNLOCK (Only sells weak stocks, holds winners overnight) ---
+        # --- TEST B: CAPITAL UNLOCK ---
         if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -468,7 +468,7 @@ class MarketScoringEngine:
 
                 if sent_score <= -30:
                     return {'type': 'News AI', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
-                            'reason': f"BEARISH NEWS SENTIMENT (-{abs(sent_score)} pts). Headiness: '{top_head[:60]}...'. Exiting position immediately.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'reason': f"BEARISH NEWS SENTIMENT (-{abs(sent_score)} pts). Headiness: '{top_head[:60]}...'. Exiting position.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'Bearish Media Alert', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(News Exit)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
 
                 if drop_from_peak >= 1.50:
@@ -502,7 +502,7 @@ class MarketScoringEngine:
 
                 if drop_from_peak >= 1.00:
                     return {'type': 'Ultimate Hybrid', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
-                            'reason': f"HYBRID TRAILING STOP (-1.00% from peak of £{highest_price:.2f}). Securing gains.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'reason': f"HYBRID TRAILING STOP (-1.00% from peak). Securing gains.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
                 return {'type': 'Ultimate Hybrid', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
@@ -519,7 +519,7 @@ class MarketScoringEngine:
                     'reason': f"Awaiting Hybrid Setup (Regime: {regime['state']}, Vol Surge: {vol_surge:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Awaiting Confluence', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # --- TEST H: WICK REVERSAL (OPTIMIZED WITH VOLUME) ---
+        # --- TEST H: WICK REVERSAL ---
         if 'test h' in prof:
             last_candle = df_5m.iloc[-2]
             c_open, c_close = last_candle['Open'], last_candle['Close']
@@ -706,10 +706,14 @@ def process_auto_profile(prof_name):
         ud = portfolio_store.user_data(prof_name)
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
-        if not is_momentum: return
+        
+        # UPDATED: Included 'test a' so Test A runs autonomously in background
+        is_auto_profile = any(x in active_profile for x in ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
+        if not is_auto_profile: return
 
-        if 'test g' in active_profile:
+        if 'test a' in active_profile:
+            scan_list = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
+        elif 'test g' in active_profile:
             scan_list = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
         elif 'test h' in active_profile or 'test i' in active_profile or 'test j' in active_profile:
             scan_list = ['META', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
@@ -735,7 +739,7 @@ def process_auto_profile(prof_name):
         regime = engine.check_market_regime()
 
         dfs = {}
-        def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d", "5m")
+        def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d" if 'test a' not in active_profile else "1y", "5m" if 'test a' not in active_profile else "1d")
         with ThreadPoolExecutor(max_workers=4) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
@@ -773,7 +777,12 @@ def process_auto_profile(prof_name):
                         if t not in ud['holdings']: ud['holdings'][t] = {}
                         ud['holdings'][t]['high_water'] = highest_p
 
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
+                if 'test a' in active_profile:
+                    avg_v = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
+                    v_r = (df['Volume'].iloc[-1] / avg_v) if avg_v > 0 else 1.0
+                    st = engine.score_nav_asset(t, cur, v_r) if t in engine.nav_bases else engine.score_equity(df, cur)
+                else:
+                    st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
 
                 last_trade_time = next((h.get('timestamp', 0) for h in hist if isinstance(h, dict) and h.get('ticker') == t), 0)
                 if int(time.time()) - last_trade_time < 300: continue
@@ -782,14 +791,14 @@ def process_auto_profile(prof_name):
                     held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
 
                 if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
-                    if is_open:
+                    if is_open or 'test a' in active_profile:
                         dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
                 elif st['action_main'] == 'BUY':
-                    if is_open:
+                    if is_open or 'test a' in active_profile:
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
             except Exception: pass
 
-        max_allowed_holds = 1 if 'test e' in active_profile else 2
+        max_allowed_holds = 5 if 'test a' in active_profile else (1 if 'test e' in active_profile else 2)
         
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
             top_candidate = max(buys, key=lambda x: x['s'])
@@ -805,7 +814,6 @@ def process_auto_profile(prof_name):
                 dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
 
         now_uk = pd.Timestamp.now(tz='Europe/London')
-        # Block buys if EOD Volatility Shield is active (after 8:45 PM BST)
         is_eod_blocked = (any(x in active_profile for x in ['test f', 'test h', 'test i', 'test j']) and now_uk.hour == 20 and now_uk.minute >= 45)
         
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
@@ -830,7 +838,7 @@ def global_background_worker():
     time.sleep(3)
     while True:
         try:
-            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'SGLN.L', 'SSLN.L', 'GOOGL', 'NFLX', 'TQQQ', 'SOXL', 'NVDL', 'QQQ']
+            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'SGLN.L', 'SSLN.L', 'GOOGL', 'NFLX', 'TQQQ', 'SOXL', 'NVDL', 'QQQ', 'YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF']
             
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
@@ -838,7 +846,8 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal', 'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI']
+            # UPDATED: Included Test A in automated profiles
+            auto_profiles = ['Test A - Deep Value', 'Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal', 'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
@@ -973,8 +982,8 @@ def get_directives():
     rem_cash = max(0, cash_balance)
     
     wl = ud.get('watchlist') or []
-    if not wl and 'test a' in active_profile:
-        wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L']
+    if not wl and (active_profile == 'ian' or 'test a' in active_profile):
+        wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
         
     active_holds = list(set([tr.get('ticker') for tr in hist if isinstance(tr, dict) and portfolio_store.get_shares(tr.get('ticker')) > 0]))
     scan_list = list(set(wl + active_holds))
