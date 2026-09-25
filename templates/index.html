@@ -43,7 +43,7 @@
         .directives-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 12px; }
         .directives-box h3 { font-size: 11px; color: #00c853; margin: 0 0 8px 0; text-transform: uppercase; text-align: center; }
         .directive-item { background: #0f1115; border: 1px solid #262b36; border-radius: 6px; padding: 8px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
-        .directive-info { font-size: 11px; color: #fff; }
+        .directive-info { font-size: 11px; color: #fff; display: flex; align-items: center; }
         .directive-info b { color: #00d2ff; }
         .directive-btn { background: #00c853; color: #fff; border: none; font-weight: bold; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; }
         .directive-btn:hover { background: #00e676; }
@@ -215,7 +215,7 @@
         <div class="top-nav">
             <div class="top-nav-row1">
                 <div style="display:flex; align-items:center; gap:8px;">
-                    <h2 id="activeTitle" style="margin:0;">No Stock Loaded</h2>
+                    <h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2>
                     <span id="activeDirectionBadge" style="display:none;"></span>
                 </div>
                 <div class="action-buttons">
@@ -225,7 +225,7 @@
                     <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
                     <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
                     <button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21" font-weight="bold" points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
                         <span id="drawBtnText">Draw Line</span>
                     </button>
                     <button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button>
@@ -359,6 +359,15 @@
             'Test J - News Sentiment AI': 'Scrapes live financial media to dynamically alter buy conviction based on positive or negative news trends.'
         };
 
+        // Flat SVG Flag function based on ticker format
+        function getCountryFlag(symbol) {
+            if (!symbol || symbol === 'ALL_SHARES') return '';
+            let code = 'us'; // Default to US
+            if (symbol.endsWith('.L')) code = 'gb';
+            else if (symbol.endsWith('.TO')) code = 'ca';
+            return `<img src="https://flagcdn.com/${code}.svg" width="16" alt="${code.toUpperCase()}" style="border-radius: 2px; margin-right: 6px; vertical-align: middle; display: inline-block; box-shadow: 0 0 2px rgba(0,0,0,0.5);">`;
+        }
+
         function updatePnLDisplay() {
             if (!currentPnLData || !currentPnLData['all']) return;
             let tf = document.querySelector('input[name="pnl_tf"]:checked').value;
@@ -441,7 +450,7 @@
                 }
                 
                 let tick = displayList[i];
-                titleEl.innerText = tick;
+                titleEl.innerHTML = `<span style="display:flex; align-items:center;">${getCountryFlag(tick)}${tick}</span>`;
 
                 if (gridCharts[i] && paneEl.getAttribute('data-ticker') === tick) {
                     fetch(`/api/data?t=${tick}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`)
@@ -604,7 +613,7 @@
             if (autoRefreshTimer) clearInterval(autoRefreshTimer);
             
             currentFetchId++;
-            document.getElementById('activeTitle').innerText = "Loading " + username + "...";
+            document.getElementById('activeTitle').innerHTML = "Loading " + username + "...";
             document.getElementById('loader').style.display = 'block';
 
             try {
@@ -696,13 +705,14 @@
 
                 let isShort = ['SQQQ', '3SUS.L'].includes(symbol);
                 let shortTag = isShort ? `<span class="short-tag">(S)</span>` : '';
+                let flagTag = getCountryFlag(symbol);
 
                 let heldTag = '';
                 if (globalPortfolioData && globalPortfolioData.holdings && globalPortfolioData.holdings[symbol] && globalPortfolioData.holdings[symbol].shares > 0) {
                     heldTag = `<span style="background:#00d2ff; color:#000; padding:2px 5px; border-radius:4px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>`;
                 }
 
-                li.innerHTML = `<div style="display:flex; align-items:center;">${arrow}<span class="ticker">${symbol}</span>${heldTag}</div><div style="display:flex; align-items:center;">${shortTag}<button class="btn-delete">✕</button></div>`; 
+                li.innerHTML = `<div style="display:flex; align-items:center;">${arrow}${flagTag}<span class="ticker">${symbol}</span>${heldTag}</div><div style="display:flex; align-items:center;">${shortTag}<button class="btn-delete">✕</button></div>`; 
                 ul.appendChild(li);
             });
         }
@@ -845,7 +855,8 @@
                     data.directives.forEach(d => {
                         let isBuy = d.action === 'BUY'; let div = document.createElement('div'); div.className = 'directive-item';
                         let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default; display:flex; align-items:center;" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
-                        div.innerHTML = `<div class="directive-info"><b>${d.ticker}</b>: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</div>${btnHTML}`;
+                        let flag = getCountryFlag(d.ticker);
+                        div.innerHTML = `<div class="directive-info" style="display:flex; align-items:center;">${flag}<b>${d.ticker}</b><span style="margin-left:4px;">: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</span></div>${btnHTML}`;
                         cont.appendChild(div);
                     });
                 }
@@ -860,7 +871,8 @@
                         let div = document.createElement('div'); div.className = 'directive-item';
                         div.style.marginBottom = '6px'; div.style.background = '#0f1115';
                         let btnHTML = `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeIanTrade('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
-                        div.innerHTML = `<div class="directive-info"><b>${d.ticker}</b>: ${d.action} ${d.shares} shs</div>${btnHTML}`;
+                        let flag = getCountryFlag(d.ticker);
+                        div.innerHTML = `<div class="directive-info" style="display:flex; align-items:center;">${flag}<b>${d.ticker}</b><span style="margin-left:4px;">: ${d.action} ${d.shares} shs</span></div>${btnHTML}`;
                         ianList.appendChild(div);
                     });
                 } else {
@@ -1268,7 +1280,10 @@
                     activeElem.classList.add('active');
                 }
 
-                document.getElementById('activeTitle').innerText = p.name; currentAnomalyReason = p.metrics.reason;
+                // Add Flag to Active Title
+                let titleFlagHtml = currentTicker !== 'ALL_SHARES' ? getCountryFlag(currentTicker) : '';
+                document.getElementById('activeTitle').innerHTML = `${titleFlagHtml}${p.name}`;
+                currentAnomalyReason = p.metrics.reason;
 
                 let dirBadgeEl = document.getElementById('activeDirectionBadge');
                 if (currentTicker !== 'ALL_SHARES') {
@@ -1307,7 +1322,6 @@
                         trendEl.style.color = reg.trend.includes('Up') ? '#00c853' : (reg.trend.includes('Down') ? '#ff3d00' : '#8a8a9e');
                     }
                     
-                    // Render 24h Sentiment Sparkline SVG Chart
                     let svg = document.getElementById('thermoSparkline');
                     if (svg && reg.sparkline && reg.sparkline.length > 1) {
                         let pts = reg.sparkline;
