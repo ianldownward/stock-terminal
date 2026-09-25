@@ -72,7 +72,7 @@
         .thermo-text{font-size:10px;font-weight:bold;margin-top:4px;display:block} .short-tag{color:#ff3d00;font-size:11px;font-weight:bold;margin-right:6px}
         .btn-execute{background:#00c853;color:#fff;border:none;font-weight:bold;padding:6px 10px;border-radius:6px;cursor:pointer;width:100%;font-size:11px;margin-top:4px} .btn-execute:hover{background:#00e676}
         .btn-execute.sell-btn{background:#ff3d00} .btn-execute.sell-btn:hover{background:#ff5252}
-        .chart-container{flex:1;background:#171a21;padding:10px;border-radius:10px;border:1px solid #262b36;position:relative;overflow:hidden}
+        .chart-container{flex:1;background:#171a21;padding:10px;border-radius:10px;border:1px solid #262b36;position:relative;overflow:hidden;min-height:350px}
         #tvChart,#chartCanvas,#gridContainer{position:absolute;top:10px;left:10px;right:10px;bottom:10px} #gridContainer{display:none;gap:8px;z-index:6}
         .grid-pane{background:#171a21;border:1px solid #262b36;border-radius:6px;position:relative;overflow:hidden} .grid-pane-title{position:absolute;bottom:6px;right:8px;font-size:11px;font-weight:bold;color:#00d2ff;z-index:8;background:rgba(15,17,21,.8);padding:2px 6px;border-radius:4px}
         #chartCanvas{pointer-events:none;z-index:5} #loader{display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#00d2ff;font-weight:bold;z-index:10;background:rgba(23,26,33,.9);padding:10px 20px;border-radius:8px;border:1px solid #00d2ff}
@@ -92,7 +92,59 @@
         .qc-input-row{display:flex;gap:8px} .qc-input-row input{flex:1;background:#0f1115;border:1px solid #262b36;color:#fff;padding:6px 8px;border-radius:6px;font-size:12px}
         .qc-input-row button{background:#333947;border:1px solid #787e8e;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer} .qc-input-row button:hover{background:#4a5265}
         #qsResult{display:none;margin-top:10px;font-size:12px;background:#0f1115;padding:10px;border-radius:6px;border:1px solid #262b36}
-        @media (max-width:900px){body,.sidebar,.main-content,.right-drawer{display:block;width:100%;height:auto} .sidebar-top{overflow-y:visible;padding-bottom:0} .sidebar-bottom{border-top:none;padding-top:5px} .right-drawer{border-left:none;border-top:1px solid #262b36} .top-nav-row1{flex-direction:column;align-items:flex-start;gap:8px} .controls{flex-wrap:wrap;justify-content:space-between;gap:8px} select,.btn-control{flex:1 1 45%;font-size:11px;padding:8px 6px;text-align:center} .chart-container{height:400px;margin-top:10px;flex:none} .grid{grid-template-columns:repeat(2,1fr)} .modal{width:95%;padding:15px}}
+
+        /* MOBILE FIXES & ACCORDIONS */
+        @media (max-width:900px){
+            html, body {
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
+                height: auto !important;
+                position: relative !important;
+                -webkit-overflow-scrolling: touch;
+            }
+            body { display: block !important; width: 100% !important; }
+            .sidebar, .main-content, .right-drawer {
+                display: block !important;
+                width: 100% !important;
+                height: auto !important;
+                overflow: visible !important;
+            }
+            .chart-container {
+                height: 360px !important;
+                min-height: 360px !important;
+                position: relative !important;
+                margin-top: 10px;
+            }
+            .grid { grid-template-columns: repeat(2, 1fr); }
+            select, .btn-control { flex: 1 1 45%; font-size: 11px; padding: 8px 6px; text-align: center; }
+            .top-nav-row1 { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+            .modal { width: 95%; padding: 15px; }
+
+            /* Collapsible Mobile Drawers */
+            .mobile-drawer {
+                background: #1a1d24;
+                border: 1px solid #262b36;
+                border-radius: 8px;
+                padding: 10px;
+                margin-bottom: 10px;
+            }
+            .mobile-drawer summary {
+                font-size: 11px;
+                color: #00d2ff;
+                text-transform: uppercase;
+                font-weight: bold;
+                cursor: pointer;
+                list-style: none;
+                outline: none;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            .mobile-drawer summary::-webkit-details-marker { display: none; }
+            .mobile-drawer summary::after { content: '▼'; color: #787e8e; font-size: 9px; }
+            .mobile-drawer[open] summary::after { content: '▲'; }
+        }
     </style>
 </head>
 <body>
@@ -106,44 +158,67 @@
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><label>Active Profile</label><div style="display:flex; gap:4px;"><button onclick="addUserPrompt()" class="user-btn new">+ New</button><button onclick="deleteUserPrompt()" class="user-btn del">Delete</button></div></div>
                 <select id="userSelect" onchange="onUserChange(this.value)" onfocus="isDropdownOpen=true" onblur="setTimeout(()=>isDropdownOpen=false, 200)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select>
             </div>
+            
             <div class="total-shares-box"><label>Total Portfolio Equity</label><div id="mTotalSharesHeldVal" class="total-val">£0.00</div><div id="mTotalSharesPnL" class="total-pnl">Cash: £0.00 | Shares: £0.00</div><div id="mTotalPnLDisplay" class="total-pnl" style="margin-top:6px; font-size:14px;">£0.00 (0.00%)</div><div style="display:flex; justify-content:center; margin-top:8px;"><div class="segmented-control" id="mPnlTogglesSidebar"><input type="radio" name="master_pnl_tf" id="mpnl_all" value="all" checked onchange="updateMasterPnLDisplay()"><label for="mpnl_all">All Time</label><input type="radio" name="master_pnl_tf" id="mpnl_today" value="today" onchange="updateMasterPnLDisplay()"><label for="mpnl_today">Today</label><input type="radio" name="master_pnl_tf" id="mpnl_1h" value="1h" onchange="updateMasterPnLDisplay()"><label for="mpnl_1h">1 Hour</label></div></div></div>
-            <div class="master-budget-box"><label>Starting Capital (£)</label><input type="number" id="masterBudgetInput" value="10000" oninput="onMasterBudgetInput()"><div class="budget-sub-stats"><div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£10,000.00</b></div></div></div>
-            <h2>Live Watchlist</h2><div class="search-box"><input type="text" id="addTickerInput" placeholder="Add Symbol..."><button id="addBtn">+</button></div>
-            <ul class="watchlist" id="watchlistUI"></ul>
+            
+            <details class="mobile-drawer" id="budgetDrawer">
+                <summary>Capital Settings</summary>
+                <div class="master-budget-box" style="margin-top:10px; margin-bottom:0;"><label>Starting Capital (£)</label><input type="number" id="masterBudgetInput" value="10000" oninput="onMasterBudgetInput()"><div class="budget-sub-stats"><div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£10,000.00</b></div></div></div>
+            </details>
+
+            <details class="mobile-drawer" id="watchlistDrawer">
+                <summary>Live Watchlist</summary>
+                <div style="margin-top:10px;">
+                    <div class="search-box"><input type="text" id="addTickerInput" placeholder="Add Symbol..."><button id="addBtn">+</button></div>
+                    <ul class="watchlist" id="watchlistUI" style="max-height: 200px;"></ul>
+                </div>
+            </details>
         </div>
+        
         <div class="sidebar-bottom">
-            <div class="directives-box"><h3>Portfolio Action Directives</h3><div id="directivesList" style="max-height: 120px; overflow-y: auto;"><div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">Scanning portfolio...</div></div></div>
-            <div class="quick-check-box"><div class="qc-header-row"><h3>Instant Anomaly Check</h3><span class="qc-close-btn" onclick="closeQuickScore()">✕</span></div><div class="qc-input-row"><input type="text" id="qsTicker" placeholder="e.g. SSLN.L or MSFT"><button onclick="checkQuickScore()">Score</button></div><div id="qsResult"></div></div>
+            <details class="mobile-drawer" id="directivesDrawer">
+                <summary>Directives & Anomaly Check</summary>
+                <div style="margin-top:10px;">
+                    <div class="directives-box"><h3>Portfolio Action Directives</h3><div id="directivesList" style="max-height: 120px; overflow-y: auto;"><div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">Scanning portfolio...</div></div></div>
+                    <div class="quick-check-box"><div class="qc-header-row"><h3>Instant Anomaly Check</h3><span class="qc-close-btn" onclick="closeQuickScore()">✕</span></div><div class="qc-input-row"><input type="text" id="qsTicker" placeholder="e.g. SSLN.L or MSFT"><button onclick="checkQuickScore()">Score</button></div><div id="qsResult"></div></div>
+                </div>
+            </details>
             <button class="btn-rec" onclick="openRecommendModal()">Search for recommendations</button>
         </div>
     </div>
     
     <div class="main-content">
-        <div class="top-nav">
-            <div class="top-nav-row1">
-                <div style="display:flex; align-items:center; gap:8px;"><h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2><span id="activeDirectionBadge" style="display:none;"></span></div>
-                <div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button><button id="btnToggleGrid" class="btn-control btn-grid" onclick="toggleGridView()">2x2 Grid View</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg><span id="drawBtnText">Draw Line</span></button><button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button><button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div>
-            </div>
-            <div class="top-nav-row2">
-                <div class="controls">
-                    <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d" selected>1 Day</option><option value="5d">5 Days</option><option value="1mo">1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
-                    <label>Interval:</label><select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
-                    <label>Style:</label><select id="styleSelect" onchange="saveUISettings(); renderChart();"><option value="candlestick">Candlestick</option><option value="heikin-ashi">Heikin-Ashi</option><option value="line">Line</option><option value="area">Area</option><option value="bar">Bar</option></select>
-                    <label>Auto Update:</label><select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();"><option value="0">Manual</option><option value="5000">5 secs</option><option value="10000" selected>10 secs</option><option value="30000">30 secs</option><option value="60000">1 min</option><option value="300000">5 mins</option></select>
+        <details class="mobile-drawer" id="chartControlsDrawer">
+            <summary>Chart Controls & Timeframes</summary>
+            <div class="top-nav" style="margin-top:10px; border:none; padding:0; background:transparent;">
+                <div class="top-nav-row1">
+                    <div style="display:flex; align-items:center; gap:8px;"><h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2><span id="activeDirectionBadge" style="display:none;"></span></div>
+                    <div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button><button id="btnToggleGrid" class="btn-control btn-grid" onclick="toggleGridView()">2x2 Grid View</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg><span id="drawBtnText">Draw Line</span></button><button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button><button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset</button></div>
                 </div>
-                <div id="marketClocks" style="display:flex; gap:15px; align-items:center; margin-left:auto;"></div>
+                <div class="top-nav-row2">
+                    <div class="controls">
+                        <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d" selected>1 Day</option><option value="5d">5 Days</option><option value="1mo">1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
+                        <label>Interval:</label><select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
+                        <label>Style:</label><select id="styleSelect" onchange="saveUISettings(); renderChart();"><option value="candlestick">Candlestick</option><option value="heikin-ashi">Heikin-Ashi</option><option value="line">Line</option><option value="area">Area</option><option value="bar">Bar</option></select>
+                        <label>Auto Update:</label><select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();"><option value="0">Manual</option><option value="5000">5 secs</option><option value="10000" selected>10 secs</option><option value="30000">30 secs</option><option value="60000">1 min</option><option value="300000">5 mins</option></select>
+                    </div>
+                    <div id="marketClocks" style="display:flex; gap:15px; align-items:center; margin-left:auto;"></div>
+                </div>
             </div>
-        </div>
+        </details>
         
-        <div class="grid">
-            <div class="card"><h3>Live Price</h3><p id="mPrice" class="val-highlight">--</p></div>
-            <div class="card"><h3>Math Discount</h3><p id="mDisc" class="val-highlight">--</p></div>
-            <div class="card"><h3>Buy Score</h3><p id="mBuy" class="val-highlight">--</p></div>
-            <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Active Tranches ⓘ</h3><div id="mTranchesContainer" class="tranche-bars-container"></div><p id="mTranchesText" style="font-size:10px; color:#787e8e; margin-top:4px;">--</p></div>
-            <div class="card"><h3>Current Value Owned (£)</h3><input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()"><span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">0 shares</span></div>
-            <div class="card" style="justify-content: flex-start;"><h3>Profit / Loss</h3><p id="mPnL" style="font-size:15px; font-weight:bold; color:#8a8a9e; margin-top:2px;">£0.00 (0.00%)</p><div style="display:flex; justify-content:center; margin-top:8px;"><div class="segmented-control" id="pnlTogglesMain"><input type="radio" name="pnl_tf" id="pnl_all" value="all" checked onchange="updatePnLDisplay()"><label for="pnl_all">All Time</label><input type="radio" name="pnl_tf" id="pnl_today" value="today" onchange="updatePnLDisplay()"><label for="pnl_today">Today</label><input type="radio" name="pnl_tf" id="pnl_1h" value="1h" onchange="updatePnLDisplay()"><label for="pnl_1h">1 Hour</label></div></div></div>
-            <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Market Sentiment ⓘ <span id="thermoTrend" style="font-size:10px; font-weight:bold; margin-left:4px;"></span></h3><div class="thermo-container"><div class="thermo-bar-bg"><div id="thermoFill" class="thermo-bar-fill"></div></div><span id="thermoText" class="thermo-text">Room Temp (Neutral)</span></div><div style="margin-top:6px; height:20px; width:100%;"><svg id="thermoSparkline" style="width:100%; height:100%; overflow:visible;"></svg></div></div>
-        </div>
+        <details class="mobile-drawer" id="metricsDrawer">
+            <summary>Stock Metrics & Sentiment</summary>
+            <div class="grid" style="margin-top:10px;">
+                <div class="card"><h3>Live Price</h3><p id="mPrice" class="val-highlight">--</p></div>
+                <div class="card"><h3>Math Discount</h3><p id="mDisc" class="val-highlight">--</p></div>
+                <div class="card"><h3>Buy Score</h3><p id="mBuy" class="val-highlight">--</p></div>
+                <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Active Tranches ⓘ</h3><div id="mTranchesContainer" class="tranche-bars-container"></div><p id="mTranchesText" style="font-size:10px; color:#787e8e; margin-top:4px;">--</p></div>
+                <div class="card"><h3>Current Value Owned (£)</h3><input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()"><span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">0 shares</span></div>
+                <div class="card" style="justify-content: flex-start;"><h3>Profit / Loss</h3><p id="mPnL" style="font-size:15px; font-weight:bold; color:#8a8a9e; margin-top:2px;">£0.00 (0.00%)</p><div style="display:flex; justify-content:center; margin-top:8px;"><div class="segmented-control" id="pnlTogglesMain"><input type="radio" name="pnl_tf" id="pnl_all" value="all" checked onchange="updatePnLDisplay()"><label for="pnl_all">All Time</label><input type="radio" name="pnl_tf" id="pnl_today" value="today" onchange="updatePnLDisplay()"><label for="pnl_today">Today</label><input type="radio" name="pnl_tf" id="pnl_1h" value="1h" onchange="updatePnLDisplay()"><label for="pnl_1h">1 Hour</label></div></div></div>
+                <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Market Sentiment ⓘ <span id="thermoTrend" style="font-size:10px; font-weight:bold; margin-left:4px;"></span></h3><div class="thermo-container"><div class="thermo-bar-bg"><div id="thermoFill" class="thermo-bar-fill"></div></div><span id="thermoText" class="thermo-text">Room Temp (Neutral)</span></div><div style="margin-top:6px; height:20px; width:100%;"><svg id="thermoSparkline" style="width:100%; height:100%; overflow:visible;"></svg></div></div>
+            </div>
+        </details>
         
         <div class="chart-container">
             <div id="chartLegend" style="position: absolute; top: 15px; left: 15px; z-index: 8; display: flex; flex-direction: column; gap: 4px; pointer-events: none;"></div>
@@ -157,8 +232,8 @@
         <div id="ianAlertBox" style="display: none; background: #1e222d; border: 1px solid #00d2ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);"><h3 style="font-size: 11px; color: #00d2ff; margin: 0 0 8px 0; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>Ian Action Required</h3><div id="ianAlertList"></div></div>
         <div class="drawer-card" id="actionCard"><h3>Recommended Action</h3><p id="mActionMain" style="font-size:18px; font-weight:bold;">--</p><span id="mActionSub" style="font-size:11px; color:#8a8a9e; font-weight:normal; display:block; margin-bottom:2px;"></span><div id="actionBtnContainer" style="margin-top:2px;"></div></div>
         <div class="drawer-card"><h3>Recommended Rec.</h3><p id="mRecTradeAmt" style="color:#00c853; font-size:15px; font-weight:bold;">£0.00</p><span id="mRecShares" style="font-size:10px; color:#787e8e; display:block; margin-top:2px;">0 shares</span></div>
-        <details class="drawer-details" open><summary>Active Profiles Leaderboard</summary><div id="leaderboardUI" style="margin-top:8px;"></div></details>
-        <details class="drawer-details" open><summary>Asset Trade Log</summary><ul class="history-list" id="historyUI" style="margin-top:8px;"></ul></details>
+        <details class="drawer-details"><summary>Active Profiles Leaderboard</summary><div id="leaderboardUI" style="margin-top:8px;"></div></details>
+        <details class="drawer-details"><summary>Asset Trade Log</summary><ul class="history-list" id="historyUI" style="margin-top:8px;"></ul></details>
         <details class="drawer-details"><summary>All Trades History</summary><ul class="history-list" id="allHistoryUI" style="margin-top:8px;"></ul></details>
     </div>
 
@@ -175,11 +250,11 @@
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
             'Test A - Deep Value': 'Manual value accumulation using physical trusts and deep-value blue chips. No automated intraday trading.',
-            'Test B - Momentum (UK & US)': 'Trades high-momentum UK stocks and 3x/2x leveraged US ETFs. Automatically unlocks US capital at 8:50 PM BST to prepare for UK morning open.',
+            'Test B - Momentum (UK & US)': 'Trades high-momentum UK stocks and 3x/2x leveraged US ETFs. Automatically unlocks US capital at 8:50 PM BST to prepare for UK morning open. Now includes Regime Filter.',
             'Test C - 24/5 Global': '24/5 Follow-the-Sun strategy. Rotates capital across Asian, European, and US markets using fast EMAs.',
-            'Test D - Volatility': 'Hunts for aggressive volume spikes breaking above the upper Bollinger Band. Uses wider 0.75% trailing stops.',
-            'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes.',
-            'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 5 minutes before the US market closes to avoid overnight gaps.',
+            'Test D - Volatility': 'Hunts for aggressive volume spikes breaking above the upper Bollinger Band. Uses wider 0.75% trailing stops. Now includes Regime Filter.',
+            'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes. Includes 1.2% quick-targets for 3x ETFs.',
+            'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 15 minutes before the US market closes to avoid overnight gaps.',
             'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.',
             'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.',
             'Test I - Ultimate Hybrid': 'Combines market regime filtering, volume spike confirmation, and EOD risk sweep into one profile.',
@@ -189,8 +264,22 @@
             'Test M - VWAP Dip Sniper': '1-Minute VWAP Reversion. Snipes artificial 1.5% dips below intraday VWAP when the market regime is bullish. Exits on VWAP touch.',
             'Test N - 1-Minute Vol Scalper': '1-Minute Volume Spike Scalper. Buys when 1m volume > 3x average with a strong bullish close. Very tight targets.',
             'Test O - 1-Minute HOD Sniper': '1-Minute High-of-Day Breakout. Buys when price breaks the intraday high during the 2:30 PM - 3:30 PM BST opening hour.',
-            'Test P - 1-Minute BB Reversion': '1-Minute Bollinger Band Reversion. Buys extreme oversold dips below the lower 2-SD Bollinger Band when RSI < 25. Exits at the 20-SMA.'
+            'Test P - 1-Minute BB Reversion': '1-Minute Bollinger Band Reversion. Buys extreme oversold dips below the lower 2-SD Bollinger Band when RSI < 25. Exits at the 20-SMA.',
+            'Test Q - Market-Neutral StatArb': 'Statistical Arbitrage. Pairs correlated assets (e.g., NVDA/AMD) and trades the spread when they abnormally diverge, remaining market-neutral.',
+            'Test R - Regime-Filtered Momentum': 'Institutional-grade momentum. Hard-blocks all trades and holds cash if the broader market regime drops below 50, protecting against systemic chop.'
         };
+
+        function applyResponsiveDrawers() {
+            let isMobile = window.innerWidth <= 900;
+            let drawers = ['watchlistDrawer', 'directivesDrawer', 'chartControlsDrawer', 'metricsDrawer', 'budgetDrawer'];
+            drawers.forEach(id => {
+                let el = document.getElementById(id);
+                if (el) {
+                    if (isMobile) el.removeAttribute('open');
+                    else el.setAttribute('open', 'true');
+                }
+            });
+        }
 
         function getCountryFlag(symbol) {
             if (!symbol || symbol === 'ALL_SHARES') return '';
@@ -376,7 +465,7 @@
             let target = (currentActiveTranches / 5.0) * total_equity, diff = target - currentValOwned, pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub'), userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p'].some(prefix => activeProf.includes(prefix));
+            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r'].some(prefix => activeProf.includes(prefix));
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
             if (!currentTicker) { am.innerText = "NO ASSET"; am.style.color = "#787e8e"; as.innerText = ""; } 
@@ -399,7 +488,7 @@
             try {
                 let res = await fetch(`/api/directives`), data = await res.json(), cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p'].some(prefix => activeProf.includes(prefix));
+                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r'].some(prefix => activeProf.includes(prefix));
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; }
                 else { data.directives.forEach(d => { let isBuy = d.action === 'BUY', div = document.createElement('div'); div.className = 'directive-item'; let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default; display:flex; align-items:center;" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`; let flag = getCountryFlag(d.ticker); div.innerHTML = `<div class="directive-info" style="display:flex; align-items:center;">${flag}<b>${d.ticker}</b><span style="margin-left:4px;">: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</span></div>${btnHTML}`; cont.appendChild(div); }); }
@@ -457,9 +546,9 @@
 
         function initChart() {
             let c = document.getElementById('tvChart');
-            tvChart = LightweightCharts.createChart(c, { width: c.clientWidth, height: c.clientHeight || 450, layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, crosshair: { mode: 0 }, timeScale: { borderColor: '#262b36', timeVisible: true }, rightPriceScale: { visible: true, borderColor: '#262b36' }, leftPriceScale: { visible: false, borderColor: '#262b36' } });
+            tvChart = LightweightCharts.createChart(c, { width: c.clientWidth, height: c.clientHeight || 350, layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, crosshair: { mode: 0 }, timeScale: { borderColor: '#262b36', timeVisible: true }, rightPriceScale: { visible: true, borderColor: '#262b36' }, leftPriceScale: { visible: false, borderColor: '#262b36' } });
             tvChart.timeScale().subscribeVisibleTimeRangeChange(drawCanvasOverlay); tvChart.timeScale().subscribeVisibleLogicalRangeChange(drawCanvasOverlay);
-            window.addEventListener('resize', () => { tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); drawCanvasOverlay(); });
+            window.addEventListener('resize', () => { applyResponsiveDrawers(); tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); drawCanvasOverlay(); });
             tvChart.subscribeClick((param) => {
                 if (!isDrawing || !param.point || currentTicker === 'ALL_SHARES') return; let logical = tvChart.timeScale().coordinateToLogical(param.point.x); if (!tvSeries) return; let price = tvSeries.coordinateToPrice(param.point.y);
                 if (!currentLine) { currentLine = { l1: logical, p1: price, l2: logical, p2: price }; } else { currentLine.l2 = logical; currentLine.p2 = price; if (!manualLines[currentTicker]) manualLines[currentTicker] = []; manualLines[currentTicker].push({...currentLine}); currentLine = null; toggleDrawMode(); drawCanvasOverlay(); }
@@ -503,7 +592,7 @@
             if (isGridView) return; let lg = document.getElementById('chartLegend');
             if (!masterData.length) { let cv = document.getElementById('chartCanvas'); if (cv) { let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); } return; }
             let s = document.getElementById('styleSelect').value, activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p'].some(prefix => activeProf.includes(prefix));
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r'].some(prefix => activeProf.includes(prefix));
             let currentRange = tvChart.timeScale().getVisibleLogicalRange();
 
             if (currentTicker === 'ALL_SHARES') {
@@ -601,7 +690,7 @@
             selectStock(v); setTimeout(openAlertModal, 500);
         });
         document.getElementById('qsTicker').addEventListener('keypress', e => { if (e.key === 'Enter') checkQuickScore(); });
-        setTimeout(() => { initChart(); fetchUsers(); updateIntervals(); fetchData(false); setupAutoRefresh(); }, 100);
+        setTimeout(() => { applyResponsiveDrawers(); initChart(); fetchUsers(); updateIntervals(); fetchData(false); setupAutoRefresh(); }, 100);
     </script>
 </body>
 </html>
