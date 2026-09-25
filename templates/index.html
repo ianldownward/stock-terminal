@@ -186,7 +186,10 @@
             'Test J - News Sentiment AI': 'Scrapes live financial media to dynamically alter buy conviction based on positive or negative news trends.',
             'Test K - 1-Minute Hyper-Scalper': 'Extremely aggressive logic. Runs exclusively on the 1-minute chart trading 3x Leveraged ETFs. Buys instant oversold reversals and uses a tight 0.75% trailing stop.',
             'Test L - 5-Minute ORB': 'Opening Range Breakout. Buys aggressive volume pushes above the first 5-minute candle\'s high between 2:30 PM and 3:00 PM BST. 1% Target, 0.5% Stop.',
-            'Test M - VWAP Dip Sniper': '1-Minute VWAP Reversion. Snipes artificial 1.5% dips below intraday VWAP when the market regime is bullish. Exits on VWAP touch.'
+            'Test M - VWAP Dip Sniper': '1-Minute VWAP Reversion. Snipes artificial 1.5% dips below intraday VWAP when the market regime is bullish. Exits on VWAP touch.',
+            'Test N - 1-Minute Vol Scalper': '1-Minute Volume Spike Scalper. Buys when 1m volume > 3x average with a strong bullish close. Very tight targets.',
+            'Test O - 1-Minute HOD Sniper': '1-Minute High-of-Day Breakout. Buys when price breaks the intraday high during the 2:30 PM - 3:30 PM BST opening hour.',
+            'Test P - 1-Minute BB Reversion': '1-Minute Bollinger Band Reversion. Buys extreme oversold dips below the lower 2-SD Bollinger Band when RSI < 25. Exits at the 20-SMA.'
         };
 
         function getCountryFlag(symbol) {
@@ -373,7 +376,7 @@
             let target = (currentActiveTranches / 5.0) * total_equity, diff = target - currentValOwned, pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub'), userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m'].some(prefix => activeProf.includes(prefix));
+            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p'].some(prefix => activeProf.includes(prefix));
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
             if (!currentTicker) { am.innerText = "NO ASSET"; am.style.color = "#787e8e"; as.innerText = ""; } 
@@ -396,7 +399,7 @@
             try {
                 let res = await fetch(`/api/directives`), data = await res.json(), cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m'].some(prefix => activeProf.includes(prefix));
+                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p'].some(prefix => activeProf.includes(prefix));
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; }
                 else { data.directives.forEach(d => { let isBuy = d.action === 'BUY', div = document.createElement('div'); div.className = 'directive-item'; let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default; display:flex; align-items:center;" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`; let flag = getCountryFlag(d.ticker); div.innerHTML = `<div class="directive-info" style="display:flex; align-items:center;">${flag}<b>${d.ticker}</b><span style="margin-left:4px;">: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</span></div>${btnHTML}`; cont.appendChild(div); }); }
@@ -500,7 +503,7 @@
             if (isGridView) return; let lg = document.getElementById('chartLegend');
             if (!masterData.length) { let cv = document.getElementById('chartCanvas'); if (cv) { let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); } return; }
             let s = document.getElementById('styleSelect').value, activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m'].some(prefix => activeProf.includes(prefix));
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p'].some(prefix => activeProf.includes(prefix));
             let currentRange = tvChart.timeScale().getVisibleLogicalRange();
 
             if (currentTicker === 'ALL_SHARES') {
