@@ -397,18 +397,21 @@ class MarketScoringEngine:
         try:
             df_qqq = fetch_yf_data('QQQ', '5d', '5m')
             if not df_qqq.empty and len(df_qqq) >= 21:
-                ema9 = df_qqq['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
-                ema21 = df_qqq['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+                ema9 = df_qqq['Close'].ewm(span=9, adjust=False).mean()
+                ema21 = df_qqq['Close'].ewm(span=21, adjust=False).mean()
                 
                 delta = df_qqq['Close'].diff()
-                rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
-                rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
+                gain = delta.where(delta > 0, 0).rolling(14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                rs = gain / loss
+                rsi = 100 - (100 / (1 + rs))
+                rsi = rsi.fillna(50)
                 
-                score = 50
-                if ema9 > ema21: score += 25
-                else: score -= 25
-                score += int((rsi - 50) * 0.5)
-                score = min(100, max(0, score))
+                scores = 50 + (ema9 > ema21).astype(int)*50 - 25 + (rsi - 50)*0.5
+                scores = scores.clip(0, 100).round(1)
+                
+                score = int(scores.iloc[-1])
+                sparkline = [round(x, 1) for x in scores.tail(78).tolist()] # Trailing 24h of 5m bars (~78 candles)
                 
                 if score <= 20: state, color, code = "Deep Freeze (Capitulation)", "#00d2ff", "BEAR_FREEZE"
                 elif score <= 40: state, color, code = "Cooling (Pullback)", "#ff9900", "BEAR"
@@ -416,12 +419,15 @@ class MarketScoringEngine:
                 elif score <= 80: state, color, code = "Heating Up (Expansion)", "#00c853", "BULL"
                 else: state, color, code = "Overheating (Euphoria)", "#b388ff", "BULL_OVERHEAT"
                 
-                return {'score': score, 'state': state, 'color': color, 'code': code}
+                trend_diff = score - sparkline[0] if sparkline else 0
+                trend_dir = "▲ Trending Up" if trend_diff > 2 else ("▼ Trending Down" if trend_diff < -2 else "► Stable")
+                
+                return {'score': score, 'state': state, 'color': color, 'code': code, 'sparkline': sparkline, 'trend': trend_dir}
         except Exception: pass
-        return {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL'}
+        return {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
 
     def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test b', regime=None):
-        if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL'}
+        if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         
         ticker = getattr(df_5m, 'name', '')
         is_inverse = ticker in ['SQQQ', '3SUS.L']
@@ -661,13 +667,13 @@ class MarketScoringEngine:
 
         return {'type': 'Physical Trust', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.98, 2), 'rec_sell': round(nav*0.95, 2),
-                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}, 'trade_type': 'LONG'}
+                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG'}
 
     def score_equity(self, df, current_price):
         if df.empty or 'Close' not in df:
             return {'type': 'Global Equity', 'score': 0, 'tranches': 0, 'discount': '0.00%', 
                     'reason': 'Awaiting data.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
-                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '', 'action_color': '#8a8a9e', 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}, 'trade_type': 'LONG'}
+                    'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '', 'action_color': '#8a8a9e', 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG'}
             
         dma = df['Close'].tail(200).mean() if len(df) >= 200 else df['Close'].mean()
         implied_discount = ((dma - current_price) / dma) * 100.0
@@ -697,7 +703,7 @@ class MarketScoringEngine:
             
         return {'type': 'Global Equity', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 
                 'reason': reason, 'is_smart': True, 'rec_buy': round(dma*0.9, 2), 'rec_sell': round(dma*1.05, 2),
-                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e'}, 'trade_type': 'LONG'}
+                'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG'}
 
 portfolio_store = PortfolioManager()
 
@@ -931,7 +937,7 @@ def update_holding():
 def execute_trade():
     portfolio_store.reload()
     b = request.get_json() or {}
-    return jsonify({'status': 'ok', 'entry': portfolio_store.execute_trade(b.get('ticker'), b.get('action'), b.get('shares'), b.get('price'))})
+    return jsonify({'status': 'ok', 'entry': portfolio_store.execute_trade(b.get('ticker'), b.get('action'), b.get('shares'), b.get('price'), b.get('username'))})
 
 @app.route('/api/trade/undo', methods=['POST'])
 def undo_trade(): 
@@ -1024,7 +1030,45 @@ def get_directives():
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
 
-    return jsonify({'directives': dirs})
+    # Calculate Ian directives if currently looking at a different profile
+    ian_dirs = []
+    if active_profile != 'ian':
+        try:
+            ian_ud = portfolio_store.user_data('Ian')
+            ian_wl = ian_ud.get('watchlist') or ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
+            ian_holds = list(set([tr.get('ticker') for tr in (ian_ud.get('history') or []) if isinstance(tr, dict) and portfolio_store.get_shares(tr.get('ticker'), 'Ian') > 0]))
+            ian_scan = list(set(ian_wl + ian_holds))
+            
+            ian_mb = ian_ud.get('master_budget', 10000.0)
+            ian_nh = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in (ian_ud.get('history') or []) if isinstance(tr, dict))
+            ian_im = sum(pos.get('manual_val', 0.0) for pos in (ian_ud.get('initial_positions') or {}).values() if isinstance(pos, dict))
+            ian_rem_cash = max(0, ian_mb + ian_nh - ian_im)
+
+            dfs_ian = {}
+            def fetch_ian(tick): return tick, fetch_yf_data(tick, "1y", "1d")
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                for tick, df_i in ex.map(fetch_ian, ian_scan): dfs_ian[tick] = df_i
+
+            for t in ian_scan:
+                df = dfs_ian.get(t)
+                if df is None or df.empty: continue
+                cur = df['Close'].iloc[-1]
+                sh = portfolio_store.get_shares(t, 'Ian')
+                cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
+                
+                avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
+                v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
+                st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
+                
+                if st['action_main'] == 'BUY' and sh == 0 and ian_rem_cash >= 20:
+                    bs = int((ian_rem_cash * 0.25) // cps)
+                    if bs > 0:
+                        ian_dirs.append({'ticker': t, 'action': 'BUY', 'shares': bs, 'price': cur, 'amount': bs * cps, 'score': st['score']})
+                elif st['action_main'] == 'SELL' and sh > 0:
+                    ian_dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': sh * cps, 'score': st['score']})
+        except Exception: pass
+
+    return jsonify({'directives': dirs, 'ian_directives': ian_dirs})
 
 @app.route('/api/recommend', methods=['GET'])
 def get_recommendations():
@@ -1092,7 +1136,6 @@ def get_data():
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
 
-        # --------- DAILY LEADERBOARD LOGIC FIX ---------
         now_lon = pd.Timestamp.now(tz='Europe/London')
         today_str = now_lon.strftime('%Y-%m-%d')
         
@@ -1173,7 +1216,6 @@ def get_data():
                 'daily_pnl': round(daily_pnl, 2)
             })
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
-        # ------------------------------------------------
 
         settings = ud.get('settings') or {}
         req_p = request.args.get('p')

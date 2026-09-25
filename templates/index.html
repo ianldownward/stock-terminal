@@ -179,7 +179,6 @@
                         <button onclick="deleteUserPrompt()" class="user-btn del">Delete</button>
                     </div>
                 </div>
-                <!-- FIXED: Dropdown pause lock (isDropdownOpen) to prevent jumping -->
                 <select id="userSelect" onchange="onUserChange(this.value)" onfocus="isDropdownOpen=true" onblur="setTimeout(()=>isDropdownOpen=false, 200)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select>
             </div>
             
@@ -226,7 +225,7 @@
                     <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
                     <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
                     <button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21" font-weight="bold" points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
                         <span id="drawBtnText">Draw Line</span>
                     </button>
                     <button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button>
@@ -268,12 +267,16 @@
             </div>
             
             <div class="card clickable-card" onclick="showAnomalyReason()">
-                <h3>Market Sentiment ⓘ</h3>
+                <h3>Market Sentiment ⓘ <span id="thermoTrend" style="font-size:10px; font-weight:bold; margin-left:4px;"></span></h3>
                 <div class="thermo-container">
                     <div class="thermo-bar-bg">
                         <div id="thermoFill" class="thermo-bar-fill"></div>
                     </div>
                     <span id="thermoText" class="thermo-text">Room Temp (Neutral)</span>
+                </div>
+                <!-- 24-Hour Sparkline Chart -->
+                <div style="margin-top:6px; height:20px; width:100%;">
+                    <svg id="thermoSparkline" style="width:100%; height:100%; overflow:visible;"></svg>
                 </div>
             </div>
         </div>
@@ -293,6 +296,15 @@
     </div>
     
     <div class="right-drawer">
+        <!-- Ian Action Alert Box -->
+        <div id="ianAlertBox" style="display: none; background: #1e222d; border: 1px solid #00d2ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);">
+            <h3 style="font-size: 11px; color: #00d2ff; margin: 0 0 8px 0; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                Ian Action Required
+            </h3>
+            <div id="ianAlertList"></div>
+        </div>
+
         <div class="drawer-card" id="actionCard"><h3>Recommended Action</h3><p id="mActionMain" style="font-size:18px; font-weight:bold;">--</p><span id="mActionSub" style="font-size:11px; color:#8a8a9e; font-weight:normal; display:block; margin-bottom:2px;"></span><div id="actionBtnContainer" style="margin-top:2px;"></div></div>
         <div class="drawer-card"><h3>Recommended Rec.</h3><p id="mRecTradeAmt" style="color:#00c853; font-size:15px; font-weight:bold;">£0.00</p><span id="mRecShares" style="font-size:10px; color:#787e8e; display:block; margin-top:2px;">0 shares</span></div>
         
@@ -576,7 +588,6 @@
                 let currentOptions = Array.from(sel.options).map(o => o.value);
                 let newOptions = data.users || [];
                 
-                // FIXED: Only rebuild the DOM if the users actually changed, prevents dropdown from snapping closed
                 if (currentOptions.join(',') !== newOptions.join(',') || sel.value !== data.active_user) {
                     sel.innerHTML = '';
                     newOptions.forEach(u => { 
@@ -810,6 +821,16 @@
             fetchData(false);
         }
 
+        async function executeIanTrade(ticker, action, shares, price) {
+            if (shares <= 0 || !ticker) return;
+            await fetch('/api/trade/execute', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ticker: ticker, action: action, shares: shares, price: price, username: 'Ian'})
+            });
+            fetchData(false);
+        }
+
         async function fetchDirectives() {
             try {
                 let res = await fetch(`/api/directives`); let data = await res.json();
@@ -819,13 +840,33 @@
                 
                 let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'].some(prefix => activeProf.includes(prefix));
                 
-                if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; return; }
-                data.directives.forEach(d => {
-                    let isBuy = d.action === 'BUY'; let div = document.createElement('div'); div.className = 'directive-item';
-                    let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default; display:flex; align-items:center;" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
-                    div.innerHTML = `<div class="directive-info"><b>${d.ticker}</b>: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</div>${btnHTML}`;
-                    cont.appendChild(div);
-                });
+                if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; }
+                else {
+                    data.directives.forEach(d => {
+                        let isBuy = d.action === 'BUY'; let div = document.createElement('div'); div.className = 'directive-item';
+                        let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default; display:flex; align-items:center;" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
+                        div.innerHTML = `<div class="directive-info"><b>${d.ticker}</b>: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</div>${btnHTML}`;
+                        cont.appendChild(div);
+                    });
+                }
+                
+                let ianBox = document.getElementById('ianAlertBox');
+                let ianList = document.getElementById('ianAlertList');
+                if (data.ian_directives && data.ian_directives.length > 0 && activeProf !== 'ian') {
+                    ianBox.style.display = 'block';
+                    ianList.innerHTML = '';
+                    data.ian_directives.forEach(d => {
+                        let isBuy = d.action === 'BUY'; 
+                        let div = document.createElement('div'); div.className = 'directive-item';
+                        div.style.marginBottom = '6px'; div.style.background = '#0f1115';
+                        let btnHTML = `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeIanTrade('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`;
+                        div.innerHTML = `<div class="directive-info"><b>${d.ticker}</b>: ${d.action} ${d.shares} shs</div>${btnHTML}`;
+                        ianList.appendChild(div);
+                    });
+                } else {
+                    ianBox.style.display = 'none';
+                }
+                
             } catch(e) {}
         }
 
@@ -1166,7 +1207,6 @@
         }
 
         async function fetchData(silent = false) {
-            // FIXED: Do not process background UI updates if the user is clicking the dropdown
             if (isDropdownOpen) return;
             
             let fetchId = ++currentFetchId; 
@@ -1191,7 +1231,6 @@
                 
                 if (p.leaderboard) {
                     let lbHtml = p.leaderboard.map(lb => {
-                        // FIXED: Color is now based strictly on daily PnL, not all-time 5k
                         let isProfit = lb.daily_pnl >= 0;
                         let color = isProfit ? '#00c853' : '#ff3d00';
                         return `
@@ -1257,10 +1296,33 @@
                     let reg = p.metrics.regime;
                     let fillEl = document.getElementById('thermoFill');
                     let textEl = document.getElementById('thermoText');
+                    let trendEl = document.getElementById('thermoTrend');
                     fillEl.style.width = `${reg.score}%`;
                     fillEl.style.backgroundColor = reg.color;
                     textEl.innerText = `${reg.score}/100 - ${reg.state}`;
                     textEl.style.color = reg.color;
+                    
+                    if (trendEl && reg.trend) {
+                        trendEl.innerText = reg.trend;
+                        trendEl.style.color = reg.trend.includes('Up') ? '#00c853' : (reg.trend.includes('Down') ? '#ff3d00' : '#8a8a9e');
+                    }
+                    
+                    // Render 24h Sentiment Sparkline SVG Chart
+                    let svg = document.getElementById('thermoSparkline');
+                    if (svg && reg.sparkline && reg.sparkline.length > 1) {
+                        let pts = reg.sparkline;
+                        let min = Math.min(...pts);
+                        let max = Math.max(...pts);
+                        let range = (max - min) || 1;
+                        let w = svg.clientWidth || 120;
+                        let h = 20;
+                        let coords = pts.map((val, idx) => {
+                            let x = (idx / (pts.length - 1)) * w;
+                            let y = h - ((val - min) / range) * (h - 4) - 2;
+                            return `${x.toFixed(1)},${y.toFixed(1)}`;
+                        }).join(' ');
+                        svg.innerHTML = `<polyline fill="none" stroke="${reg.color}" stroke-width="1.5" points="${coords}" />`;
+                    }
                 }
 
                 updateMarketClocks();
