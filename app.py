@@ -110,7 +110,7 @@ class PortfolioManager:
         return {
             'master_budget': 5000.0 if 'test' in username.lower() else 10000.0,
             'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [], 'notified_signals': {},
-            'settings': {'period': '1mo', 'interval': '1d', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
+            'settings': {'period': '1d', 'interval': '5m', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
     def load(self):
@@ -411,7 +411,7 @@ class MarketScoringEngine:
                 scores = scores.clip(0, 100).round(1)
                 
                 score = int(scores.iloc[-1])
-                sparkline = [round(x, 1) for x in scores.tail(78).tolist()] # Trailing 24h of 5m bars (~78 candles)
+                sparkline = [round(x, 1) for x in scores.tail(78).tolist()]
                 
                 if score <= 20: state, color, code = "Deep Freeze (Capitulation)", "#00d2ff", "BEAR_FREEZE"
                 elif score <= 40: state, color, code = "Cooling (Pullback)", "#ff9900", "BEAR"
@@ -443,7 +443,6 @@ class MarketScoringEngine:
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_us_stock = not ticker.endswith('.L')
 
-        # --- EOD VOLATILITY SHIELD ---
         if any(x in prof for x in ['test f', 'test h', 'test i', 'test j']) and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 45:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -455,7 +454,6 @@ class MarketScoringEngine:
                         'reason': "EOD NO-BUY ZONE: Blocking new entries in final 15 mins.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
-        # --- TEST B: CAPITAL UNLOCK ---
         if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -464,7 +462,6 @@ class MarketScoringEngine:
                             'reason': "US PRE-CLOSE CAPITAL UNLOCK: Freeing capital for UK morning open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'US Pre-Close Unlock', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(UK Capital Unlock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
-        # --- TEST J: NEWS SENTIMENT AI PROFILE ---
         if 'test j' in prof:
             sent_score, h_count, top_head = fetch_news_sentiment(ticker)
             
@@ -495,7 +492,6 @@ class MarketScoringEngine:
                     'reason': f"Scanning media feeds for {ticker} catalysts (Current Sentiment: {sent_score:+d} pts). Top: '{top_head[:50]}...'", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Scanning News AI', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Catalyst)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # --- TEST I: ULTIMATE HYBRID PROFILE ---
         if 'test i' in prof:
             avg_vol = df_5m['Volume'].tail(20).mean()
             cur_vol = df_5m['Volume'].iloc[-1]
@@ -525,7 +521,6 @@ class MarketScoringEngine:
                     'reason': f"Awaiting Hybrid Setup (Regime: {regime['state']}, Vol Surge: {vol_surge:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Awaiting Confluence', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # --- TEST H: WICK REVERSAL ---
         if 'test h' in prof:
             last_candle = df_5m.iloc[-2]
             c_open, c_close = last_candle['Open'], last_candle['Close']
@@ -571,7 +566,6 @@ class MarketScoringEngine:
                     'reason': "Scanning 5-minute wicks for lower buyer-rejection pin bars with Volume > 1.2x.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Scanning Wicks', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # STANDARD MOMENTUM PROFILES
         trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if 'test e' in prof else 0.50))
         hard_pct = -0.50 if 'test d' in prof else -1.00
 
@@ -803,7 +797,8 @@ def process_auto_profile(prof_name):
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
             except Exception: pass
 
-        max_allowed_holds = 5 if 'test a' in active_profile else (1 if 'test e' in active_profile else 2)
+        # CHANGED: Max limits bumped to 3 for momentum profiles to allow diversification.
+        max_allowed_holds = 5 if 'test a' in active_profile else (1 if 'test e' in active_profile else 3)
         
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
             top_candidate = max(buys, key=lambda x: x['s'])
@@ -827,7 +822,8 @@ def process_auto_profile(prof_name):
         if buys and rem_cash >= MIN_BUY_VALUE and not is_eod_blocked and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
             top_buys = buys[:slots_available]
-            per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if 'test e' in active_profile else 0.50))
+            # CHANGED: 33% capital allocation for 3 positions.
+            per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if 'test e' in active_profile else 0.33))
             for b in top_buys:
                 bs = int(per_stock_budget // b['cps'])
                 amt = round(bs * b['cps'], 2)
@@ -1009,6 +1005,17 @@ def get_directives():
             sh = portfolio_store.get_shares(t)
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
             
+            now_uk = pd.Timestamp.now(tz='Europe/London')
+            is_us_stock = not t.endswith('.L')
+            current_mins = now_uk.hour * 60 + now_uk.minute
+            
+            if now_uk.weekday() >= 5:
+                is_open = False
+            elif is_us_stock:
+                is_open = (14 * 60 + 30) <= current_mins < (21 * 60)
+            else:
+                is_open = (8 * 60) <= current_mins < (16 * 60 + 30)
+            
             if is_momentum:
                 avg_buy_p, highest_p = 0.0, cur
                 if sh > 0:
@@ -1021,16 +1028,22 @@ def get_directives():
                 v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
                 st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
             
+            tot_own = portfolio_store.get_total_portfolio_value(prof_name)
+            total_eq = cash_balance + tot_own
+            
             if st['action_main'] == 'BUY' and sh == 0 and rem_cash >= 20:
-                bs = int((rem_cash * 0.25) // cps) 
-                if bs > 0:
-                    dirs.append({'ticker': t, 'action': 'BUY', 'shares': bs, 'price': cur, 'amount': bs * cps, 'score': st['score']})
+                # CHANGED: Hide closed stocks from UI for day-trading bots
+                if not is_momentum or is_open:
+                    allocation = 0.33 if is_momentum else 0.20
+                    bs = int(min(rem_cash, total_eq * allocation) // cps) 
+                    if bs > 0:
+                        dirs.append({'ticker': t, 'action': 'BUY', 'shares': bs, 'price': cur, 'amount': bs * cps, 'score': st['score']})
             elif st['action_main'] == 'SELL' and sh > 0:
-                dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': sh * cps, 'score': st['score']})
+                if not is_momentum or is_open:
+                    dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': sh * cps, 'score': st['score']})
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
 
-    # Calculate Ian directives if currently looking at a different profile
     ian_dirs = []
     if active_profile != 'ian':
         try:
@@ -1219,9 +1232,9 @@ def get_data():
 
         settings = ud.get('settings') or {}
         req_p = request.args.get('p')
-        if not req_p or req_p == 'undefined': req_p = settings.get('period', '5d' if is_momentum else '1mo')
+        if not req_p or req_p == 'undefined': req_p = settings.get('period', '1d')
         req_i = request.args.get('i')
-        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '5m' if is_momentum else '1d')
+        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '5m')
 
         if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
         elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
