@@ -107,10 +107,24 @@ class PortfolioManager:
         self._ensure_default_user()
 
     def default_user_state(self, username=""):
+        prof = username.strip().lower()
+        if 'test k' in prof:
+            wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
+        elif 'test g' in prof:
+            wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
+        elif any(x in prof for x in ['test h', 'test i', 'test j']):
+            wl = ['META', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
+        elif 'test c' in prof:
+            wl = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+        elif any(x in prof for x in ['test a', 'ian']):
+            wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
+        else:
+            wl = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'SMCI', 'ARM', 'AVGO', 'CONL', 'MSTX', 'BITX']
+
         return {
-            'master_budget': 5000.0 if 'test' in username.lower() else 10000.0,
-            'watchlist': [], 'initial_positions': {}, 'holdings': {}, 'history': [], 'notified_signals': {},
-            'settings': {'period': '1d', 'interval': '5m', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
+            'master_budget': 5000.0 if 'test' in prof else 10000.0,
+            'watchlist': wl, 'initial_positions': {}, 'holdings': {}, 'history': [], 'notified_signals': {},
+            'settings': {'period': '1d', 'interval': '1m' if 'test k' in prof else '5m', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
     def load(self):
@@ -144,7 +158,7 @@ class PortfolioManager:
                 'Ian', 'Test A - Deep Value', 'Test B - Momentum (UK & US)', 
                 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep',
                 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal',
-                'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI'
+                'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI', 'Test K - 1-Minute Hyper-Scalper'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -158,7 +172,7 @@ class PortfolioManager:
                     needs_save = True
 
             for p in default_profiles:
-                if p not in self.data['users']:
+                if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
                     
@@ -185,7 +199,7 @@ class PortfolioManager:
     def user_data(self, username=None):
         au = username if username else self.active_username()
         if 'users' not in self.data: self.data['users'] = {}
-        if au not in self.data['users']:
+        if au not in self.data['users'] or not self.data['users'][au].get('watchlist'):
             self.data['users'][au] = self.default_user_state(au)
             self.save_data(self.data)
         return self.data['users'][au]
@@ -194,7 +208,8 @@ class PortfolioManager:
         if not username.strip(): return
         self.reload()
         if 'users' not in self.data: self.data['users'] = {}
-        if username.strip() not in self.data['users']: self.data['users'][username.strip()] = self.default_user_state(username.strip())
+        if username.strip() not in self.data['users'] or not self.data['users'][username.strip()].get('watchlist'): 
+            self.data['users'][username.strip()] = self.default_user_state(username.strip())
         self.data['active_user'] = username.strip()
         self.save_data(self.data)
 
@@ -443,7 +458,41 @@ class MarketScoringEngine:
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_us_stock = not ticker.endswith('.L')
 
-        if any(x in prof for x in ['test f', 'test h', 'test i', 'test j']) and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 45:
+        ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
+        ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
+        delta = df_5m['Close'].diff()
+        rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
+        rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
+
+        # TEST K: 1-MINUTE HYPER-SCALPER
+        if 'test k' in prof:
+            if avg_buy_price > 0 and highest_price > 0:
+                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
+                
+                if drop_from_peak >= 0.75:
+                    return {'type': 'Hyper-Scalp', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                            'reason': f"SCALPER TRAILING STOP. Dropped {drop_from_peak:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
+                if rsi >= 75:
+                    return {'type': 'Hyper-Scalp', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
+                            'reason': f"RSI OVERBOUGHT ({rsi:.1f}). Scalping profits.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                            'status': 'Overbought', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Scalp Exit)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
+                return {'type': 'Hyper-Scalp', 'score': 95, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%",
+                        'reason': f"RIDING SCALP. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                        'status': 'Riding Trend', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Position Active)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+
+            if rsi <= 35 and current_price > ema9 and pct_change_5d > -5:
+                return {'type': 'Hyper-Scalp', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%",
+                        'reason': f"SCALP DETECTED: Oversold RSI ({rsi:.1f}) + Price pushed above 9-EMA.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
+                        'status': 'Hyper-Scalp Buy', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Scalp Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+                        
+            return {'type': 'Hyper-Scalp', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%",
+                    'reason': f"Scanning 1m chart. Waiting for RSI < 35 & Price > 9-EMA (Current RSI: {rsi:.1f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
+                    'status': 'Scanning Scalps', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
+
+        # EOD VOLATILITY SHIELD
+        if any(x in prof for x in ['test f', 'test h', 'test i', 'test j', 'test k']) and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 45:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%",
@@ -454,6 +503,7 @@ class MarketScoringEngine:
                         'reason': "EOD NO-BUY ZONE: Blocking new entries in final 15 mins.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                         'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
+        # TEST B: CAPITAL UNLOCK
         if 'test b' in prof and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -462,6 +512,7 @@ class MarketScoringEngine:
                             'reason': "US PRE-CLOSE CAPITAL UNLOCK: Freeing capital for UK morning open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'US Pre-Close Unlock', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(UK Capital Unlock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
+        # TEST J: NEWS SENTIMENT AI PROFILE
         if 'test j' in prof:
             sent_score, h_count, top_head = fetch_news_sentiment(ticker)
             
@@ -492,11 +543,11 @@ class MarketScoringEngine:
                     'reason': f"Scanning media feeds for {ticker} catalysts (Current Sentiment: {sent_score:+d} pts). Top: '{top_head[:50]}...'", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Scanning News AI', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Catalyst)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
+        # TEST I: ULTIMATE HYBRID PROFILE
         if 'test i' in prof:
             avg_vol = df_5m['Volume'].tail(20).mean()
             cur_vol = df_5m['Volume'].iloc[-1]
             vol_surge = (cur_vol / avg_vol) if avg_vol > 0 else 1.0
-            ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
 
             if avg_buy_price > 0 and highest_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -521,6 +572,7 @@ class MarketScoringEngine:
                     'reason': f"Awaiting Hybrid Setup (Regime: {regime['state']}, Vol Surge: {vol_surge:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': 'Awaiting Confluence', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
+        # TEST H: WICK REVERSAL
         if 'test h' in prof:
             last_candle = df_5m.iloc[-2]
             c_open, c_close = last_candle['Open'], last_candle['Close']
@@ -553,8 +605,6 @@ class MarketScoringEngine:
                             'reason': f"HOLDING WICK REVERSAL. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                             'status': 'Holding Reversal', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Reversal)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
-                ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
-                
                 if (lower_wick / total_range) >= 0.35 and current_price > c_low and vol_ratio >= 1.2:
                     if current_price >= ema21:
                         wick_score = min(100, max(60, round(50 + (lower_wick / total_range) * 50)))
@@ -602,13 +652,6 @@ class MarketScoringEngine:
                     'reason': f"SENTIMENT THERMOMETER BLOCK ({regime['score']}/100 - {regime['state']}): QQQ in pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price,
                     'status': regime['state'], 'color': regime['color'], 'action_main': 'HOLD / WAIT', 'action_sub': '(Market Cooling)', 'action_color': regime['color'], 'regime': regime, 'trade_type': trade_type}
 
-        ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
-        ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
-        delta = df_5m['Close'].diff()
-        rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
-        
-        # CHANGED: Added strict rule: current_price must be > ema9 to catch falling knives
         if ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0:
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
             tranches, action_main, action_sub = 1, "BUY", f"({trade_type} Surge)"
@@ -708,7 +751,7 @@ def process_auto_profile(prof_name):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
+        is_auto_profile = any(x in active_profile for x in ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k'])
         if not is_auto_profile: return
 
         if 'test a' in active_profile:
@@ -717,6 +760,8 @@ def process_auto_profile(prof_name):
             scan_list = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
         elif 'test h' in active_profile or 'test i' in active_profile or 'test j' in active_profile:
             scan_list = ['META', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
+        elif 'test k' in active_profile:
+            scan_list = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
         elif 'test c' in active_profile:
             scan_list = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
         else:
@@ -739,7 +784,11 @@ def process_auto_profile(prof_name):
         regime = engine.check_market_regime()
 
         dfs = {}
-        def fetch_data_thread(tick): return tick, fetch_yf_data(tick, "5d" if 'test a' not in active_profile else "1y", "5m" if 'test a' not in active_profile else "1d")
+        def fetch_data_thread(tick): 
+            interval = "1m" if 'test k' in active_profile else ("1d" if 'test a' in active_profile else "5m")
+            period = "1d" if 'test k' in active_profile else ("1y" if 'test a' in active_profile else "5d")
+            return tick, fetch_yf_data(tick, period, interval)
+
         with ThreadPoolExecutor(max_workers=4) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
 
@@ -814,7 +863,7 @@ def process_auto_profile(prof_name):
                 dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
 
         now_uk = pd.Timestamp.now(tz='Europe/London')
-        is_eod_blocked = (any(x in active_profile for x in ['test f', 'test h', 'test i', 'test j']) and now_uk.hour == 20 and now_uk.minute >= 45)
+        is_eod_blocked = (any(x in active_profile for x in ['test f', 'test h', 'test i', 'test j', 'test k']) and now_uk.hour == 20 and now_uk.minute >= 45)
         
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
@@ -842,11 +891,12 @@ def global_background_worker():
             
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
+                fetch_yf_data(tk, "1d", "1m")
             
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal', 'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI']
+            auto_profiles = ['Test A - Deep Value', 'Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal', 'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI', 'Test K - 1-Minute Hyper-Scalper']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
@@ -944,8 +994,10 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
-        df = fetch_yf_data(t, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k'])
+        interval = "1m" if 'test k' in active_profile else "5m"
+        period = "1d" if 'test k' in active_profile else "5d"
+        df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         df.name = t
         cur = df['Close'].iloc[-1]
@@ -990,10 +1042,14 @@ def get_directives():
     dirs = []
     if scan_list:
         regime = engine.check_market_regime()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k'])
         
         dfs = {}
-        def fetch_t(tick): return tick, fetch_yf_data(tick, "5d" if is_momentum else "1y", "5m" if is_momentum else "1d")
+        def fetch_t(tick): 
+            interval = "1m" if 'test k' in active_profile else "5m"
+            period = "1d" if 'test k' in active_profile else "5d"
+            return tick, fetch_yf_data(tick, period if is_momentum else "1y", interval if is_momentum else "1d")
+            
         with ThreadPoolExecutor(max_workers=4) as ex:
             for tick, df_t in ex.map(fetch_t, scan_list): dfs[tick] = df_t
             
@@ -1105,7 +1161,7 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
+        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k'])
         if not t: t = 'ALL_SHARES'
 
         if is_momentum and not wl:
@@ -1113,6 +1169,8 @@ def get_data():
                 wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
             elif 'test h' in active_profile or 'test i' in active_profile or 'test j' in active_profile:
                 wl = ['META', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
+            elif 'test k' in active_profile:
+                wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
             elif 'test c' in active_profile:
                 wl = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
             else:
@@ -1232,7 +1290,7 @@ def get_data():
         req_p = request.args.get('p')
         if not req_p or req_p == 'undefined': req_p = settings.get('period', '1d')
         req_i = request.args.get('i')
-        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '5m')
+        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '1m' if 'test k' in active_profile else '5m')
 
         if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
         elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
