@@ -236,7 +236,8 @@
             </div>
             <div class="top-nav-row2">
                 <div class="controls">
-                    <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d">1 Day</option><option value="5d">5 Days</option><option value="1mo" selected>1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
+                    <!-- CHANGED: Default explicitly selects 1 Day -->
+                    <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d" selected>1 Day</option><option value="5d">5 Days</option><option value="1mo">1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
                     <label>Interval:</label><select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
                     <label>Style:</label><select id="styleSelect" onchange="saveUISettings(); renderChart();"><option value="candlestick">Candlestick</option><option value="heikin-ashi">Heikin-Ashi</option><option value="line">Line</option><option value="area">Area</option><option value="bar">Bar</option></select>
                     <label>Auto Update:</label><select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();"><option value="0">Manual</option><option value="5000">5 secs</option><option value="10000" selected>10 secs</option><option value="30000">30 secs</option><option value="60000">1 min</option><option value="300000">5 mins</option></select>
@@ -274,7 +275,6 @@
                     </div>
                     <span id="thermoText" class="thermo-text">Room Temp (Neutral)</span>
                 </div>
-                <!-- 24-Hour Sparkline Chart -->
                 <div style="margin-top:6px; height:20px; width:100%;">
                     <svg id="thermoSparkline" style="width:100%; height:100%; overflow:visible;"></svg>
                 </div>
@@ -296,7 +296,6 @@
     </div>
     
     <div class="right-drawer">
-        <!-- Ian Action Alert Box -->
         <div id="ianAlertBox" style="display: none; background: #1e222d; border: 1px solid #00d2ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);">
             <h3 style="font-size: 11px; color: #00d2ff; margin: 0 0 8px 0; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 4px;">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
@@ -359,10 +358,9 @@
             'Test J - News Sentiment AI': 'Scrapes live financial media to dynamically alter buy conviction based on positive or negative news trends.'
         };
 
-        // Flat SVG Flag function based on ticker format
         function getCountryFlag(symbol) {
             if (!symbol || symbol === 'ALL_SHARES') return '';
-            let code = 'us'; // Default to US
+            let code = 'us'; 
             if (symbol.endsWith('.L')) code = 'gb';
             else if (symbol.endsWith('.TO')) code = 'ca';
             return `<img src="https://flagcdn.com/${code}.svg" width="16" alt="${code.toUpperCase()}" style="border-radius: 2px; margin-right: 6px; vertical-align: middle; display: inline-block; box-shadow: 0 0 2px rgba(0,0,0,0.5);">`;
@@ -453,11 +451,14 @@
                 titleEl.innerHTML = `<span style="display:flex; align-items:center;">${getCountryFlag(tick)}${tick}</span>`;
 
                 if (gridCharts[i] && paneEl.getAttribute('data-ticker') === tick) {
+                    // CHANGED: Added zoom lock to Grid Charts
+                    let currentRange = gridCharts[i].timeScale().getVisibleLogicalRange();
                     fetch(`/api/data?t=${tick}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`)
                     .then(res => res.json())
                     .then(data => {
                         if (data.ohlc && data.ohlc.length) {
                             gridSeries[i].setData(data.ohlc);
+                            if (currentRange) gridCharts[i].timeScale().setVisibleLogicalRange(currentRange);
                         }
                     });
                 } else {
@@ -1118,6 +1119,9 @@
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
             let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'].some(prefix => activeProf.includes(prefix));
 
+            // CHANGED: Capture current zoom/pan state before updating data
+            let currentRange = tvChart.timeScale().getVisibleLogicalRange();
+
             if (currentTicker === 'ALL_SHARES') {
                 if (tvSeries) { tvChart.removeSeries(tvSeries); tvSeries = null; }
                 if (tvMathSeries) { tvChart.removeSeries(tvMathSeries); tvMathSeries = null; }
@@ -1171,7 +1175,13 @@
                     lg.innerHTML += `<div style="font-size: 12px; color: #ffffff; font-weight: bold; text-shadow: 1px 1px 2px #000; margin-top: 6px;">PORTFOLIO AVG (${fSign}${fAvg.toFixed(2)}%)</div>`;
                 }
 
-                if (currentChartStyle !== 'multi' || lastRenderedTicker !== 'ALL_SHARES') { tvChart.timeScale().fitContent(); }
+                // CHANGED: Restore zoom state if already viewing multi-chart, else fit to content
+                if (currentChartStyle === 'multi' && lastRenderedTicker === 'ALL_SHARES' && currentRange) {
+                    tvChart.timeScale().setVisibleLogicalRange(currentRange);
+                } else {
+                    tvChart.timeScale().fitContent();
+                }
+
                 currentChartStyle = 'multi'; lastRenderedTicker = 'ALL_SHARES';
             } else {
                 if (multiSeries && multiSeries.length) { multiSeries.forEach(ms => tvChart.removeSeries(ms)); multiSeries = []; }
@@ -1213,6 +1223,11 @@
                 } else {
                     if (tvMathSeries) { tvChart.removeSeries(tvMathSeries); tvMathSeries = null; }
                     tvChart.applyOptions({ leftPriceScale: { visible: false } });
+                }
+
+                // CHANGED: Lock zoom if updating live data
+                if (!needNew && currentRange) {
+                    tvChart.timeScale().setVisibleLogicalRange(currentRange);
                 }
             }
             setTimeout(drawCanvasOverlay, 50);
@@ -1280,7 +1295,6 @@
                     activeElem.classList.add('active');
                 }
 
-                // Add Flag to Active Title
                 let titleFlagHtml = currentTicker !== 'ALL_SHARES' ? getCountryFlag(currentTicker) : '';
                 document.getElementById('activeTitle').innerHTML = `${titleFlagHtml}${p.name}`;
                 currentAnomalyReason = p.metrics.reason;
