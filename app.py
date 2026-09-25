@@ -707,7 +707,6 @@ def process_auto_profile(prof_name):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        # UPDATED: Included 'test a' so Test A runs autonomously in background
         is_auto_profile = any(x in active_profile for x in ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'])
         if not is_auto_profile: return
 
@@ -846,7 +845,6 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            # UPDATED: Included Test A in automated profiles
             auto_profiles = ['Test A - Deep Value', 'Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal', 'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI']
             for prof in auto_profiles:
                 process_auto_profile(prof)
@@ -1094,6 +1092,39 @@ def get_data():
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
 
+        # --------- DAILY LEADERBOARD LOGIC FIX ---------
+        now_lon = pd.Timestamp.now(tz='Europe/London')
+        today_str = now_lon.strftime('%Y-%m-%d')
+        
+        all_user_holds = set()
+        for u, u_data in portfolio_store.data.get('users', {}).items():
+            for tr in u_data.get('history', []):
+                if isinstance(tr, dict): all_user_holds.add(tr.get('ticker'))
+                
+        prices = {}
+        def fetch_lb_price(tick):
+            df_lb = fetch_yf_data(tick, "5d", "5m")
+            if df_lb.empty: return tick, 0.0, 0.0
+            cur_p = df_lb['Close'].iloc[-1]
+            div = 100.0 if tick.endswith('.L') and cur_p > 100 else 1.0
+            cur_pounds = cur_p / div
+            
+            if df_lb.index.tz is None: df_lb.index = df_lb.index.tz_localize('UTC')
+            else: df_lb.index = df_lb.index.tz_convert('UTC')
+            
+            last_lon = df_lb.index[-1].tz_convert('Europe/London')
+            if now_lon.date() > last_lon.date():
+                start_pounds = cur_pounds
+            else:
+                prev_sessions = df_lb[df_lb.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < today_str]
+                start_p = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_lb['Close'].iloc[0]
+                start_pounds = start_p / div
+            return tick, cur_pounds, start_pounds
+
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for tick, cur_pnd, start_pnd in ex.map(fetch_lb_price, all_user_holds):
+                prices[tick] = {'cur': cur_pnd, 'start': start_pnd}
+
         leaderboard = []
         for u, u_data in portfolio_store.data.get('users', {}).items():
             if not isinstance(u_data, dict): continue
@@ -1103,15 +1134,46 @@ def get_data():
             
             nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist_lb if isinstance(tr, dict))
             im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos_lb.values() if isinstance(pos, dict))
-            cash_lb = mb_lb + nh_lb - im_lb
+            cash_now = mb_lb + nh_lb - im_lb
             
-            holds_lb_val = portfolio_store.get_total_portfolio_value(u)
+            trades_today = [tr for tr in hist_lb if isinstance(tr, dict) and tr.get('date_str') == today_str]
+            net_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
+            cash_start = cash_now - net_cash_today
+            
+            equity_now = 0.0
+            equity_start = 0.0
+            
+            shares_now_map = {}
+            for tr in hist_lb:
+                if not isinstance(tr, dict): continue
+                tk = tr.get('ticker')
+                if tk not in shares_now_map: shares_now_map[tk] = portfolio_store.get_shares(tk, u)
+                
+            for tk, sh_now in shares_now_map.items():
+                if sh_now <= 0 and not any(tr.get('ticker') == tk for tr in trades_today): continue
+                
+                p_data = prices.get(tk, {'cur': 0.0, 'start': 0.0})
+                equity_now += sh_now * p_data['cur']
+                
+                sh_start = sh_now
+                for tr in trades_today:
+                    if tr.get('ticker') == tk:
+                        if tr.get('action') == 'BUY': sh_start -= tr.get('shares', 0)
+                        else: sh_start += tr.get('shares', 0)
+                equity_start += max(0, sh_start) * p_data['start']
+                
+            tot_eq_now = max(0, cash_now) + equity_now
+            tot_eq_start = max(0, cash_start) + equity_start
+            daily_pnl = tot_eq_now - tot_eq_start
+            
             leaderboard.append({
                 'user': u, 
-                'equity': round(max(0, cash_lb) + holds_lb_val, 2),
-                'budget': mb_lb
+                'equity': round(tot_eq_now, 2),
+                'budget': mb_lb,
+                'daily_pnl': round(daily_pnl, 2)
             })
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
+        # ------------------------------------------------
 
         settings = ud.get('settings') or {}
         req_p = request.args.get('p')
@@ -1142,7 +1204,6 @@ def get_data():
             
         tot_today_diff, tot_1h_diff = 0.0, 0.0
         now_utc = pd.Timestamp.now(tz='UTC')
-        now_lon = pd.Timestamp.now(tz='Europe/London')
         
         for tk in active_holds:
             sh_h = portfolio_store.get_shares(tk)

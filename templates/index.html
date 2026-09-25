@@ -171,7 +171,17 @@
     
     <div class="sidebar">
         <div class="sidebar-top">
-            <div class="user-profile-box"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><label>Active Profile</label><div style="display:flex; gap:4px;"><button onclick="addUserPrompt()" class="user-btn new">+ New</button><button onclick="deleteUserPrompt()" class="user-btn del">Delete</button></div></div><select id="userSelect" onchange="onUserChange(this.value)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select></div>
+            <div class="user-profile-box">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <label>Active Profile</label>
+                    <div style="display:flex; gap:4px;">
+                        <button onclick="addUserPrompt()" class="user-btn new">+ New</button>
+                        <button onclick="deleteUserPrompt()" class="user-btn del">Delete</button>
+                    </div>
+                </div>
+                <!-- FIXED: Dropdown pause lock (isDropdownOpen) to prevent jumping -->
+                <select id="userSelect" onchange="onUserChange(this.value)" onfocus="isDropdownOpen=true" onblur="setTimeout(()=>isDropdownOpen=false, 200)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select>
+            </div>
             
             <div class="total-shares-box">
                 <label>Total Portfolio Equity</label>
@@ -320,6 +330,8 @@
         let isDrawing = false; 
         let currentLine = null;
         let showManual = true; 
+        
+        let isDropdownOpen = false;
 
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
@@ -559,8 +571,20 @@
         async function fetchUsers() {
             try {
                 let res = await fetch('/api/users'); let data = await res.json();
-                let sel = document.getElementById('userSelect'); sel.innerHTML = '';
-                (data.users || []).forEach(u => { let opt = document.createElement('option'); opt.value = u; opt.innerText = u; if (u === data.active_user) opt.selected = true; sel.appendChild(opt); });
+                let sel = document.getElementById('userSelect'); 
+                
+                let currentOptions = Array.from(sel.options).map(o => o.value);
+                let newOptions = data.users || [];
+                
+                // FIXED: Only rebuild the DOM if the users actually changed, prevents dropdown from snapping closed
+                if (currentOptions.join(',') !== newOptions.join(',') || sel.value !== data.active_user) {
+                    sel.innerHTML = '';
+                    newOptions.forEach(u => { 
+                        let opt = document.createElement('option'); opt.value = u; opt.innerText = u; 
+                        if (u === data.active_user) opt.selected = true; 
+                        sel.appendChild(opt); 
+                    });
+                }
             } catch(e) {}
         }
 
@@ -1142,6 +1166,9 @@
         }
 
         async function fetchData(silent = false) {
+            // FIXED: Do not process background UI updates if the user is clicking the dropdown
+            if (isDropdownOpen) return;
+            
             let fetchId = ++currentFetchId; 
             
             let loader = document.getElementById('loader');
@@ -1164,7 +1191,8 @@
                 
                 if (p.leaderboard) {
                     let lbHtml = p.leaderboard.map(lb => {
-                        let isProfit = lb.equity >= lb.budget;
+                        // FIXED: Color is now based strictly on daily PnL, not all-time 5k
+                        let isProfit = lb.daily_pnl >= 0;
                         let color = isProfit ? '#00c853' : '#ff3d00';
                         return `
                             <div class="lb-item">
