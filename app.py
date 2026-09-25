@@ -416,6 +416,23 @@ class MarketScoringEngine:
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
 
+        # GLOBAL SAFETY FILTERS (Preventing "Buying the Top" & "Selling the Bottom")
+        avg_vol_20 = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
+        cur_vol = df_5m['Volume'].iloc[-1]
+        vol_ratio = (cur_vol / avg_vol_20) if avg_vol_20 > 0 else 1.0
+        
+        df_today = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_uk.strftime('%Y-%m-%d')]
+        hod = df_today['High'].max() if not df_today.empty else current_price
+        dist_from_hod_pct = ((hod - current_price) / hod) * 100.0 if hod > 0 else 0.0
+
+        # Safety Shield 1: Block Buy if Overextended RSI (> 65)
+        if rsi >= 65 and avg_buy_price == 0 and not 'test o' in prof:
+            return {'type': 'Safety Shield', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'BUY BLOCKED: RSI Overextended ({rsi:.1f} >= 65). Preventing peak buy.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Peak Buy Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI High)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
+        # Safety Shield 2: Block Buy if HOD Resistance without Volume (> 2.5x)
+        if dist_from_hod_pct <= 0.20 and vol_ratio < 2.5 and avg_buy_price == 0 and not 'test o' in prof:
+            return {'type': 'Safety Shield', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'BUY BLOCKED: Near HOD ({hod:.2f}) without 2.5x volume explosion.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'HOD Resistance Shield', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(HOD Block)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
         # TEST Q: STATARB PAIRS TRADER
         if 'test q' in prof:
             pairs = {'NVDA':'AMD', 'AMD':'NVDA', 'GLEN.L':'RIO.L', 'RIO.L':'GLEN.L', 'JPM':'BAC', 'BAC':'JPM'}
@@ -442,7 +459,7 @@ class MarketScoringEngine:
                     return {'type': 'Regime Filter', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': f"REGIME SHUTDOWN ({regime['state']}). Liquidating.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Panic Sell', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Regime Drop)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
                 return {'type': 'Regime Filter', 'score': 10, 'tranches': 0, 'discount': '0.00%', 'reason': f"HARD BLOCK: Market Sentiment is {regime['score']}/100. Holding cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Blocked by Regime', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Weather Bad)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
             
-            if ema9 > ema21 and current_price > ema9 and rsi < 70 and pct_change_5d > 0:
+            if ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0:
                 if avg_buy_price > 0:
                     pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                     drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
@@ -456,8 +473,6 @@ class MarketScoringEngine:
 
         # TEST N: 1-MINUTE VOL SCALPER
         if 'test n' in prof:
-            avg_vol_20 = df_5m['Volume'].tail(20).mean()
-            cur_vol = df_5m['Volume'].iloc[-1]
             last_candle = df_5m.iloc[-1]
             candle_range = last_candle['High'] - last_candle['Low']
             close_pos = (last_candle['Close'] - last_candle['Low']) / candle_range if candle_range > 0 else 0
@@ -471,14 +486,11 @@ class MarketScoringEngine:
                 return {'type': 'Vol Scalp', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Riding Volume Surge.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Active Scalp', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Holding)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
                 
             if cur_vol > (avg_vol_20 * 3.0) and close_pos >= 0.8 and last_candle['Close'] > last_candle['Open']:
-                return {'type': 'Vol Scalp', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Volume Spike ({cur_vol/avg_vol_20:.1f}x) & strong close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.005, 'status': 'Vol Spike Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Vol Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+                return {'type': 'Vol Scalp', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Volume Spike ({vol_ratio:.1f}x) & strong close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.005, 'status': 'Vol Spike Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Vol Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'Vol Scalp', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Scanning for 3x Volume Spikes.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         # TEST O: 1-MINUTE HOD SNIPER
         if 'test o' in prof:
-            df_today = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_uk.strftime('%Y-%m-%d')]
-            hod = df_today['High'].max() if not df_today.empty else current_price
-            
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 if pnl_pct >= 0.80:
@@ -487,9 +499,9 @@ class MarketScoringEngine:
                     return {'type': 'HOD Sniper', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Stop Loss (-0.40%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
                 return {'type': 'HOD Sniper', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Riding HOD Breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Active Breakout', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Holding)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
                 
-            if 870 <= current_mins <= 930 and regime['score'] > 50 and current_price >= hod:
-                return {'type': 'HOD Sniper', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'HOD Breakout ({hod:.2f}) detected in bullish regime.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.008, 'status': 'HOD Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(HOD Breakout)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-            return {'type': 'HOD Sniper', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Scanning for HOD ({hod:.2f}) breakouts (2:30-3:30 PM).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning HOD', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
+            if 870 <= current_mins <= 930 and regime['score'] > 50 and current_price >= hod and vol_ratio >= 2.5:
+                return {'type': 'HOD Sniper', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'HOD Breakout ({hod:.2f}) on {vol_ratio:.1f}x volume in bullish regime.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.008, 'status': 'HOD Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(HOD Breakout)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
+            return {'type': 'HOD Sniper', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Scanning for HOD ({hod:.2f}) breakouts on high volume (2:30-3:30 PM).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning HOD', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         # TEST P: 1-MINUTE BB REVERSION
         if 'test p' in prof:
@@ -520,20 +532,16 @@ class MarketScoringEngine:
                 return {'type': 'ORB', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Riding ORB Breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Active ORB', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Holding)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             
             if 870 <= current_mins <= 930:
-                df_today = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_uk.strftime('%Y-%m-%d')]
                 if not df_today.empty and len(df_today) >= 1:
                     first_candle = df_today.iloc[0]
                     orb_high = first_candle['High']
                     if current_mins >= 875 and current_price > orb_high:
-                        cur_vol = df_5m['Volume'].iloc[-1]
-                        avg_vol = df_5m['Volume'].tail(20).mean()
-                        if cur_vol > (avg_vol * 2.0):
+                        if vol_ratio > 2.0:
                             return {'type': 'ORB', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'ORB Breakout > {orb_high:.2f} on 2x volume.', 'is_smart': True, 'rec_buy': current_price*0.99, 'rec_sell': current_price*1.01, 'status': 'ORB Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(ORB Breakout)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'ORB', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Waiting for ORB conditions (2:35 - 3:30 PM).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning ORB', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         # TEST M: VWAP Dip Sniper
         if 'test m' in prof:
-            df_today = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_uk.strftime('%Y-%m-%d')]
             if not df_today.empty:
                 vwap = (df_today['Close'] * df_today['Volume']).cumsum() / df_today['Volume'].cumsum()
                 current_vwap = vwap.iloc[-1]
