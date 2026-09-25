@@ -399,6 +399,7 @@ class MarketScoringEngine:
         if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         ticker = getattr(df_5m, 'name', '')
         is_inverse = ticker in ['SQQQ', '3SUS.L']
+        is_3x_etf = ticker in ['TQQQ', 'SOXL', 'NVDL', 'CONL', 'MSTX', 'BITX', 'SQQQ', '3SUS.L']
         trade_type = 'SHORT' if is_inverse else 'LONG'
 
         if df_5m.empty or len(df_5m) < 21:
@@ -425,13 +426,24 @@ class MarketScoringEngine:
         hod = df_today['High'].max() if not df_today.empty else current_price
         dist_from_hod_pct = ((hod - current_price) / hod) * 100.0 if hod > 0 else 0.0
 
-        # Safety Shield 1: Block Buy if Overextended RSI (> 65)
         if rsi >= 65 and avg_buy_price == 0 and not 'test o' in prof:
             return {'type': 'Safety Shield', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'BUY BLOCKED: RSI Overextended ({rsi:.1f} >= 65). Preventing peak buy.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Peak Buy Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI High)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
-        # Safety Shield 2: Block Buy if HOD Resistance without Volume (> 2.5x)
         if dist_from_hod_pct <= 0.20 and vol_ratio < 2.5 and avg_buy_price == 0 and not 'test o' in prof:
             return {'type': 'Safety Shield', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'BUY BLOCKED: Near HOD ({hod:.2f}) without 2.5x volume explosion.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'HOD Resistance Shield', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(HOD Block)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
+        # 20:50 BST 3x ETF SWEEP (Tests E, P, R)
+        if any(x in prof for x in ['test e', 'test p', 'test r']) and is_3x_etf and now_uk.hour == 20 and now_uk.minute >= 50:
+            if avg_buy_price > 0:
+                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                return {'type': 'EOD 3x Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD 3x ETF SHIELD: Liquidating overnight risk.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(3x Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+            return {'type': 'EOD 3x Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD 3x ETF SHIELD: Blocking entries before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
+        # TEST E: QUICK 1.2% TARGET FOR 3x ETFs
+        if 'test e' in prof and is_3x_etf and avg_buy_price > 0:
+            pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+            if pnl_pct >= 1.20:
+                return {'type': 'Rotator', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
         # TEST Q: STATARB PAIRS TRADER
         if 'test q' in prof:
@@ -452,24 +464,12 @@ class MarketScoringEngine:
                         return {'type': 'StatArb', 'score': 85, 'tranches': 1, 'discount': f"{spread:.2f}%", 'reason': f'Spread widening: {ticker} lagging {pair_tick} by {abs(spread):.2f}%.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.01, 'status': 'Arb Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Pairs Snipe)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'StatArb', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Monitoring statistical correlation spread.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning Pairs', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Divergence)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # TEST R: REGIME-FILTERED MOMENTUM
-        if 'test r' in prof:
+        # REGIME-FILTERED MOMENTUM (Tests B, D, R)
+        if any(x in prof for x in ['test b', 'test d', 'test r']):
             if regime['score'] < 50:
                 if avg_buy_price > 0:
                     return {'type': 'Regime Filter', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': f"REGIME SHUTDOWN ({regime['state']}). Liquidating.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Panic Sell', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Regime Drop)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
                 return {'type': 'Regime Filter', 'score': 10, 'tranches': 0, 'discount': '0.00%', 'reason': f"HARD BLOCK: Market Sentiment is {regime['score']}/100. Holding cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Blocked by Regime', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Weather Bad)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-            
-            if ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0:
-                if avg_buy_price > 0:
-                    pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                    drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
-                    if drop_from_peak_pct >= 0.75:
-                        return {'type': 'Regime Filter', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"Trailing Stop. Dropped {drop_from_peak_pct:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
-                    return {'type': 'Regime Filter', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Riding confirmed trend in Bullish Regime.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trend Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
-                
-                buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
-                return {'type': 'Regime Filter', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Bullish Regime Confirmed. Fast EMA Cross.", 'is_smart': True, 'rec_buy': current_price*0.99, 'rec_sell': current_price*1.02, 'status': 'Filtered Buy', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Regime Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-            return {'type': 'Regime Filter', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Market is healthy, but waiting for EMA setup.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning Trend', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
         # TEST N: 1-MINUTE VOL SCALPER
         if 'test n' in prof:
@@ -575,8 +575,8 @@ class MarketScoringEngine:
                         
             return {'type': 'Hyper-Scalp', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Waiting for RSI < 35 & Price > 9-EMA (Current RSI: {rsi:.1f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning Scalps', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # EOD VOLATILITY SHIELD
-        if any(x in prof for x in ['test f', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r']) and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 45:
+        # EOD VOLATILITY SHIELD (Standard for others)
+        if any(x in prof for x in ['test f', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test q']) and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 45:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD VOLATILITY SHIELD: Liquidating 15 mins before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
