@@ -608,16 +608,17 @@ class MarketScoringEngine:
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
         
-        if ema9 > ema21 and rsi < 65 and pct_change_5d > 0:
+        # CHANGED: Added strict rule: current_price must be > ema9 to catch falling knives
+        if ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0:
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
             tranches, action_main, action_sub = 1, "BUY", f"({trade_type} Surge)"
             status, color, action_color = f"Fast {trade_type} Surge", "#00c853", "#00c853"
-            reason = f"SURGE DETECTED ({trade_type}): 9-EMA > 21-EMA, RSI {rsi:.1f}."
+            reason = f"SURGE DETECTED ({trade_type}): Price > 9-EMA > 21-EMA, RSI {rsi:.1f}."
         else:
             buy_score, tranches = 10, 0
             action_main, action_sub = "HOLD / WAIT", "(Awaiting Setup)"
             status, color, action_color = "No Setup", "#8a8a9e", "#8a8a9e"
-            reason = f"Awaiting fast EMA crossover surge."
+            reason = f"Awaiting fast EMA crossover surge (Price > 9-EMA)."
 
         return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': tranches, 'discount': f"{pct_change_5d:.2f}%",
                 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2),
@@ -797,7 +798,6 @@ def process_auto_profile(prof_name):
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
             except Exception: pass
 
-        # CHANGED: Max limits bumped to 3 for momentum profiles to allow diversification.
         max_allowed_holds = 5 if 'test a' in active_profile else (1 if 'test e' in active_profile else 3)
         
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
@@ -822,7 +822,6 @@ def process_auto_profile(prof_name):
         if buys and rem_cash >= MIN_BUY_VALUE and not is_eod_blocked and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
             top_buys = buys[:slots_available]
-            # CHANGED: 33% capital allocation for 3 positions.
             per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if 'test e' in active_profile else 0.33))
             for b in top_buys:
                 bs = int(per_stock_budget // b['cps'])
@@ -1032,7 +1031,6 @@ def get_directives():
             total_eq = cash_balance + tot_own
             
             if st['action_main'] == 'BUY' and sh == 0 and rem_cash >= 20:
-                # CHANGED: Hide closed stocks from UI for day-trading bots
                 if not is_momentum or is_open:
                     allocation = 0.33 if is_momentum else 0.20
                     bs = int(min(rem_cash, total_eq * allocation) // cps) 
