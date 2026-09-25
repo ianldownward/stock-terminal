@@ -236,8 +236,7 @@
             </div>
             <div class="top-nav-row2">
                 <div class="controls">
-                    <!-- CHANGED: Default explicitly selects 1 Day -->
-                    <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d" selected>1 Day</option><option value="5d">5 Days</option><option value="1mo">1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
+                    <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d">1 Day</option><option value="5d">5 Days</option><option value="1mo" selected>1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
                     <label>Interval:</label><select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
                     <label>Style:</label><select id="styleSelect" onchange="saveUISettings(); renderChart();"><option value="candlestick">Candlestick</option><option value="heikin-ashi">Heikin-Ashi</option><option value="line">Line</option><option value="area">Area</option><option value="bar">Bar</option></select>
                     <label>Auto Update:</label><select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();"><option value="0">Manual</option><option value="5000">5 secs</option><option value="10000" selected>10 secs</option><option value="30000">30 secs</option><option value="60000">1 min</option><option value="300000">5 mins</option></select>
@@ -355,7 +354,8 @@
             'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.',
             'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.',
             'Test I - Ultimate Hybrid': 'Combines market regime filtering, volume spike confirmation, and EOD risk sweep into one profile.',
-            'Test J - News Sentiment AI': 'Scrapes live financial media to dynamically alter buy conviction based on positive or negative news trends.'
+            'Test J - News Sentiment AI': 'Scrapes live financial media to dynamically alter buy conviction based on positive or negative news trends.',
+            'Test K - 1-Minute Hyper-Scalper': 'Extremely aggressive logic. Runs exclusively on the 1-minute chart trading 3x Leveraged ETFs. Buys instant oversold reversals and uses a tight 0.75% trailing stop.'
         };
 
         function getCountryFlag(symbol) {
@@ -451,7 +451,6 @@
                 titleEl.innerHTML = `<span style="display:flex; align-items:center;">${getCountryFlag(tick)}${tick}</span>`;
 
                 if (gridCharts[i] && paneEl.getAttribute('data-ticker') === tick) {
-                    // CHANGED: Added zoom lock to Grid Charts
                     let currentRange = gridCharts[i].timeScale().getVisibleLogicalRange();
                     fetch(`/api/data?t=${tick}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`)
                     .then(res => res.json())
@@ -790,7 +789,7 @@
             let userSel = document.getElementById('userSelect');
             let activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
             
-            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'].some(prefix => activeProf.includes(prefix));
+            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k'].some(prefix => activeProf.includes(prefix));
             
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -849,7 +848,7 @@
                 let userSel = document.getElementById('userSelect');
                 let activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
                 
-                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'].some(prefix => activeProf.includes(prefix));
+                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k'].some(prefix => activeProf.includes(prefix));
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; }
                 else {
@@ -1117,9 +1116,8 @@
             
             let s = document.getElementById('styleSelect').value;
             let activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j'].some(prefix => activeProf.includes(prefix));
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k'].some(prefix => activeProf.includes(prefix));
 
-            // CHANGED: Capture current zoom/pan state before updating data
             let currentRange = tvChart.timeScale().getVisibleLogicalRange();
 
             if (currentTicker === 'ALL_SHARES') {
@@ -1175,7 +1173,6 @@
                     lg.innerHTML += `<div style="font-size: 12px; color: #ffffff; font-weight: bold; text-shadow: 1px 1px 2px #000; margin-top: 6px;">PORTFOLIO AVG (${fSign}${fAvg.toFixed(2)}%)</div>`;
                 }
 
-                // CHANGED: Restore zoom state if already viewing multi-chart, else fit to content
                 if (currentChartStyle === 'multi' && lastRenderedTicker === 'ALL_SHARES' && currentRange) {
                     tvChart.timeScale().setVisibleLogicalRange(currentRange);
                 } else {
@@ -1225,7 +1222,6 @@
                     tvChart.applyOptions({ leftPriceScale: { visible: false } });
                 }
 
-                // CHANGED: Lock zoom if updating live data
                 if (!needNew && currentRange) {
                     tvChart.timeScale().setVisibleLogicalRange(currentRange);
                 }
