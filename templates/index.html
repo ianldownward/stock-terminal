@@ -214,6 +214,7 @@
         let isGridView = false; let gridCharts = []; let gridSeries = [];
         let currentFetchId = 0; let manualLines = {}; let isDrawing = false; let currentLine = null; let showManual = true; let isDropdownOpen = false;
         let selectedLegendTickers = new Set(); 
+        let showAvgLine = true;
 
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
@@ -234,7 +235,9 @@
             'Test O - 1-Minute HOD Sniper': '1-Minute High-of-Day Breakout. Buys when price breaks the intraday high during the 2:30 PM - 3:30 PM BST opening hour.',
             'Test P - 1-Minute BB Reversion': '1-Minute Bollinger Band Reversion. Buys extreme oversold dips below the lower 2-SD Bollinger Band when RSI < 25. Exits at the 20-SMA.',
             'Test Q - Market-Neutral StatArb': 'Statistical Arbitrage. Pairs correlated assets (e.g., NVDA/AMD) and trades the spread when they abnormally diverge, remaining market-neutral.',
-            'Test R - Regime-Filtered Momentum': 'Institutional-grade momentum. Hard-blocks all trades and holds cash if the broader market regime drops below 50, protecting against systemic chop.'
+            'Test R - Regime-Filtered Momentum': 'Institutional-grade momentum. Hard-blocks all trades and holds cash if the broader market regime drops below 50, protecting against systemic chop.',
+            'Test S - Apex Rotator': 'The ultimate evolution. 100% capital rotation into top leaders during healthy regimes, and 100% cash block when market sentiment drops.',
+            'Test T - Elasticity Sniper': 'Aggressive 1-minute elasticity. Buys only when RSI<25, Price<Lower Bollinger Band, and volume spikes > 3x average. Fast EMA exits.'
         };
 
         function applyResponsiveDrawers() {
@@ -272,6 +275,11 @@
             else selectedLegendTickers.add(ticker);
             renderChart();
         }
+        
+        function toggleAvgLine() {
+            showAvgLine = !showAvgLine;
+            renderChart();
+        }
 
         function toggleGridView() {
             isGridView = !isGridView;
@@ -284,7 +292,6 @@
             let heldTickers = [];
             if (globalPortfolioData && globalPortfolioData.holdings) heldTickers = Object.keys(globalPortfolioData.holdings).filter(t => globalPortfolioData.holdings[t].shares > 0);
             
-            // Fix: If holding nothing, show nothing (or fallback gracefully). If holding 1, only show 1. 
             let displayList = [...heldTickers].slice(0, 4); 
             
             let gridCont = document.getElementById('gridContainer');
@@ -322,7 +329,6 @@
                 }
             }
             
-            // If completely empty
             if (displayList.length === 0) {
                  let wrapperEl = document.getElementById(`pane0`);
                  wrapperEl.style.display = 'block';
@@ -463,7 +469,7 @@
             let target = (currentActiveTranches / 5.0) * total_equity, diff = target - currentValOwned, pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
             let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
             let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub'), userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r'].some(prefix => activeProf.includes(prefix));
+            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
             if (!currentTicker) { am.innerText = "NO ASSET"; am.style.color = "#787e8e"; as.innerText = ""; } 
@@ -486,7 +492,7 @@
             try {
                 let res = await fetch(`/api/directives`), data = await res.json(), cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r'].some(prefix => activeProf.includes(prefix));
+                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; }
                 else { data.directives.forEach(d => { let isBuy = d.action === 'BUY', div = document.createElement('div'); div.className = 'directive-item'; let btnHTML = isAuto ? `<button class="directive-btn" style="background:#00d2ff; color:#000; cursor:default; display:flex; align-items:center;" disabled><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:2px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Auto</button>` : `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeTradeDirect('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`; let flag = getCountryFlag(d.ticker); div.innerHTML = `<div class="directive-info" style="display:flex; align-items:center;">${flag}<b>${d.ticker}</b><span style="margin-left:4px;">: ${d.action} ${d.shares} shs (£${d.amount.toFixed(2)})</span></div>${btnHTML}`; cont.appendChild(div); }); }
@@ -591,7 +597,7 @@
             if (isGridView) return; let lg = document.getElementById('chartLegend');
             if (!masterData.length) { let cv = document.getElementById('chartCanvas'); if (cv) { let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); } return; }
             let s = document.getElementById('styleSelect').value, activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r'].some(prefix => activeProf.includes(prefix));
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
             let currentRange = tvChart.timeScale().getVisibleLogicalRange();
 
             if (currentTicker === 'ALL_SHARES') {
@@ -623,10 +629,15 @@
                 if (visibleCount > 1 || selectedLegendTickers.size === 0) {
                     let avgData = sortedTimes.filter(t => avgDataMap[t] && avgDataMap[t].count > 0).map(t => ({ time: t, value: Math.round((avgDataMap[t].sum / avgDataMap[t].count + Number.EPSILON) * 100) / 100 }));
                     if (avgData.length > 0) { 
-                        let avgSeries = tvChart.addLineSeries({ color: '#ffffff', lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Dashed }); 
-                        avgSeries.setData(avgData); multiSeries.push(avgSeries); 
+                        if (showAvgLine) {
+                            let avgSeries = tvChart.addLineSeries({ color: '#ffffff', lineWidth: 3, lineStyle: LightweightCharts.LineStyle.Dashed }); 
+                            avgSeries.setData(avgData); multiSeries.push(avgSeries); 
+                        }
                         let fAvg = avgData[avgData.length-1].value, fSign = fAvg > 0 ? '+' : ''; 
-                        lg.innerHTML += `<div style="font-size: 12px; color: #ffffff; font-weight: bold; text-shadow: 1px 1px 2px #000; margin-top: 6px; pointer-events: none;">PORTFOLIO AVG (${fSign}${fAvg.toFixed(2)}%)</div>`; 
+                        lg.innerHTML += `<div style="font-size: 12px; color: #ffffff; font-weight: bold; text-shadow: 1px 1px 2px #000; margin-top: 6px; pointer-events: auto; display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" ${showAvgLine ? 'checked' : ''} onchange="toggleAvgLine()" style="margin-right: 4px; cursor: pointer;">
+                            PORTFOLIO AVG (${fSign}${fAvg.toFixed(2)}%)
+                        </div>`; 
                     }
                 }
                 if (currentChartStyle === 'multi' && lastRenderedTicker === 'ALL_SHARES' && currentRange) { tvChart.timeScale().setVisibleLogicalRange(currentRange); } else { tvChart.timeScale().fitContent(); }
@@ -666,7 +677,6 @@
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
                     let s = globalPortfolioData.settings;
                     
-                    // Force default 1d / 5m if no custom settings exist for this user
                     let loadedPeriod = s.period || '1d';
                     let loadedInterval = s.interval || '5m';
                     
@@ -692,7 +702,6 @@
                 if (currentTicker !== 'ALL_SHARES') { let isShort = p.metrics.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(currentTicker); dirBadgeEl.className = `badge-direction ${isShort ? 'badge-short' : 'badge-long'}`; dirBadgeEl.innerText = isShort ? 'SHORT POSITION' : 'LONG POSITION'; dirBadgeEl.style.display = 'inline-block'; } else { dirBadgeEl.style.display = 'none'; }
                 currentLivePrice = p.metrics.price; currentActiveTranches = p.metrics.tranches; currentSharesOwned = p.metrics.shares_owned; currentValOwned = p.metrics.value_owned;
                 
-                // Do not overwrite user typing
                 let budgetInput = document.getElementById('masterBudgetInput');
                 if (document.activeElement !== budgetInput) { budgetInput.value = p.metrics.master_budget; }
                 
