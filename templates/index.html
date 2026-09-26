@@ -283,19 +283,30 @@
         function initGridCharts() {
             let heldTickers = [];
             if (globalPortfolioData && globalPortfolioData.holdings) heldTickers = Object.keys(globalPortfolioData.holdings).filter(t => globalPortfolioData.holdings[t].shares > 0);
-            let wl = globalPortfolioData.watchlist || [];
-            let displayList = [...heldTickers];
-            if (displayList.length === 0) { for (let t of wl) { if (!displayList.includes(t)) displayList.push(t); if (displayList.length >= 4) break; } }
-            displayList = displayList.slice(0, 4); if (!displayList.length) displayList = ['MSTR'];
+            
+            // Fix: If holding nothing, show nothing (or fallback gracefully). If holding 1, only show 1. 
+            let displayList = [...heldTickers].slice(0, 4); 
+            
             let gridCont = document.getElementById('gridContainer');
-            if (displayList.length === 1) { gridCont.style.gridTemplateColumns = '1fr'; gridCont.style.gridTemplateRows = '1fr'; } 
-            else if (displayList.length === 2) { gridCont.style.gridTemplateColumns = '1fr 1fr'; gridCont.style.gridTemplateRows = '1fr'; } 
-            else { gridCont.style.gridTemplateColumns = '1fr 1fr'; gridCont.style.gridTemplateRows = '1fr 1fr'; }
+            if (displayList.length <= 1) { 
+                gridCont.style.gridTemplateColumns = '1fr'; gridCont.style.gridTemplateRows = '1fr'; 
+            } else if (displayList.length === 2) { 
+                gridCont.style.gridTemplateColumns = '1fr 1fr'; gridCont.style.gridTemplateRows = '1fr'; 
+            } else { 
+                gridCont.style.gridTemplateColumns = '1fr 1fr'; gridCont.style.gridTemplateRows = '1fr 1fr'; 
+            }
 
             for (let i = 0; i < 4; i++) {
                 let paneEl = document.getElementById(`chart${i}`), titleEl = document.getElementById(`title${i}`), wrapperEl = document.getElementById(`pane${i}`);
                 if (!paneEl || !titleEl || !wrapperEl) continue;
-                if (i >= displayList.length) { wrapperEl.style.display = 'none'; continue; } else { wrapperEl.style.display = 'block'; }
+                
+                if (i >= displayList.length) { 
+                    wrapperEl.style.display = 'none'; 
+                    continue; 
+                } else { 
+                    wrapperEl.style.display = 'block'; 
+                }
+                
                 let tick = displayList[i]; titleEl.innerHTML = `<span style="display:flex; align-items:center;">${getCountryFlag(tick)}${tick}</span>`;
                 if (gridCharts[i] && paneEl.getAttribute('data-ticker') === tick) {
                     let currentRange = gridCharts[i].timeScale().getVisibleLogicalRange();
@@ -309,6 +320,14 @@
                     gridCharts[i] = gc; gridSeries[i] = gs;
                     fetch(`/api/data?t=${tick}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`).then(res => res.json()).then(data => { if (data.ohlc && data.ohlc.length) { gs.setData(data.ohlc); gc.timeScale().fitContent(); } });
                 }
+            }
+            
+            // If completely empty
+            if (displayList.length === 0) {
+                 let wrapperEl = document.getElementById(`pane0`);
+                 wrapperEl.style.display = 'block';
+                 document.getElementById(`title0`).innerHTML = 'No Shares Held';
+                 document.getElementById(`chart0`).innerHTML = '<div style="display:flex; justify-content:center; align-items:center; height:100%; color:#787e8e; font-size:12px;">You currently hold no active positions.</div>';
             }
         }
 
@@ -646,11 +665,25 @@
                 }
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
                     let s = globalPortfolioData.settings;
-                    if (s.period) document.getElementById('periodSelect').value = s.period; updateIntervals();
-                    if (s.interval) { let iSel = document.getElementById('intervalSelect'); if (Array.from(iSel.options).some(opt => opt.value === s.interval)) iSel.value = s.interval; }
-                    if (s.style) document.getElementById('styleSelect').value = s.style; if (s.refresh) document.getElementById('refreshSelect').value = s.refresh;
+                    
+                    // Force default 1d / 5m if no custom settings exist for this user
+                    let loadedPeriod = s.period || '1d';
+                    let loadedInterval = s.interval || '5m';
+                    
+                    document.getElementById('periodSelect').value = loadedPeriod; 
+                    updateIntervals();
+                    
+                    let iSel = document.getElementById('intervalSelect'); 
+                    if (Array.from(iSel.options).some(opt => opt.value === loadedInterval)) {
+                        iSel.value = loadedInterval; 
+                    }
+                    
+                    if (s.style) document.getElementById('styleSelect').value = s.style; 
+                    if (s.refresh) document.getElementById('refreshSelect').value = s.refresh;
                     if (s.ntfy_topic && document.getElementById('ntfyTopicInput')) document.getElementById('ntfyTopicInput').value = s.ntfy_topic;
-                    setupAutoRefresh(); isSettingsLoaded = true;
+                    
+                    setupAutoRefresh(); 
+                    isSettingsLoaded = true;
                 }
                 let wl_status = p.wl_status || {}; renderWatchlist(globalPortfolioData.watchlist, wl_status);
                 let activeElem = document.querySelector(`li.watchlist-item[data-symbol="${currentTicker}"]`); if (activeElem) { document.querySelectorAll('.watchlist-item').forEach(x => x.classList.remove('active')); activeElem.classList.add('active'); }
