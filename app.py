@@ -64,7 +64,7 @@ class PortfolioManager:
         if 'test q' in prof: wl = ['NVDA', 'AMD', 'GLEN.L', 'RIO.L', 'JPM', 'BAC']
         elif 'test s' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'META', 'MSFT']
         elif any(x in prof for x in ['test p', 'test t']): wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
-        elif any(x in prof for x in ['test e', 'test u']): wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR']
+        elif any(x in prof for x in ['test e', 'test u']): wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO']
         elif 'test c' in prof: wl = ['AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L']
         elif any(x in prof for x in ['test a', 'ian']): wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
         else: wl = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'PLTR', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
@@ -104,9 +104,9 @@ class PortfolioManager:
         try:
             allowed_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test C - 24/5 Global', 
-                'Test E - Rotator', 'Test P - 1-Minute BB Reversion', 
-                'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper',
-                'Test U - Tight Rotator'
+                'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator',
+                'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
+                'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -398,6 +398,13 @@ class MarketScoringEngine:
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
 
+        # EOD SWEEP RULE FOR TEST E2 (20:50 BST CASH LIQUIDATION)
+        if 'test e2' in prof and now_uk.hour == 20 and now_uk.minute >= 50:
+            if avg_buy_price > 0:
+                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                return {'type': 'EOD Rotator Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating position to 100% cash before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+            return {'type': 'EOD Rotator Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD ROTATOR SWEEP: Blocking new entries in final 10 mins.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
         # QUICK 1.2% TARGET FOR 3x ETFs
         if any(x in prof for x in ['test e', 'test s', 'test u']) and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -465,7 +472,7 @@ class MarketScoringEngine:
                 return {'type': 'BB Revert', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Price pierced lower BB ({lower_bb:.2f}) & RSI {rsi:.1f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': sma20, 'status': 'Extreme Oversold', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(BB Reversion)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'BB Revert', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Scanning for Lower BB pierces & RSI <= 25.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning BB', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # STANDARD MOMENTUM & ROTATOR (Test C, E, S, U)
+        # STANDARD MOMENTUM & ROTATOR SUITE (Test C, E, E2, E3, S, U)
         if 'test u' in prof:
             trail_pct = 0.50
         elif any(x in prof for x in ['test e', 'test s']):
@@ -639,10 +646,13 @@ def process_auto_profile(prof_name):
 
         max_allowed_holds = 5 if 'test a' in active_profile else (1 if any(x in active_profile for x in ['test e', 'test s', 'test u']) else 3)
         
+        # DYNAMIC ROTATION HURDLE: Test E3 uses a 5-point hair-trigger hurdle instead of 15 points
+        swap_hurdle = 5 if 'test e3' in active_profile else 15
+        
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
-            if top_candidate['s'] >= (weakest_holding['score'] + 15) and top_candidate['s'] >= 65:
+            if top_candidate['s'] >= (weakest_holding['score'] + swap_hurdle) and top_candidate['s'] >= 65:
                 dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
 
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
@@ -656,7 +666,7 @@ def process_auto_profile(prof_name):
                 bs = int(per_stock_budget // b['cps'])
                 amt = round(bs * b['cps'], 2)
                 if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
-                    dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': b['s'], 'price': b['p'], 'amount': amt})
+                    dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
 
         for d in dirs:
             if d['shares'] > 0:
@@ -667,14 +677,14 @@ def global_background_worker():
     time.sleep(3)
     while True:
         try:
-            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L', 'COIN', 'CONL', 'MSTX', 'BITX', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'TQQQ', 'SOXL', 'NVDL', 'QQQ', 'YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'JPM', 'BAC']
+            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L', 'COIN', 'CONL', 'MSTX', 'BITX', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'TQQQ', 'SOXL', 'NVDL', 'QQQ', 'YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'JPM', 'BAC', 'AVGO']
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
                 fetch_yf_data(tk, "1d", "1m")
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator']
+            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
