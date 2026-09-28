@@ -36,36 +36,6 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             return df.copy()
         except Exception: return pd.DataFrame()
 
-def fetch_news_sentiment(ticker):
-    now = time.time()
-    if ticker in NEWS_CACHE:
-        cached_time, score, headline_count, top_headline = NEWS_CACHE[ticker]
-        if now - cached_time < 900: return score, headline_count, top_headline
-
-    clean_ticker = ticker.split('.')[0]
-    rss_url = f"https://news.google.com/rss/search?q={clean_ticker}+stock+when:1d&hl=en-US&gl=US&ceid=US:en"
-    bullish_words = ['surge', 'surges', 'jump', 'jumps', 'record', 'high', 'rally', 'rallies', 'beat', 'beats', 'upgrade', 'upgraded', 'breakout', 'bullish', 'growth', 'gain', 'gains', 'soar', 'soars', 'ai', 'partnership', 'revenue']
-    bearish_words = ['plunge', 'plunges', 'drop', 'drops', 'fall', 'falls', 'crash', 'downgrade', 'downgraded', 'miss', 'misses', 'lawsuit', 'investigation', 'slump', 'bearish', 'decline', 'declines', 'sink', 'sinks', 'warning', 'risk']
-
-    score, headline_count, top_headline = 0, 0, "No recent headlines found."
-    try:
-        req = urllib.request.Request(rss_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=4) as response:
-            root = ET.fromstring(response.read())
-            items = root.findall('.//item')
-            headline_count = len(items)
-            if items: top_headline = items[0].find('title').text if items[0].find('title') is not None else top_headline
-            for item in items[:10]:
-                title = item.find('title').text.lower() if item.find('title') is not None else ''
-                words = re.findall(r'\b\w+\b', title)
-                for w in words:
-                    if w in bullish_words: score += 12
-                    elif w in bearish_words: score -= 15
-        score = min(100, max(-100, score))
-        NEWS_CACHE[ticker] = (now, score, headline_count, top_headline)
-        return score, headline_count, top_headline
-    except Exception: return 0, 0, "News feed temporarily unavailable."
-
 def send_push_notification(topic, title, message):
     if not topic: return
     try:
@@ -92,19 +62,17 @@ class PortfolioManager:
     def default_user_state(self, username=""):
         prof = username.strip().lower()
         if 'test q' in prof: wl = ['NVDA', 'AMD', 'GLEN.L', 'RIO.L', 'JPM', 'BAC']
-        elif any(x in prof for x in ['test r', 'test s']): wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'META', 'MSFT']
-        elif any(x in prof for x in ['test k', 'test m', 'test n', 'test o', 'test p', 'test t']): wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
-        elif 'test l' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'CONL']
-        elif 'test g' in prof: wl = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L']
-        elif any(x in prof for x in ['test h', 'test i', 'test j']): wl = ['META', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L']
-        elif 'test c' in prof: wl = ['TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
+        elif 'test s' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'META', 'MSFT']
+        elif any(x in prof for x in ['test p', 'test t']): wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
+        elif 'test e' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR']
+        elif 'test c' in prof: wl = ['AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L']
         elif any(x in prof for x in ['test a', 'ian']): wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
-        else: wl = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'NFLX', 'PLTR', 'COIN', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'SMCI', 'ARM', 'AVGO', 'CONL', 'MSTX', 'BITX']
+        else: wl = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'PLTR', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
 
         return {
             'master_budget': 5000.0,
             'watchlist': wl, 'initial_positions': {}, 'holdings': {}, 'history': [], 'notified_signals': {},
-            'settings': {'period': '1d', 'interval': '1m' if any(x in prof for x in ['test k', 'test m', 'test n', 'test o', 'test p', 'test t']) else '5m', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
+            'settings': {'period': '1d', 'interval': '1m' if any(x in prof for x in ['test p', 'test t']) else '5m', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
     def load(self):
@@ -134,28 +102,40 @@ class PortfolioManager:
 
     def _ensure_default_user(self):
         try:
-            default_profiles = [
-                'Ian', 'Test A - Deep Value', 'Test B - Momentum (UK & US)', 
-                'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep',
-                'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal', 'Test I - Ultimate Hybrid', 
-                'Test J - News Sentiment AI', 'Test K - 1-Minute Hyper-Scalper', 'Test L - 5-Minute ORB', 
-                'Test M - VWAP Dip Sniper', 'Test N - 1-Minute Vol Scalper', 'Test O - 1-Minute HOD Sniper', 
-                'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test R - Regime-Filtered Momentum',
-                'Test S - Apex Rotator', 'Test T - Elasticity Sniper'
+            allowed_profiles = [
+                'Ian', 'Test A - Deep Value', 'Test C - 24/5 Global', 
+                'Test E - Rotator', 'Test P - 1-Minute BB Reversion', 
+                'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
                 self.data['users'] = {}
                 needs_save = True
 
-            for p in default_profiles:
+            # Purge deleted/underperforming profiles
+            existing_users = list(self.data['users'].keys())
+            for u in existing_users:
+                if u not in allowed_profiles and not u.startswith('Test S -'):
+                    del self.data['users'][u]
+                    needs_save = True
+
+            # Ensure baseline profiles exist
+            for p in allowed_profiles:
                 if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
                     
+            # Fix Ian starting capital & clear legacy position drift
+            if 'Ian' in self.data['users']:
+                ian_ref = self.data['users']['Ian']
+                if ian_ref.get('master_budget', 0) != 5000.0:
+                    ian_ref['master_budget'] = 5000.0
+                    needs_save = True
+
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = 'Ian'
                 needs_save = True
+                
             if needs_save: self.save_data(self.data)
         except Exception as e: print(f"Cleanup error: {e}")
 
@@ -366,12 +346,9 @@ class MarketScoringEngine:
             'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta Platforms', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
             'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ',
             'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'SQQQ': 'ProShares UltraPro Short QQQ (3x Short)',
-            '3SUS.L': 'WisdomTree US NASDAQ 3x Short', 'TSM': 'TSMC ADR', 'SONY': 'Sony Group', 'BABA': 'Alibaba Group',
-            'ASML': 'ASML Holding', 'SAP': 'SAP SE', 'SMCI': 'Super Micro Computer', 'ARM': 'ARM Holdings', 'AVGO': 'Broadcom Inc.',
-            'CONL': 'GraniteShares 2x Long COIN', 'MSTX': 'Defiance 2x Daily Long MSTR', 'BITX': '2x Bitcoin Strategy ETF',
+            '3SUS.L': 'WisdomTree US NASDAQ 3x Short', 'CONL': 'GraniteShares 2x Long COIN', 'MSTX': 'Defiance 2x Daily Long MSTR', 'BITX': '2x Bitcoin Strategy ETF',
             'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
-            'GLEN.L': 'Glencore plc', 'RIO.L': 'Rio Tinto plc', 'HSBA.L': 'HSBC Holdings', 'GSK.L': 'GSK plc', 'ULVR.L': 'Unilever plc',
-            'SBUX': 'Starbucks Corp', 'NKE': 'Nike Inc', 'BA': 'Boeing Co', 'JPM': 'JPMorgan Chase', 'BAC': 'Bank of America'
+            'GLEN.L': 'Glencore plc', 'RIO.L': 'Rio Tinto plc', 'HSBA.L': 'HSBC Holdings', 'GSK.L': 'GSK plc', 'ULVR.L': 'Unilever plc'
         }
 
     def check_market_regime(self):
@@ -402,7 +379,7 @@ class MarketScoringEngine:
         except Exception: pass
         return {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
 
-    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test b', regime=None):
+    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test e', regime=None):
         if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         ticker = getattr(df_5m, 'name', '')
         is_inverse = ticker in ['SQQQ', '3SUS.L']
@@ -416,7 +393,6 @@ class MarketScoringEngine:
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
         now_uk = pd.Timestamp.now(tz='Europe/London')
         is_us_stock = not ticker.endswith('.L')
-        current_mins = now_uk.hour * 60 + now_uk.minute
 
         ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
         ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
@@ -424,47 +400,24 @@ class MarketScoringEngine:
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
 
-        # GLOBAL SAFETY FILTERS
-        avg_vol_20 = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
-        cur_vol = df_5m['Volume'].iloc[-1]
-        vol_ratio = (cur_vol / avg_vol_20) if avg_vol_20 > 0 else 1.0
-        
-        df_today = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_uk.strftime('%Y-%m-%d')]
-        hod = df_today['High'].max() if not df_today.empty else current_price
-        dist_from_hod_pct = ((hod - current_price) / hod) * 100.0 if hod > 0 else 0.0
-
-        if rsi >= 65 and avg_buy_price == 0 and not 'test o' in prof:
-            return {'type': 'Safety Shield', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'BUY BLOCKED: RSI Overextended ({rsi:.1f} >= 65). Preventing peak buy.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Peak Buy Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI High)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-
-        if dist_from_hod_pct <= 0.20 and vol_ratio < 2.5 and avg_buy_price == 0 and not 'test o' in prof:
-            return {'type': 'Safety Shield', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'BUY BLOCKED: Near HOD ({hod:.2f}) without 2.5x volume explosion.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'HOD Resistance Shield', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(HOD Block)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-
-        # 20:50 BST 3x ETF SWEEP (Tests E, P, R, S)
-        if any(x in prof for x in ['test e', 'test p', 'test r', 'test s']) and is_3x_etf and now_uk.hour == 20 and now_uk.minute >= 50:
-            if avg_buy_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                return {'type': 'EOD 3x Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD 3x ETF SHIELD: Liquidating overnight risk.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(3x Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-            return {'type': 'EOD 3x Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD 3x ETF SHIELD: Blocking entries before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-
-        # QUICK 1.2% TARGET FOR 3x ETFs (Tests E, S)
+        # QUICK 1.2% TARGET FOR 3x ETFs
         if any(x in prof for x in ['test e', 'test s']) and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             if pnl_pct >= 1.20:
                 return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
-        # TEST T: 1-MINUTE ELASTICITY SNIPER (K + P + Vol)
+        # TEST T: ELASTICITY SNIPER
         if 'test t' in prof:
             sma20 = df_5m['Close'].rolling(20).mean().iloc[-1]
             std20 = df_5m['Close'].rolling(20).std().iloc[-1]
             lower_bb = sma20 - (2 * std20)
-            
+            avg_vol_20 = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
+            vol_ratio = (df_5m['Volume'].iloc[-1] / avg_vol_20) if avg_vol_20 > 0 else 1.0
+
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
                 if current_price >= sma20:
-                    return {'type': 'Elasticity Sniper', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Target Hit: Reverted to 20-SMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(SMA Mean)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
-                if drop_from_peak >= 0.75:
-                    return {'type': 'Elasticity Sniper', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"Trailing Stop. Dropped {drop_from_peak:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
+                    return {'type': 'Elasticity Sniper', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Reverted to 20-SMA mean.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(SMA Mean)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
                 return {'type': 'Elasticity Sniper', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f'Waiting for reversion to {sma20:.2f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Active Sniper', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Holding)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
 
             if rsi <= 25 and current_price < lower_bb and vol_ratio >= 3.0:
@@ -472,7 +425,7 @@ class MarketScoringEngine:
 
             return {'type': 'Elasticity Sniper', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Awaiting Extreme Exhaustion (RSI<25, Price<LBB, Vol>3x).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning Extremes', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # TEST Q: STATARB PAIRS TRADER
+        # TEST Q: STATARB PAIRS
         if 'test q' in prof:
             pairs = {'NVDA':'AMD', 'AMD':'NVDA', 'GLEN.L':'RIO.L', 'RIO.L':'GLEN.L', 'JPM':'BAC', 'BAC':'JPM'}
             pair_tick = pairs.get(ticker)
@@ -491,53 +444,14 @@ class MarketScoringEngine:
                         return {'type': 'StatArb', 'score': 85, 'tranches': 1, 'discount': f"{spread:.2f}%", 'reason': f'Spread widening: {ticker} lagging {pair_tick} by {abs(spread):.2f}%.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.01, 'status': 'Arb Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Pairs Snipe)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'StatArb', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Monitoring statistical correlation spread.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning Pairs', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Divergence)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # REGIME-FILTERED MOMENTUM (Tests B, D, R)
-        if any(x in prof for x in ['test b', 'test d', 'test r']):
-            if regime['score'] < 50:
-                if avg_buy_price > 0:
-                    return {'type': 'Regime Filter', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': f"REGIME SHUTDOWN ({regime['state']}). Liquidating.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Panic Sell', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Regime Drop)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
-                return {'type': 'Regime Filter', 'score': 10, 'tranches': 0, 'discount': '0.00%', 'reason': f"HARD BLOCK: Market Sentiment is {regime['score']}/100. Holding cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Blocked by Regime', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Weather Bad)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-
-        # REGIME-FILTERED MOMENTUM - TEST S (Apex Rotator tuned to lower threshold < 35)
+        # TEST S: APEX ROTATOR (REGIME < 35 SHUTDOWN)
         if 'test s' in prof:
             if regime['score'] < 35:
                 if avg_buy_price > 0:
                     return {'type': 'Apex Rotator', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': f"APEX SHUTDOWN: Market Sentiment crashed ({regime['score']}/100). Liquidating.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Panic Sell', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Regime Drop)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
                 return {'type': 'Apex Rotator', 'score': 10, 'tranches': 0, 'discount': '0.00%', 'reason': f"APEX BLOCK: Market Sentiment in deep drop ({regime['score']}/100). Holding cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Blocked by Regime', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Weather Bad)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
-        # TEST N: 1-MINUTE VOL SCALPER
-        if 'test n' in prof:
-            last_candle = df_5m.iloc[-1]
-            candle_range = last_candle['High'] - last_candle['Low']
-            close_pos = (last_candle['Close'] - last_candle['Low']) / candle_range if candle_range > 0 else 0
-            
-            if avg_buy_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                if pnl_pct >= 0.50:
-                    return {'type': 'Vol Scalp', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Target Hit (+0.50%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
-                elif current_price < df_5m['Open'].iloc[-1]:
-                    return {'type': 'Vol Scalp', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Momentum lost (candle turned red).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Momentum Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Bail)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
-                return {'type': 'Vol Scalp', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Riding Volume Surge.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Active Scalp', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Holding)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-                
-            if cur_vol > (avg_vol_20 * 3.0) and close_pos >= 0.8 and last_candle['Close'] > last_candle['Open']:
-                return {'type': 'Vol Scalp', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Volume Spike ({vol_ratio:.1f}x) & strong close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.005, 'status': 'Vol Spike Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Vol Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-            return {'type': 'Vol Scalp', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Scanning for 3x Volume Spikes.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
-
-        # TEST O: 1-MINUTE HOD SNIPER
-        if 'test o' in prof:
-            if avg_buy_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                if pnl_pct >= 0.80:
-                    return {'type': 'HOD Sniper', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Target Hit (+0.80%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
-                elif pnl_pct <= -0.40:
-                    return {'type': 'HOD Sniper', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Stop Loss (-0.40%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
-                return {'type': 'HOD Sniper', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Riding HOD Breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Active Breakout', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Holding)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-                
-            if 870 <= current_mins <= 930 and regime['score'] > 50 and current_price >= hod and vol_ratio >= 2.5:
-                return {'type': 'HOD Sniper', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'HOD Breakout ({hod:.2f}) on {vol_ratio:.1f}x volume in bullish regime.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.008, 'status': 'HOD Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(HOD Breakout)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-            return {'type': 'HOD Sniper', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Scanning for HOD ({hod:.2f}) breakouts on high volume (2:30-3:30 PM).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning HOD', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
-
-        # TEST P: 1-MINUTE BB REVERSION
+        # TEST P: BB REVERSION
         if 'test p' in prof:
             sma20 = df_5m['Close'].rolling(20).mean().iloc[-1]
             std20 = df_5m['Close'].rolling(20).std().iloc[-1]
@@ -553,72 +467,9 @@ class MarketScoringEngine:
                 return {'type': 'BB Revert', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Price pierced lower BB ({lower_bb:.2f}) & RSI {rsi:.1f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': sma20, 'status': 'Extreme Oversold', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(BB Reversion)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'BB Revert', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Scanning for Lower BB pierces & RSI <= 25.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning BB', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # TEST L: 5-Minute Opening Range Breakout (ORB)
-        if 'test l' in prof:
-            if avg_buy_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                if pnl_pct >= 1.0:
-                    return {'type': 'ORB', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'ORB Target Reached (+1.0%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
-                elif pnl_pct <= -0.5:
-                    return {'type': 'ORB', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'ORB Stop Loss (-0.5%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
-                if current_mins > 930:
-                    return {'type': 'ORB', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'ORB Time Expired (3:30 PM). Liquidating.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Time Exit', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Time Stop)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-                return {'type': 'ORB', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Riding ORB Breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Active ORB', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Holding)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-            
-            if 870 <= current_mins <= 930:
-                if not df_today.empty and len(df_today) >= 1:
-                    first_candle = df_today.iloc[0]
-                    orb_high = first_candle['High']
-                    if current_mins >= 875 and current_price > orb_high:
-                        if vol_ratio > 2.0:
-                            return {'type': 'ORB', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'ORB Breakout > {orb_high:.2f} on 2x volume.', 'is_smart': True, 'rec_buy': current_price*0.99, 'rec_sell': current_price*1.01, 'status': 'ORB Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(ORB Breakout)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-            return {'type': 'ORB', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Waiting for ORB conditions (2:35 - 3:30 PM).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning ORB', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
-
-        # TEST M: VWAP Dip Sniper
-        if 'test m' in prof:
-            if not df_today.empty:
-                vwap = (df_today['Close'] * df_today['Volume']).cumsum() / df_today['Volume'].cumsum()
-                current_vwap = vwap.iloc[-1]
-                
-                if avg_buy_price > 0:
-                    pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                    drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
-                    if current_price >= current_vwap:
-                        return {'type': 'VWAP Sniper', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'VWAP Reversion Target Hit.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(VWAP Touch)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
-                    if drop_from_peak >= 0.8:
-                        return {'type': 'VWAP Sniper', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'Trailing Stop Hit (-0.8%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Trailing Stop)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
-                    return {'type': 'VWAP Sniper', 'score': 90, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f'Riding VWAP Mean Reversion. VWAP: {current_vwap:.2f}', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Active Reversion', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Holding)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-                
-                if current_price < current_vwap * 0.985 and regime['score'] >= 50 and 870 <= current_mins <= 960:
-                    return {'type': 'VWAP Sniper', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Price 1.5% below VWAP ({current_vwap:.2f}). Bullish regime.', 'is_smart': True, 'rec_buy': current_price*0.99, 'rec_sell': current_vwap, 'status': 'VWAP Dip Buy', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Dip Snipe)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-            return {'type': 'VWAP Sniper', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Scanning for VWAP divergence (1.5% Dip).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning VWAP', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
-
-        # TEST K: 1-MINUTE HYPER SCALPER
-        if 'test k' in prof:
-            if avg_buy_price > 0 and highest_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0
-                if drop_from_peak >= 0.75:
-                    return {'type': 'Hyper-Scalp', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"SCALPER TRAILING STOP. Dropped {drop_from_peak:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
-                if rsi >= 75:
-                    return {'type': 'Hyper-Scalp', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RSI OVERBOUGHT ({rsi:.1f}). Scalping profits.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overbought', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Scalp Exit)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
-                return {'type': 'Hyper-Scalp', 'score': 95, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING SCALP. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding Trend', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Position Active)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-
-            if rsi <= 35 and current_price > ema9 and pct_change_5d > -5:
-                return {'type': 'Hyper-Scalp', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SCALP DETECTED: Oversold RSI ({rsi:.1f}) + Price pushed above 9-EMA.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': 'Hyper-Scalp Buy', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Scalp Entry)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
-                        
-            return {'type': 'Hyper-Scalp', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Waiting for RSI < 35 & Price > 9-EMA (Current RSI: {rsi:.1f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning Scalps', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
-
-        # EOD VOLATILITY SHIELD (Standard for others)
-        if any(x in prof for x in ['test f', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test q', 'test t']) and is_us_stock and now_uk.hour == 20 and now_uk.minute >= 45:
-            if avg_buy_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD VOLATILITY SHIELD: Liquidating 15 mins before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-            return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD NO-BUY ZONE: Blocking new entries in final 15 mins.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
-
-        # STANDARD MOMENTUM (Test B, C, D, E, G, H, I, J, S)
-        trail_pct = 0.30 if regime['code'] == 'BULL_OVERHEAT' else (0.75 if 'test d' in prof else (1.00 if any(x in prof for x in ['test e', 'test s']) else 0.50))
-        hard_pct = -0.50 if 'test d' in prof else -1.00
+        # STANDARD MOMENTUM & ROTATOR (Test C, E, S)
+        trail_pct = 1.00 if any(x in prof for x in ['test e', 'test s']) else 0.50
+        hard_pct = -1.00
 
         if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
@@ -629,43 +480,19 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
 
-        if 'test g' in prof:
-            if regime['code'] in ['BEAR', 'BEAR_FREEZE'] and not is_inverse:
-                return {'type': 'Bi-Directional', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "LONG BUYS BLOCKED: Market Sentiment in Pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Bearish Market - Short Mode', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeking Short)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': 'LONG'}
-            elif regime['code'] in ['BULL', 'BULL_OVERHEAT'] and is_inverse:
-                return {'type': 'Bi-Directional', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "SHORT BUYS BLOCKED: Market Sentiment in Bullish mode.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Bullish Market - Long Mode', 'color': '#00c853', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeking Long)', 'action_color': '#00c853', 'regime': regime, 'trade_type': 'SHORT'}
-
-        elif regime['code'] in ['BEAR', 'BEAR_FREEZE']:
-            return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SENTIMENT THERMOMETER BLOCK: QQQ in pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': regime['state'], 'color': regime['color'], 'action_main': 'HOLD / WAIT', 'action_sub': '(Market Cooling)', 'action_color': regime['color'], 'regime': regime, 'trade_type': trade_type}
-
         if ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0:
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
             return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Fast {trade_type} Surge", 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f"({trade_type} Surge)", 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
 
-        return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Awaiting fast EMA crossover surge (Price > 9-EMA).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
+        return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Awaiting fast EMA crossover surge.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
     def score_nav_asset(self, ticker, current_price, volume_ratio):
         nav = self.nav_bases.get(ticker, current_price * 1.10)
         implied_discount = ((nav - current_price) / nav) * 100.0
         buy_score = min(max(round(min(max((implied_discount/20.0)*80.0, 0), 80) + min(max((volume_ratio/2.0)*20.0, 0), 20), 2), 0), 100)
         tranches = 0 if implied_discount <= 0 else min(5, int(buy_score // 20) + 1)
-            
-        macro_triggered, uun_discount = False, 0.0
-        if ticker == 'YCA.L':
-            try:
-                u_df = fetch_yf_data('U-UN.TO', '1d', '1d')
-                if not u_df.empty:
-                    u_price = u_df['Close'].iloc[-1]
-                    u_nav = self.nav_bases.get('U-UN.TO', 28.50)
-                    uun_discount = ((u_nav - u_price) / u_nav) * 100.0
-                    if uun_discount > 10.0: macro_triggered = True
-            except Exception: pass
 
-        if macro_triggered:
-            action_main, action_sub, status, color, tranches = "SELL", "(Sentinel Active)", "MACRO SENTINEL TRIPPED", "#ff3d00", 0
-            reason = f"EMERGENCY STOP: Sprott U.UN discount exceeded 10% ({uun_discount:.1f}%)."
-            action_color = "#ff3d00"
-        elif implied_discount <= 5.0 and implied_discount > -50.0:
+        if implied_discount <= 5.0 and implied_discount > -50.0:
             action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", "Target Reached", "#ff3d00", 0
             reason = f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%."
             action_color = "#ff3d00"
@@ -728,7 +555,7 @@ def process_auto_profile(prof_name):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'])
+        is_auto_profile = any(x in active_profile for x in ['test a', 'test c', 'test e', 'test p', 'test q', 'test s', 'test t'])
         if not is_auto_profile: return
 
         scan_list = ud.get('watchlist') or []
@@ -750,8 +577,8 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): 
-            interval = "1m" if any(x in active_profile for x in ['test k', 'test m', 'test n', 'test o', 'test p', 'test t']) else ("1d" if 'test a' in active_profile else "5m")
-            period = "1d" if any(x in active_profile for x in ['test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test t']) else ("1y" if 'test a' in active_profile else "5d")
+            interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else ("1d" if 'test a' in active_profile else "5m")
+            period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else ("1y" if 'test a' in active_profile else "5d")
             return tick, fetch_yf_data(tick, period, interval)
 
         with ThreadPoolExecutor(max_workers=4) as ex:
@@ -795,11 +622,6 @@ def process_auto_profile(prof_name):
                 else:
                     st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
 
-                # Cooldown removed for momentum & rotator bots so exits process immediately
-                if 'test a' in active_profile:
-                    last_trade_time = next((h.get('timestamp', 0) for h in hist if h.get('ticker') == t), 0)
-                    if int(time.time()) - last_trade_time < 300: continue
-
                 if sh > 0:
                     held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
 
@@ -819,19 +641,10 @@ def process_auto_profile(prof_name):
             if top_candidate['s'] >= (weakest_holding['score'] + 15) and top_candidate['s'] >= 65:
                 dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
 
-        if len(held_scores) > max_allowed_holds:
-            held_scores.sort(key=lambda x: x['score'])
-            for i in range(len(held_scores) - max_allowed_holds):
-                weakest = held_scores[i]
-                dirs.append({'ticker': weakest['ticker'], 'action': 'SELL', 'shares': weakest['shares'], 'price': weakest['price'], 'amount': round(weakest['value'], 2)})
-
-        now_uk = pd.Timestamp.now(tz='Europe/London')
-        is_eod_blocked = (any(x in active_profile for x in ['test f', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t']) and now_uk.hour == 20 and now_uk.minute >= 45)
-        
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
-        if buys and rem_cash >= MIN_BUY_VALUE and not is_eod_blocked and slots_available > 0:
+        if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
             top_buys = buys[:slots_available]
             per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if any(x in active_profile for x in ['test e', 'test s']) else 0.33))
@@ -850,14 +663,14 @@ def global_background_worker():
     time.sleep(3)
     while True:
         try:
-            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L', 'COIN', 'CONL', 'MSTX', 'BITX', 'SMCI', 'ARM', 'AVGO', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'TSM', 'SONY', 'BABA', 'ASML', 'SAP', 'SGLN.L', 'SSLN.L', 'GOOGL', 'NFLX', 'TQQQ', 'SOXL', 'NVDL', 'QQQ', 'YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'JPM', 'BAC']
+            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'MSTR', 'RR.L', 'SHEL.L', 'BP.L', 'COIN', 'CONL', 'MSTX', 'BITX', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'TQQQ', 'SOXL', 'NVDL', 'QQQ', 'YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'JPM', 'BAC']
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
                 fetch_yf_data(tk, "1d", "1m")
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test B - Momentum (UK & US)', 'Test C - 24/5 Global', 'Test D - Volatility', 'Test E - Rotator', 'Test F - EOD Sweep', 'Test G - Long/Short Bi-Directional', 'Test H - Wick Reversal', 'Test I - Ultimate Hybrid', 'Test J - News Sentiment AI', 'Test K - 1-Minute Hyper-Scalper', 'Test L - 5-Minute ORB', 'Test M - VWAP Dip Sniper', 'Test N - 1-Minute Vol Scalper', 'Test O - 1-Minute HOD Sniper', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test R - Regime-Filtered Momentum', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper']
+            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
@@ -890,12 +703,6 @@ def add_user():
 def delete_user():
     portfolio_store.reload()
     return jsonify({'status': 'ok' if portfolio_store.delete_user((request.get_json() or {}).get('username', '')) else 'error'})
-
-@app.route('/api/push_test', methods=['POST'])
-def push_test():
-    topic = (request.get_json() or {}).get('topic', '')
-    if topic: send_push_notification(topic, "Stock Terminal Push Alert", "Test notification connected successfully!")
-    return jsonify({'status': 'ok' if topic else 'error'})
 
 @app.route('/api/portfolio', methods=['GET'])
 def get_portfolio():
@@ -954,9 +761,9 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'])
-        interval = "1m" if any(x in active_profile for x in ['test k', 'test m', 'test n', 'test o', 'test p', 'test t']) else "5m"
-        period = "1d" if any(x in active_profile for x in ['test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test t']) else "5d"
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t'])
+        interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
+        period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         df.name = t
@@ -993,21 +800,18 @@ def get_directives():
     rem_cash = max(0, cash_balance)
     
     wl = ud.get('watchlist') or []
-    if not wl and (active_profile == 'ian' or 'test a' in active_profile):
-        wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
-        
     active_holds = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker')) > 0]))
     scan_list = list(set(wl + active_holds))
     
     dirs = []
     if scan_list:
         regime = engine.check_market_regime()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t'])
         
         dfs = {}
         def fetch_t(tick): 
-            interval = "1m" if any(x in active_profile for x in ['test k', 'test m', 'test n', 'test o', 'test p', 'test t']) else "5m"
-            period = "1d" if any(x in active_profile for x in ['test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test t']) else "5d"
+            interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
+            period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
             return tick, fetch_yf_data(tick, period if is_momentum else "1y", interval if is_momentum else "1d")
             
         with ThreadPoolExecutor(max_workers=4) as ex:
@@ -1053,44 +857,7 @@ def get_directives():
                     dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': sh * cps, 'score': st['score']})
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
-
-    ian_dirs = []
-    if active_profile != 'ian':
-        try:
-            ian_ud = portfolio_store.user_data('Ian')
-            ian_wl = ian_ud.get('watchlist') or ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
-            ian_holds = list(set([tr.get('ticker') for tr in (ian_ud.get('history') or []) if portfolio_store.get_shares(tr.get('ticker'), 'Ian') > 0]))
-            ian_scan = list(set(ian_wl + ian_holds))
-            
-            ian_mb = ian_ud.get('master_budget', 5000.0)
-            ian_nh = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in (ian_ud.get('history') or []))
-            ian_im = sum(pos.get('manual_val', 0.0) for pos in (ian_ud.get('initial_positions') or {}).values())
-            ian_rem_cash = max(0, ian_mb + ian_nh - ian_im)
-
-            dfs_ian = {}
-            def fetch_ian(tick): return tick, fetch_yf_data(tick, "1y", "1d")
-            with ThreadPoolExecutor(max_workers=4) as ex:
-                for tick, df_i in ex.map(fetch_ian, ian_scan): dfs_ian[tick] = df_i
-
-            for t in ian_scan:
-                df = dfs_ian.get(t)
-                if df is None or df.empty: continue
-                cur = df['Close'].iloc[-1]
-                sh = portfolio_store.get_shares(t, 'Ian')
-                cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
-                
-                avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
-                v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
-                st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
-                
-                if st['action_main'] == 'BUY' and sh == 0 and ian_rem_cash >= 20:
-                    bs = int((ian_rem_cash * 0.25) // cps)
-                    if bs > 0: ian_dirs.append({'ticker': t, 'action': 'BUY', 'shares': bs, 'price': cur, 'amount': bs * cps, 'score': st['score']})
-                elif st['action_main'] == 'SELL' and sh > 0:
-                    ian_dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': sh * cps, 'score': st['score']})
-        except Exception: pass
-
-    return jsonify({'directives': dirs, 'ian_directives': ian_dirs})
+    return jsonify({'directives': dirs, 'ian_directives': []})
 
 @app.route('/api/recommend', methods=['GET'])
 def get_recommendations():
@@ -1116,7 +883,7 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t'])
         if not t: t = 'ALL_SHARES'
 
         hist = ud.get('history') or []
@@ -1209,7 +976,7 @@ def get_data():
         req_p = request.args.get('p')
         if not req_p or req_p == 'undefined': req_p = settings.get('period', '1d')
         req_i = request.args.get('i')
-        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '1m' if any(x in active_profile for x in ['test k', 'test m', 'test n', 'test o', 'test p', 'test t']) else '5m')
+        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '1m' if any(x in active_profile for x in ['test p', 'test t']) else '5m')
 
         if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
         elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
