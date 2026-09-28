@@ -64,7 +64,7 @@ class PortfolioManager:
         if 'test q' in prof: wl = ['NVDA', 'AMD', 'GLEN.L', 'RIO.L', 'JPM', 'BAC']
         elif 'test s' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'META', 'MSFT']
         elif any(x in prof for x in ['test p', 'test t']): wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
-        elif 'test e' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR']
+        elif any(x in prof for x in ['test e', 'test u']): wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR']
         elif 'test c' in prof: wl = ['AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L']
         elif any(x in prof for x in ['test a', 'ian']): wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
         else: wl = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'PLTR', 'MSTR', 'TQQQ', 'SOXL', 'NVDL']
@@ -105,27 +105,25 @@ class PortfolioManager:
             allowed_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test C - 24/5 Global', 
                 'Test E - Rotator', 'Test P - 1-Minute BB Reversion', 
-                'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper'
+                'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper',
+                'Test U - Tight Rotator'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
                 self.data['users'] = {}
                 needs_save = True
 
-            # Purge deleted/underperforming profiles
             existing_users = list(self.data['users'].keys())
             for u in existing_users:
                 if u not in allowed_profiles and not u.startswith('Test S -'):
                     del self.data['users'][u]
                     needs_save = True
 
-            # Ensure baseline profiles exist
             for p in allowed_profiles:
                 if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
                     
-            # Fix Ian starting capital & clear legacy position drift
             if 'Ian' in self.data['users']:
                 ian_ref = self.data['users']['Ian']
                 if ian_ref.get('master_budget', 0) != 5000.0:
@@ -401,7 +399,7 @@ class MarketScoringEngine:
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
 
         # QUICK 1.2% TARGET FOR 3x ETFs
-        if any(x in prof for x in ['test e', 'test s']) and is_3x_etf and avg_buy_price > 0:
+        if any(x in prof for x in ['test e', 'test s', 'test u']) and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             if pnl_pct >= 1.20:
                 return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type}
@@ -467,8 +465,14 @@ class MarketScoringEngine:
                 return {'type': 'BB Revert', 'score': 85, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f'Price pierced lower BB ({lower_bb:.2f}) & RSI {rsi:.1f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': sma20, 'status': 'Extreme Oversold', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(BB Reversion)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'BB Revert', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Scanning for Lower BB pierces & RSI <= 25.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning BB', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # STANDARD MOMENTUM & ROTATOR (Test C, E, S)
-        trail_pct = 1.00 if any(x in prof for x in ['test e', 'test s']) else 0.50
+        # STANDARD MOMENTUM & ROTATOR (Test C, E, S, U)
+        if 'test u' in prof:
+            trail_pct = 0.50
+        elif any(x in prof for x in ['test e', 'test s']):
+            trail_pct = 1.00
+        else:
+            trail_pct = 0.50
+
         hard_pct = -1.00
 
         if avg_buy_price > 0 and highest_price > 0:
@@ -555,7 +559,7 @@ def process_auto_profile(prof_name):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['test a', 'test c', 'test e', 'test p', 'test q', 'test s', 'test t'])
+        is_auto_profile = any(x in active_profile for x in ['test a', 'test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u'])
         if not is_auto_profile: return
 
         scan_list = ud.get('watchlist') or []
@@ -633,7 +637,7 @@ def process_auto_profile(prof_name):
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
             except Exception: pass
 
-        max_allowed_holds = 5 if 'test a' in active_profile else (1 if any(x in active_profile for x in ['test e', 'test s']) else 3)
+        max_allowed_holds = 5 if 'test a' in active_profile else (1 if any(x in active_profile for x in ['test e', 'test s', 'test u']) else 3)
         
         if buys and held_scores and len(held_scores) >= max_allowed_holds:
             top_candidate = max(buys, key=lambda x: x['s'])
@@ -647,12 +651,12 @@ def process_auto_profile(prof_name):
         if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
             top_buys = buys[:slots_available]
-            per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if any(x in active_profile for x in ['test e', 'test s']) else 0.33))
+            per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u']) else 0.33))
             for b in top_buys:
                 bs = int(per_stock_budget // b['cps'])
                 amt = round(bs * b['cps'], 2)
                 if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
-                    dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
+                    dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': b['s'], 'price': b['p'], 'amount': amt})
 
         for d in dirs:
             if d['shares'] > 0:
@@ -670,7 +674,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper']
+            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
@@ -761,7 +765,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u'])
         interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
         period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
@@ -806,7 +810,7 @@ def get_directives():
     dirs = []
     if scan_list:
         regime = engine.check_market_regime()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u'])
         
         dfs = {}
         def fetch_t(tick): 
@@ -849,7 +853,7 @@ def get_directives():
             
             if st['action_main'] == 'BUY' and sh == 0 and rem_cash >= 20:
                 if not is_momentum or is_open:
-                    allocation = 0.98 if any(x in active_profile for x in ['test e', 'test s']) else (0.33 if is_momentum else 0.20)
+                    allocation = 0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u']) else (0.33 if is_momentum else 0.20)
                     bs = int(min(rem_cash, total_eq * allocation) // cps) 
                     if bs > 0: dirs.append({'ticker': t, 'action': 'BUY', 'shares': bs, 'price': cur, 'amount': bs * cps, 'score': st['score']})
             elif st['action_main'] == 'SELL' and sh > 0:
@@ -883,7 +887,7 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u'])
         if not t: t = 'ALL_SHARES'
 
         hist = ud.get('history') or []
