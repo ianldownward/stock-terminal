@@ -491,12 +491,19 @@ class MarketScoringEngine:
                         return {'type': 'StatArb', 'score': 85, 'tranches': 1, 'discount': f"{spread:.2f}%", 'reason': f'Spread widening: {ticker} lagging {pair_tick} by {abs(spread):.2f}%.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price*1.01, 'status': 'Arb Entry', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': '(Pairs Snipe)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type}
             return {'type': 'StatArb', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Monitoring statistical correlation spread.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Scanning Pairs', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(No Divergence)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type}
 
-        # REGIME-FILTERED MOMENTUM (Tests B, D, R, S)
-        if any(x in prof for x in ['test b', 'test d', 'test r', 'test s']):
+        # REGIME-FILTERED MOMENTUM (Tests B, D, R)
+        if any(x in prof for x in ['test b', 'test d', 'test r']):
             if regime['score'] < 50:
                 if avg_buy_price > 0:
                     return {'type': 'Regime Filter', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': f"REGIME SHUTDOWN ({regime['state']}). Liquidating.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Panic Sell', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Regime Drop)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
                 return {'type': 'Regime Filter', 'score': 10, 'tranches': 0, 'discount': '0.00%', 'reason': f"HARD BLOCK: Market Sentiment is {regime['score']}/100. Holding cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Blocked by Regime', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Weather Bad)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
+
+        # REGIME-FILTERED MOMENTUM - TEST S (Apex Rotator tuned to lower threshold < 35)
+        if 'test s' in prof:
+            if regime['score'] < 35:
+                if avg_buy_price > 0:
+                    return {'type': 'Apex Rotator', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': f"APEX SHUTDOWN: Market Sentiment crashed ({regime['score']}/100). Liquidating.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Panic Sell', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Regime Drop)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type}
+                return {'type': 'Apex Rotator', 'score': 10, 'tranches': 0, 'discount': '0.00%', 'reason': f"APEX BLOCK: Market Sentiment in deep drop ({regime['score']}/100). Holding cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Blocked by Regime', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Weather Bad)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type}
 
         # TEST N: 1-MINUTE VOL SCALPER
         if 'test n' in prof:
@@ -788,8 +795,10 @@ def process_auto_profile(prof_name):
                 else:
                     st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
 
-                last_trade_time = next((h.get('timestamp', 0) for h in hist if h.get('ticker') == t), 0)
-                if int(time.time()) - last_trade_time < 300: continue
+                # Cooldown removed for momentum & rotator bots so exits process immediately
+                if 'test a' in active_profile:
+                    last_trade_time = next((h.get('timestamp', 0) for h in hist if h.get('ticker') == t), 0)
+                    if int(time.time()) - last_trade_time < 300: continue
 
                 if sh > 0:
                     held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
