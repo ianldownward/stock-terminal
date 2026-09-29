@@ -233,6 +233,7 @@
         let selectedLegendTickers = new Set(); 
         let showAvgLine = true;
         let currentHealthPct = 0; let currentHealthColor = '#8a8a9e'; let currentHealthText = 'N/A'; let isRotatorProfile = false;
+        let tvBuyPriceLine = null;
 
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
@@ -673,6 +674,30 @@
                     if (s === 'candlestick' || s === 'heikin-ashi') tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' }); else if (s === 'bar') tvSeries = tvChart.addBarSeries({ upColor: '#00c853', downColor: '#ff3d00' }); else if (s === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff', lineWidth: 2 }); else tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
                     tvSeries.setData(md); tvChart.timeScale().fitContent(); currentChartStyle = s; lastRenderedTicker = currentTicker;
                 } else { tvSeries.setData(md); }
+
+                // --- DYNAMIC HORIZONTAL BUY PRICE LINE OVERLAY ---
+                if (tvBuyPriceLine) {
+                    tvSeries.removePriceLine(tvBuyPriceLine);
+                    tvBuyPriceLine = null;
+                }
+
+                if (currentTicker !== 'ALL_SHARES' && currentSharesOwned > 0 && globalPortfolioData && globalPortfolioData.history) {
+                    let activeBuys = globalPortfolioData.history.filter(h => h.ticker === currentTicker && h.action === 'BUY');
+                    if (activeBuys.length > 0) {
+                        let avgBuyPrice = parseFloat(activeBuys[0].price);
+                        if (avgBuyPrice > 0) {
+                            tvBuyPriceLine = tvSeries.createPriceLine({
+                                price: avgBuyPrice,
+                                color: '#00c853',
+                                lineWidth: 2,
+                                lineStyle: LightweightCharts.LineStyle.Dashed,
+                                axisLabelVisible: true,
+                                title: 'BUY PRICE',
+                            });
+                        }
+                    }
+                }
+
                 if (showMath && masterMathLine && masterMathLine.length > 0) {
                     if (!tvMathSeries || needNew) { if (tvMathSeries) tvChart.removeSeries(tvMathSeries); tvChart.applyOptions({ leftPriceScale: { visible: !isMomentum } }); tvMathSeries = tvChart.addLineSeries({ color: '#ff9900', lineWidth: 2, lineStyle: 1, priceScaleId: isMomentum ? 'right' : 'left' }); }
                     tvMathSeries.setData(masterMathLine);

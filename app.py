@@ -1026,7 +1026,6 @@ def get_data():
                 else:
                     top_score = 0
                     top_stock = None
-                    # Quick scan of top watchlist items to find closest target
                     for tick in wl[:10]:
                         df_t = fetch_yf_data(tick, req_p, req_i)
                         if not df_t.empty:
