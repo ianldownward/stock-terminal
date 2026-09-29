@@ -10,7 +10,7 @@
         .sidebar-bottom{padding:15px;border-top:1px solid #262b36;background:#1a1d24;flex-shrink:0}
         .right-drawer{width:280px;background:#171a21;border-left:1px solid #262b36;display:flex;flex-direction:column;padding:15px;flex-shrink:0;overflow-y:auto}
         .right-drawer h2,.sidebar h2{font-size:12px;color:#787e8e;margin:10px 0;text-transform:uppercase;letter-spacing:.5px} .sidebar h2{margin-top:0}
-        .drawer-card{background:#1a1d24;border:1px solid #262b36;border-radius:8px;padding:12px;margin-bottom:10px;text-align:center;position:relative}
+        .drawer-card{background:#1a1d24;border:1px solid #262b36;border-radius:8px;padding:12px;margin-bottom:10px;text-align:center;position:relative; min-height: 80px;}
         .drawer-card h3{font-size:10px;color:#787e8e;margin:0 0 6px 0;text-transform:uppercase}
         .drawer-details{background:#1a1d24;border:1px solid #262b36;border-radius:8px;padding:10px;margin-bottom:10px}
         .drawer-details summary{font-size:11px;color:#00d2ff;text-transform:uppercase;font-weight:bold;cursor:pointer;list-style:none;outline:none;display:flex;justify-content:space-between;align-items:center}
@@ -197,7 +197,7 @@
     
     <div class="right-drawer">
         <div id="ianAlertBox" style="display: none; background: #1e222d; border: 1px solid #00d2ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);"><h3 style="font-size: 11px; color: #00d2ff; margin: 0 0 8px 0; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>Ian Action Required</h3><div id="ianAlertList"></div></div>
-        <div class="drawer-card" id="actionCard"><h3>Recommended Action</h3><p id="mActionMain" style="font-size:18px; font-weight:bold;">--</p><span id="mActionSub" style="font-size:11px; color:#8a8a9e; font-weight:normal; display:block; margin-bottom:2px;"></span><div id="actionBtnContainer" style="margin-top:2px;"></div></div>
+        <div class="drawer-card" id="actionCard"></div>
         <div class="drawer-card"><h3>Recommended Rec.</h3><p id="mRecTradeAmt" style="color:#00c853; font-size:15px; font-weight:bold;">£0.00</p><span id="mRecShares" style="font-size:10px; color:#787e8e; display:block; margin-top:2px;">0 shares</span></div>
         <details class="drawer-details"><summary>Active Profiles Leaderboard</summary><div id="leaderboardUI" style="margin-top:8px;"></div></details>
         <details class="drawer-details"><summary>Asset Trade Log</summary><ul class="history-list" id="historyUI" style="margin-top:8px;"></ul></details>
@@ -215,6 +215,7 @@
         let currentFetchId = 0; let manualLines = {}; let isDrawing = false; let currentLine = null; let showManual = true; let isDropdownOpen = false;
         let selectedLegendTickers = new Set(); 
         let showAvgLine = true;
+        let currentHealthPct = 0; let currentHealthColor = '#8a8a9e'; let currentHealthText = 'N/A'; let isRotatorProfile = false;
 
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
@@ -459,16 +460,36 @@
             let cash_balance = tb + net_history, rem = Math.max(0, cash_balance), toa = 0;
             if (globalPortfolioData.holdings) { for (let t of Object.keys(globalPortfolioData.holdings)) { if (globalPortfolioData.holdings[t] && globalPortfolioData.holdings[t].shares > 0) toa += (globalPortfolioData.holdings[t].manual_val || 0); } }
             let total_equity = cash_balance + toa;
+            
+            let target = (currentActiveTranches / 5.0) * total_equity, diff = target - currentValOwned, pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
+            let recAmt = "£0.00", recSh = "0 shares";
+            
+            let actionCard = document.getElementById('actionCard');
+            
+            // --- Custom UI Overrides for Rotator Bots ---
+            if (isRotatorProfile && currentTicker !== 'ALL_SHARES') {
+                document.getElementById('inputHeldVal').disabled = false;
+                document.getElementById('mRecTradeAmt').innerText = "Auto"; 
+                document.getElementById('mRecShares').innerText = "Algorithmic Execution";
+                
+                if (currentSharesOwned > 0) {
+                    actionCard.innerHTML = `<div style="text-align: center;"><div style="font-size: 11px; color: #8a8a9e; text-transform: uppercase; margin-bottom: 8px;">Position Health (Trailing Stop)</div><div style="font-size: 14px; font-weight: bold; margin-bottom: 10px; color: ${currentHealthColor};">${currentHealthText}</div><div style="width: 100%; height: 8px; background: #2a2e39; border-radius: 4px; overflow: hidden; margin-bottom: 5px;"><div style="width: ${currentHealthPct}%; height: 100%; background: ${currentHealthColor}; transition: width 0.5s ease, background-color 0.5s ease;"></div></div><div style="display: flex; justify-content: space-between; font-size: 10px; color: #8a8a9e;"><span>Sell Zone</span><span>Peak Safety</span></div></div>`;
+                } else {
+                    actionCard.innerHTML = `<div style="text-align: center; padding-top: 5px;"><div style="font-size: 11px; color: #8a8a9e; text-transform: uppercase; margin-bottom: 8px;">Rotator Status</div><div style="font-size: 14px; font-weight: bold; color: #00d2ff; margin-bottom: 5px;">Positions Aligned</div><div style="font-size: 11px; color: #8a8a9e; line-height: 1.4;">100% Cash<br>Awaiting momentum surge...</div></div>`;
+                }
+                return; // Stop here, bypass standard portfolio rendering below
+            }
+
+            // --- Traditional UI Rendering ---
+            actionCard.innerHTML = `<h3>Recommended Action</h3><p id="mActionMain" style="font-size:18px; font-weight:bold;">--</p><span id="mActionSub" style="font-size:11px; color:#8a8a9e; font-weight:normal; display:block; margin-bottom:2px;"></span><div id="actionBtnContainer" style="margin-top:2px;"></div>`;
+            let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub'), bc = document.getElementById('actionBtnContainer');
 
             if (currentTicker === 'ALL_SHARES') {
-                let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub'), bc = document.getElementById('actionBtnContainer');
                 am.innerText = "PORTFOLIO"; am.style.color = "#00d2ff"; as.innerText = "Aggregate View"; document.getElementById('mRecTradeAmt').innerText = "£0.00"; document.getElementById('mRecShares').innerText = "0 shares"; bc.innerHTML = "";
                 document.getElementById('inputHeldVal').value = currentValOwned.toFixed(2); document.getElementById('inputHeldVal').disabled = true; document.getElementById('mSharesOwned').innerText = "All held shares"; return;
             } else { document.getElementById('inputHeldVal').disabled = false; }
             
-            let target = (currentActiveTranches / 5.0) * total_equity, diff = target - currentValOwned, pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
-            let recAmt = "£0.00", recSh = "0 shares", bc = document.getElementById('actionBtnContainer'); bc.innerHTML = "";
-            let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub'), userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
+            let userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
             let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
             let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
 
@@ -668,6 +689,13 @@
                 const controller = new AbortController(), timeoutId = setTimeout(() => controller.abort(), 25000);
                 let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`, { signal: controller.signal }); clearTimeout(timeoutId);
                 let p = await res.json(); if (fetchId !== currentFetchId) return;
+                
+                // Track Rotator Health Metrics Locally
+                currentHealthPct = p.metrics.health_pct || 0;
+                currentHealthColor = p.metrics.health_color || '#8a8a9e';
+                currentHealthText = p.metrics.health_text || 'N/A';
+                isRotatorProfile = p.metrics.is_rotator_profile || false;
+
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 if (p.leaderboard) {
@@ -676,24 +704,16 @@
                 }
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
                     let s = globalPortfolioData.settings;
-                    
                     let loadedPeriod = s.period || '1d';
                     let loadedInterval = s.interval || '5m';
-                    
                     document.getElementById('periodSelect').value = loadedPeriod; 
                     updateIntervals();
-                    
                     let iSel = document.getElementById('intervalSelect'); 
-                    if (Array.from(iSel.options).some(opt => opt.value === loadedInterval)) {
-                        iSel.value = loadedInterval; 
-                    }
-                    
+                    if (Array.from(iSel.options).some(opt => opt.value === loadedInterval)) { iSel.value = loadedInterval; }
                     if (s.style) document.getElementById('styleSelect').value = s.style; 
                     if (s.refresh) document.getElementById('refreshSelect').value = s.refresh;
                     if (s.ntfy_topic && document.getElementById('ntfyTopicInput')) document.getElementById('ntfyTopicInput').value = s.ntfy_topic;
-                    
-                    setupAutoRefresh(); 
-                    isSettingsLoaded = true;
+                    setupAutoRefresh(); isSettingsLoaded = true;
                 }
                 let wl_status = p.wl_status || {}; renderWatchlist(globalPortfolioData.watchlist, wl_status);
                 let activeElem = document.querySelector(`li.watchlist-item[data-symbol="${currentTicker}"]`); if (activeElem) { document.querySelectorAll('.watchlist-item').forEach(x => x.classList.remove('active')); activeElem.classList.add('active'); }
