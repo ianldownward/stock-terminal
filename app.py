@@ -105,7 +105,8 @@ class PortfolioManager:
         try:
             allowed_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test C - 24/5 Global', 
-                'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator',
+                'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 
+                'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator',
                 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator',
                 'Test W - Adaptive Volatility Rotator'
@@ -188,6 +189,18 @@ class PortfolioManager:
         self.data['users'][au] = self.default_user_state(au)
         self.save_data(self.data)
         return self.user_data()
+
+    def reset_all_profiles_to_5000(self):
+        self.reload()
+        for u in list(self.data.get('users', {}).keys()):
+            wl = self.data['users'][u].get('watchlist', [])
+            st = self.data['users'][u].get('settings', {})
+            self.data['users'][u] = self.default_user_state(u)
+            if wl: self.data['users'][u]['watchlist'] = wl
+            if st: self.data['users'][u]['settings'] = st
+            self.data['users'][u]['master_budget'] = 5000.0
+        self.save_data(self.data)
+        return True
 
     def update_settings(self, settings):
         self.reload()
@@ -404,6 +417,8 @@ class MarketScoringEngine:
             if is_3x_etf: trail_pct, hard_pct = 1.25, -1.00
             elif ticker.endswith('.L') or ticker in ['PHYS', 'PSLV', 'CEF', 'GLD']: trail_pct, hard_pct = 0.30, -0.50
             else: trail_pct, hard_pct = 1.00, -1.00
+        elif 'test e6' in prof: trail_pct, hard_pct = 0.75, -0.75
+        elif 'test e7' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
         elif 'test u' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif any(x in prof for x in ['test e', 'test s']): trail_pct, hard_pct = 1.00, -1.00
@@ -415,7 +430,14 @@ class MarketScoringEngine:
         if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
+            peak_pnl_pct = ((highest_price - avg_buy_price) / avg_buy_price) * 100.0
             
+            # TEST E6 & E7 BREAKEVEN LOCK RULE
+            if any(x in prof for x in ['test e6', 'test e7']) and peak_pnl_pct >= 0.50:
+                breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
+                if current_price <= breakeven_price:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+
             health_pct = int(max(0, min(100, 100 - (drop_from_peak_pct / trail_pct * 100))))
             pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
             
@@ -434,8 +456,8 @@ class MarketScoringEngine:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell'}
 
-        # OVERRIDE: EOD SWEEP RULE FOR TEST E2, TEST E4, TEST E5
-        if any(x in prof for x in ['test e2', 'test e4', 'test e5']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: EOD SWEEP RULE FOR TEST E2, TEST E4, TEST E5, TEST E6, TEST E7
+        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
@@ -455,10 +477,17 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
-        # ENTRY LOGIC
+        # ENTRY LOGIC (WITH VOLUME FILTER FOR TEST E6 & E7)
         if ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0:
+            vol_20ma = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
+            cur_vol = df_5m['Volume'].iloc[-1]
+            vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
+            
+            if any(x in prof for x in ['test e6', 'test e7']) and vol_ratio < 1.20:
+                return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
-            return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Fast {trade_type} Surge", 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f"({trade_type} Surge)", 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+            return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}, Vol {vol_ratio:.1f}x.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Fast {trade_type} Surge", 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f"({trade_type} Surge)", 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
         return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Awaiting fast EMA crossover surge.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
@@ -636,7 +665,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
+            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
@@ -679,6 +708,12 @@ def get_portfolio():
 def reset_portfolio():
     portfolio_store.reload()
     return jsonify({'status': 'ok', 'portfolio': portfolio_store.reset_all()})
+
+@app.route('/api/portfolio/reset_all_profiles', methods=['POST'])
+def reset_all_profiles():
+    portfolio_store.reload()
+    portfolio_store.reset_all_profiles_to_5000()
+    return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/settings', methods=['POST'])
 def update_settings():
@@ -1007,7 +1042,6 @@ def get_data():
         regime = engine.check_market_regime()
 
         if t == 'ALL_SHARES':
-            # CALCULATE ROTATOR HEALTH FOR ALL_SHARES VIEW
             health_pct, health_color, health_text = 0, '#8a8a9e', 'No Data'
             if is_rotator:
                 if active_holds:
