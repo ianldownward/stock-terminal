@@ -105,7 +105,7 @@ class PortfolioManager:
         try:
             allowed_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test C - 24/5 Global', 
-                'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator',
+                'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator',
                 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator',
                 'Test W - Adaptive Volatility Rotator'
@@ -404,6 +404,7 @@ class MarketScoringEngine:
             if is_3x_etf: trail_pct = 1.25
             elif ticker.endswith('.L') or ticker in ['PHYS', 'PSLV', 'CEF', 'GLD']: trail_pct = 0.30
             else: trail_pct = 1.00
+        elif 'test e5' in prof: trail_pct = 0.35
         elif 'test u' in prof: trail_pct = 0.50
         elif any(x in prof for x in ['test e', 'test s']): trail_pct = 1.00
         else: trail_pct = 0.50
@@ -433,8 +434,8 @@ class MarketScoringEngine:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell'}
 
-        # OVERRIDE: EOD SWEEP RULE FOR TEST E2 & TEST E4
-        if any(x in prof for x in ['test e2', 'test e4']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: EOD SWEEP RULE FOR TEST E2, TEST E4, TEST E5
+        if any(x in prof for x in ['test e2', 'test e4', 'test e5']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
@@ -635,7 +636,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
+            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
@@ -1006,6 +1007,38 @@ def get_data():
         regime = engine.check_market_regime()
 
         if t == 'ALL_SHARES':
+            # CALCULATE ROTATOR HEALTH FOR ALL_SHARES VIEW
+            health_pct, health_color, health_text = 0, '#8a8a9e', 'No Data'
+            if is_rotator:
+                if active_holds:
+                    held_t = active_holds[0]
+                    df_held = pnl_dfs_5m.get(held_t) if pnl_dfs_5m.get(held_t) is not None else fetch_yf_data(held_t, req_p, req_i)
+                    if df_held is not None and not df_held.empty:
+                        last_p = df_held['Close'].iloc[-1]
+                        avg_buy_p = 0.0
+                        t_buys = [tr for tr in hist if tr.get('ticker') == held_t and tr.get('action') == 'BUY']
+                        if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
+                        highest_p = (ud.get('holdings', {}).get(held_t) or {}).get('high_water', last_p)
+                        st = engine.score_momentum(df_held, last_p, avg_buy_p, highest_p, active_profile, regime)
+                        health_pct = st.get('health_pct', 0)
+                        health_color = st.get('health_color', '#8a8a9e')
+                        health_text = f"{held_t} - {st.get('health_text', 'Tracking')}"
+                else:
+                    top_score = 0
+                    top_stock = None
+                    # Quick scan of top watchlist items to find closest target
+                    for tick in wl[:10]:
+                        df_t = fetch_yf_data(tick, req_p, req_i)
+                        if not df_t.empty:
+                            st = engine.score_momentum(df_t, df_t['Close'].iloc[-1], 0, 0, active_profile, regime)
+                            if st['score'] > top_score:
+                                top_score = st['score']
+                                top_stock = tick
+                    if top_stock:
+                        health_pct = top_score
+                        health_color = '#00c853' if top_score >= 65 else ('#ff9900' if top_score >= 40 else '#00d2ff')
+                        health_text = f"Hunting: {top_stock} ({top_score}/100)"
+
             lines = []
             if wl:
                 def fetch_t(tick): return tick, fetch_yf_data(tick, req_p, req_i)
@@ -1040,7 +1073,7 @@ def get_data():
                 'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data,
                 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
                 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime,
-                'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '', 'is_rotator_profile': is_rotator
+                'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'is_rotator_profile': is_rotator
             }})
 
         df = fetch_yf_data(t, req_p, req_i)
