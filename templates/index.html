@@ -466,21 +466,39 @@
             
             let actionCard = document.getElementById('actionCard');
             
-            // --- Custom UI Overrides for Rotator Bots ---
-            if (isRotatorProfile) { // Removed the currentTicker !== 'ALL_SHARES' restriction
+            /// --- Custom UI Overrides for Rotator Bots ---
+            if (isRotatorProfile) {
                 document.getElementById('inputHeldVal').disabled = false;
                 document.getElementById('mRecTradeAmt').innerText = "Auto"; 
                 document.getElementById('mRecShares').innerText = "Algorithmic Execution";
                 
-                if (currentSharesOwned > 0 || (currentTicker === 'ALL_SHARES' && currentHealthText.includes('-'))) {
-                    let healthHeader = currentTicker === 'ALL_SHARES' ? "Active Held Position" : "Position Health (Trailing Stop)";
-                    actionCard.innerHTML = `<div style="text-align: center;"><div style="font-size: 11px; color: #8a8a9e; text-transform: uppercase; margin-bottom: 8px;">${healthHeader}</div><div style="font-size: 14px; font-weight: bold; margin-bottom: 10px; color: ${currentHealthColor};">${currentHealthText}</div><div style="width: 100%; height: 8px; background: #2a2e39; border-radius: 4px; overflow: hidden; margin-bottom: 5px;"><div style="width: ${currentHealthPct}%; height: 100%; background: ${currentHealthColor}; transition: width 0.5s ease, background-color 0.5s ease;"></div></div><div style="display: flex; justify-content: space-between; font-size: 10px; color: #8a8a9e;"><span>Sell Zone</span><span>Peak Safety</span></div></div>`;
+                if (currentSharesOwned > 0 || (currentTicker === 'ALL_SHARES' && currentHealthText.includes('%'))) {
+                    let healthHeader = currentTicker === 'ALL_SHARES' ? "Active Held Position" : "Position Health & Gain";
+                    actionCard.innerHTML = `
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: #8a8a9e; text-transform: uppercase; margin-bottom: 6px;">${healthHeader}</div>
+                            <div style="font-size: 15px; font-weight: bold; margin-bottom: 8px; color: ${currentHealthColor};">${currentHealthText}</div>
+                            <div style="width: 100%; height: 8px; background: #2a2e39; border-radius: 4px; overflow: hidden; margin-bottom: 5px;">
+                                <div style="width: ${currentHealthPct}%; height: 100%; background: ${currentHealthColor}; transition: width 0.5s ease;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #8a8a9e;">
+                                <span>Sell Zone</span>
+                                <span>Peak Safety</span>
+                            </div>
+                        </div>`;
                 } else {
                     let healthHeader = currentTicker === 'ALL_SHARES' ? "Scanning Portfolio" : "Rotator Status";
                     let statusText = currentTicker === 'ALL_SHARES' ? currentHealthText : "Positions Aligned";
-                    let subText = currentTicker === 'ALL_SHARES' ? `<div style="width: 100%; height: 8px; background: #2a2e39; border-radius: 4px; overflow: hidden; margin-top: 10px;"><div style="width: ${currentHealthPct}%; height: 100%; background: ${currentHealthColor}; transition: width 0.5s ease;"></div></div><div style="display: flex; justify-content: space-between; font-size: 10px; color: #8a8a9e; margin-top:5px;"><span>0</span><span>100 (Buy Threshold: 65)</span></div>` : `100% Cash<br>Awaiting momentum surge...`;
+                    let subText = currentTicker === 'ALL_SHARES' ? 
+                        `<div style="width: 100%; height: 8px; background: #2a2e39; border-radius: 4px; overflow: hidden; margin-top: 10px;"><div style="width: ${currentHealthPct}%; height: 100%; background: ${currentHealthColor};"></div></div><div style="display: flex; justify-content: space-between; font-size: 10px; color: #8a8a9e; margin-top:5px;"><span>0</span><span>100 (Buy Threshold: 65)</span></div>` : 
+                        `100% Cash<br>Awaiting momentum surge...`;
                     
-                    actionCard.innerHTML = `<div style="text-align: center; padding-top: 5px;"><div style="font-size: 11px; color: #8a8a9e; text-transform: uppercase; margin-bottom: 8px;">${healthHeader}</div><div style="font-size: 14px; font-weight: bold; color: ${currentHealthColor}; margin-bottom: 5px;">${statusText}</div><div style="font-size: 11px; color: #8a8a9e; line-height: 1.4;">${subText}</div></div>`;
+                    actionCard.innerHTML = `
+                        <div style="text-align: center; padding-top: 5px;">
+                            <div style="font-size: 11px; color: #8a8a9e; text-transform: uppercase; margin-bottom: 8px;">${healthHeader}</div>
+                            <div style="font-size: 14px; font-weight: bold; color: ${currentHealthColor}; margin-bottom: 5px;">${statusText}</div>
+                            <div style="font-size: 11px; color: #8a8a9e; line-height: 1.4;">${subText}</div>
+                        </div>`;
                 }
                 return; 
             }
