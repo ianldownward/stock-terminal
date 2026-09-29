@@ -10,7 +10,7 @@
         .sidebar-bottom{padding:15px;border-top:1px solid #262b36;background:#1a1d24;flex-shrink:0}
         .right-drawer{width:280px;background:#171a21;border-left:1px solid #262b36;display:flex;flex-direction:column;padding:15px;flex-shrink:0;overflow-y:auto}
         .right-drawer h2,.sidebar h2{font-size:12px;color:#787e8e;margin:10px 0;text-transform:uppercase;letter-spacing:.5px} .sidebar h2{margin-top:0}
-        .drawer-card{background:#1a1d24;border:1px solid #262b36;border-radius:8px;padding:12px;margin-bottom:10px;text-align:center;position:relative; min-height: 80px;}
+        .drawer-card{background:#1a1d24;border:1px solid #262b36;border-radius:8px;padding:12px;margin-bottom:10px;text-align:center;position:relative}
         .drawer-card h3{font-size:10px;color:#787e8e;margin:0 0 6px 0;text-transform:uppercase}
         .drawer-details{background:#1a1d24;border:1px solid #262b36;border-radius:8px;padding:10px;margin-bottom:10px}
         .drawer-details summary{font-size:11px;color:#00d2ff;text-transform:uppercase;font-weight:bold;cursor:pointer;list-style:none;outline:none;display:flex;justify-content:space-between;align-items:center}
@@ -182,7 +182,26 @@
                 <div class="card"><h3>Buy Score</h3><p id="mBuy" class="val-highlight">--</p></div>
                 <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Active Tranches ⓘ</h3><div id="mTranchesContainer" class="tranche-bars-container"></div><p id="mTranchesText" style="font-size:10px; color:#787e8e; margin-top:4px;">--</p></div>
                 <div class="card"><h3>Current Value Owned (£)</h3><input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()"><span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">0 shares</span></div>
-                <div class="card" style="justify-content: flex-start;"><h3>Profit / Loss</h3><p id="mPnL" style="font-size:15px; font-weight:bold; color:#8a8a9e; margin-top:2px;">£0.00 (0.00%)</p><div style="display:flex; justify-content:center; margin-top:8px;"><div class="segmented-control" id="pnlTogglesMain"><input type="radio" name="pnl_tf" id="pnl_all" value="all" checked onchange="updatePnLDisplay()"><label for="pnl_all">All Time</label><input type="radio" name="pnl_tf" id="pnl_today" value="today" onchange="updatePnLDisplay()"><label for="pnl_today">Today</label><input type="radio" name="pnl_tf" id="pnl_1h" value="1h" onchange="updatePnLDisplay()"><label for="pnl_1h">1 Hour</label></div></div></div>
+                
+                <!-- CUSTOM ROTATOR POSITION HEALTH & RE-ENTRY CARD -->
+                <div class="card" id="rotatorHealthCard" style="display:flex; flex-direction:column; justify-content:center; padding:10px;">
+                    <h3 id="rotatorHealthHeader" style="font-size:10px; color:#787e8e; margin:0 0 4px 0; text-transform:uppercase;">Position Health</h3>
+                    <div id="rotatorHealthStatus" style="font-size:13px; font-weight:bold; margin-bottom:6px; color:#8a8a9e;">Scanning...</div>
+                    <div style="width: 100%; height: 8px; background: #0f1115; border:1px solid #262b36; border-radius: 4px; overflow: hidden;">
+                        <div id="rotatorHealthBarFill" style="width: 0%; height: 100%; background: #00c853; transition: width 0.5s ease, background-color 0.5s ease;"></div>
+                    </div>
+                    <div id="rotatorHealthFooter" style="display: flex; justify-content: space-between; font-size: 9px; color: #787e8e; margin-top:4px;">
+                        <span>Sell Zone</span><span>Peak Safety</span>
+                    </div>
+                </div>
+
+                <!-- BUY PRICE P/L CARD (HIDES WHEN 100% CASH) -->
+                <div class="card" id="buyPricePnlCard" style="display:flex; flex-direction:column; justify-content:center;">
+                    <h3>P/L From Buy Price</h3>
+                    <p id="mBuyPricePnL" style="font-size:15px; font-weight:bold; color:#8a8a9e; margin-top:2px;">£0.00 (0.00%)</p>
+                    <span id="mBuyPriceSubText" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">Held Position</span>
+                </div>
+
                 <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Market Sentiment ⓘ <span id="thermoTrend" style="font-size:10px; font-weight:bold; margin-left:4px;"></span></h3><div class="thermo-container"><div class="thermo-bar-bg"><div id="thermoFill" class="thermo-bar-fill"></div></div><span id="thermoText" class="thermo-text">Room Temp (Neutral)</span></div><div style="margin-top:6px; height:20px; width:100%;"><svg id="thermoSparkline" style="width:100%; height:100%; overflow:visible;"></svg></div></div>
             </div>
         </details>
@@ -197,10 +216,8 @@
     
     <div class="right-drawer">
         <div id="ianAlertBox" style="display: none; background: #1e222d; border: 1px solid #00d2ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);"><h3 style="font-size: 11px; color: #00d2ff; margin: 0 0 8px 0; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>Ian Action Required</h3><div id="ianAlertList"></div></div>
-        <div class="drawer-card" id="actionCard"></div>
-        <div class="drawer-card"><h3>Recommended Rec.</h3><p id="mRecTradeAmt" style="color:#00c853; font-size:15px; font-weight:bold;">£0.00</p><span id="mRecShares" style="font-size:10px; color:#787e8e; display:block; margin-top:2px;">0 shares</span></div>
-        <details class="drawer-details"><summary>Active Profiles Leaderboard</summary><div id="leaderboardUI" style="margin-top:8px;"></div></details>
-        <details class="drawer-details"><summary>Asset Trade Log</summary><ul class="history-list" id="historyUI" style="margin-top:8px;"></ul></details>
+        <details class="drawer-details" open><summary>Active Profiles Leaderboard</summary><div id="leaderboardUI" style="margin-top:8px;"></div></details>
+        <details class="drawer-details" open><summary>Asset Trade Log</summary><ul class="history-list" id="historyUI" style="margin-top:8px;"></ul></details>
         <details class="drawer-details"><summary>All Trades History</summary><ul class="history-list" id="allHistoryUI" style="margin-top:8px;"></ul></details>
     </div>
 
@@ -224,6 +241,10 @@
             'Test C - 24/5 Global': '24/5 Follow-the-Sun strategy. Rotates capital across Asian, European, and US markets using fast EMAs.',
             'Test D - Volatility': 'Hunts for aggressive volume spikes breaking above the upper Bollinger Band. Uses wider 0.75% trailing stops. Now includes Regime Filter.',
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes. Includes 1.2% quick-targets for 3x ETFs.',
+            'Test E2 - EOD Rotator': '100% capital rotation into top leaders with a hard 20:50 BST cash sweep to block overnight gap risk.',
+            'Test E3 - Hair-Trigger Rotator': 'Aggressive 5-point swap hurdle rotator designed for fast-moving markets.',
+            'Test E4 - Clean EOD Rotator': 'Fresh benchmark rotator profile established with 1.00% trailing stop and 20:50 BST cash sweep.',
+            'Test E5 - Micro-Stop EOD Rotator': 'Rotator profile testing a tight 0.35% trailing stop with 20:50 BST cash sweep to cut pullback losses early.',
             'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 15 minutes before the US market closes to avoid overnight gaps.',
             'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.',
             'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.',
@@ -257,12 +278,6 @@
             if (!symbol || symbol === 'ALL_SHARES') return '';
             let code = 'us'; if (symbol.endsWith('.L')) code = 'gb'; else if (symbol.endsWith('.TO')) code = 'ca';
             return `<img src="https://flagcdn.com/${code}.svg" width="16" alt="${code.toUpperCase()}" style="border-radius: 2px; margin-right: 6px; vertical-align: middle; display: inline-block; box-shadow: 0 0 2px rgba(0,0,0,0.5);">`;
-        }
-
-        function updatePnLDisplay() {
-            if (!currentPnLData || !currentPnLData['all']) return;
-            let tf = document.querySelector('input[name="pnl_tf"]:checked').value, data = currentPnLData[tf] || currentPnLData['all'], pnlEl = document.getElementById('mPnL');
-            pnlEl.innerText = data.val; pnlEl.style.color = data.color;
         }
 
         function updateMasterPnLDisplay() {
@@ -455,78 +470,41 @@
         }
 
         function calculateSizing() {
-            let tb = globalPortfolioData.master_budget || 10000, net_history = 0;
-            (globalPortfolioData.history || []).forEach(h => { net_history += (h.action === 'BUY' ? -h.amount : h.amount); });
-            let cash_balance = tb + net_history, rem = Math.max(0, cash_balance), toa = 0;
-            if (globalPortfolioData.holdings) { for (let t of Object.keys(globalPortfolioData.holdings)) { if (globalPortfolioData.holdings[t] && globalPortfolioData.holdings[t].shares > 0) toa += (globalPortfolioData.holdings[t].manual_val || 0); } }
-            let total_equity = cash_balance + toa;
+            let isHolding = currentSharesOwned > 0 || (currentTicker === 'ALL_SHARES' && Object.keys(globalPortfolioData.holdings || {}).some(k => (globalPortfolioData.holdings[k].shares || 0) > 0));
             
-            let target = (currentActiveTranches / 5.0) * total_equity, diff = target - currentValOwned, pps = (currentTicker.endsWith('.L') && currentLivePrice > 100) ? (currentLivePrice / 100.0) : currentLivePrice;
-            let recAmt = "£0.00", recSh = "0 shares";
+            // --- ROTATOR HEALTH CARD ---
+            let healthHeader = document.getElementById('rotatorHealthHeader');
+            let healthStatus = document.getElementById('rotatorHealthStatus');
+            let healthBarFill = document.getElementById('rotatorHealthBarFill');
+            let healthFooter = document.getElementById('rotatorHealthFooter');
             
-            let actionCard = document.getElementById('actionCard');
-            
-            /// --- Custom UI Overrides for Rotator Bots ---
-            if (isRotatorProfile) {
-                document.getElementById('inputHeldVal').disabled = false;
-                document.getElementById('mRecTradeAmt').innerText = "Auto"; 
-                document.getElementById('mRecShares').innerText = "Algorithmic Execution";
-                
-                if (currentSharesOwned > 0 || (currentTicker === 'ALL_SHARES' && currentHealthText.includes('%'))) {
-                    let healthHeader = currentTicker === 'ALL_SHARES' ? "Active Held Position" : "Position Health & Gain";
-                    actionCard.innerHTML = `
-                        <div style="text-align: center;">
-                            <div style="font-size: 11px; color: #8a8a9e; text-transform: uppercase; margin-bottom: 6px;">${healthHeader}</div>
-                            <div style="font-size: 15px; font-weight: bold; margin-bottom: 8px; color: ${currentHealthColor};">${currentHealthText}</div>
-                            <div style="width: 100%; height: 8px; background: #2a2e39; border-radius: 4px; overflow: hidden; margin-bottom: 5px;">
-                                <div style="width: ${currentHealthPct}%; height: 100%; background: ${currentHealthColor}; transition: width 0.5s ease;"></div>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #8a8a9e;">
-                                <span>Sell Zone</span>
-                                <span>Peak Safety</span>
-                            </div>
-                        </div>`;
-                } else {
-                    let healthHeader = currentTicker === 'ALL_SHARES' ? "Scanning Portfolio" : "Rotator Status";
-                    let statusText = currentTicker === 'ALL_SHARES' ? currentHealthText : "Positions Aligned";
-                    let subText = currentTicker === 'ALL_SHARES' ? 
-                        `<div style="width: 100%; height: 8px; background: #2a2e39; border-radius: 4px; overflow: hidden; margin-top: 10px;"><div style="width: ${currentHealthPct}%; height: 100%; background: ${currentHealthColor};"></div></div><div style="display: flex; justify-content: space-between; font-size: 10px; color: #8a8a9e; margin-top:5px;"><span>0</span><span>100 (Buy Threshold: 65)</span></div>` : 
-                        `100% Cash<br>Awaiting momentum surge...`;
-                    
-                    actionCard.innerHTML = `
-                        <div style="text-align: center; padding-top: 5px;">
-                            <div style="font-size: 11px; color: #8a8a9e; text-transform: uppercase; margin-bottom: 8px;">${healthHeader}</div>
-                            <div style="font-size: 14px; font-weight: bold; color: ${currentHealthColor}; margin-bottom: 5px;">${statusText}</div>
-                            <div style="font-size: 11px; color: #8a8a9e; line-height: 1.4;">${subText}</div>
-                        </div>`;
-                }
-                return; 
+            if (isHolding) {
+                healthHeader.innerText = "Position Health (Trailing Stop)";
+                healthStatus.innerText = currentHealthText;
+                healthStatus.style.color = currentHealthColor;
+                healthBarFill.style.width = `${currentHealthPct}%`;
+                healthBarFill.style.backgroundColor = currentHealthColor;
+                healthFooter.innerHTML = `<span>Sell Zone</span><span>Peak Safety</span>`;
+            } else {
+                healthHeader.innerText = "Re-entry Scanner (Buy Trigger)";
+                healthStatus.innerText = currentHealthText.includes('Hunting') ? currentHealthText : "Scanning Watchlist...";
+                healthStatus.style.color = currentHealthColor;
+                healthBarFill.style.width = `${currentHealthPct}%`;
+                healthBarFill.style.backgroundColor = currentHealthColor;
+                healthFooter.innerHTML = `<span>0/100</span><span>Buy Trigger: 65/100</span>`;
             }
 
-            // --- Traditional UI Rendering ---
-            actionCard.innerHTML = `<h3>Recommended Action</h3><p id="mActionMain" style="font-size:18px; font-weight:bold;">--</p><span id="mActionSub" style="font-size:11px; color:#8a8a9e; font-weight:normal; display:block; margin-bottom:2px;"></span><div id="actionBtnContainer" style="margin-top:2px;"></div>`;
-            let am = document.getElementById('mActionMain'), as = document.getElementById('mActionSub'), bc = document.getElementById('actionBtnContainer');
-
-            if (currentTicker === 'ALL_SHARES') {
-                am.innerText = "PORTFOLIO"; am.style.color = "#00d2ff"; as.innerText = "Aggregate View"; document.getElementById('mRecTradeAmt').innerText = "£0.00"; document.getElementById('mRecShares').innerText = "0 shares"; bc.innerHTML = "";
-                document.getElementById('inputHeldVal').value = currentValOwned.toFixed(2); document.getElementById('inputHeldVal').disabled = true; document.getElementById('mSharesOwned').innerText = "All held shares"; return;
-            } else { document.getElementById('inputHeldVal').disabled = false; }
+            // --- BUY PRICE P/L CARD ---
+            let pnlCard = document.getElementById('buyPricePnlCard');
+            let pnlDisplay = document.getElementById('mBuyPricePnL');
             
-            let userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-            let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
-            let autoBtnHTML = `<button class="btn-execute" style="background:#00d2ff; color:#000; cursor:default; display:flex; justify-content:center; align-items:center;" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> AI Auto-Executing</button>`;
-
-            if (!currentTicker) { am.innerText = "NO ASSET"; am.style.color = "#787e8e"; as.innerText = ""; } 
-            else {
-                let bs = 0, ss = 0, mv = 20.0;
-                if (diff >= mv && currentActiveTranches > 0 && pps > 0) bs = Math.floor(Math.min(diff, Math.max(0, rem)) / pps);
-                if (currentValOwned > 0 && am.innerText === "SELL") ss = currentSharesOwned; else if (currentValOwned > 0 && currentActiveTranches === 0) ss = currentSharesOwned; else if (diff <= -mv && pps > 0) ss = Math.floor(Math.abs(diff) / pps); 
-
-                if (bs > 0 && (bs * pps) >= mv) { am.innerText = "BUY"; am.style.color = "#00c853"; as.innerText = `(Tranche ${currentActiveTranches})`; recAmt = `+£${(bs*pps).toFixed(2)}`; recSh = `Buy ${bs} shares`; if(isAuto) bc.innerHTML = autoBtnHTML; else bc.innerHTML = `<button class="btn-execute" onclick="executeTradeDirect('${currentTicker}', 'BUY', ${bs}, ${currentLivePrice})">Confirm Buy (${bs} Shs)</button>`; } 
-                else if (ss > 0 && (ss * pps) >= mv) { am.innerText = "SELL"; am.style.color = "#ff3d00"; if (ss === currentSharesOwned && currentActiveTranches > 0) as.innerText = "(Take Profit / Sentinel)"; else as.innerText = "(Trim Excess Allocation)"; recAmt = `-£${(ss*pps).toFixed(2)}`; recSh = `Sell ${ss} shares`; if(isAuto) bc.innerHTML = autoBtnHTML; else bc.innerHTML = `<button class="btn-execute sell-btn" onclick="executeTradeDirect('${currentTicker}', 'SELL', ${ss}, ${currentLivePrice})">Confirm Sell (${ss} Shs)</button>`; } 
-                else { am.innerText = "HOLD / WAIT"; am.style.color = "#8a8a9e"; if (diff > 5 && rem <= 0) { as.innerText = `(Insufficient Budget)`; am.style.color = "#ff9900"; } else if (currentActiveTranches > 0 && currentValOwned > 0) as.innerText = `(Tranche ${currentActiveTranches} Filled)`; else as.innerText = `(Tranche ${currentActiveTranches})`; }
+            if (isHolding && currentPnLData && currentPnLData['all']) {
+                pnlCard.style.display = "flex";
+                pnlDisplay.innerText = currentPnLData['all'].val;
+                pnlDisplay.style.color = currentPnLData['all'].color;
+            } else {
+                pnlCard.style.display = "none";
             }
-            document.getElementById('mRecTradeAmt').innerText = recAmt; document.getElementById('mRecShares').innerText = recSh;
         }
 
         async function executeTradeDirect(ticker, action, shares, price) { if (shares <= 0 || !ticker) return; await fetch('/api/trade/execute', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: ticker, action: action, shares: shares, price: price})}); fetchData(false); }
@@ -713,7 +691,6 @@
                 let res = await fetch(`/api/data?t=${currentTicker}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`, { signal: controller.signal }); clearTimeout(timeoutId);
                 let p = await res.json(); if (fetchId !== currentFetchId) return;
                 
-                // Track Rotator Health Metrics Locally
                 currentHealthPct = p.metrics.health_pct || 0;
                 currentHealthColor = p.metrics.health_color || '#8a8a9e';
                 currentHealthText = p.metrics.health_text || 'N/A';
@@ -751,7 +728,7 @@
                 document.getElementById('mPrice').innerText = p.metrics.price_display; document.getElementById('mDisc').innerText = p.metrics.discount; document.getElementById('mBuy').innerText = p.metrics.buy_score;
                 updateTrancheVisual(p.metrics.tranches); document.getElementById('inputHeldVal').value = currentValOwned; document.getElementById('mSharesOwned').innerText = currentTicker === 'ALL_SHARES' ? "All held shares" : `${currentSharesOwned} shares`;
                 currentMasterPnLData = p.metrics.master_pnl_data || { 'all': {val: p.metrics.total_pnl_display, color: p.metrics.total_pnl_color} }; updateMasterPnLDisplay();
-                currentPnLData = p.metrics.pnl_data || { 'all': {val: p.metrics.pnl_display, color: p.metrics.pnl_color} }; updatePnLDisplay();
+                currentPnLData = p.metrics.pnl_data || { 'all': {val: p.metrics.pnl_display, color: p.metrics.pnl_color} };
                 if (p.metrics.regime) {
                     let reg = p.metrics.regime, fillEl = document.getElementById('thermoFill'), textEl = document.getElementById('thermoText'), trendEl = document.getElementById('thermoTrend');
                     fillEl.style.width = `${reg.score}%`; fillEl.style.backgroundColor = reg.color; textEl.innerText = `${reg.score}/100 - ${reg.state}`; textEl.style.color = reg.color;
