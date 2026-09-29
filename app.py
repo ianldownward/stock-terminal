@@ -399,34 +399,34 @@ class MarketScoringEngine:
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
 
-        # DYNAMIC ASSET-SPECIFIC TRAILING STOPS & HEALTH SCORE CALCULATION
+        # DYNAMIC ASSET-SPECIFIC TRAILING STOPS & HARD STOPS
         if 'test w' in prof:
-            if is_3x_etf: trail_pct = 1.25
-            elif ticker.endswith('.L') or ticker in ['PHYS', 'PSLV', 'CEF', 'GLD']: trail_pct = 0.30
-            else: trail_pct = 1.00
-        elif 'test e5' in prof: trail_pct = 0.35
-        elif 'test u' in prof: trail_pct = 0.50
-        elif any(x in prof for x in ['test e', 'test s']): trail_pct = 1.00
-        else: trail_pct = 0.50
+            if is_3x_etf: trail_pct, hard_pct = 1.25, -1.00
+            elif ticker.endswith('.L') or ticker in ['PHYS', 'PSLV', 'CEF', 'GLD']: trail_pct, hard_pct = 0.30, -0.50
+            else: trail_pct, hard_pct = 1.00, -1.00
+        elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
+        elif 'test u' in prof: trail_pct, hard_pct = 0.50, -0.50
+        elif any(x in prof for x in ['test e', 'test s']): trail_pct, hard_pct = 1.00, -1.00
+        else: trail_pct, hard_pct = 0.50, -0.50
 
-        hard_pct = -1.00
         health_pct, health_color, health_text = 0, "#8a8a9e", "Scanning..."
 
-        # Calculate Rotator Health Bar (Distance to trailing stop)
+        # Calculate Rotator Health Bar & PnL from Buy Position
         if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
             
             health_pct = int(max(0, min(100, 100 - (drop_from_peak_pct / trail_pct * 100))))
+            pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
             
             if drop_from_peak_pct >= trail_pct or pnl_pct <= hard_pct:
-                health_color, health_text, health_pct = "#ff3d00", "Stop Tripped (Selling)", 0
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"STOP TRIPPED {pnl_str}. Peak: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Tripped', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': f"Stop Tripped {pnl_str}"}
             elif health_pct >= 70:
-                health_color, health_text = "#00c853", "Strong Trend (Near Peak)"
+                health_color, health_text = "#00c853", f"Strong Trend {pnl_str}"
             elif health_pct >= 40:
-                health_color, health_text = "#ff9900", "Moderate (Pulling Back)"
+                health_color, health_text = "#ff9900", f"Pullback {pnl_str}"
             else:
-                health_color, health_text = "#ff4a4a", "Danger (Near Stop Loss)"
+                health_color, health_text = "#ff4a4a", f"Danger Zone {pnl_str}"
 
         # OVERRIDE: LSE CROSS-MARKET SWEEP FOR TEST W
         if 'test w' in prof and ticker.endswith('.L') and now_uk.hour == 16 and now_uk.minute >= 20 and now_uk.minute < 30:
