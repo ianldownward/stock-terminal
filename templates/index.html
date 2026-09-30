@@ -248,6 +248,7 @@
             'Test E5 - Micro-Stop EOD Rotator': 'Rotator profile testing a tight 0.35% trailing stop with 20:50 BST cash sweep to cut pullback losses early.',
             'Test E6 - Breakeven Rotator': '100% Rotator with Volume Filter (>1.2x MA), 0.75% Trailing Stop, and an automatic Breakeven Stop Lock at +0.10% once price touches +0.50% profit.',
             'Test E7 - Breakeven 0.5% Rotator': '100% Rotator with Volume Filter (>1.2x MA), 0.50% Trailing Stop, and an automatic Breakeven Stop Lock at +0.10% once price touches +0.50% profit.',
+            'Test E8 - Meta-Adaptive Rotator': 'Dynamic Meta-Engine switching strategies based on Market Heat (Bull Momentum, Chop Dip Sniper, Bear Short Rotation, Crash Cash Lock).',
             'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 15 minutes before the US market closes to avoid overnight gaps.',
             'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.',
             'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.',
@@ -479,7 +480,6 @@
         function calculateSizing() {
             let isHolding = currentSharesOwned > 0 || (currentTicker === 'ALL_SHARES' && Object.keys(globalPortfolioData.holdings || {}).some(k => (globalPortfolioData.holdings[k].shares || 0) > 0));
             
-            // --- ROTATOR HEALTH CARD ---
             let healthHeader = document.getElementById('rotatorHealthHeader');
             let healthStatus = document.getElementById('rotatorHealthStatus');
             let healthBarFill = document.getElementById('rotatorHealthBarFill');
@@ -501,7 +501,6 @@
                 healthFooter.innerHTML = `<span>0/100</span><span>Buy Trigger: 65/100</span>`;
             }
 
-            // --- BUY PRICE P/L CARD ---
             let pnlCard = document.getElementById('buyPricePnlCard');
             let pnlDisplay = document.getElementById('mBuyPricePnL');
             
