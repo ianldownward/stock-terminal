@@ -508,7 +508,8 @@ class MarketScoringEngine:
             cur_vol = df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
             
-            if any(x in prof for x in ['test e6', 'test e7', 'test e8']) and vol_ratio < 1.20:
+            # Apply Volume Filter to E4, E5, E6, E7, E8
+            if any(x in prof for x in ['test e4', 'test e5', 'test e6', 'test e7', 'test e8']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
