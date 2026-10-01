@@ -933,7 +933,7 @@ def get_directives():
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
     
-    # SCAN ALL PROFILES FOR GLOBAL PENDING ACTIONS BANNER
+    # SCAN ALL PROFILES FOR PERSISTENT ACTIONS
     all_pending_actions = []
     now_lon = pd.Timestamp.now(tz='Europe/London')
     current_mins_now = now_lon.hour * 60 + now_lon.minute
@@ -1018,13 +1018,20 @@ def get_data():
         all_user_holds = set()
         user_active_hold_status = {}
         for u, u_data in portfolio_store.data.get('users', {}).items():
-            u_holds = [tr.get('ticker') for tr in u_data.get('history', []) if portfolio_store.get_shares(tr.get('ticker'), u) > 0]
+            hist_u = u_data.get('history', [])
+            u_holds = [tr.get('ticker') for tr in hist_u if portfolio_store.get_shares(tr.get('ticker'), u) > 0]
+            
             user_active_hold_status[u] = False
             for tr_tk in u_holds:
                 all_user_holds.add(tr_tk)
                 is_us = not tr_tk.endswith('.L')
                 is_open = ((14 * 60 + 30) <= current_mins < (21 * 60)) if is_us else ((8 * 60) <= current_mins < (16 * 60 + 30))
                 if is_open: user_active_hold_status[u] = True
+
+            # FIX: Ensure we fetch price data for anything traded today, even if currently 0 shares
+            for tr in hist_u:
+                if tr.get('date_str') == today_str:
+                    all_user_holds.add(tr.get('ticker'))
 
         prices = {}
         def fetch_lb_price(tick):
@@ -1131,11 +1138,16 @@ def get_data():
         tot_today_diff, tot_1h_diff = 0.0, 0.0
         now_utc = pd.Timestamp.now(tz='UTC')
         
-        for tk in active_holds:
+        active_holds_and_traded = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker')) > 0 or tr.get('date_str') == today_str]))
+
+        for tk in active_holds_and_traded:
             sh_h = portfolio_store.get_shares(tk)
-            if sh_h <= 0: continue
             t_buys_today = [tr for tr in hist if tr.get('ticker') == tk and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
+            t_sells_today = [tr for tr in hist if tr.get('ticker') == tk and tr.get('action') == 'SELL' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
+            
             df_5m = pnl_dfs_5m.get(tk)
+            if df_5m is None: df_5m = fetch_yf_data(tk, "5d", "5m")
+            
             if df_5m is not None and not df_5m.empty:
                 cur_price = df_5m['Close'].iloc[-1]
                 div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
@@ -1153,8 +1165,14 @@ def get_data():
                 p_1h_base_pence = prior_df['Close'].iloc[-1] if not prior_df.empty else (df_5m['Close'].iloc[0] if not df_5m.empty else cur_price)
                 p_1h_base_pounds = p_1h_base_pence / div
 
-                tot_today_diff += sh_h * (cur_price_pounds - p_today_base_pounds)
-                tot_1h_diff += sh_h * (cur_price_pounds - p_1h_base_pounds)
+                if sh_h > 0:
+                    tot_today_diff += sh_h * (cur_price_pounds - p_today_base_pounds)
+                    tot_1h_diff += sh_h * (cur_price_pounds - p_1h_base_pounds)
+                
+                if t_sells_today:
+                    for sell_tr in t_sells_today:
+                        sell_price_pounds = sell_tr.get('price', 0) / div if tk.endswith('.L') and sell_tr.get('price', 0) > 100 else sell_tr.get('price', 0)
+                        tot_today_diff += sell_tr.get('shares', 0) * (sell_price_pounds - p_today_base_pounds)
 
         master_today_pct = (tot_today_diff / mb * 100.0) if mb > 0 else 0.0
         master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
