@@ -94,6 +94,10 @@
         .qc-input-row button{background:#333947;border:1px solid #787e8e;color:#fff;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer} .qc-input-row button:hover{background:#4a5265}
         #qsResult{display:none;margin-top:10px;font-size:12px;background:#0f1115;padding:10px;border-radius:6px;border:1px solid #262b36}
 
+        /* GLOBAL ACTION WARNING BANNER */
+        .global-warning-banner { display:none; background:#ff3d00; color:#fff; padding:8px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow:0 0 12px rgba(255,61,0,0.6); animation: pulseWarning 1.5s infinite; }
+        @keyframes pulseWarning { 0% { box-shadow:0 0 0 0 rgba(255,61,0,0.7); } 70% { box-shadow:0 0 0 10px rgba(255,61,0,0); } 100% { box-shadow:0 0 0 0 rgba(255,61,0,0); } }
+
         /* MOBILE FIXES & ACCORDIONS */
         @media (max-width:900px){
             html, body { overflow-y: auto !important; overflow-x: hidden !important; height: auto !important; position: relative !important; -webkit-overflow-scrolling: touch; }
@@ -160,7 +164,7 @@
             <div class="top-nav" style="margin-top:10px; border:none; padding:0; background:transparent;">
                 <div class="top-nav-row1">
                     <div style="display:flex; align-items:center; gap:8px;"><h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2><span id="activeDirectionBadge" style="display:none;"></span></div>
-                    <div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button><button id="btnToggleGrid" class="btn-control btn-grid" onclick="toggleGridView()">Shares Held</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg><span id="drawBtnText">Draw Line</span></button><button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button><button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset User</button><button class="btn-control btn-reset" style="border-color:#ff9900; color:#ff9900;" onclick="resetAllProfilesTo5000()">Reset ALL to £5K</button></div>
+                    <div class="action-buttons"><div id="globalActionBanner" class="global-warning-banner">⚠ ACTION REQUIRED</div><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button><button id="btnToggleGrid" class="btn-control btn-grid" onclick="toggleGridView()">Shares Held</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg><span id="drawBtnText">Draw Line</span></button><button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button><button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset User</button><button class="btn-control btn-reset" style="border-color:#ff9900; color:#ff9900;" onclick="resetAllProfilesTo5000()">Reset ALL to £5K</button></div>
                 </div>
                 <div class="top-nav-row2">
                     <div class="controls">
@@ -195,11 +199,11 @@
                     </div>
                 </div>
 
-                <!-- BUY PRICE P/L CARD (HIDES WHEN 100% CASH) -->
+                <!-- BUY PRICE P/L & SELLING THRESHOLD CARD -->
                 <div class="card" id="buyPricePnlCard" style="display:flex; flex-direction:column; justify-content:center;">
                     <h3>P/L From Buy Price</h3>
                     <p id="mBuyPricePnL" style="font-size:15px; font-weight:bold; color:#8a8a9e; margin-top:2px;">£0.00 (0.00%)</p>
-                    <span id="mBuyPriceSubText" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">Held Position</span>
+                    <span id="mBuyPriceSubText" style="font-size:10px; color:#00d2ff; display:block; margin-top:4px; font-weight:bold;">Selling at: --</span>
                 </div>
 
                 <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Market Sentiment ⓘ <span id="thermoTrend" style="font-size:10px; font-weight:bold; margin-left:4px;"></span></h3><div class="thermo-container"><div class="thermo-bar-bg"><div id="thermoFill" class="thermo-bar-fill"></div></div><span id="thermoText" class="thermo-text">Room Temp (Neutral)</span></div><div style="margin-top:6px; height:20px; width:100%;"><svg id="thermoSparkline" style="width:100%; height:100%; overflow:visible;"></svg></div></div>
@@ -234,6 +238,7 @@
         let showAvgLine = true;
         let currentHealthPct = 0; let currentHealthColor = '#8a8a9e'; let currentHealthText = 'N/A'; let isRotatorProfile = false;
         let tvBuyPriceLine = null;
+        let currentHardPct = -0.50; let currentStopPrice = 0.0;
 
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
@@ -503,11 +508,16 @@
 
             let pnlCard = document.getElementById('buyPricePnlCard');
             let pnlDisplay = document.getElementById('mBuyPricePnL');
+            let pnlSubText = document.getElementById('mBuyPriceSubText');
             
             if (isHolding && currentPnLData && currentPnLData['all']) {
                 pnlCard.style.display = "flex";
                 pnlDisplay.innerText = currentPnLData['all'].val;
                 pnlDisplay.style.color = currentPnLData['all'].color;
+                
+                let stopType = currentHardPct > 0 ? "Breakeven" : "Stop";
+                let stopPriceFormatted = currentStopPrice > 0 ? ` (Selling at: £${currentStopPrice.toFixed(2)})` : "";
+                pnlSubText.innerText = `${stopType}: ${currentHardPct > 0 ? '+' : ''}${currentHardPct.toFixed(2)}%${stopPriceFormatted}`;
             } else {
                 pnlCard.style.display = "none";
             }
@@ -530,6 +540,18 @@
                     ianBox.style.display = 'block'; ianList.innerHTML = '';
                     data.ian_directives.forEach(d => { let isBuy = d.action === 'BUY', div = document.createElement('div'); div.className = 'directive-item'; div.style.marginBottom = '6px'; div.style.background = '#0f1115'; let btnHTML = `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeIanTrade('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">Confirm</button>`; let flag = getCountryFlag(d.ticker); div.innerHTML = `<div class="directive-info" style="display:flex; align-items:center;">${flag}<b>${d.ticker}</b><span style="margin-left:4px;">: ${d.action} ${d.shares} shs</span></div>${btnHTML}`; ianList.appendChild(div); });
                 } else { ianBox.style.display = 'none'; }
+
+                // TOP-RIGHT GLOBAL ACTION WARNING BANNER
+                let warnBanner = document.getElementById('globalActionBanner');
+                if (data.all_pending_actions && data.all_pending_actions.length > 0) {
+                    let first = data.all_pending_actions[0];
+                    warnBanner.style.display = 'block';
+                    warnBanner.innerHTML = `⚠ ${first.user.toUpperCase()}: ${first.action} ${first.ticker}`;
+                    warnBanner.onclick = () => onUserChange(first.user);
+                } else {
+                    warnBanner.style.display = 'none';
+                }
+
             } catch(e) {}
         }
 
@@ -681,7 +703,7 @@
                     tvSeries.setData(md); tvChart.timeScale().fitContent(); currentChartStyle = s; lastRenderedTicker = currentTicker;
                 } else { tvSeries.setData(md); }
 
-                // --- DYNAMIC HORIZONTAL BUY PRICE LINE OVERLAY ---
+                // DYNAMIC HORIZONTAL BUY PRICE LINE OVERLAY
                 if (tvBuyPriceLine && tvSeries) {
                     try { tvSeries.removePriceLine(tvBuyPriceLine); } catch(e) {}
                     tvBuyPriceLine = null;
@@ -726,6 +748,8 @@
                 currentHealthColor = p.metrics.health_color || '#8a8a9e';
                 currentHealthText = p.metrics.health_text || 'N/A';
                 isRotatorProfile = p.metrics.is_rotator_profile || false;
+                currentHardPct = p.metrics.hard_pct !== undefined ? p.metrics.hard_pct : -0.50;
+                currentStopPrice = p.metrics.stop_price || 0.0;
 
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
