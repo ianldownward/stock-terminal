@@ -520,11 +520,31 @@ class MarketScoringEngine:
 
         return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Awaiting fast EMA crossover surge.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...', 'hard_pct': hard_pct, 'stop_price': round(current_price * (1 + hard_pct / 100.0), 2)}
 
-    def score_nav_asset(self, ticker, current_price, volume_ratio):
+    def score_nav_asset(self, ticker, current_price, volume_ratio, avg_buy_price=0.0, highest_price=0.0):
         nav = self.nav_bases.get(ticker, current_price * 1.10)
         implied_discount = ((nav - current_price) / nav) * 100.0
         buy_score = min(max(round(min(max((implied_discount/20.0)*80.0, 0), 80) + min(max((volume_ratio/2.0)*20.0, 0), 20), 2), 0), 100)
         tranches = 0 if implied_discount <= 0 else min(5, int(buy_score // 20) + 1)
+        
+        hard_pct = -0.50
+        stop_price = round(avg_buy_price * (1 + hard_pct / 100.0), 2) if avg_buy_price > 0 else current_price
+        health_pct, health_color, health_text = 0, "#8a8a9e", "Scanning..."
+
+        if avg_buy_price > 0 and highest_price > 0:
+            pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+            drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
+            pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
+            trail_pct = 0.50
+
+            health_pct = int(max(0, min(100, 100 - (drop_from_peak_pct / trail_pct * 100))))
+            if drop_from_peak_pct >= trail_pct or pnl_pct <= hard_pct:
+                health_color, health_text = "#ff3d00", f"Stop Tripped {pnl_str}"
+            elif health_pct >= 70:
+                health_color, health_text = "#00c853", f"Strong Trend {pnl_str}"
+            elif health_pct >= 40:
+                health_color, health_text = "#ff9900", f"Pullback {pnl_str}"
+            else:
+                health_color, health_text = "#ff4a4a", f"Danger Zone {pnl_str}"
 
         if implied_discount <= 5.0 and implied_discount > -50.0:
             action_main, action_sub, status, color = "SELL", "(Take Profit)", "Target Reached", "#ff3d00"
@@ -538,9 +558,9 @@ class MarketScoringEngine:
             status, color = ('Trading at Premium', '#ff4a4a') if implied_discount < 0 else ('Low Value', '#8a8a9e')
             reason, action_color = f"Trading at {implied_discount:.1f}% NAV discount. Active Tranches: {tranches}.", "#8a8a9e"
 
-        return {'type': 'Physical Trust', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.98, 2), 'rec_sell': round(nav*0.95, 2), 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG', 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'N/A', 'hard_pct': -0.50, 'stop_price': round(current_price * 0.995, 2)}
+        return {'type': 'Physical Trust', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.98, 2), 'rec_sell': round(nav*0.95, 2), 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG', 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'hard_pct': hard_pct, 'stop_price': stop_price}
 
-    def score_equity(self, df, current_price):
+    def score_equity(self, df, current_price, avg_buy_price=0.0, highest_price=0.0):
         if df.empty or 'Close' not in df:
             return {'type': 'Global Equity', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Awaiting data.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '', 'action_color': '#8a8a9e', 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG', 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'N/A', 'hard_pct': -0.50, 'stop_price': round(current_price * 0.995, 2)}
             
@@ -556,6 +576,26 @@ class MarketScoringEngine:
         buy_score = min(max(round(min(max((implied_discount/25.0)*50.0, 0), 50) + (max(0, (40-rsi)/40*30) if pd.notna(rsi) else 0) + min(max((vol_rat/2.0)*20.0, 0), 20), 2), 0), 100)
         tranches = 0 if implied_discount < 0 else min(5, int(buy_score // 20) + 1)
         
+        hard_pct = -0.50
+        stop_price = round(avg_buy_price * (1 + hard_pct / 100.0), 2) if avg_buy_price > 0 else current_price
+        health_pct, health_color, health_text = 0, "#8a8a9e", "Scanning..."
+
+        if avg_buy_price > 0 and highest_price > 0:
+            pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+            drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
+            pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
+            trail_pct = 0.50
+
+            health_pct = int(max(0, min(100, 100 - (drop_from_peak_pct / trail_pct * 100))))
+            if drop_from_peak_pct >= trail_pct or pnl_pct <= hard_pct:
+                health_color, health_text = "#ff3d00", f"Stop Tripped {pnl_str}"
+            elif health_pct >= 70:
+                health_color, health_text = "#00c853", f"Strong Trend {pnl_str}"
+            elif health_pct >= 40:
+                health_color, health_text = "#ff9900", f"Pullback {pnl_str}"
+            else:
+                health_color, health_text = "#ff4a4a", f"Danger Zone {pnl_str}"
+
         if buy_score >= 40:
             action_main, action_sub = "BUY", f"(Tranche {tranches})"
             status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
@@ -567,7 +607,7 @@ class MarketScoringEngine:
             action_main, action_sub, status, color = "HOLD / WAIT", f"(Tranche {tranches})", 'Fair Value', '#8a8a9e'
             reason, action_color = f"No Value Anomaly. Near 200d-DMA.", "#8a8a9e"
             
-        return {'type': 'Global Equity', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 'reason': reason, 'is_smart': True, 'rec_buy': round(dma*0.9, 2), 'rec_sell': round(dma*1.05, 2), 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG', 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'N/A', 'hard_pct': -0.50, 'stop_price': round(current_price * 0.995, 2)}
+        return {'type': 'Global Equity', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 'reason': reason, 'is_smart': True, 'rec_buy': round(dma*0.9, 2), 'rec_sell': round(dma*1.05, 2), 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG', 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'hard_pct': hard_pct, 'stop_price': stop_price}
 
 portfolio_store = PortfolioManager()
 
@@ -640,7 +680,7 @@ def process_auto_profile(prof_name):
                 if 'test a' in active_profile:
                     avg_v = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
                     v_r = (df['Volume'].iloc[-1] / avg_v) if avg_v > 0 else 1.0
-                    st = engine.score_nav_asset(t, cur, v_r) if t in engine.nav_bases else engine.score_equity(df, cur)
+                    st = engine.score_nav_asset(t, cur, v_r, avg_buy_price=avg_buy_p, highest_price=highest_p) if t in engine.nav_bases else engine.score_equity(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p)
                 else:
                     st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
 
@@ -872,7 +912,12 @@ def get_directives():
             else:
                 avg_vol = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
                 v_rat = (df['Volume'].iloc[-1] / avg_vol) if avg_vol > 0 else 1.0
-                st = engine.score_nav_asset(t, cur, v_rat) if t in engine.nav_bases else engine.score_equity(df, cur)
+                avg_buy_p, highest_p = 0.0, cur
+                if sh > 0:
+                    t_buys = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
+                    if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
+                    highest_p = (ud.get('holdings', {}).get(t) or {}).get('high_water', cur)
+                st = engine.score_nav_asset(t, cur, v_rat, avg_buy_price=avg_buy_p, highest_price=highest_p) if t in engine.nav_bases else engine.score_equity(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p)
             
             tot_own = portfolio_store.get_total_portfolio_value(prof_name)
             total_eq = cash_balance + tot_own
@@ -904,7 +949,7 @@ def get_directives():
                     buys_u = [tr for tr in u_hist if tr.get('ticker') == tk and tr.get('action') == 'BUY']
                     avg_b_u = buys_u[0].get('price', 0.0) if buys_u else cur_u
                     hw_u = (u_data.get('holdings', {}).get(tk) or {}).get('high_water', cur_u)
-                    st_u = engine.score_momentum(df_u, cur_u, avg_buy_price=avg_b_u, highest_price=hw_u, profile=u) if any(x in u.lower() for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w']) else engine.score_equity(df_u, cur_u)
+                    st_u = engine.score_momentum(df_u, cur_u, avg_buy_price=avg_b_u, highest_price=hw_u, profile=u) if any(x in u.lower() for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w']) else engine.score_equity(df_u, cur_u, avg_buy_price=avg_b_u, highest_price=hw_u)
                     if st_u['action_main'] == 'SELL' and sh_u > 0:
                         all_pending_actions.append({'user': u, 'ticker': tk, 'action': 'SELL', 'shares': sh_u, 'price': cur_u, 'reason': st_u['reason']})
             except: pass
@@ -1197,7 +1242,7 @@ def get_data():
             st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
-            st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
+            st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0, avg_buy_price=avg_buy_p, highest_price=highest_p) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p, avg_buy_price=avg_buy_p, highest_price=highest_p)
 
         cb_t = (init_pos.get(t) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if tr.get('ticker')==t)
         
