@@ -538,7 +538,6 @@
             try {
                 let res = await fetch(`/api/directives`), data = await res.json(), cont = document.getElementById('directivesList'); cont.innerHTML = "";
                 let userSel = document.getElementById('userSelect'), activeProf = userSel ? userSel.value.trim().toLowerCase() : '';
-                let isAuto = ['test a', 'test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
                 
                 if (!(data.directives || []).length) { cont.innerHTML = `<div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>`; }
                 else { 
@@ -550,12 +549,6 @@
                         cont.appendChild(div); 
                     }); 
                 }
-                
-                let ianBox = document.getElementById('ianAlertBox'), ianList = document.getElementById('ianAlertList');
-                if (data.ian_directives && data.ian_directives.length > 0 && activeProf !== 'ian') {
-                    ianBox.style.display = 'block'; ianList.innerHTML = '';
-                    data.ian_directives.forEach(d => { let isBuy = d.action === 'BUY', div = document.createElement('div'); div.className = 'directive-item'; div.style.marginBottom = '6px'; div.style.background = '#0f1115'; let btnHTML = `<button class="directive-btn ${isBuy?'':'sell'}" onclick="executeIanTrade('${d.ticker}', '${d.action}', ${d.shares}, ${d.price})">${d.action} NOW</button>`; let flag = getCountryFlag(d.ticker); div.innerHTML = `<div class="directive-info" style="display:flex; align-items:center;">${flag}<b>${d.ticker}</b><span style="margin-left:4px;">: ${d.action} ${d.shares} shs</span></div>${btnHTML}`; ianList.appendChild(div); });
-                } else { ianBox.style.display = 'none'; }
 
                 // TOP-RIGHT GLOBAL ACTION WARNING BANNER ABOVE LEADERBOARD
                 let warnBanner = document.getElementById('globalTopRightWarning');
@@ -769,7 +762,22 @@
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 if (p.leaderboard) {
-                    let lbHtml = p.leaderboard.map(lb => { let isProfit = lb.daily_pnl >= 0, color = isProfit ? '#00c853' : '#ff3d00'; return `<div class="lb-item"><div class="lb-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'"><span>${lb.user}</span><span style="color:${color}; font-weight:bold;">£${lb.equity.toFixed(2)}</span></div><div class="lb-desc">${profileDesc[lb.user] || 'Custom execution profile.'}</div></div>`; }).join('');
+                    let lbHtml = p.leaderboard.map(lb => { 
+                        let isProfit = lb.daily_pnl >= 0, color = isProfit ? '#00c853' : '#ff3d00';
+                        let pnlFormatted = `${isProfit ? '+' : ''}£${lb.daily_pnl.toFixed(2)}`;
+                        let activeBadge = lb.has_active_holds ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
+                        return `
+                            <div class="lb-item">
+                                <div class="lb-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'">
+                                    <span>${lb.user}${activeBadge}</span>
+                                    <div style="text-align:right;">
+                                        <span style="color:${color}; font-weight:bold;">£${lb.equity.toFixed(2)}</span>
+                                        <div style="font-size:10px; color:${color};">(${pnlFormatted} Today)</div>
+                                    </div>
+                                </div>
+                                <div class="lb-desc">${profileDesc[lb.user] || 'Custom execution profile.'}</div>
+                            </div>`; 
+                    }).join('');
                     document.getElementById('leaderboardUI').innerHTML = lbHtml;
                 }
                 if (!isSettingsLoaded && globalPortfolioData.settings) {

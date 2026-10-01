@@ -882,7 +882,7 @@ def get_directives():
         def fetch_t(tick): 
             interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
             period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
-            return tick, fetch_yf_data(tick, period if is_momentum else "1y", interval if is_momentum else "1d")
+            return tick, fetch_yf_data(tick, period if is_momentum else "1y", interval if is_momentum else "5d")
             
         with ThreadPoolExecutor(max_workers=4) as ex:
             for tick, df_t in ex.map(fetch_t, scan_list): dfs[tick] = df_t
@@ -933,14 +933,21 @@ def get_directives():
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
     
-    # SCAN ALL PROFILES FOR GLOBAL PENDING ACTIONS BANNER
+    # SCAN ALL PROFILES FOR GLOBAL PENDING ACTIONS
     all_pending_actions = []
+    now_lon = pd.Timestamp.now(tz='Europe/London')
+    current_mins_now = now_lon.hour * 60 + now_lon.minute
+
     for u, u_data in portfolio_store.data.get('users', {}).items():
         if not isinstance(u_data, dict): continue
         u_hist = u_data.get('history') or []
         u_holds = list(set([tr.get('ticker') for tr in u_hist if portfolio_store.get_shares(tr.get('ticker'), u) > 0]))
         for tk in u_holds:
             try:
+                is_us = not tk.endswith('.L')
+                mkt_open = ((14 * 60 + 30) <= current_mins_now < (21 * 60)) if is_us else ((8 * 60) <= current_mins_now < (16 * 60 + 30))
+                if not mkt_open and not any(x in u.lower() for x in ['ian', 'test a']): continue
+
                 df_u = fetch_yf_data(tk, "5d", "5m")
                 if not df_u.empty:
                     df_u.name = tk
@@ -954,7 +961,7 @@ def get_directives():
                         all_pending_actions.append({'user': u, 'ticker': tk, 'action': 'SELL', 'shares': sh_u, 'price': cur_u, 'reason': st_u['reason']})
             except: pass
 
-    return jsonify({'directives': dirs, 'ian_directives': [], 'all_pending_actions': all_pending_actions})
+    return jsonify({'directives': dirs, 'ian_directives': dirs if active_profile == 'ian' else [], 'all_pending_actions': all_pending_actions})
 
 @app.route('/api/recommend', methods=['GET'])
 def get_recommendations():
@@ -1006,11 +1013,19 @@ def get_data():
 
         now_lon = pd.Timestamp.now(tz='Europe/London')
         today_str = now_lon.strftime('%Y-%m-%d')
+        current_mins = now_lon.hour * 60 + now_lon.minute
         
         all_user_holds = set()
+        user_active_hold_status = {}
         for u, u_data in portfolio_store.data.get('users', {}).items():
-            for tr in u_data.get('history', []): all_user_holds.add(tr.get('ticker'))
-                
+            u_holds = [tr.get('ticker') for tr in u_data.get('history', []) if portfolio_store.get_shares(tr.get('ticker'), u) > 0]
+            user_active_hold_status[u] = False
+            for tr_tk in u_holds:
+                all_user_holds.add(tr_tk)
+                is_us = not tr_tk.endswith('.L')
+                is_open = ((14 * 60 + 30) <= current_mins < (21 * 60)) if is_us else ((8 * 60) <= current_mins < (16 * 60 + 30))
+                if is_open: user_active_hold_status[u] = True
+
         prices = {}
         def fetch_lb_price(tick):
             df_lb = fetch_yf_data(tick, "5d", "5m")
@@ -1068,7 +1083,13 @@ def get_data():
                 
             tot_eq_now = max(0, cash_now) + equity_now
             tot_eq_start = max(0, cash_start) + equity_start
-            leaderboard.append({'user': u, 'equity': round(tot_eq_now, 2), 'budget': mb_lb, 'daily_pnl': round(tot_eq_now - tot_eq_start, 2)})
+            leaderboard.append({
+                'user': u, 
+                'equity': round(tot_eq_now, 2), 
+                'budget': mb_lb, 
+                'daily_pnl': round(tot_eq_now - tot_eq_start, 2),
+                'has_active_holds': user_active_hold_status.get(u, False)
+            })
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
 
         settings = ud.get('settings') or {}
