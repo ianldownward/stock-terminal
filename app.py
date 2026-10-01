@@ -933,7 +933,7 @@ def get_directives():
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
     
-    # SCAN ALL PROFILES FOR GLOBAL PENDING ACTIONS
+    # SCAN ALL PROFILES FOR GLOBAL PENDING ACTIONS BANNER
     all_pending_actions = []
     now_lon = pd.Timestamp.now(tz='Europe/London')
     current_mins_now = now_lon.hour * 60 + now_lon.minute
@@ -1059,35 +1059,45 @@ def get_data():
             im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos_lb.values())
             cash_now = mb_lb + nh_lb - im_lb
             
-            trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
-            net_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
-            cash_start = cash_now - net_cash_today
-            
-            equity_now, equity_start = 0.0, 0.0
+            equity_now = 0.0
             shares_now_map = {}
             for tr in hist_lb:
                 tk = tr.get('ticker')
                 if tk not in shares_now_map: shares_now_map[tk] = portfolio_store.get_shares(tk, u)
                 
             for tk, sh_now in shares_now_map.items():
-                if sh_now <= 0 and not any(tr.get('ticker') == tk for tr in trades_today): continue
+                if sh_now <= 0: continue
                 p_data = prices.get(tk, {'cur': 0.0, 'start': 0.0})
                 equity_now += sh_now * p_data['cur']
                 
-                sh_start = sh_now
-                for tr in trades_today:
-                    if tr.get('ticker') == tk:
-                        if tr.get('action') == 'BUY': sh_start -= tr.get('shares', 0)
-                        else: sh_start += tr.get('shares', 0)
-                equity_start += max(0, sh_start) * p_data['start']
-                
             tot_eq_now = max(0, cash_now) + equity_now
-            tot_eq_start = max(0, cash_start) + equity_start
+
+            # CALCULATION FOR DAILY PNL SINCE 8:00 AM
+            trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
+            net_trade_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
+            
+            # Reconstruction of holdings at 8 AM
+            held_at_8am = {}
+            for tk, sh_now in shares_now_map.items():
+                if sh_now > 0 or any(tr.get('ticker') == tk for tr in trades_today):
+                    sh_8am = sh_now
+                    for tr in trades_today:
+                        if tr.get('ticker') == tk:
+                            if tr.get('action') == 'BUY': sh_8am -= tr.get('shares', 0)
+                            else: sh_8am += tr.get('shares', 0)
+                    if sh_8am > 0: held_at_8am[tk] = sh_8am
+            
+            cash_8am = cash_now - net_trade_cash_today
+            equity_8am = sum(sh * prices.get(tk, {}).get('start', prices.get(tk, {}).get('cur', 0.0)) for tk, sh in held_at_8am.items())
+            tot_eq_8am = cash_8am + equity_8am
+            
+            daily_pnl_val = round(tot_eq_now - tot_eq_8am, 2) if tot_eq_8am > 0 else 0.0
+
             leaderboard.append({
                 'user': u, 
                 'equity': round(tot_eq_now, 2), 
                 'budget': mb_lb, 
-                'daily_pnl': round(tot_eq_now - tot_eq_start, 2),
+                'daily_pnl': daily_pnl_val,
                 'has_active_holds': user_active_hold_status.get(u, False)
             })
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
