@@ -904,7 +904,7 @@ def get_directives():
                     buys_u = [tr for tr in u_hist if tr.get('ticker') == tk and tr.get('action') == 'BUY']
                     avg_b_u = buys_u[0].get('price', 0.0) if buys_u else cur_u
                     hw_u = (u_data.get('holdings', {}).get(tk) or {}).get('high_water', cur_u)
-                    st_u = engine.score_momentum(df_u, cur_u, avg_buy_price=avg_b_u, highest_price=hw_u, profile=u)
+                    st_u = engine.score_momentum(df_u, cur_u, avg_buy_price=avg_b_u, highest_price=hw_u, profile=u) if any(x in u.lower() for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w']) else engine.score_equity(df_u, cur_u)
                     if st_u['action_main'] == 'SELL' and sh_u > 0:
                         all_pending_actions.append({'user': u, 'ticker': tk, 'action': 'SELL', 'shares': sh_u, 'price': cur_u, 'reason': st_u['reason']})
             except: pass
