@@ -516,7 +516,7 @@ class MarketScoringEngine:
             cur_vol = df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
             
-            if any(x in prof for x in ['test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10']) and vol_ratio < 1.20:
+            if 'test e11' not in prof and any(x in prof for x in ['test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...', 'hard_pct': hard_pct, 'stop_price': round(current_price * (1 + hard_pct / 100.0), 2)}
 
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
@@ -700,15 +700,33 @@ def process_auto_profile(prof_name):
             except Exception: pass
 
         max_allowed_holds = 5 if 'test a' in active_profile else (1 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w']) else 3)
-        
-        swap_hurdle = 5 if 'test e3' in active_profile else 10
-        
-        if buys and held_scores and len(held_scores) >= max_allowed_holds:
+        swap_hurdle = 5 if 'test e3' in active_profile or 'test e11' in active_profile else 10
+
+        # AUTOMATED ROTATION SWAP ENGINE FOR E-SERIES
+        if buys and held_scores:
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
-            if top_candidate['s'] >= (weakest_holding['score'] + swap_hurdle) and top_candidate['s'] >= 65:
-                dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
+            
+            # If the candidate has a higher score than the holding by the swap hurdle threshold
+            if top_candidate['s'] >= (weakest_holding['score'] + swap_hurdle) and top_candidate['s'] >= 60:
+                # 1. Liquidate the weaker position automatically
+                portfolio_store.execute_trade(weakest_holding['ticker'], 'SELL', weakest_holding['shares'], weakest_holding['price'], prof_name)
+                
+                # 2. Recalculate cash after liquidation
+                ud = portfolio_store.user_data(prof_name)
+                hist = ud.get('history') or []
+                net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist)
+                init_manual = sum(pos.get('manual_val', 0.0) for pos in (ud.get('initial_positions') or {}).values())
+                rem_cash = max(0, mb + net_history - init_manual)
+                
+                # 3. Buy the higher-scoring momentum candidate
+                bs = int(rem_cash // top_candidate['cps'])
+                amt = round(bs * top_candidate['cps'], 2)
+                if bs > 0 and amt >= MIN_BUY_VALUE:
+                    portfolio_store.execute_trade(top_candidate['t'], 'BUY', bs, top_candidate['p'], prof_name)
+                return
 
+        # STANDARD CAPITAL DEPLOYMENT (IF SLOTS ARE OPEN)
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
