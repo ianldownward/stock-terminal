@@ -15,8 +15,10 @@
         .drawer-details{background:#1a1d24;border:1px solid #262b36;border-radius:8px;padding:10px;margin-bottom:10px}
         .drawer-details summary{font-size:11px;color:#00d2ff;text-transform:uppercase;font-weight:bold;cursor:pointer;list-style:none;outline:none;display:flex;justify-content:space-between;align-items:center}
         .drawer-details summary::-webkit-details-marker{display:none} .drawer-details summary::after{content:'▼';color:#787e8e;font-size:9px} .drawer-details[open] summary::after{content:'▲'}
-        .lb-item{background:#0f1115;border:1px solid #262b36;border-radius:8px;padding:10px;margin-bottom:8px;transition:border-color .2s} .lb-item:hover{border-color:#00d2ff}
-        .lb-header{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:bold;color:#fff;cursor:pointer}
+        .lb-item{background:#0f1115;border:1px solid #262b36;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;transition:border-color .2s, background .2s} 
+        .lb-item:hover{border-color:#00d2ff;background:#1e222d}
+        .lb-item.active-profile-card{border-color:#00d2ff;background:#1e222d}
+        .lb-header{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:bold;color:#fff}
         .lb-desc{font-size:11px;color:#8a8a9e;margin-top:8px;display:none;line-height:1.4;border-top:1px solid #262b36;padding-top:8px}
         .total-shares-box{background:#1e222d;padding:12px;border-radius:8px;border:1px solid #00d2ff;margin-bottom:10px;text-align:center}
         .total-shares-box label{font-size:10px;color:#00d2ff;text-transform:uppercase;font-weight:bold;display:block;margin-bottom:4px}
@@ -640,7 +642,7 @@
                 let x = parseFloat(xs), itms = g[xs]; ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.moveTo(x, 0); ctx.lineTo(x, cv.height - 25); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1; ctx.stroke(); let sy = cv.height - 55;
                 
                 itms.forEach(i => { 
-                    let buy = i.action === 'BUY', costPence = i.price, div = currentTicker.endswith('.L') && costPence > 100 ? 100.0 : 1.0;
+                    let buy = i.action === 'BUY', costPence = i.price, div = (currentTicker.endsWith('.L') && costPence > 100) ? 100.0 : 1.0;
                     let pricePounds = costPence / div;
                     let priceY = tvSeries ? tvSeries.priceToCoordinate(costPence) : null;
 
@@ -797,17 +799,22 @@
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 if (p.leaderboard) {
+                    let currentActiveProf = document.getElementById('userSelect').value.trim();
                     let lbHtml = p.leaderboard.map(lb => { 
                         let isProfit = lb.daily_pnl >= 0, color = isProfit ? '#00c853' : '#ff3d00';
                         let pnlFormatted = `${isProfit ? '+' : ''}£${lb.daily_pnl.toFixed(2)}`;
                         let activeBadge = lb.has_active_holds ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
+                        let isActiveCard = lb.user === currentActiveProf ? 'active-profile-card' : '';
                         return `
-                            <div class="lb-item">
-                                <div class="lb-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'block' ? 'none' : 'block'">
+                            <div class="lb-item ${isActiveCard}" onclick="onUserChange('${lb.user}')">
+                                <div class="lb-header">
                                     <span>${lb.user}${activeBadge}</span>
-                                    <div style="text-align:right;">
-                                        <span style="color:${color}; font-weight:bold;">£${lb.equity.toFixed(2)}</span>
-                                        <div style="font-size:10px; color:${color};">(${pnlFormatted} Today)</div>
+                                    <div style="text-align:right; display:flex; align-items:center; gap:8px;">
+                                        <div>
+                                            <span style="color:${color}; font-weight:bold;">£${lb.equity.toFixed(2)}</span>
+                                            <div style="font-size:10px; color:${color};">(${pnlFormatted} Today)</div>
+                                        </div>
+                                        <span onclick="event.stopPropagation(); let d = this.closest('.lb-item').querySelector('.lb-desc'); d.style.display = d.style.display === 'block' ? 'none' : 'block';" style="color:#787e8e; font-size:11px; padding:2px 4px; border:1px solid #262b36; border-radius:4px;">ⓘ</span>
                                     </div>
                                 </div>
                                 <div class="lb-desc">${profileDesc[lb.user] || 'Custom execution profile.'}</div>
