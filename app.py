@@ -962,20 +962,25 @@ def get_directives():
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
     
-    # SCAN ALL PROFILES FOR PERSISTENT ACTIONS
+    # SCAN ONLY MANUAL PROFILES FOR WARNING BANNERS
     all_pending_actions = []
     now_lon = pd.Timestamp.now(tz='Europe/London')
     current_mins_now = now_lon.hour * 60 + now_lon.minute
 
     for u, u_data in portfolio_store.data.get('users', {}).items():
         if not isinstance(u_data, dict): continue
+        u_prof_clean = u.strip().lower()
+        
+        # STRICTLY EXCLUDE ALL AUTOMATED PROFILES FROM WARNING BANNERS
+        if u_prof_clean != 'ian' and 'test a' not in u_prof_clean: continue
+
         u_hist = u_data.get('history') or []
         u_holds = list(set([tr.get('ticker') for tr in u_hist if portfolio_store.get_shares(tr.get('ticker'), u) > 0]))
         for tk in u_holds:
             try:
                 is_us = not tk.endswith('.L')
                 mkt_open = ((14 * 60 + 30) <= current_mins_now < (21 * 60)) if is_us else ((8 * 60) <= current_mins_now < (16 * 60 + 30))
-                if not mkt_open and not any(x in u.lower() for x in ['ian', 'test a']): continue
+                if not mkt_open: continue
 
                 df_u = fetch_yf_data(tk, "5d", "5m")
                 if not df_u.empty:
@@ -985,7 +990,7 @@ def get_directives():
                     buys_u = [tr for tr in u_hist if tr.get('ticker') == tk and tr.get('action') == 'BUY']
                     avg_b_u = buys_u[0].get('price', 0.0) if buys_u else cur_u
                     hw_u = (u_data.get('holdings', {}).get(tk) or {}).get('high_water', cur_u)
-                    st_u = engine.score_momentum(df_u, cur_u, avg_buy_price=avg_b_u, highest_price=hw_u, profile=u) if any(x in u.lower() for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w']) else engine.score_equity(df_u, cur_u, avg_buy_price=avg_b_u, highest_price=hw_u)
+                    st_u = engine.score_equity(df_u, cur_u, avg_buy_price=avg_b_u, highest_price=hw_u)
                     if st_u['action_main'] == 'SELL' and sh_u > 0:
                         all_pending_actions.append({'user': u, 'ticker': tk, 'action': 'SELL', 'shares': sh_u, 'price': cur_u, 'reason': st_u['reason']})
             except: pass
