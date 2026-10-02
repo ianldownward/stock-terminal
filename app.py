@@ -1108,7 +1108,7 @@ def get_data():
             for tk, sh_now in shares_now_map.items():
                 if sh_now <= 0: continue
                 p_data = prices.get(tk, {'cur': 0.0, 'start': 0.0})
-                equity_now += sh_now * p_data['cur']
+                equity_now += sh_now * (p_data.get('cur') or 0.0)
                 
             tot_eq_now = max(0, cash_now) + equity_now
 
@@ -1127,7 +1127,7 @@ def get_data():
                     if sh_8am > 0: held_at_8am[tk] = sh_8am
             
             cash_8am = cash_now - net_trade_cash_today
-            equity_8am = sum(sh * prices.get(tk, {}).get('start', prices.get(tk, {}).get('cur', 0.0)) for tk, sh in held_at_8am.items())
+            equity_8am = sum(sh * (prices.get(tk, {}).get('start') or prices.get(tk, {}).get('cur') or 0.0) for tk, sh in held_at_8am.items())
             tot_eq_8am = cash_8am + equity_8am
             
             daily_pnl_val = round(tot_eq_now - tot_eq_8am, 2) if tot_eq_8am > 0 else 0.0
@@ -1190,7 +1190,7 @@ def get_data():
                 if sh_8am_u > 0: held_at_8am_user[tk_u] = sh_8am_u
 
         cash_8am_user = cash_balance - net_trade_cash_today_user
-        equity_8am_user = sum(sh * prices.get(tk_u, {}).get('start', prices.get(tk_u, {}).get('cur', 0.0)) for tk_u, sh in held_at_8am_user.items())
+        equity_8am_user = sum(sh * (prices.get(tk_u, {}).get('start') or prices.get(tk_u, {}).get('cur') or 0.0) for tk_u, sh in held_at_8am_user.items())
         tot_eq_8am_user = cash_8am_user + equity_8am_user
         
         tot_today_diff = total_equity - tot_eq_8am_user if tot_eq_8am_user > 0 else 0.0
