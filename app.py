@@ -706,7 +706,7 @@ def process_auto_profile(prof_name):
 
                 if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
                     if is_open or 'test a' in active_profile:
-                        dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
+                        portfolio_store.execute_trade(t, 'SELL', sh, cur, prof_name)
                 elif st['action_main'] == 'BUY':
                     if is_open or 'test a' in active_profile:
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
@@ -715,7 +715,7 @@ def process_auto_profile(prof_name):
         max_allowed_holds = 5 if 'test a' in active_profile else (1 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w']) else 3)
         swap_hurdle = 5 if 'test e3' in active_profile or 'test e11' in active_profile else 10
 
-        # AUTOMATED ROTATION SWAP ENGINE FOR E-SERIES
+        # AUTOMATED ROTATION SWAP ENGINE FOR ALL PROFILES
         if buys and held_scores:
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
@@ -735,22 +735,19 @@ def process_auto_profile(prof_name):
                     portfolio_store.execute_trade(top_candidate['t'], 'BUY', bs, top_candidate['p'], prof_name)
                 return
 
+        # AUTOMATED SINGLE BEST-BUY DEPLOYMENT (AUTO-SELECT HIGHEST SCORE IF CASH CONSTRAINED)
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
         if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
-            top_buys = buys[:slots_available]
-            per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w']) else 0.33))
-            for b in top_buys:
-                bs = int(per_stock_budget // b['cps'])
-                amt = round(bs * b['cps'], 2)
-                if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
-                    dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
-
-        for d in dirs:
-            if d['shares'] > 0:
-                portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'], prof_name)
+            top_candidate = buys[0]
+            
+            per_stock_budget = min(rem_cash, total_equity * (0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w']) else 0.33))
+            bs = int(per_stock_budget // top_candidate['cps'])
+            amt = round(bs * top_candidate['cps'], 2)
+            if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
+                portfolio_store.execute_trade(top_candidate['t'], 'BUY', bs, top_candidate['p'], prof_name)
     except Exception: pass
 
 def global_background_worker():
@@ -952,13 +949,15 @@ def get_directives():
             tot_own = portfolio_store.get_total_portfolio_value(prof_name)
             total_eq = cash_balance + tot_own
             
-            if st['action_main'] == 'BUY' and sh == 0 and rem_cash >= 20:
-                if not is_momentum or is_open:
-                    allocation = 0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w']) else (0.33 if is_momentum else 0.20)
+            # AUTOMATED PROFILES FILTER OUT DIRECTIVE PROMPTS
+            is_automated = active_profile != 'ian' and 'test a' not in active_profile
+            
+            if not is_automated:
+                if st['action_main'] == 'BUY' and sh == 0 and rem_cash >= 20:
+                    allocation = 0.33 if is_momentum else 0.20
                     bs = int(min(rem_cash, total_eq * allocation) // cps) 
                     if bs > 0: dirs.append({'ticker': t, 'action': 'BUY', 'shares': bs, 'price': cur, 'amount': bs * cps, 'score': st['score']})
-            elif st['action_main'] == 'SELL' and sh > 0:
-                if not is_momentum or is_open:
+                elif st['action_main'] == 'SELL' and sh > 0:
                     dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': sh * cps, 'score': st['score']})
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
