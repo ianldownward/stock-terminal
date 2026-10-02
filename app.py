@@ -68,7 +68,7 @@ class PortfolioManager:
         elif 'test q' in prof: wl = ['NVDA', 'AMD', 'GLEN.L', 'RIO.L', 'JPM', 'BAC']
         elif 'test s' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'META', 'MSFT']
         elif any(x in prof for x in ['test p', 'test t']): wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
-        elif 'test w' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L', 'SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L']
+        elif any(x in prof for x in ['test w', 'test w-inverse']): wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L', 'SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L']
         elif any(x in prof for x in ['test e', 'test u']): wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
         elif 'test c' in prof: wl = ['AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L']
         elif any(x in prof for x in ['test a', 'ian']): wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
@@ -113,7 +113,7 @@ class PortfolioManager:
                 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator', 'Test E11 - Unfiltered Hyper-Scalper',
                 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator',
-                'Test W - Adaptive Volatility Rotator'
+                'Test W - Adaptive Volatility Rotator', 'Test W-Inverse - Opposite Adaptive Volatility'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -417,6 +417,21 @@ class MarketScoringEngine:
         rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
 
+        # EXACT OPPOSITE/INVERTED LOGIC FOR TEST W-INVERSE
+        if 'test w-inverse' in prof:
+            is_w_buy = (ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0)
+            
+            # If Test W would buy, Test W-Inverse SELLS or HOLDS
+            if is_w_buy:
+                if avg_buy_price > 0:
+                    return {'type': 'Inverted Volatility', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'TEST W-INVERSE: Test W triggered BUY. Forcing OPPOSITE liquidation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Inverted Liquidation', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Inverse Mirror)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': 'Inverted Sell', 'hard_pct': -0.50, 'stop_price': current_price}
+                return {'type': 'Inverted Volatility', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'TEST W-INVERSE: Test W triggered BUY. Blocking Entry.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Inverted Wait', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Wait)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Inverted Wait', 'hard_pct': -0.50, 'stop_price': current_price}
+
+            # If Test W would HOLD / WAIT (Weak Momentum), Test W-Inverse BUYS
+            else:
+                buy_score = min(100, max(50, round(50 + abs(pct_change_5d) * 10 + rsi)))
+                return {'type': 'Inverted Volatility', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'TEST W-INVERSE: Test W in WAIT mode. Executing CONTRARIAN BUY.', 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Contrarian {trade_type} Entry", 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f"(Contrarian Surge)", 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Contrarian Tracking', 'hard_pct': -0.50, 'stop_price': round(current_price * 0.995, 2)}
+
         # DYNAMIC STRATEGY SWITCHING FOR TEST E8
         if 'test e8' in prof:
             if regime_score < 25:
@@ -707,26 +722,21 @@ def process_auto_profile(prof_name):
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
             
-            # If the candidate has a higher score than the holding by the swap hurdle threshold
             if top_candidate['s'] >= (weakest_holding['score'] + swap_hurdle) and top_candidate['s'] >= 60:
-                # 1. Liquidate the weaker position automatically
                 portfolio_store.execute_trade(weakest_holding['ticker'], 'SELL', weakest_holding['shares'], weakest_holding['price'], prof_name)
                 
-                # 2. Recalculate cash after liquidation
                 ud = portfolio_store.user_data(prof_name)
                 hist = ud.get('history') or []
                 net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist)
                 init_manual = sum(pos.get('manual_val', 0.0) for pos in (ud.get('initial_positions') or {}).values())
                 rem_cash = max(0, mb + net_history - init_manual)
                 
-                # 3. Buy the higher-scoring momentum candidate
                 bs = int(rem_cash // top_candidate['cps'])
                 amt = round(bs * top_candidate['cps'], 2)
                 if bs > 0 and amt >= MIN_BUY_VALUE:
                     portfolio_store.execute_trade(top_candidate['t'], 'BUY', bs, top_candidate['p'], prof_name)
                 return
 
-        # STANDARD CAPITAL DEPLOYMENT (IF SLOTS ARE OPEN)
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
@@ -756,7 +766,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator', 'Test E11 - Unfiltered Hyper-Scalper', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
+            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator', 'Test E11 - Unfiltered Hyper-Scalper', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator', 'Test W-Inverse - Opposite Adaptive Volatility']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
