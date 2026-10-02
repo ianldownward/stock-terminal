@@ -63,6 +63,8 @@ class PortfolioManager:
         prof = username.strip().lower()
         if 'test e8' in prof:
             wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L', 'SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L', 'CONL', 'MSTX', 'BITX']
+        elif 'test e9' in prof:
+            wl = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'PLTR', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX', 'JPM', 'BAC', 'AVGO']
         elif 'test q' in prof: wl = ['NVDA', 'AMD', 'GLEN.L', 'RIO.L', 'JPM', 'BAC']
         elif 'test s' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'META', 'MSFT']
         elif any(x in prof for x in ['test p', 'test t']): wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
@@ -108,7 +110,7 @@ class PortfolioManager:
             allowed_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test C - 24/5 Global', 
                 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 
-                'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator',
+                'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator',
                 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator',
                 'Test W - Adaptive Volatility Rotator'
@@ -444,6 +446,7 @@ class MarketScoringEngine:
         elif 'test e6' in prof: trail_pct, hard_pct = 0.75, -0.75
         elif 'test e7' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
+        elif 'test e9' in prof: trail_pct, hard_pct = 0.20, -0.20
         elif 'test u' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif any(x in prof for x in ['test e', 'test s']): trail_pct, hard_pct = 1.00, -1.00
         else: trail_pct, hard_pct = 0.50, -0.50
@@ -494,7 +497,7 @@ class MarketScoringEngine:
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell', 'hard_pct': 0.0, 'stop_price': current_price}
 
         # OVERRIDE: EOD SWEEP RULE
-        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell', 'hard_pct': 0.0, 'stop_price': current_price}
@@ -512,7 +515,7 @@ class MarketScoringEngine:
             cur_vol = df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
             
-            if any(x in prof for x in ['test e4', 'test e5', 'test e6', 'test e7', 'test e8']) and vol_ratio < 1.20:
+            if any(x in prof for x in ['test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...', 'hard_pct': hard_pct, 'stop_price': round(current_price * (1 + hard_pct / 100.0), 2)}
 
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
@@ -734,7 +737,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
+            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
@@ -1028,7 +1031,6 @@ def get_data():
                 is_open = ((14 * 60 + 30) <= current_mins < (21 * 60)) if is_us else ((8 * 60) <= current_mins < (16 * 60 + 30))
                 if is_open: user_active_hold_status[u] = True
 
-            # FIX: Ensure we fetch price data for anything traded today, even if currently 0 shares
             for tr in hist_u:
                 if tr.get('date_str') == today_str:
                     all_user_holds.add(tr.get('ticker'))
