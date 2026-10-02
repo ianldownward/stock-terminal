@@ -646,14 +646,14 @@
                     let pricePounds = costPence / div;
                     let priceY = tvSeries ? tvSeries.priceToCoordinate(costPence) : null;
 
-                    // DRAW DOT AT EXECUTION PRICE LEVEL ON DASHED LINE
+                    // DRAW SOLID WHITE DOT WITH DARK BORDER AT EXECUTION PRICE LEVEL
                     if (priceY !== null) {
                         ctx.beginPath();
-                        ctx.arc(x, priceY, 4, 0, 2 * Math.PI);
-                        ctx.fillStyle = buy ? '#00c853' : '#ff3d00';
+                        ctx.arc(x, priceY, 4.5, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#ffffff';
                         ctx.fill();
-                        ctx.strokeStyle = '#ffffff';
-                        ctx.lineWidth = 1;
+                        ctx.strokeStyle = '#0f1115';
+                        ctx.lineWidth = 1.5;
                         ctx.stroke();
                     }
 
