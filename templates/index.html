@@ -275,6 +275,8 @@
             'Test R - Regime-Filtered Momentum': 'Institutional-grade momentum. Hard-blocks all trades and holds cash if the broader market regime drops below 50, protecting against systemic chop.',
             'Test S - Apex Rotator': 'The ultimate evolution. 100% capital rotation into top leaders during healthy regimes, and 100% cash block when market sentiment drops.',
             'Test T - Elasticity Sniper': 'Aggressive 1-minute elasticity. Buys only when RSI<25, Price<Lower Bollinger Band, and volume spikes > 3x average. Fast EMA exits.',
+            'Test U - Tight Rotator': '0.50% standard stop rotator with an aggressive 1.2% hard target. Now features 20:50 BST End-of-Day liquidation to hold cash overnight.',
+            'Test V - Velocity Rotator': 'A variation of Test U (0.50% stop, EOD sweep) that includes a Volume-Backed Velocity Brake. It will front-run its own stop and panic-sell early if it detects a rapid 0.30% drop on surging (>1.5x) volume.',
             'Test W - Adaptive Volatility Rotator': 'Adaptive volatility rotator profile using dynamic trailing stops across asset classes.',
             'Test W-Inverse - Opposite Adaptive Volatility': 'Contrarian mirror strategy to Test W. Inverts all momentum buy/sell signals to execute opposite trades on weak or declining setups.'
         };
@@ -646,7 +648,6 @@
                     let pricePounds = costPence / div;
                     let priceY = tvSeries ? tvSeries.priceToCoordinate(costPence) : null;
 
-                    // DRAW SOLID WHITE DOT WITH DARK BORDER AT EXECUTION PRICE LEVEL
                     if (priceY !== null) {
                         ctx.beginPath();
                         ctx.arc(x, priceY, 4.5, 0, 2 * Math.PI);
@@ -657,7 +658,6 @@
                         ctx.stroke();
                     }
 
-                    // CLEAN 2-LINE BADGE OVERLAY
                     let line1 = `${i.shares}sh`;
                     let line2 = `@ £${pricePounds.toFixed(2)}`;
                     ctx.font = 'bold 10px -apple-system, sans-serif';
@@ -692,7 +692,7 @@
             if (isGridView) return; let lg = document.getElementById('chartLegend');
             if (!masterData.length) { let cv = document.getElementById('chartCanvas'); if (cv) { let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); } return; }
             let s = document.getElementById('styleSelect').value, activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test f', 'test g', 'test h', 'test i', 'test j', 'test k', 'test l', 'test m', 'test n', 'test o', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
             let currentRange = tvChart.timeScale().getVisibleLogicalRange();
 
             if (currentTicker === 'ALL_SHARES') {
@@ -748,7 +748,6 @@
                     tvSeries.setData(md); tvChart.timeScale().fitContent(); currentChartStyle = s; lastRenderedTicker = currentTicker;
                 } else { tvSeries.setData(md); }
 
-                // DYNAMIC HORIZONTAL BUY PRICE LINE OVERLAY
                 if (tvBuyPriceLine && tvSeries) {
                     try { tvSeries.removePriceLine(tvBuyPriceLine); } catch(e) {}
                     tvBuyPriceLine = null;
