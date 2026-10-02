@@ -63,7 +63,7 @@ class PortfolioManager:
         prof = username.strip().lower()
         if 'test e8' in prof:
             wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L', 'SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L', 'CONL', 'MSTX', 'BITX']
-        elif any(x in prof for x in ['test e9', 'test e10']):
+        elif any(x in prof for x in ['test e9', 'test e10', 'test e11']):
             wl = ['RR.L', 'SHEL.L', 'BP.L', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'GOOGL', 'PLTR', 'MSTR', 'TQQQ', 'SOXL', 'NVDL', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX', 'JPM', 'BAC', 'AVGO']
         elif 'test q' in prof: wl = ['NVDA', 'AMD', 'GLEN.L', 'RIO.L', 'JPM', 'BAC']
         elif 'test s' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'META', 'MSFT']
@@ -110,7 +110,7 @@ class PortfolioManager:
             allowed_profiles = [
                 'Ian', 'Test A - Deep Value', 'Test C - 24/5 Global', 
                 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 
-                'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator',
+                'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator', 'Test E11 - Unfiltered Hyper-Scalper',
                 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator',
                 'Test W - Adaptive Volatility Rotator'
@@ -447,7 +447,7 @@ class MarketScoringEngine:
         elif 'test e7' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
         elif 'test e9' in prof: trail_pct, hard_pct = 0.20, -0.20
-        elif 'test e10' in prof: trail_pct, hard_pct = 0.10, -0.10
+        elif any(x in prof for x in ['test e10', 'test e11']): trail_pct, hard_pct = 0.10, -0.10
         elif 'test u' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif any(x in prof for x in ['test e', 'test s']): trail_pct, hard_pct = 1.00, -1.00
         else: trail_pct, hard_pct = 0.50, -0.50
@@ -498,7 +498,7 @@ class MarketScoringEngine:
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell', 'hard_pct': 0.0, 'stop_price': current_price}
 
         # OVERRIDE: EOD SWEEP RULE
-        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10', 'test e11']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell', 'hard_pct': 0.0, 'stop_price': current_price}
@@ -738,7 +738,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
+            auto_profiles = ['Test A - Deep Value', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator', 'Test E11 - Unfiltered Hyper-Scalper', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test W - Adaptive Volatility Rotator']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
