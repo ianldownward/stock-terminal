@@ -421,13 +421,11 @@ class MarketScoringEngine:
         if 'test w-inverse' in prof:
             is_w_buy = (ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0)
             
-            # If Test W would buy, Test W-Inverse SELLS or HOLDS
             if is_w_buy:
                 if avg_buy_price > 0:
                     return {'type': 'Inverted Volatility', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'TEST W-INVERSE: Test W triggered BUY. Forcing OPPOSITE liquidation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Inverted Liquidation', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Inverse Mirror)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': 'Inverted Sell', 'hard_pct': -0.50, 'stop_price': current_price}
                 return {'type': 'Inverted Volatility', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'TEST W-INVERSE: Test W triggered BUY. Blocking Entry.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Inverted Wait', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Wait)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Inverted Wait', 'hard_pct': -0.50, 'stop_price': current_price}
 
-            # If Test W would HOLD / WAIT (Weak Momentum), Test W-Inverse BUYS
             else:
                 buy_score = min(100, max(50, round(50 + abs(pct_change_5d) * 10 + rsi)))
                 return {'type': 'Inverted Volatility', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'TEST W-INVERSE: Test W in WAIT mode. Executing CONTRARIAN BUY.', 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Contrarian {trade_type} Entry", 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f"(Contrarian Surge)", 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Contrarian Tracking', 'hard_pct': -0.50, 'stop_price': round(current_price * 0.995, 2)}
