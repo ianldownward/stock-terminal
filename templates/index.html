@@ -260,6 +260,8 @@
             'Test E9 - 0.2% Scalp Rotator': 'Hyper-tight variation of the E-series Rotator. Utilizes a massive cross-market watchlist with a very sensitive 0.20% trailing stop to scalp tiny bursts of momentum.',
             'Test E10 - 0.1% Hyper-Scalp Rotator': 'Extreme hyper-scalper. Uses the full cross-market watchlist with a razor-thin 0.10% trailing stop to capture instantaneous momentum bursts.',
             'Test E11 - Unfiltered Hyper-Scalper': 'Extreme hyper-scalper without volume restrictions. Uses a razor-thin 0.10% trailing stop and buys any EMA momentum crossover regardless of volume.',
+            'Test E12 - E4 Momentum Hybrid': 'E4 logic (1% stop, EOD sweep) but strictly requires RSI > 50 to buy only in established uptrends.',
+            'Test E13 - E6 Breakeven 0.5% Hybrid': 'E6 volume filter and breakeven lock, but with a tighter 0.50% stop like E7.',
             'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 15 minutes before the US market closes to avoid overnight gaps.',
             'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.',
             'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.',
@@ -276,6 +278,9 @@
             'Test S - Apex Rotator': 'The ultimate evolution. 100% capital rotation into top leaders during healthy regimes, and 100% cash block when market sentiment drops.',
             'Test T - Elasticity Sniper': 'Aggressive 1-minute elasticity. Buys only when RSI<25, Price<Lower Bollinger Band, and volume spikes > 3x average. Fast EMA exits.',
             'Test U - Tight Rotator': '0.50% standard stop rotator with an aggressive 1.2% hard target. Now features 20:50 BST End-of-Day liquidation to hold cash overnight.',
+            'Test U1 - Ultra-Tight EOD Rotator': '0.35% tight trailing stop variation of Test U. Locks in profits even earlier.',
+            'Test U2 - Volume-Backed U': 'Test U logic with a strict >1.5x volume entry requirement to avoid low-liquidity fakeouts.',
+            'Test U3 - Breakeven Lock U': 'Test U with a Breakeven Stop Lock. Once a trade reaches +0.40% profit, the stop moves to +0.10%.',
             'Test V - Velocity Rotator': 'A variation of Test U (0.50% stop, EOD sweep) that includes a Volume-Backed Velocity Brake. It will front-run its own stop and panic-sell early if it detects a rapid 0.30% drop on surging (>1.5x) volume.',
             'Test W - Adaptive Volatility Rotator': 'Adaptive volatility rotator profile using dynamic trailing stops across asset classes.',
             'Test W-Inverse - Opposite Adaptive Volatility': 'Contrarian mirror strategy to Test W. Inverts all momentum buy/sell signals to execute opposite trades on weak or declining setups.'
@@ -692,7 +697,7 @@
             if (isGridView) return; let lg = document.getElementById('chartLegend');
             if (!masterData.length) { let cv = document.getElementById('chartCanvas'); if (cv) { let ctx = cv.getContext('2d'); ctx.clearRect(0, 0, cv.width, cv.height); } return; }
             let s = document.getElementById('styleSelect').value, activeProf = document.getElementById('userSelect').value.trim().toLowerCase();
-            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test p', 'test q', 'test r', 'test s', 'test t'].some(prefix => activeProf.includes(prefix));
+            let isMomentum = ['test b', 'test c', 'test d', 'test e', 'test p', 'test q', 'test r', 'test s', 'test t', 'test u', 'test v', 'test w'].some(prefix => activeProf.includes(prefix));
             let currentRange = tvChart.timeScale().getVisibleLogicalRange();
 
             if (currentTicker === 'ALL_SHARES') {
