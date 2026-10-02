@@ -1112,11 +1112,10 @@ def get_data():
                 
             tot_eq_now = max(0, cash_now) + equity_now
 
-            # CALCULATION FOR DAILY PNL SINCE 8:00 AM
+            # RECONSTRUCTION OF 8:00 AM BASELINE FOR TODAY PNL Metric
             trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
             net_trade_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
             
-            # Reconstruction of holdings at 8 AM
             held_at_8am = {}
             for tk, sh_now in shares_now_map.items():
                 if sh_now > 0 or any(tr.get('ticker') == tk for tr in trades_today):
@@ -1171,44 +1170,31 @@ def get_data():
         tot_today_diff, tot_1h_diff = 0.0, 0.0
         now_utc = pd.Timestamp.now(tz='UTC')
         
-        active_holds_and_traded = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker')) > 0 or tr.get('date_str') == today_str]))
-
-        for tk in active_holds_and_traded:
-            sh_h = portfolio_store.get_shares(tk)
-            t_buys_today = [tr for tr in hist if tr.get('ticker') == tk and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
-            t_sells_today = [tr for tr in hist if tr.get('ticker') == tk and tr.get('action') == 'SELL' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
+        # ACTIVE USER SNAPSHOT FOR TODAY CARD PNL
+        trades_today_user = [tr for tr in hist if tr.get('date_str') == today_str]
+        net_trade_cash_today_user = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today_user)
+        
+        user_shares_now = {}
+        for tr in hist:
+            tk_u = tr.get('ticker')
+            if tk_u not in user_shares_now: user_shares_now[tk_u] = portfolio_store.get_shares(tk_u)
             
-            df_5m = pnl_dfs_5m.get(tk)
-            if df_5m is None: df_5m = fetch_yf_data(tk, "5d", "5m")
-            
-            if df_5m is not None and not df_5m.empty:
-                cur_price = df_5m['Close'].iloc[-1]
-                div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
-                cur_price_pounds = cur_price / div
-                
-                if t_buys_today: p_today_base_pounds = sum(tr.get('amount', 0) for tr in t_buys_today) / sum(tr.get('shares', 1) for tr in t_buys_today)
-                else:
-                    last_date_str = now_lon.strftime('%Y-%m-%d')
-                    prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-                    p_today_base_pence = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                    p_today_base_pounds = p_today_base_pence / div
+        held_at_8am_user = {}
+        for tk_u, sh_now_u in user_shares_now.items():
+            if sh_now_u > 0 or any(tr.get('ticker') == tk_u for tr in trades_today_user):
+                sh_8am_u = sh_now_u
+                for tr in trades_today_user:
+                    if tr.get('ticker') == tk_u:
+                        if tr.get('action') == 'BUY': sh_8am_u -= tr.get('shares', 0)
+                        else: sh_8am_u += tr.get('shares', 0)
+                if sh_8am_u > 0: held_at_8am_user[tk_u] = sh_8am_u
 
-                target_ts = now_utc - pd.Timedelta(hours=1)
-                prior_df = df_5m[df_5m.index <= target_ts]
-                p_1h_base_pence = prior_df['Close'].iloc[-1] if not prior_df.empty else (df_5m['Close'].iloc[0] if not df_5m.empty else cur_price)
-                p_1h_base_pounds = p_1h_base_pence / div
-
-                if sh_h > 0:
-                    tot_today_diff += sh_h * (cur_price_pounds - p_today_base_pounds)
-                    tot_1h_diff += sh_h * (cur_price_pounds - p_1h_base_pounds)
-                
-                if t_sells_today:
-                    for sell_tr in t_sells_today:
-                        sell_price_pounds = sell_tr.get('price', 0) / div if tk.endswith('.L') and sell_tr.get('price', 0) > 100 else sell_tr.get('price', 0)
-                        tot_today_diff += sell_tr.get('shares', 0) * (sell_price_pounds - p_today_base_pounds)
-
-        master_today_pct = (tot_today_diff / mb * 100.0) if mb > 0 else 0.0
-        master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
+        cash_8am_user = cash_balance - net_trade_cash_today_user
+        equity_8am_user = sum(sh * prices.get(tk_u, {}).get('start', prices.get(tk_u, {}).get('cur', 0.0)) for tk_u, sh in held_at_8am_user.items())
+        tot_eq_8am_user = cash_8am_user + equity_8am_user
+        
+        tot_today_diff = total_equity - tot_eq_8am_user if tot_eq_8am_user > 0 else 0.0
+        master_today_pct = (tot_today_diff / tot_eq_8am_user * 100.0) if tot_eq_8am_user > 0 else 0.0
 
         master_pnl_data = {
             'all': {'val': f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')},
