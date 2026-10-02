@@ -521,8 +521,8 @@ class MarketScoringEngine:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell', 'hard_pct': 0.0, 'stop_price': current_price}
 
-        # OVERRIDE: EOD SWEEP RULE
-        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10', 'test e11']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: EOD SWEEP RULE (INCLUDES TEST U)
+        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10', 'test e11', 'test u']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell', 'hard_pct': 0.0, 'stop_price': current_price}
@@ -1198,7 +1198,6 @@ def get_data():
                 if sh_h > 0:
                     tot_1h_diff += sh_h * (cur_price_pounds - p_1h_base_pounds)
 
-        # GET TODAY PNL FOR ACTIVE USER FROM LEADERBOARD SYNC
         active_lb_user = next((x for x in leaderboard if x['user'].strip().lower() == active_profile), None)
         tot_today_diff = active_lb_user['daily_pnl'] if active_lb_user else 0.0
         
