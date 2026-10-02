@@ -273,6 +273,14 @@ class PortfolioManager:
             self.reload()
             if not ticker or shares <= 0: return None
             ud = self.user_data(username)
+            
+            # --- 15-SECOND REAL-WORLD BROKER LIMITER ---
+            now_ts = int(time.time())
+            if 'trade_cooldowns' not in ud: ud['trade_cooldowns'] = {}
+            if now_ts - ud['trade_cooldowns'].get(ticker, 0) < 15:
+                return None  # Block trade: within 15s cooldown
+            # -------------------------------------------
+            
             action = 'BUY' if 'BUY' in action_type.upper() else 'SELL'
             cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
             
@@ -305,6 +313,9 @@ class PortfolioManager:
                 hw = (ud['holdings'].get(ticker) or {}).get('high_water', price)
                 ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2), 'high_water': max(hw, price)}
             else: ud['holdings'].pop(ticker, None)
+            
+            # --- UPDATE COOLDOWN TRACKER ---
+            ud['trade_cooldowns'][ticker] = now_ts
             
             self.save_data(self.data)
             ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
@@ -715,7 +726,6 @@ def process_auto_profile(prof_name):
         max_allowed_holds = 5 if 'test a' in active_profile else (1 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w']) else 3)
         swap_hurdle = 5 if 'test e3' in active_profile or 'test e11' in active_profile else 10
 
-        # AUTOMATED ROTATION SWAP ENGINE FOR ALL PROFILES
         if buys and held_scores:
             top_candidate = max(buys, key=lambda x: x['s'])
             weakest_holding = min(held_scores, key=lambda x: x['score'])
@@ -735,7 +745,6 @@ def process_auto_profile(prof_name):
                     portfolio_store.execute_trade(top_candidate['t'], 'BUY', bs, top_candidate['p'], prof_name)
                 return
 
-        # AUTOMATED SINGLE BEST-BUY DEPLOYMENT (AUTO-SELECT HIGHEST SCORE IF CASH CONSTRAINED)
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
@@ -949,7 +958,6 @@ def get_directives():
             tot_own = portfolio_store.get_total_portfolio_value(prof_name)
             total_eq = cash_balance + tot_own
             
-            # AUTOMATED PROFILES FILTER OUT DIRECTIVE PROMPTS
             is_automated = active_profile != 'ian' and 'test a' not in active_profile
             
             if not is_automated:
@@ -962,7 +970,6 @@ def get_directives():
 
     dirs.sort(key=lambda x: (0 if x['action'] == 'SELL' else 1, -x.get('score', 0)))
     
-    # SCAN ONLY MANUAL PROFILES FOR WARNING BANNERS
     all_pending_actions = []
     now_lon = pd.Timestamp.now(tz='Europe/London')
     current_mins_now = now_lon.hour * 60 + now_lon.minute
@@ -971,7 +978,6 @@ def get_directives():
         if not isinstance(u_data, dict): continue
         u_prof_clean = u.strip().lower()
         
-        # STRICTLY EXCLUDE ALL AUTOMATED PROFILES FROM WARNING BANNERS
         if u_prof_clean != 'ian' and 'test a' not in u_prof_clean: continue
 
         u_hist = u_data.get('history') or []
@@ -1112,11 +1118,9 @@ def get_data():
                 
             tot_eq_now = max(0, cash_now) + equity_now
 
-            # CALCULATION FOR DAILY PNL SINCE 8:00 AM
             trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
             net_trade_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
             
-            # Reconstruction of holdings at 8 AM
             held_at_8am = {}
             for tk, sh_now in shares_now_map.items():
                 if sh_now > 0 or any(tr.get('ticker') == tk for tr in trades_today):
@@ -1186,27 +1190,18 @@ def get_data():
                 div = 100.0 if tk.endswith('.L') and cur_price > 100 else 1.0
                 cur_price_pounds = cur_price / div
                 
-                if t_buys_today: p_today_base_pounds = sum(tr.get('amount', 0) for tr in t_buys_today) / sum(tr.get('shares', 1) for tr in t_buys_today)
-                else:
-                    last_date_str = now_lon.strftime('%Y-%m-%d')
-                    prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-                    p_today_base_pence = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                    p_today_base_pounds = p_today_base_pence / div
-
                 target_ts = now_utc - pd.Timedelta(hours=1)
                 prior_df = df_5m[df_5m.index <= target_ts]
                 p_1h_base_pence = prior_df['Close'].iloc[-1] if not prior_df.empty else (df_5m['Close'].iloc[0] if not df_5m.empty else cur_price)
                 p_1h_base_pounds = p_1h_base_pence / div
 
                 if sh_h > 0:
-                    tot_today_diff += sh_h * (cur_price_pounds - p_today_base_pounds)
                     tot_1h_diff += sh_h * (cur_price_pounds - p_1h_base_pounds)
-                
-                if t_sells_today:
-                    for sell_tr in t_sells_today:
-                        sell_price_pounds = sell_tr.get('price', 0) / div if tk.endswith('.L') and sell_tr.get('price', 0) > 100 else sell_tr.get('price', 0)
-                        tot_today_diff += sell_tr.get('shares', 0) * (sell_price_pounds - p_today_base_pounds)
 
+        # GET TODAY PNL FOR ACTIVE USER FROM LEADERBOARD SYNC
+        active_lb_user = next((x for x in leaderboard if x['user'].strip().lower() == active_profile), None)
+        tot_today_diff = active_lb_user['daily_pnl'] if active_lb_user else 0.0
+        
         master_today_pct = (tot_today_diff / mb * 100.0) if mb > 0 else 0.0
         master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
 
@@ -1343,46 +1338,19 @@ def get_data():
                 div = 100.0 if t.endswith('.L') and cur_p > 100 else 1.0
                 cur_p_pounds = cur_p / div
                 last_ts = df_5m.index[-1]
-                last_lon = last_ts.tz_convert('Europe/London')
                 
-                t_buys_today_t = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
-                avg_b_today_t_pounds = (sum(tr.get('amount', 0) for tr in t_buys_today_t) / sum(tr.get('shares', 1) for tr in t_buys_today_t)) if t_buys_today_t else 0.0
-
-                if now_lon.date() > last_lon.date():
-                    p_today_pounds = cur_p_pounds
-                    p_1h_pounds = cur_p_pounds
-                else:
-                    last_date_str = last_lon.strftime('%Y-%m-%d')
-                    prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-                    p_today_mkt_pence = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                    p_today_pounds = avg_b_today_t_pounds if avg_b_today_t_pounds > 0 else (p_today_mkt_pence / div)
-                    
-                    if (now_utc - last_ts).total_seconds() > 4200: p_1h_pounds = cur_p_pounds
-                    else:
-                        target_ts = now_utc - pd.Timedelta(hours=1)
-                        prior_df = df_5m[df_5m.index <= target_ts]
-                        p_1h_mkt_pence = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today_mkt_pence
-                        p_1h_pounds = avg_b_today_t_pounds if avg_b_today_t_pounds > 0 else (p_1h_mkt_pence / div)
-                
-                pv_today = sh_own * (cur_p_pounds - p_today_pounds)
-                pv_1h = sh_own * (cur_p_pounds - p_1h_pounds)
-                val_today_start = sh_own * p_today_pounds
-                val_1h_start = sh_own * p_1h_pounds
-                
-                pp_today = (pv_today / val_today_start * 100.0) if val_today_start > 0 else 0.0
-                pp_1h = (pv_1h / val_1h_start * 100.0) if val_1h_start > 0 else 0.0
-                
+                pv_1h = 0.0
                 ticker_pnl_data = {
                     'all': {'val': pnl_d, 'color': c},
-                    'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')},
-                    '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}
+                    'today': {'val': master_pnl_data['today']['val'], 'color': master_pnl_data['today']['color']},
+                    '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} (0.00%)", 'color': '#8a8a9e'}
                 }
             else:
-                ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': {'val': pnl_d, 'color': c}, '1h': {'val': pnl_d, 'color': c}}
+                ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': master_pnl_data['today'], '1h': master_pnl_data['1h']}
         else: 
             pnl_d, c = "£0.00 (0.00%)", '#8a8a9e'
             empty_pnl = {'val': pnl_d, 'color': c}
-            ticker_pnl_data = {'all': empty_pnl, 'today': empty_pnl, '1h': empty_pnl}
+            ticker_pnl_data = {'all': empty_pnl, 'today': master_pnl_data['today'], '1h': master_pnl_data['1h']}
 
         if sh_own > 0:
             if 'holdings' not in ud: ud['holdings'] = {}
