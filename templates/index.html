@@ -211,11 +211,54 @@
     </style>
 </head>
 <body>
-    <div class="modal-overlay" id="recModal"><div class="modal"><h2><span>Market Anomaly Screener</span><button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('recModal').style.display='none'">Close</button></h2><div id="recLoader" style="text-align:center; padding: 20px; color:#00d2ff;">Scanning global assets for anomalies...</div><div id="recContent"></div><div class="pagination-row" id="recPagination"><button id="btnPrevPage" class="btn-cancel" onclick="changeRecPage(-1)" style="padding: 6px 12px; font-size:12px;">← Previous 5</button><span id="pageInfo" style="font-size:12px; color:#8a8a9e;"></span><button id="btnNextPage" class="btn-cancel" onclick="changeRecPage(1)" style="padding: 6px 12px; font-size:12px;">Next 5 →</button></div></div></div>
+    <div class="modal-overlay" id="recModal">
+        <div class="modal">
+            <h2><span>Market Anomaly Screener</span><button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('recModal').style.display='none'">Close</button></h2>
+            <div id="recLoader" style="text-align:center; padding: 20px; color:#00d2ff;">Scanning global assets for anomalies...</div>
+            <div id="recContent"></div>
+            <div class="pagination-row" id="recPagination">
+                <button id="btnPrevPage" class="btn-cancel" onclick="changeRecPage(-1)" style="padding: 6px 12px; font-size:12px;">← Previous 5</button>
+                <span id="pageInfo" style="font-size:12px; color:#8a8a9e;"></span>
+                <button id="btnNextPage" class="btn-cancel" onclick="changeRecPage(1)" style="padding: 6px 12px; font-size:12px;">Next 5 →</button>
+            </div>
+        </div>
+    </div>
     
-    <div class="modal-overlay" id="alertModal"><div class="modal"><h2><span id="modalTitle">Configure Alerts</span></h2><div class="alert-section" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;"><h3 style="font-size:13px; color:#00d2ff; margin-bottom:10px; text-transform:uppercase;">iPhone Lock Screen Alerts (ntfy.sh)</h3><p style="font-size:11px; color:#8a8a9e; margin-top:0; margin-bottom:10px; line-height:1.4;">1. Install free <b>ntfy</b> app on iPhone.<br>2. Subscribe to a topic name (e.g. <code>ian_stock_terminal</code>).<br>3. Enter exact topic name below:</p><div style="display:flex; gap:8px;"><input type="text" id="ntfyTopicInput" placeholder="e.g. ian_stock_terminal" style="background:#0f1115; border:1px solid #262b36; color:#00d2ff; padding:8px; border-radius:6px; flex:1; font-weight:bold;"><button onclick="testPushNotification()" style="background:#00d2ff; color:#000; border:none; font-weight:bold; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:11px;">Test Push</button></div></div><div class="alert-section" id="smartAlertsSection" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;"><h3 style="font-size:13px; color:#00d2ff; margin-bottom:15px; text-transform:uppercase;">Smart Tranche Alerts</h3><div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;"><input type="checkbox" id="chkBuy" style="margin-right:12px; margin-top:3px;" checked><div><b style="color:#fff;">Anomaly Buy Signal</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when mathematical deviation dictates scaling into next tranche.</span></div></div><div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;"><input type="checkbox" id="chkSell" style="margin-right:12px; margin-top:3px;" checked><div><b style="color:#fff;">Take Profit Target</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when baseline discount shrinks and premium returns.</span></div></div></div><div class="modal-actions" style="display:flex; justify-content:flex-end; gap:10px;"><button class="btn-cancel" onclick="document.getElementById('alertModal').style.display='none'">Cancel</button><button class="btn-save" style="background:#00d2ff; border:none; color:#000; font-weight:bold; padding:10px 18px; border-radius:6px; cursor:pointer;" onclick="saveAlerts()">Save Alerts</button></div></div></div>
+    <div class="modal-overlay" id="alertModal">
+        <div class="modal">
+            <h2><span id="modalTitle">Configure Alerts</span></h2>
+            <div class="alert-section" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;">
+                <h3 style="font-size:13px; color:#00d2ff; margin-bottom:10px; text-transform:uppercase;">iPhone Lock Screen Alerts (ntfy.sh)</h3>
+                <p style="font-size:11px; color:#8a8a9e; margin-top:0; margin-bottom:10px; line-height:1.4;">1. Install free <b>ntfy</b> app on iPhone.<br>2. Subscribe to a topic name (e.g. <code>ian_stock_terminal</code>).<br>3. Enter exact topic name below:</p>
+                <div style="display:flex; gap:8px;">
+                    <input type="text" id="ntfyTopicInput" placeholder="e.g. ian_stock_terminal" style="background:#0f1115; border:1px solid #262b36; color:#00d2ff; padding:8px; border-radius:6px; flex:1; font-weight:bold;">
+                    <button onclick="testPushNotification()" style="background:#00d2ff; color:#000; border:none; font-weight:bold; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:11px;">Test Push</button>
+                </div>
+            </div>
+            <div class="alert-section" id="smartAlertsSection" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;">
+                <h3 style="font-size:13px; color:#00d2ff; margin-bottom:15px; text-transform:uppercase;">Smart Tranche Alerts</h3>
+                <div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;">
+                    <input type="checkbox" id="chkBuy" style="margin-right:12px; margin-top:3px;" checked>
+                    <div><b style="color:#fff;">Anomaly Buy Signal</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when mathematical deviation dictates scaling into next tranche.</span></div>
+                </div>
+                <div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;">
+                    <input type="checkbox" id="chkSell" style="margin-right:12px; margin-top:3px;" checked>
+                    <div><b style="color:#fff;">Take Profit Target</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when baseline discount shrinks and premium returns.</span></div>
+                </div>
+            </div>
+            <div class="modal-actions" style="display:flex; justify-content:flex-end; gap:10px;">
+                <button class="btn-cancel" onclick="document.getElementById('alertModal').style.display='none'">Cancel</button>
+                <button class="btn-save" style="background:#00d2ff; border:none; color:#000; font-weight:bold; padding:10px 18px; border-radius:6px; cursor:pointer;" onclick="saveAlerts()">Save Alerts</button>
+            </div>
+        </div>
+    </div>
     
-    <div class="modal-overlay" id="reasonModal"><div class="modal" style="width: 420px;"><h2>Anomaly Breakdown <button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('reasonModal').style.display='none'">Close</button></h2><p id="reasonText" style="color: #e1e3e6; line-height: 1.6; font-size: 14px; margin-top: 10px;"></p></div></div>
+    <div class="modal-overlay" id="reasonModal">
+        <div class="modal" style="width: 420px;">
+            <h2>Anomaly Breakdown <button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('reasonModal').style.display='none'">Close</button></h2>
+            <p id="reasonText" style="color: #e1e3e6; line-height: 1.6; font-size: 14px; margin-top: 10px;"></p>
+        </div>
+    </div>
     
     <!-- NEW TRADE JOURNEY MODAL -->
     <div class="modal-overlay" id="journeyModal">
@@ -234,21 +277,51 @@
     <div class="sidebar">
         <div class="sidebar-top">
             <div class="user-profile-box">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><label>Active Profile</label><div style="display:flex; gap:4px;"><button onclick="addUserPrompt()" class="user-btn new">+ New</button><button onclick="deleteUserPrompt()" class="user-btn del">Delete</button></div></div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <label>Active Profile</label>
+                    <div style="display:flex; gap:4px;">
+                        <button onclick="addUserPrompt()" class="user-btn new">+ New</button>
+                        <button onclick="deleteUserPrompt()" class="user-btn del">Delete</button>
+                    </div>
+                </div>
                 <select id="userSelect" onchange="onUserChange(this.value)" onfocus="isDropdownOpen=true" onblur="setTimeout(()=>isDropdownOpen=false, 200)" style="width:100%; background:#0f1115; color:#fff; border:1px solid #262b36; padding:6px; border-radius:6px; font-size:13px; font-weight:bold;"></select>
             </div>
             
-            <div class="total-shares-box"><label>Total Portfolio Equity</label><div id="mTotalSharesHeldVal" class="total-val">£0.00</div><div id="mTotalSharesPnL" class="total-pnl">Cash: £0.00 | Shares: £0.00</div><div id="mTotalPnLDisplay" class="total-pnl" style="margin-top:6px; font-size:14px;">£0.00 (0.00%)</div><div style="display:flex; justify-content:center; margin-top:8px;"><div class="segmented-control" id="mPnlTogglesSidebar"><input type="radio" name="master_pnl_tf" id="mpnl_all" value="all" checked onchange="updateMasterPnLDisplay()"><label for="mpnl_all">All Time</label><input type="radio" name="master_pnl_tf" id="mpnl_today" value="today" onchange="updateMasterPnLDisplay()"><label for="mpnl_today">Today</label><input type="radio" name="master_pnl_tf" id="mpnl_1h" value="1h" onchange="updateMasterPnLDisplay()"><label for="mpnl_1h">1 Hour</label></div></div></div>
+            <div class="total-shares-box">
+                <label>Total Portfolio Equity</label>
+                <div id="mTotalSharesHeldVal" class="total-val">£0.00</div>
+                <div id="mTotalSharesPnL" class="total-pnl">Cash: £0.00 | Shares: £0.00</div>
+                <div id="mTotalPnLDisplay" class="total-pnl" style="margin-top:6px; font-size:14px;">£0.00 (0.00%)</div>
+                <div style="display:flex; justify-content:center; margin-top:8px;">
+                    <div class="segmented-control" id="mPnlTogglesSidebar">
+                        <input type="radio" name="master_pnl_tf" id="mpnl_all" value="all" checked onchange="updateMasterPnLDisplay()">
+                        <label for="mpnl_all">All Time</label>
+                        <input type="radio" name="master_pnl_tf" id="mpnl_today" value="today" onchange="updateMasterPnLDisplay()">
+                        <label for="mpnl_today">Today</label>
+                        <input type="radio" name="master_pnl_tf" id="mpnl_1h" value="1h" onchange="updateMasterPnLDisplay()">
+                        <label for="mpnl_1h">1 Hour</label>
+                    </div>
+                </div>
+            </div>
             
             <details class="mobile-drawer" id="budgetDrawer">
                 <summary>Capital Settings</summary>
-                <div class="master-budget-box" style="margin-top:10px; margin-bottom:0;"><label>Starting Capital (£)</label><input type="number" id="masterBudgetInput" value="10000" onchange="onMasterBudgetInput()"><div class="budget-sub-stats"><div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£10,000.00</b></div></div></div>
+                <div class="master-budget-box" style="margin-top:10px; margin-bottom:0;">
+                    <label>Starting Capital (£)</label>
+                    <input type="number" id="masterBudgetInput" value="10000" onchange="onMasterBudgetInput()">
+                    <div class="budget-sub-stats">
+                        <div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£10,000.00</b></div>
+                    </div>
+                </div>
             </details>
 
             <details class="mobile-drawer" id="watchlistDrawer">
                 <summary>Live Watchlist</summary>
                 <div style="margin-top:10px;">
-                    <div class="search-box"><input type="text" id="addTickerInput" placeholder="Add Symbol..."><button id="addBtn">+</button></div>
+                    <div class="search-box">
+                        <input type="text" id="addTickerInput" placeholder="Add Symbol...">
+                        <button id="addBtn">+</button>
+                    </div>
                     <ul class="watchlist" id="watchlistUI" style="max-height: 200px;"></ul>
                 </div>
             </details>
@@ -258,8 +331,23 @@
             <details class="mobile-drawer" id="directivesDrawer">
                 <summary>Directives & Anomaly Check</summary>
                 <div style="margin-top:10px;">
-                    <div class="directives-box"><h3>Portfolio Action Directives</h3><div id="directivesList" style="max-height: 120px; overflow-y: auto;"><div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">Scanning portfolio...</div></div></div>
-                    <div class="quick-check-box"><div class="qc-header-row"><h3>Instant Anomaly Check</h3><span class="qc-close-btn" onclick="closeQuickScore()">✕</span></div><div class="qc-input-row"><input type="text" id="qsTicker" placeholder="e.g. SSLN.L or MSFT"><button onclick="checkQuickScore()">Score</button></div><div id="qsResult"></div></div>
+                    <div class="directives-box">
+                        <h3>Portfolio Action Directives</h3>
+                        <div id="directivesList" style="max-height: 120px; overflow-y: auto;">
+                            <div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">Scanning portfolio...</div>
+                        </div>
+                    </div>
+                    <div class="quick-check-box">
+                        <div class="qc-header-row">
+                            <h3>Instant Anomaly Check</h3>
+                            <span class="qc-close-btn" onclick="closeQuickScore()">✕</span>
+                        </div>
+                        <div class="qc-input-row">
+                            <input type="text" id="qsTicker" placeholder="e.g. SSLN.L or MSFT">
+                            <button onclick="checkQuickScore()">Score</button>
+                        </div>
+                        <div id="qsResult"></div>
+                    </div>
                 </div>
             </details>
             <button class="btn-rec" onclick="openRecommendModal()">Search for recommendations</button>
@@ -271,7 +359,10 @@
             <summary>Chart Controls & Timeframes</summary>
             <div class="top-nav" style="margin-top:10px; border:none; padding:0; background:transparent;">
                 <div class="top-nav-row1">
-                    <div style="display:flex; align-items:center; gap:8px;"><h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2><span id="activeDirectionBadge" style="display:none;"></span></div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2>
+                        <span id="activeDirectionBadge" style="display:none;"></span>
+                    </div>
                     <div class="action-buttons">
                         <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button>
                         <button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button>
@@ -282,7 +373,10 @@
                         <button class="btn-control" style="border-color:#b388ff; color:#b388ff; font-weight:bold;" onclick="openJourneyModal()">Trade Flow</button>
                         
                         <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
-                        <button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg><span id="drawBtnText">Draw Line</span></button>
+                        <button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
+                            <span id="drawBtnText">Draw Line</span>
+                        </button>
                         <button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button>
                         <button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button>
                         <button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button>
@@ -291,10 +385,35 @@
                 </div>
                 <div class="top-nav-row2">
                     <div class="controls">
-                        <label>Range:</label><select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);"><option value="1d" selected>1 Day</option><option value="5d">5 Days</option><option value="1mo">1 Month</option><option value="6mo">6 Months</option><option value="1y">1 Year</option><option value="5y">5 Years</option><option value="max">Max</option></select>
-                        <label>Interval:</label><select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
-                        <label>Style:</label><select id="styleSelect" onchange="saveUISettings(); renderChart();"><option value="candlestick">Candlestick</option><option value="heikin-ashi">Heikin-Ashi</option><option value="line">Line</option><option value="area">Area</option><option value="bar">Bar</option></select>
-                        <label>Auto Update:</label><select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();"><option value="0">Manual</option><option value="5000">5 secs</option><option value="10000" selected>10 secs</option><option value="30000">30 secs</option><option value="60000">1 min</option><option value="300000">5 mins</option></select>
+                        <label>Range:</label>
+                        <select id="periodSelect" onchange="saveUISettings(); updateIntervals(); fetchData(false);">
+                            <option value="1d" selected>1 Day</option>
+                            <option value="5d">5 Days</option>
+                            <option value="1mo">1 Month</option>
+                            <option value="6mo">6 Months</option>
+                            <option value="1y">1 Year</option>
+                            <option value="5y">5 Years</option>
+                            <option value="max">Max</option>
+                        </select>
+                        <label>Interval:</label>
+                        <select id="intervalSelect" onchange="saveUISettings(); fetchData(false);"></select>
+                        <label>Style:</label>
+                        <select id="styleSelect" onchange="saveUISettings(); renderChart();">
+                            <option value="candlestick">Candlestick</option>
+                            <option value="heikin-ashi">Heikin-Ashi</option>
+                            <option value="line">Line</option>
+                            <option value="area">Area</option>
+                            <option value="bar">Bar</option>
+                        </select>
+                        <label>Auto Update:</label>
+                        <select id="refreshSelect" onchange="saveUISettings(); setupAutoRefresh();">
+                            <option value="0">Manual</option>
+                            <option value="5000">5 secs</option>
+                            <option value="10000" selected>10 secs</option>
+                            <option value="30000">30 secs</option>
+                            <option value="60000">1 min</option>
+                            <option value="300000">5 mins</option>
+                        </select>
                     </div>
                     <div id="marketClocks" style="display:flex; gap:15px; align-items:center; margin-left:auto;"></div>
                 </div>
@@ -307,8 +426,16 @@
                 <div class="card"><h3>Live Price</h3><p id="mPrice" class="val-highlight">--</p></div>
                 <div class="card"><h3>Math Discount</h3><p id="mDisc" class="val-highlight">--</p></div>
                 <div class="card"><h3>Buy Score</h3><p id="mBuy" class="val-highlight">--</p></div>
-                <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Active Tranches ⓘ</h3><div id="mTranchesContainer" class="tranche-bars-container"></div><p id="mTranchesText" style="font-size:10px; color:#787e8e; margin-top:4px;">--</p></div>
-                <div class="card"><h3>Current Value Owned (£)</h3><input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()"><span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">0 shares</span></div>
+                <div class="card clickable-card" onclick="showAnomalyReason()">
+                    <h3>Active Tranches ⓘ</h3>
+                    <div id="mTranchesContainer" class="tranche-bars-container"></div>
+                    <p id="mTranchesText" style="font-size:10px; color:#787e8e; margin-top:4px;">--</p>
+                </div>
+                <div class="card">
+                    <h3>Current Value Owned (£)</h3>
+                    <input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()">
+                    <span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">0 shares</span>
+                </div>
                 
                 <!-- CUSTOM ROTATOR POSITION HEALTH & RE-ENTRY CARD -->
                 <div class="card" id="rotatorHealthCard" style="display:flex; flex-direction:column; justify-content:center; padding:10px;">
@@ -329,21 +456,42 @@
                     <span id="mBuyPriceSubText" style="font-size:10px; color:#00d2ff; display:block; margin-top:4px; font-weight:bold;">Selling at: --</span>
                 </div>
 
-                <div class="card clickable-card" onclick="showAnomalyReason()"><h3>Market Sentiment ⓘ <span id="thermoTrend" style="font-size:10px; font-weight:bold; margin-left:4px;"></span></h3><div class="thermo-container"><div class="thermo-bar-bg"><div id="thermoFill" class="thermo-bar-fill"></div></div><span id="thermoText" class="thermo-text">Room Temp (Neutral)</span></div><div style="margin-top:6px; height:20px; width:100%;"><svg id="thermoSparkline" style="width:100%; height:100%; overflow:visible;"></svg></div></div>
+                <div class="card clickable-card" onclick="showAnomalyReason()">
+                    <h3>Market Sentiment ⓘ <span id="thermoTrend" style="font-size:10px; font-weight:bold; margin-left:4px;"></span></h3>
+                    <div class="thermo-container">
+                        <div class="thermo-bar-bg"><div id="thermoFill" class="thermo-bar-fill"></div></div>
+                        <span id="thermoText" class="thermo-text">Room Temp (Neutral)</span>
+                    </div>
+                    <div style="margin-top:6px; height:20px; width:100%;">
+                        <svg id="thermoSparkline" style="width:100%; height:100%; overflow:visible;"></svg>
+                    </div>
+                </div>
             </div>
         </details>
         
         <div class="chart-container">
             <div id="chartLegend" style="position: absolute; top: 15px; left: 15px; z-index: 8; display: flex; flex-direction: column; gap: 4px; pointer-events: none;"></div>
-            <div id="loader">Fetching...</div><div id="tvChart"></div>
-            <div id="gridContainer"><div class="grid-pane" id="pane0"><div class="grid-pane-title" id="title0">Pane 1</div><div id="chart0" style="width:100%; height:100%;"></div></div><div class="grid-pane" id="pane1"><div class="grid-pane-title" id="title1">Pane 2</div><div id="chart1" style="width:100%; height:100%;"></div></div><div class="grid-pane" id="pane2"><div class="grid-pane-title" id="title2">Pane 3</div><div id="chart2" style="width:100%; height:100%;"></div></div><div class="grid-pane" id="pane3"><div class="grid-pane-title" id="title3">Pane 4</div><div id="chart3" style="width:100%; height:100%;"></div></div></div>
+            <div id="loader">Fetching...</div>
+            <div id="tvChart"></div>
+            <div id="gridContainer">
+                <div class="grid-pane" id="pane0"><div class="grid-pane-title" id="title0">Pane 1</div><div id="chart0" style="width:100%; height:100%;"></div></div>
+                <div class="grid-pane" id="pane1"><div class="grid-pane-title" id="title1">Pane 2</div><div id="chart1" style="width:100%; height:100%;"></div></div>
+                <div class="grid-pane" id="pane2"><div class="grid-pane-title" id="title2">Pane 3</div><div id="chart2" style="width:100%; height:100%;"></div></div>
+                <div class="grid-pane" id="pane3"><div class="grid-pane-title" id="title3">Pane 4</div><div id="chart3" style="width:100%; height:100%;"></div></div>
+            </div>
             <canvas id="chartCanvas"></canvas>
         </div>
     </div>
     
     <div class="right-drawer">
         <div id="globalTopRightWarning" class="global-top-right-warning"></div>
-        <div id="ianAlertBox" style="display: none; background: #1e222d; border: 1px solid #00d2ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);"><h3 style="font-size: 11px; color: #00d2ff; margin: 0 0 8px 0; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>Ian Action Required</h3><div id="ianAlertList"></div></div>
+        <div id="ianAlertBox" style="display: none; background: #1e222d; border: 1px solid #00d2ff; border-radius: 8px; padding: 12px; margin-bottom: 10px; box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);">
+            <h3 style="font-size: 11px; color: #00d2ff; margin: 0 0 8px 0; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+                Ian Action Required
+            </h3>
+            <div id="ianAlertList"></div>
+        </div>
         <details class="drawer-details" open><summary>Active Profiles Leaderboard</summary><div id="leaderboardUI" style="margin-top:8px;"></div></details>
         <details class="drawer-details" open><summary>Trade History</summary><ul class="history-list" id="allHistoryUI" style="margin-top:8px;"></ul></details>
     </div>
@@ -368,7 +516,6 @@
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
             'Test A - Deep Value': 'Manual value accumulation using physical trusts and deep-value blue chips. No automated intraday trading.',
-            'Test B - Momentum (UK & US)': 'Trades high-momentum UK stocks and 3x/2x leveraged US ETFs.',
             'Test C - 24/5 Global': '24/5 Follow-the-Sun strategy. Rotates capital across Asian, European, and US markets using fast EMAs.',
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing relative strength leader over the last 60 minutes.',
             'Test E2 - EOD Rotator': '100% capital rotation into top leaders with a hard 20:50 BST cash sweep to block overnight gap risk.',
@@ -722,7 +869,7 @@
 
         async function loadRecommended(t, s, b, sell) { document.getElementById('recModal').style.display = 'none'; await fetch('/api/watchlist/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: t})}); selectStock(t); setTimeout(openAlertModal, 500); }
 
-        // --- NEW TRADE JOURNEY LOGIC ---
+        // --- NEW TRADE JOURNEY LOGIC WITH GHOSTING ---
         function openJourneyModal() {
             document.getElementById('journeyModal').style.display = 'flex';
             // Delay loading slightly so display:flex can calculate dimensions for the chart
@@ -784,7 +931,7 @@
             let c = document.getElementById('journeyChartContainer');
             
             if (!tr || !tr.chart || tr.chart.length === 0) {
-                c.innerHTML = '<div style="color:#787e8e; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center;">Detailed intraday chart data is no longer available for this historical trade.<br><br>The exact timestamp is older than Yahoo Finance\'s 1-month intraday limit.</div>';
+                c.innerHTML = '<div style="color:#787e8e; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center;">Detailed intraday chart data is no longer available for this historical trade.</div>';
                 return;
             } else {
                 if (c.innerHTML.includes('Detailed intraday')) {
@@ -806,15 +953,43 @@
                     crosshair: { mode: 0 }, 
                     timeScale: { borderColor: '#262b36', timeVisible: true } 
                 });
-                journeySeries = journeyChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
+                // Remove default colors so item-level "ghost" colors take effect
+                journeySeries = journeyChart.addCandlestickSeries({ borderVisible: false });
                 new ResizeObserver(() => { journeyChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); }).observe(c);
             }
             
-            journeySeries.setData(tr.chart);
+            // Time snapping logic: Find the exact closest candle to the buy and sell times to ensure perfectly accurate highlighting and markers
+            let closestBuyTime = tr.chart[0].time;
+            let closestSellTime = tr.chart[tr.chart.length - 1].time;
             
+            tr.chart.forEach(pt => {
+                if (Math.abs(pt.time - tr.buy_time) < Math.abs(closestBuyTime - tr.buy_time)) closestBuyTime = pt.time;
+                if (Math.abs(pt.time - tr.sell_time) < Math.abs(closestSellTime - tr.sell_time)) closestSellTime = pt.time;
+            });
+            
+            // Map over the data and apply "ghosted" colors outside the active window
+            let styledChart = tr.chart.map(pt => {
+                let isActive = pt.time >= closestBuyTime && pt.time <= closestSellTime;
+                let isUp = pt.close >= pt.open;
+                
+                let upColor = isActive ? '#00c853' : 'rgba(0, 200, 83, 0.15)';
+                let downColor = isActive ? '#ff3d00' : 'rgba(255, 61, 0, 0.15)';
+                let color = isUp ? upColor : downColor;
+                
+                return {
+                    ...pt,
+                    color: color,
+                    wickColor: color,
+                    borderColor: color
+                };
+            });
+            
+            journeySeries.setData(styledChart);
+            
+            // Add clean buy/sell markers using the snapped timestamps
             journeySeries.setMarkers([
-                { time: tr.buy_time, position: 'belowBar', color: '#00c853', shape: 'arrowUp', text: `BUY ${tr.shares}sh` },
-                { time: tr.sell_time, position: 'aboveBar', color: '#ff3d00', shape: 'arrowDown', text: `SELL ${tr.shares}sh` }
+                { time: closestBuyTime, position: 'belowBar', color: '#00c853', shape: 'arrowUp', text: `BUY ${tr.shares}sh` },
+                { time: closestSellTime, position: 'aboveBar', color: '#ff3d00', shape: 'arrowDown', text: `SELL ${tr.shares}sh` }
             ]);
             
             journeyChart.timeScale().fitContent();
