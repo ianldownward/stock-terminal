@@ -179,7 +179,7 @@ class PortfolioManager:
             if needs_save: 
                 self.save_data(self.data)
         except Exception as e: 
-            pass
+            print(f"Cleanup error: {e}")
 
     def save_data(self, data_to_save):
         if self.client:
@@ -338,6 +338,7 @@ class PortfolioManager:
                 return None
             ud = self.user_data(username)
             
+            # --- 15-SECOND REAL-WORLD BROKER LIMITER ---
             now_ts = int(time.time())
             if 'trade_cooldowns' not in ud: 
                 ud['trade_cooldowns'] = {}
@@ -396,9 +397,10 @@ class PortfolioManager:
             else: 
                 ud['holdings'].pop(ticker, None)
             
+            # UPDATE COOLDOWN
             ud['trade_cooldowns'][ticker] = now_ts
-            self.save_data(self.data)
             
+            self.save_data(self.data)
             ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
             if ntfy_topic: 
                 send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
@@ -1190,7 +1192,8 @@ def trade_journey():
     for tr in hist:
         tk = tr.get('ticker')
         if tr.get('action') == 'BUY':
-            if tk not in buys: buys[tk] = []
+            if tk not in buys: 
+                buys[tk] = []
             buys[tk].append(tr)
         elif tr.get('action') == 'SELL':
             if tk in buys and len(buys[tk]) > 0:
@@ -1229,15 +1232,16 @@ def trade_journey():
             return tr, False
             
         tk = tr['ticker']
-        df = fetch_yf_data(tk, "1mo", "5m")
+        df = fetch_yf_data(tk, "60d", "5m")
+        if df.empty: df = fetch_yf_data(tk, "1mo", "5m")
+        if df.empty: df = fetch_yf_data(tk, "5d", "5m")
+        
         chart_data = []
         made_save = False
         
         if not df.empty:
-            if df.index.tz is not None: 
-                df.index = df.index.tz_convert('UTC')
-            
-            mask = (df.index.astype('int64') // 10**9 >= tr['start_ts']) & (df.index.astype('int64') // 10**9 <= tr['end_ts'])
+            ts_vals = pd.Series([int(x.timestamp()) for x in df.index], index=df.index)
+            mask = (ts_vals >= tr['start_ts']) & (ts_vals <= tr['end_ts'])
             filtered = df[mask]
             
             if not filtered.empty:
@@ -1276,7 +1280,6 @@ def trade_journey():
         portfolio_store.save_data(portfolio_store.data)
 
     return jsonify({'trades': trades_with_charts})
-
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
