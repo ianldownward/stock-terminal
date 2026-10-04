@@ -101,6 +101,22 @@
         .global-top-right-warning .action-btn-inline { background:#fff; color:#ff3d00; border:none; font-weight:bold; padding:4px 8px; border-radius:4px; font-size:11px; margin-left:8px; cursor:pointer; text-transform:uppercase; display:inline-block; }
         @keyframes pulseWarning { 0% { box-shadow:0 0 0 0 rgba(255,61,0,0.8); } 70% { box-shadow:0 0 0 10px rgba(255,61,0,0); } 100% { box-shadow:0 0 0 0 rgba(255,61,0,0); } }
 
+        /* TRADE JOURNEY MODAL & RIBBON */
+        #journeyModal .modal { width: 90%; max-width: 1000px; height: 85vh; display: flex; flex-direction: column; padding: 20px; }
+        .journey-ribbon { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 12px; margin-bottom: 15px; border-bottom: 1px solid #262b36; white-space: nowrap; flex-shrink: 0; scrollbar-width: none; }
+        .journey-ribbon::-webkit-scrollbar { display: none; }
+        .journey-pill { background: #1e222d; border: 1px solid #262b36; border-radius: 8px; padding: 8px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: border-color 0.2s; }
+        .journey-pill:hover, .journey-pill.active { border-color: #00d2ff; background: #252a37; }
+        .journey-pill.pnl-pos { border-left: 3px solid #00c853; }
+        .journey-pill.pnl-neg { border-left: 3px solid #ff3d00; }
+        .j-ticker { font-weight: bold; font-size: 13px; color: #fff; }
+        .j-pnl { font-size: 12px; font-weight: bold; }
+        .j-pnl.pos { color: #00c853; } .j-pnl.neg { color: #ff3d00; }
+        .j-dates { font-size: 10px; color: #8a8a9e; display: block; margin-top: 4px; }
+        #journeyChartContainer { flex: 1; position: relative; min-height: 400px; background: #171a21; border-radius: 8px; border: 1px solid #262b36; overflow: hidden; }
+        #journeyChart { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+        #journeyLoader { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00d2ff; font-weight: bold; z-index: 10; display: none; background: rgba(23, 26, 33, 0.9); padding: 10px 20px; border-radius: 8px; border: 1px solid #00d2ff; }
+
         /* MOBILE FIXES & ACCORDIONS */
         @media (max-width:900px){
             html, body { overflow-y: auto !important; overflow-x: hidden !important; height: auto !important; position: relative !important; -webkit-overflow-scrolling: touch; }
@@ -126,6 +142,20 @@
     <div class="modal-overlay" id="alertModal"><div class="modal"><h2><span id="modalTitle">Configure Alerts</span></h2><div class="alert-section" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;"><h3 style="font-size:13px; color:#00d2ff; margin-bottom:10px; text-transform:uppercase;">iPhone Lock Screen Alerts (ntfy.sh)</h3><p style="font-size:11px; color:#8a8a9e; margin-top:0; margin-bottom:10px; line-height:1.4;">1. Install free <b>ntfy</b> app on iPhone.<br>2. Subscribe to a topic name (e.g. <code>ian_stock_terminal</code>).<br>3. Enter exact topic name below:</p><div style="display:flex; gap:8px;"><input type="text" id="ntfyTopicInput" placeholder="e.g. ian_stock_terminal" style="background:#0f1115; border:1px solid #262b36; color:#00d2ff; padding:8px; border-radius:6px; flex:1; font-weight:bold;"><button onclick="testPushNotification()" style="background:#00d2ff; color:#000; border:none; font-weight:bold; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:11px;">Test Push</button></div></div><div class="alert-section" id="smartAlertsSection" style="margin-bottom:20px; padding-bottom:15px; border-bottom:1px solid #262b36;"><h3 style="font-size:13px; color:#00d2ff; margin-bottom:15px; text-transform:uppercase;">Smart Tranche Alerts</h3><div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;"><input type="checkbox" id="chkBuy" style="margin-right:12px; margin-top:3px;" checked><div><b style="color:#fff;">Anomaly Buy Signal</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when mathematical deviation dictates scaling into next tranche.</span></div></div><div style="display:flex; align-items:flex-start; margin-bottom:12px; font-size:14px;"><input type="checkbox" id="chkSell" style="margin-right:12px; margin-top:3px;" checked><div><b style="color:#fff;">Take Profit Target</b><span style="color:#8a8a9e; font-size:12px; display:block;">Alert me when baseline discount shrinks and premium returns.</span></div></div></div><div class="modal-actions" style="display:flex; justify-content:flex-end; gap:10px;"><button class="btn-cancel" onclick="document.getElementById('alertModal').style.display='none'">Cancel</button><button class="btn-save" style="background:#00d2ff; border:none; color:#000; font-weight:bold; padding:10px 18px; border-radius:6px; cursor:pointer;" onclick="saveAlerts()">Save Alerts</button></div></div></div>
     <div class="modal-overlay" id="reasonModal"><div class="modal" style="width: 420px;"><h2>Anomaly Breakdown <button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('reasonModal').style.display='none'">Close</button></h2><p id="reasonText" style="color: #e1e3e6; line-height: 1.6; font-size: 14px; margin-top: 10px;"></p></div></div>
     
+    <!-- NEW TRADE JOURNEY MODAL -->
+    <div class="modal-overlay" id="journeyModal">
+        <div class="modal">
+            <h2><span>Trade Journey Flow</span><button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="closeJourneyModal()">Close</button></h2>
+            <div id="journeyRibbon" class="journey-ribbon">
+                <div style="color:#8a8a9e; font-size:12px; margin:auto;">Loading trades...</div>
+            </div>
+            <div id="journeyChartContainer">
+                <div id="journeyLoader">Loading Chart...</div>
+                <div id="journeyChart"></div>
+            </div>
+        </div>
+    </div>
+
     <div class="sidebar">
         <div class="sidebar-top">
             <div class="user-profile-box">
@@ -167,7 +197,20 @@
             <div class="top-nav" style="margin-top:10px; border:none; padding:0; background:transparent;">
                 <div class="top-nav-row1">
                     <div style="display:flex; align-items:center; gap:8px;"><h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2><span id="activeDirectionBadge" style="display:none;"></span></div>
-                    <div class="action-buttons"><button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button><button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button><button id="btnToggleGrid" class="btn-control btn-grid" onclick="toggleGridView()">Shares Held</button><button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button><button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button><button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg><span id="drawBtnText">Draw Line</span></button><button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button><button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button><button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button><button class="btn-control btn-reset" onclick="resetTerminalData()">Reset User</button><button class="btn-control btn-reset" style="border-color:#ff9900; color:#ff9900;" onclick="resetAllProfilesTo5000()">Reset ALL to £5K</button></div>
+                    <div class="action-buttons">
+                        <button id="btnShowTrades" class="btn-control btn-trades active" onclick="toggleShowTrades()">Trades</button>
+                        <button id="btnShowMath" class="btn-control btn-trades" onclick="toggleShowMath()">Math Overlay</button>
+                        <button id="btnToggleGrid" class="btn-control btn-grid" onclick="toggleGridView()">Shares Held</button>
+                        <button class="btn-control btn-refresh" onclick="fetchData(false)">Refresh</button>
+                        <!-- NEW TRADE FLOW BUTTON (Replaced Reset ALL to 5k) -->
+                        <button class="btn-control" style="border-color:#b388ff; color:#b388ff;" onclick="openJourneyModal()">Trade Flow</button>
+                        <button class="btn-control btn-alert" onclick="openAlertModal(false)">Setup Alerts</button>
+                        <button id="btnDraw" class="btn-control btn-draw" style="border-color:#ffeb3b; color:#ffeb3b; display:flex; align-items:center; gap:4px;" onclick="toggleDrawMode()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg><span id="drawBtnText">Draw Line</span></button>
+                        <button id="btnToggleManual" class="btn-control btn-manual active" style="border-color:#ffeb3b;" onclick="toggleManualLines()">Manual</button>
+                        <button class="btn-control" style="border-color:#ffeb3b; color:#ffeb3b;" onclick="clearManualLines()">Clear</button>
+                        <button id="btnFullscreen" class="btn-control btn-fullscreen" onclick="toggleFullScreen()">Full Screen</button>
+                        <button class="btn-control btn-reset" onclick="resetTerminalData()">Reset User</button>
+                    </div>
                 </div>
                 <div class="top-nav-row2">
                     <div class="controls">
@@ -242,6 +285,7 @@
         let currentHealthPct = 0; let currentHealthColor = '#8a8a9e'; let currentHealthText = 'N/A'; let isRotatorProfile = false;
         let tvBuyPriceLine = null;
         let currentHardPct = -0.50; let currentStopPrice = 0.0;
+        let journeyChart = null; let journeySeries = null;
 
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
@@ -262,16 +306,6 @@
             'Test E11 - Unfiltered Hyper-Scalper': 'Extreme hyper-scalper without volume restrictions. Uses a razor-thin 0.10% trailing stop and buys any EMA momentum crossover regardless of volume.',
             'Test E12 - E4 Momentum Hybrid': 'E4 logic (1% stop, EOD sweep) but strictly requires RSI > 50 to buy only in established uptrends.',
             'Test E13 - E6 Breakeven 0.5% Hybrid': 'E6 volume filter and breakeven lock, but with a tighter 0.50% stop like E7.',
-            'Test F - EOD Sweep': 'Forces 100% liquidation to cash exactly 15 minutes before the US market closes to avoid overnight gaps.',
-            'Test G - Long/Short Bi-Directional': 'Trades standard equities when Market Heat > 50, and flips to Inverse ETFs (SQQQ, 3SUS.L) to profit from market pullbacks when Market Heat < 40.',
-            'Test H - Wick Reversal': 'Aggressively scans 30+ momentum leaders for bottom-wick reversal pin bars (buyers rejecting lows) and sells when top green wicks signal exhaustion.',
-            'Test I - Ultimate Hybrid': 'Combines market regime filtering, volume spike confirmation, and EOD risk sweep into one profile.',
-            'Test J - News Sentiment AI': 'Scrapes live financial media to dynamically alter buy conviction based on positive or negative news trends.',
-            'Test K - 1-Minute Hyper-Scalper': 'Extremely aggressive logic. Runs exclusively on the 1-minute chart trading 3x Leveraged ETFs. Buys instant oversold reversals and uses a tight 0.75% trailing stop.',
-            'Test L - 5-Minute ORB': 'Opening Range Breakout. Buys aggressive volume pushes above the first 5-minute candle\'s high between 2:30 PM and 3:00 PM BST. 1% Target, 0.5% Stop.',
-            'Test M - VWAP Dip Sniper': '1-Minute VWAP Reversion. Snipes artificial 1.5% dips below intraday VWAP when the market regime is bullish. Exits on VWAP touch.',
-            'Test N - 1-Minute Vol Scalper': '1-Minute Volume Spike Scalper. Buys when 1m volume > 3x average with a strong bullish close. Very tight targets.',
-            'Test O - 1-Minute HOD Sniper': '1-Minute High-of-Day Breakout. Buys when price breaks the intraday high during the 2:30 PM - 3:30 PM BST opening hour.',
             'Test P - 1-Minute BB Reversion': '1-Minute Bollinger Band Reversion. Buys extreme oversold dips below the lower 2-SD Bollinger Band when RSI < 25. Exits at the 20-SMA.',
             'Test Q - Market-Neutral StatArb': 'Statistical Arbitrage. Pairs correlated assets (e.g., NVDA/AMD) and trades the spread when they abnormally diverge, remaining market-neutral.',
             'Test R - Regime-Filtered Momentum': 'Institutional-grade momentum. Hard-blocks all trades and holds cash if the broader market regime drops below 50, protecting against systemic chop.',
@@ -463,10 +497,6 @@
             if (confirm("Reset all portfolio data for this active user?")) { currentFetchId++; document.getElementById('loader').style.display = 'block'; try { await fetch('/api/portfolio/reset', { method: 'POST' }); currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; await fetchData(false); } catch(e) { document.getElementById('loader').style.display = 'none'; } }
         }
 
-        async function resetAllProfilesTo5000() {
-            if (confirm("Reset ALL test profiles back to £5,000 baseline ready for market opening?")) { currentFetchId++; document.getElementById('loader').style.display = 'block'; try { await fetch('/api/portfolio/reset_all_profiles', { method: 'POST' }); currentTicker = 'ALL_SHARES'; isSettingsLoaded = false; await fetchData(false); } catch(e) { document.getElementById('loader').style.display = 'none'; } }
-        }
-
         function setupAutoRefresh() { if (autoRefreshTimer) clearInterval(autoRefreshTimer); let ms = parseInt(document.getElementById('refreshSelect').value) || 0; if (ms > 0) autoRefreshTimer = setInterval(() => { fetchData(true); }, ms); }
 
         function renderWatchlist(watchlist, wl_status = {}) {
@@ -616,6 +646,86 @@
         function changeRecPage(dir) { recPg += dir; renderRecPage(); }
 
         async function loadRecommended(t, s, b, sell) { document.getElementById('recModal').style.display = 'none'; await fetch('/api/watchlist/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: t})}); selectStock(t); setTimeout(openAlertModal, 500); }
+
+        // --- NEW TRADE JOURNEY LOGIC ---
+        function openJourneyModal() {
+            document.getElementById('journeyModal').style.display = 'flex';
+            loadTradeJourney();
+        }
+
+        function closeJourneyModal() {
+            document.getElementById('journeyModal').style.display = 'none';
+            if (journeyChart) { journeyChart.remove(); journeyChart = null; journeySeries = null; }
+        }
+
+        async function loadTradeJourney() {
+            document.getElementById('journeyLoader').style.display = 'block';
+            let ribbon = document.getElementById('journeyRibbon');
+            ribbon.innerHTML = '';
+            try {
+                let res = await fetch('/api/trade_journey');
+                let data = await res.json();
+                document.getElementById('journeyLoader').style.display = 'none';
+                
+                if (!data.trades || data.trades.length === 0) {
+                    ribbon.innerHTML = '<div style="color:#8a8a9e; font-size:12px; margin:auto; padding:10px;">No completed (round-trip) trades found for this profile yet.</div>';
+                    return;
+                }
+                
+                window.journeyData = data.trades;
+                data.trades.forEach((tr, idx) => {
+                    let isPos = tr.pnl_val >= 0;
+                    let pill = document.createElement('div');
+                    pill.className = `journey-pill ${isPos ? 'pnl-pos' : 'pnl-neg'}`;
+                    pill.onclick = () => renderJourneyChart(idx);
+                    pill.innerHTML = `
+                        <span class="j-ticker">${tr.ticker}</span> 
+                        <span class="j-pnl ${isPos ? 'pos' : 'neg'}">${isPos ? '▲ +' : '▼ -'}£${Math.abs(tr.pnl_val).toFixed(2)}</span>
+                        <div style="display:flex; flex-direction:column; gap:2px; margin-left:6px; padding-left:6px; border-left:1px solid #363c4a;">
+                            <span class="j-dates">IN: ${tr.buy_date.split(' ')[1]}</span>
+                            <span class="j-dates">OUT: ${tr.sell_date.split(' ')[1]}</span>
+                        </div>
+                    `;
+                    ribbon.appendChild(pill);
+                });
+                renderJourneyChart(0);
+            } catch (e) {
+                document.getElementById('journeyLoader').innerText = 'Error loading trade journey.';
+            }
+        }
+
+        function renderJourneyChart(idx) {
+            let tr = window.journeyData[idx];
+            if (!tr || !tr.chart || tr.chart.length === 0) return;
+            
+            document.querySelectorAll('.journey-pill').forEach((p, i) => {
+                if (i === idx) p.classList.add('active');
+                else p.classList.remove('active');
+            });
+
+            let c = document.getElementById('journeyChartContainer');
+            if (!journeyChart) {
+                journeyChart = LightweightCharts.createChart(document.getElementById('journeyChart'), { 
+                    width: c.clientWidth, height: c.clientHeight, 
+                    layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, 
+                    grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, 
+                    crosshair: { mode: 0 }, 
+                    timeScale: { borderColor: '#262b36', timeVisible: true } 
+                });
+                journeySeries = journeyChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false, wickUpColor: '#00c853', wickDownColor: '#ff3d00' });
+                new ResizeObserver(() => { journeyChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); }).observe(c);
+            }
+            
+            journeySeries.setData(tr.chart);
+            
+            // Add clean buy/sell markers
+            journeySeries.setMarkers([
+                { time: tr.buy_time, position: 'belowBar', color: '#00c853', shape: 'arrowUp', text: `BUY ${tr.shares}sh` },
+                { time: tr.sell_time, position: 'aboveBar', color: '#ff3d00', shape: 'arrowDown', text: `SELL ${tr.shares}sh` }
+            ]);
+            
+            journeyChart.timeScale().fitContent();
+        }
 
         function initChart() {
             let c = document.getElementById('tvChart');
