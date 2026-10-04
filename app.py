@@ -1229,7 +1229,8 @@ def trade_journey():
     
     def fetch_trade_chart(tr):
         tk = tr['ticker']
-        df = fetch_yf_data(tk, "60d", "5m")
+        # Use 1mo period to satisfy yfinance intraday limits
+        df = fetch_yf_data(tk, "1mo", "5m")
         chart_data = []
         if not df.empty:
             if df.index.tz is not None: 
@@ -1253,6 +1254,7 @@ def trade_journey():
         trades_with_charts = list(ex.map(fetch_trade_chart, completed_trades))
         
     return jsonify({'trades': trades_with_charts})
+
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
@@ -1355,9 +1357,11 @@ def get_data():
                 
             tot_eq_now = max(0, cash_now) + equity_now
 
+            # CALCULATION FOR DAILY PNL SINCE 8:00 AM
             trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
             net_trade_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
             
+            # Reconstruction of holdings at 8 AM
             held_at_8am = {}
             for tk, sh_now in shares_now_map.items():
                 if sh_now > 0 or any(tr.get('ticker') == tk for tr in trades_today):
@@ -1435,6 +1439,7 @@ def get_data():
                 if sh_h > 0:
                     tot_1h_diff += sh_h * (cur_price_pounds - p_1h_base_pounds)
 
+        # SYNCHRONIZED TODAY PNL METRIC
         tot_today_diff = active_user_today_pnl_val
         master_today_pct = (tot_today_diff / mb * 100.0) if mb > 0 else 0.0
         master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
