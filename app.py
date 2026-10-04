@@ -179,7 +179,7 @@ class PortfolioManager:
             if needs_save: 
                 self.save_data(self.data)
         except Exception as e: 
-            print(f"Cleanup error: {e}")
+            pass
 
     def save_data(self, data_to_save):
         if self.client:
@@ -1223,46 +1223,60 @@ def trade_journey():
     completed_trades = completed_trades[-15:]
     needs_save = False
     
-    for tr in completed_trades:
+    def fetch_trade_chart(tr):
         if tr['saved_chart'] is not None and len(tr['saved_chart']) > 0:
             tr['chart'] = tr['saved_chart']
-        else:
-            tk = tr['ticker']
-            df = fetch_yf_data(tk, "60d", "5m")
-            chart_data = []
-            if not df.empty:
-                if df.index.tz is not None: 
-                    df.index = df.index.tz_convert('UTC')
-                
-                mask = (df.index.astype('int64') // 10**9 >= tr['start_ts']) & (df.index.astype('int64') // 10**9 <= tr['end_ts'])
-                filtered = df[mask]
-                
-                if not filtered.empty:
-                    base_p = filtered['Close'].iloc[0]
-                    for idx, row in filtered.iterrows():
-                        chart_data.append({
-                            'time': int(idx.timestamp()),
-                            'open': round(((row['Open'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Open'],
-                            'high': round(((row['High'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['High'],
-                            'low': round(((row['Low'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Low'],
-                            'close': round(((row['Close'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Close']
-                        })
-                    tr['chart'] = chart_data
-                    
-                    for h in ud.get('history', []):
-                        if h.get('id') == tr['sell_id']:
-                            h['journey_chart'] = chart_data
-                            needs_save = True
-                            break
-                else:
-                    tr['chart'] = []
+            return tr, False
+            
+        tk = tr['ticker']
+        df = fetch_yf_data(tk, "1mo", "5m")
+        chart_data = []
+        made_save = False
+        
+        if not df.empty:
+            if df.index.tz is not None: 
+                df.index = df.index.tz_convert('UTC')
+            
+            mask = (df.index.astype('int64') // 10**9 >= tr['start_ts']) & (df.index.astype('int64') // 10**9 <= tr['end_ts'])
+            filtered = df[mask]
+            
+            if not filtered.empty:
+                base_p = filtered['Close'].iloc[0]
+                for idx, row in filtered.iterrows():
+                    chart_data.append({
+                        'time': int(idx.timestamp()),
+                        'open': round(((row['Open'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Open'],
+                        'high': round(((row['High'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['High'],
+                        'low': round(((row['Low'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Low'],
+                        'close': round(((row['Close'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Close']
+                    })
+                tr['chart'] = chart_data
+                made_save = True
             else:
                 tr['chart'] = []
-                
+        else:
+            tr['chart'] = []
+            
+        return tr, made_save
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        results = list(ex.map(fetch_trade_chart, completed_trades))
+        
+    trades_with_charts = []
+    for res, made_save in results:
+        trades_with_charts.append(res)
+        if made_save:
+            for h in ud.get('history', []):
+                if h.get('id') == res['sell_id']:
+                    h['journey_chart'] = res['chart']
+                    needs_save = True
+                    break
+                    
     if needs_save:
         portfolio_store.save_data(portfolio_store.data)
 
-    return jsonify({'trades': completed_trades})
+    return jsonify({'trades': trades_with_charts})
+
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
