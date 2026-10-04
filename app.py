@@ -338,7 +338,6 @@ class PortfolioManager:
                 return None
             ud = self.user_data(username)
             
-            # --- 15-SECOND REAL-WORLD BROKER LIMITER ---
             now_ts = int(time.time())
             if 'trade_cooldowns' not in ud: 
                 ud['trade_cooldowns'] = {}
@@ -397,10 +396,9 @@ class PortfolioManager:
             else: 
                 ud['holdings'].pop(ticker, None)
             
-            # UPDATE COOLDOWN
             ud['trade_cooldowns'][ticker] = now_ts
-            
             self.save_data(self.data)
+            
             ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
             if ntfy_topic: 
                 send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
@@ -1185,17 +1183,14 @@ def trade_journey():
     portfolio_store.reload()
     ud = portfolio_store.user_data()
     
-    # Process history chronologically (oldest to newest) to match buys and sells
     hist = list(reversed(ud.get('history', [])))
-    
     buys = {}
     completed_trades = []
     
     for tr in hist:
         tk = tr.get('ticker')
         if tr.get('action') == 'BUY':
-            if tk not in buys: 
-                buys[tk] = []
+            if tk not in buys: buys[tk] = []
             buys[tk].append(tr)
         elif tr.get('action') == 'SELL':
             if tk in buys and len(buys[tk]) > 0:
@@ -1209,8 +1204,8 @@ def trade_journey():
                 sell_val = shares * sell_price
                 pnl_val = sell_val - buy_val
                 
-                # Format dates to "DD MMM HH:MM" based on the stored 'time' field
                 completed_trades.append({
+                    'sell_id': tr.get('id'),
                     'ticker': tk,
                     'shares': shares,
                     'buy_price': round(buy_price, 2),
@@ -1220,41 +1215,54 @@ def trade_journey():
                     'sell_time': tr.get('timestamp'),
                     'buy_date': b.get('time'),
                     'sell_date': tr.get('time'),
-                    'start_ts': b.get('timestamp') - 7200,
-                    'end_ts': tr.get('timestamp') + 7200
+                    'start_ts': b.get('timestamp') - 86400,
+                    'end_ts': tr.get('timestamp') + 86400,
+                    'saved_chart': tr.get('journey_chart', None)
                 })
     
-    # Take the 15 most recent completed trades, but keep them in chronological left-to-right order
     completed_trades = completed_trades[-15:]
+    needs_save = False
     
-    def fetch_trade_chart(tr):
-        tk = tr['ticker']
-        # Use 1mo period to satisfy yfinance intraday limits
-        df = fetch_yf_data(tk, "1mo", "5m")
-        chart_data = []
-        if not df.empty:
-            if df.index.tz is not None: 
-                df.index = df.index.tz_convert('UTC')
-            mask = (df.index.astype('int64') // 10**9 >= tr['start_ts']) & (df.index.astype('int64') // 10**9 <= tr['end_ts'])
-            filtered = df[mask]
-            
-            base_p = filtered['Close'].iloc[0] if not filtered.empty else tr['buy_price']
-            for idx, row in filtered.iterrows():
-                chart_data.append({
-                    'time': int(idx.timestamp()),
-                    'open': round(((row['Open'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Open'],
-                    'high': round(((row['High'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['High'],
-                    'low': round(((row['Low'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Low'],
-                    'close': round(((row['Close'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Close']
-                })
-        tr['chart'] = chart_data
-        return tr
+    for tr in completed_trades:
+        if tr['saved_chart'] is not None and len(tr['saved_chart']) > 0:
+            tr['chart'] = tr['saved_chart']
+        else:
+            tk = tr['ticker']
+            df = fetch_yf_data(tk, "60d", "5m")
+            chart_data = []
+            if not df.empty:
+                if df.index.tz is not None: 
+                    df.index = df.index.tz_convert('UTC')
+                
+                mask = (df.index.astype('int64') // 10**9 >= tr['start_ts']) & (df.index.astype('int64') // 10**9 <= tr['end_ts'])
+                filtered = df[mask]
+                
+                if not filtered.empty:
+                    base_p = filtered['Close'].iloc[0]
+                    for idx, row in filtered.iterrows():
+                        chart_data.append({
+                            'time': int(idx.timestamp()),
+                            'open': round(((row['Open'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Open'],
+                            'high': round(((row['High'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['High'],
+                            'low': round(((row['Low'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Low'],
+                            'close': round(((row['Close'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Close']
+                        })
+                    tr['chart'] = chart_data
+                    
+                    for h in ud.get('history', []):
+                        if h.get('id') == tr['sell_id']:
+                            h['journey_chart'] = chart_data
+                            needs_save = True
+                            break
+                else:
+                    tr['chart'] = []
+            else:
+                tr['chart'] = []
+                
+    if needs_save:
+        portfolio_store.save_data(portfolio_store.data)
 
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        trades_with_charts = list(ex.map(fetch_trade_chart, completed_trades))
-        
-    return jsonify({'trades': trades_with_charts})
-
+    return jsonify({'trades': completed_trades})
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
@@ -1357,11 +1365,9 @@ def get_data():
                 
             tot_eq_now = max(0, cash_now) + equity_now
 
-            # CALCULATION FOR DAILY PNL SINCE 8:00 AM
             trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
             net_trade_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
             
-            # Reconstruction of holdings at 8 AM
             held_at_8am = {}
             for tk, sh_now in shares_now_map.items():
                 if sh_now > 0 or any(tr.get('ticker') == tk for tr in trades_today):
@@ -1439,7 +1445,6 @@ def get_data():
                 if sh_h > 0:
                     tot_1h_diff += sh_h * (cur_price_pounds - p_1h_base_pounds)
 
-        # SYNCHRONIZED TODAY PNL METRIC
         tot_today_diff = active_user_today_pnl_val
         master_today_pct = (tot_today_diff / mb * 100.0) if mb > 0 else 0.0
         master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
