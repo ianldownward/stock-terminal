@@ -1190,7 +1190,8 @@ def trade_journey():
     for tr in hist:
         tk = tr.get('ticker')
         if tr.get('action') == 'BUY':
-            if tk not in buys: buys[tk] = []
+            if tk not in buys: 
+                buys[tk] = []
             buys[tk].append(tr)
         elif tr.get('action') == 'SELL':
             if tk in buys and len(buys[tk]) > 0:
@@ -1276,6 +1277,7 @@ def trade_journey():
         portfolio_store.save_data(portfolio_store.data)
 
     return jsonify({'trades': trades_with_charts})
+
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
