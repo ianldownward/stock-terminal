@@ -1180,104 +1180,127 @@ def get_recommendations():
 
 @app.route('/api/trade_journey', methods=['GET'])
 def trade_journey():
-    portfolio_store.reload()
-    ud = portfolio_store.user_data()
-    
-    hist = list(reversed(ud.get('history', [])))
-    buys = {}
-    completed_trades = []
-    
-    for tr in hist:
-        tk = tr.get('ticker')
-        if tr.get('action') == 'BUY':
-            if tk not in buys: 
-                buys[tk] = []
-            buys[tk].append(tr)
-        elif tr.get('action') == 'SELL':
-            if tk in buys and len(buys[tk]) > 0:
-                b = buys[tk].pop(0)
-                div = 100.0 if tk.endswith('.L') else 1.0
-                buy_price = b.get('price') / (div if b.get('price') > 100 else 1.0)
-                sell_price = tr.get('price') / (div if tr.get('price') > 100 else 1.0)
-                shares = tr.get('shares')
-                
-                buy_val = shares * buy_price
-                sell_val = shares * sell_price
-                pnl_val = sell_val - buy_val
-                
-                completed_trades.append({
-                    'sell_id': tr.get('id'),
-                    'ticker': tk,
-                    'shares': shares,
-                    'buy_price': round(buy_price, 2),
-                    'sell_price': round(sell_price, 2),
-                    'pnl_val': round(pnl_val, 2),
-                    'buy_time': b.get('timestamp'),
-                    'sell_time': tr.get('timestamp'),
-                    'buy_date': b.get('time'),
-                    'sell_date': tr.get('time'),
-                    'start_ts': b.get('timestamp'),
-                    'end_ts': tr.get('timestamp'),
-                    'saved_chart': tr.get('journey_chart', None)
-                })
-    
-    completed_trades = completed_trades[-15:]
-    needs_save = False
-    
-    def fetch_trade_chart(tr):
-        if tr['saved_chart'] is not None and len(tr['saved_chart']) > 0:
-            tr['chart'] = [c for c in tr['saved_chart'] if tr['start_ts'] <= c['time'] <= tr['end_ts']]
-            return tr, False
-            
-        tk = tr['ticker']
-        df = fetch_yf_data(tk, "1mo", "5m")
-        if df.empty: df = fetch_yf_data(tk, "5d", "5m")
+    try:
+        portfolio_store.reload()
         
-        chart_data = []
-        made_save = False
-        
-        if not df.empty:
-            ts_vals = pd.Series([int(x.timestamp()) for x in df.index], index=df.index)
-            mask = (ts_vals >= tr['start_ts']) & (ts_vals <= tr['end_ts'])
-            filtered = df[mask]
-            
-            if not filtered.empty:
-                base_p = filtered['Close'].iloc[0]
-                for idx, row in filtered.iterrows():
-                    chart_data.append({
-                        'time': int(idx.timestamp()),
-                        'open': round(((row['Open'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Open'],
-                        'high': round(((row['High'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['High'],
-                        'low': round(((row['Low'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Low'],
-                        'close': round(((row['Close'] - base_p) / base_p) * 100, 2) if base_p > 0 else row['Close']
-                    })
-                tr['chart'] = chart_data
-                made_save = True
-            else:
-                tr['chart'] = []
-        else:
-            tr['chart'] = []
-            
-        return tr, made_save
-
-    with ThreadPoolExecutor(max_workers=4) as ex:
-        results = list(ex.map(fetch_trade_chart, completed_trades))
-        
-    trades_with_charts = []
-    for res, made_save in results:
-        trades_with_charts.append(res)
-        if made_save:
-            for h in ud.get('history', []):
-                if h.get('id') == res['sell_id']:
-                    h['journey_chart'] = res['chart']
-                    needs_save = True
-                    break
+        # AGGREGATE TRADES FROM ALL PROFILES
+        all_hist = []
+        for u, u_data in portfolio_store.data.get('users', {}).items():
+            if isinstance(u_data, dict) and 'history' in u_data:
+                for tr in u_data['history']:
+                    tr_copy = dict(tr)
+                    tr_copy['profile'] = u
+                    all_hist.append(tr_copy)
                     
-    if needs_save:
-        portfolio_store.save_data(portfolio_store.data)
+        # Sort chronological (oldest to newest) using safe int casting
+        all_hist.sort(key=lambda x: int(x.get('timestamp') or 0))
+        
+        buys = {}
+        completed_trades = []
+        
+        for tr in all_hist:
+            tk = tr.get('ticker')
+            prof = tr.get('profile', 'Unknown')
+            # Fix: Isolate buy/sell matching by profile to prevent cross-contamination
+            key = f"{prof}_{tk}"
+            
+            if tr.get('action') == 'BUY':
+                if key not in buys: buys[key] = []
+                buys[key].append(tr)
+            elif tr.get('action') == 'SELL':
+                if key in buys and len(buys[key]) > 0:
+                    b = buys[key].pop(0)
+                    
+                    # Safe parsing for old or corrupted manual entries
+                    div = 100.0 if tk and tk.endswith('.L') else 1.0
+                    b_p = float(b.get('price') or 0)
+                    s_p = float(tr.get('price') or 0)
+                    
+                    buy_price = b_p / (div if b_p > 100 else 1.0)
+                    sell_price = s_p / (div if s_p > 100 else 1.0)
+                    shares = int(tr.get('shares') or 0)
+                    pnl_val = (shares * sell_price) - (shares * buy_price)
+                    
+                    b_ts = int(b.get('timestamp') or 0)
+                    s_ts = int(tr.get('timestamp') or 0)
+                    
+                    completed_trades.append({
+                        'sell_id': tr.get('id'),
+                        'profile': prof,
+                        'ticker': tk,
+                        'shares': shares,
+                        'buy_price': round(buy_price, 2),
+                        'sell_price': round(sell_price, 2),
+                        'pnl_val': round(pnl_val, 2),
+                        'buy_time': b_ts,
+                        'sell_time': s_ts,
+                        'buy_date': b.get('time', ''),
+                        'sell_date': tr.get('time', ''),
+                        'start_ts': b_ts - 14400, # 4 hr padding for ghosting context
+                        'end_ts': s_ts + 14400,
+                        'saved_chart': tr.get('journey_chart', None)
+                    })
+        
+        completed_trades = completed_trades[-30:] # Last 30 across all profiles
+        needs_save = False
+        
+        def fetch_trade_chart(tr):
+            try:
+                if tr.get('saved_chart') and len(tr['saved_chart']) > 0:
+                    tr['chart'] = [c for c in tr['saved_chart'] if tr['start_ts'] <= c['time'] <= tr['end_ts']]
+                    return tr, False
+                    
+                tk = tr['ticker']
+                df = fetch_yf_data(tk, "1mo", "5m")
+                if df.empty: df = fetch_yf_data(tk, "5d", "5m")
+                
+                chart_data = []
+                made_save = False
+                if not df.empty:
+                    # Safe timestamp indexing
+                    ts_vals = pd.Series([int(x.timestamp()) for x in df.index], index=df.index)
+                    mask = (ts_vals >= tr['start_ts']) & (ts_vals <= tr['end_ts'])
+                    filtered = df[mask]
+                    if not filtered.empty:
+                        base_p = float(filtered['Close'].iloc[0])
+                        for idx, row in filtered.iterrows():
+                            chart_data.append({
+                                'time': int(idx.timestamp()),
+                                'open': round(((row['Open'] - base_p) / base_p) * 100, 2) if base_p > 0 else float(row['Open']),
+                                'high': round(((row['High'] - base_p) / base_p) * 100, 2) if base_p > 0 else float(row['High']),
+                                'low': round(((row['Low'] - base_p) / base_p) * 100, 2) if base_p > 0 else float(row['Low']),
+                                'close': round(((row['Close'] - base_p) / base_p) * 100, 2) if base_p > 0 else float(row['Close'])
+                            })
+                        tr['chart'] = chart_data
+                        made_save = True
+                    else: tr['chart'] = []
+                else: tr['chart'] = []
+                return tr, made_save
+            except Exception as e:
+                print(f"Error fetching chart for {tr.get('ticker')}: {e}")
+                tr['chart'] = []
+                return tr, False
 
-    return jsonify({'trades': trades_with_charts})
-
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            results = list(ex.map(fetch_trade_chart, completed_trades))
+            
+        trades_with_charts = []
+        for res, made_save in results:
+            trades_with_charts.append(res)
+            if made_save and res.get('sell_id'):
+                for u, u_data in portfolio_store.data.get('users', {}).items():
+                    if isinstance(u_data, dict) and 'history' in u_data:
+                        for h in u_data['history']:
+                            if str(h.get('id')) == str(res['sell_id']):
+                                h['journey_chart'] = res['chart']
+                                needs_save = True
+                                break
+                                
+        if needs_save: portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'trades': trades_with_charts})
+    except Exception as e:
+        print(f"Trade Journey Error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
