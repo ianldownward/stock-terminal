@@ -174,7 +174,7 @@
         @keyframes pulseWarning { 0% { box-shadow: 0 0 0 0 rgba(255,61,0,0.8); } 70% { box-shadow: 0 0 0 10px rgba(255,61,0,0); } 100% { box-shadow: 0 0 0 0 rgba(255,61,0,0); } }
 
         /* TRADE JOURNEY MODAL & RIBBON */
-        #journeyModal .modal { width: 90%; max-width: 1000px; height: 85vh; display: flex; flex-direction: column; padding: 20px; }
+        #journeyModal .modal { width: 95%; max-width: 1200px; height: 85vh; display: flex; flex-direction: column; padding: 20px; }
         .journey-ribbon { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 12px; margin-bottom: 15px; border-bottom: 1px solid #262b36; white-space: nowrap; flex-shrink: 0; scrollbar-width: none; }
         .journey-ribbon::-webkit-scrollbar { display: none; }
         .journey-pill { background: #1e222d; border: 1px solid #262b36; border-radius: 8px; padding: 8px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; transition: border-color 0.2s; }
@@ -190,7 +190,6 @@
         #journeyChart { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
         #journeyLoader { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00d2ff; font-weight: bold; z-index: 10; display: none; background: rgba(23, 26, 33, 0.9); padding: 10px 20px; border-radius: 8px; border: 1px solid #00d2ff; }
 
-        /* MOBILE FIXES & ACCORDIONS */
         @media (max-width:900px){
             html, body { overflow-y: auto !important; overflow-x: hidden !important; height: auto !important; position: relative !important; -webkit-overflow-scrolling: touch; }
             body { display: block !important; width: 100% !important; }
@@ -201,12 +200,6 @@
             .top-nav-row1 { flex-direction: column; align-items: flex-start; gap: 8px; }
             .controls { flex-wrap: wrap; justify-content: space-between; gap: 8px; }
             .modal { width: 95%; padding: 15px; }
-            
-            .mobile-drawer { background: #1a1d24; border: 1px solid #262b36; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
-            .mobile-drawer summary { font-size: 11px; color: #00d2ff; text-transform: uppercase; font-weight: bold; cursor: pointer; list-style: none; outline: none; display: flex; justify-content: space-between; align-items: center; }
-            .mobile-drawer summary::-webkit-details-marker { display: none; }
-            .mobile-drawer summary::after { content: '▼'; color: #787e8e; font-size: 9px; }
-            .mobile-drawer[open] summary::after { content: '▲'; }
         }
     </style>
 </head>
@@ -263,7 +256,7 @@
     <!-- NEW TRADE JOURNEY MODAL -->
     <div class="modal-overlay" id="journeyModal">
         <div class="modal">
-            <h2><span>Trade Journey Flow</span><button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="closeJourneyModal()">Close</button></h2>
+            <h2><span>Global Trade Journey Flow</span><button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="closeJourneyModal()">Close</button></h2>
             <div id="journeyRibbon" class="journey-ribbon">
                 <div style="color:#8a8a9e; font-size:12px; margin:auto;">Loading trades...</div>
             </div>
@@ -511,7 +504,8 @@
         let tvBuyPriceLine = null;
         let currentHardPct = -0.50; let currentStopPrice = 0.0;
         
-        let journeyChart = null; let journeySeries = null;
+        let journeyChart = null; 
+        let journeySeries = null; // Unified chart series
 
         const profileDesc = {
             'Ian': 'Default manual profile for long-term tracking and custom execution without automated rules.',
@@ -869,13 +863,10 @@
 
         async function loadRecommended(t, s, b, sell) { document.getElementById('recModal').style.display = 'none'; await fetch('/api/watchlist/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: t})}); selectStock(t); setTimeout(openAlertModal, 500); }
 
-        // --- NEW TRADE JOURNEY LOGIC WITH GHOSTING ---
+        // --- NEW TRADE JOURNEY UNIFIED CHART ENGINE ---
         function openJourneyModal() {
             document.getElementById('journeyModal').style.display = 'flex';
-            // Delay loading slightly so display:flex can calculate dimensions for the chart
-            setTimeout(() => {
-                loadTradeJourney();
-            }, 50);
+            setTimeout(() => { loadTradeJourney(); }, 50);
         }
 
         function closeJourneyModal() {
@@ -887,24 +878,43 @@
             document.getElementById('journeyLoader').style.display = 'block';
             let ribbon = document.getElementById('journeyRibbon');
             ribbon.innerHTML = '';
+            
             try {
                 let res = await fetch('/api/trade_journey');
                 let data = await res.json();
                 document.getElementById('journeyLoader').style.display = 'none';
                 
                 if (!data.trades || data.trades.length === 0) {
-                    ribbon.innerHTML = '<div style="color:#8a8a9e; font-size:12px; margin:auto; padding:10px;">No completed (round-trip) trades found for this profile yet.</div>';
+                    ribbon.innerHTML = '<div style="color:#8a8a9e; font-size:12px; margin:auto; padding:10px;">No completed (round-trip) trades found across all profiles.</div>';
                     return;
                 }
                 
                 window.journeyData = data.trades;
+                
+                let c = document.getElementById('journeyChartContainer');
+                c.innerHTML = '<div id="journeyLoader" style="display:none;">Loading Chart...</div><div id="journeyChart"></div>';
+                
+                journeyChart = LightweightCharts.createChart(document.getElementById('journeyChart'), { 
+                    width: c.clientWidth, height: c.clientHeight, 
+                    layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, 
+                    grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, 
+                    crosshair: { mode: 0 }, 
+                    timeScale: { borderColor: '#262b36', timeVisible: true } 
+                });
+                new ResizeObserver(() => { journeyChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); }).observe(c);
+
+                journeySeries = journeyChart.addCandlestickSeries({ borderVisible: false, priceScaleId: 'right' });
+
                 data.trades.forEach((tr, idx) => {
                     let isPos = tr.pnl_val >= 0;
                     let pill = document.createElement('div');
                     pill.className = `journey-pill ${isPos ? 'pnl-pos' : 'pnl-neg'}`;
-                    pill.onclick = () => renderJourneyChart(idx);
+                    
+                    pill.onclick = () => { selectJourneyTrade(idx); };
+                    
+                    // Added Profile name to the pill
                     pill.innerHTML = `
-                        <span class="j-ticker">${tr.ticker}</span> 
+                        <span class="j-ticker">${tr.profile.toUpperCase()}: ${tr.ticker}</span> 
                         <span class="j-pnl ${isPos ? 'pos' : 'neg'}">${isPos ? '▲ +' : '▼ -'}£${Math.abs(tr.pnl_val).toFixed(2)}</span>
                         <div style="display:flex; flex-direction:column; gap:2px; margin-left:6px; padding-left:6px; border-left:1px solid #363c4a;">
                             <span class="j-dates">IN: ${tr.buy_date}</span>
@@ -914,51 +924,30 @@
                     ribbon.appendChild(pill);
                 });
                 
-                // Select the newest trade (the last one in the array since they are chronological left-to-right)
                 let lastIdx = data.trades.length - 1;
-                renderJourneyChart(lastIdx);
-                
-                // Auto-scroll the ribbon to the far right to show the newest trades immediately
+                selectJourneyTrade(lastIdx);
                 setTimeout(() => { ribbon.scrollLeft = ribbon.scrollWidth; }, 100);
+                
             } catch (e) {
                 document.getElementById('journeyLoader').style.display = 'none';
                 ribbon.innerHTML = '<div style="color:#ff3d00; font-size:12px; margin:auto; padding:10px;">Error loading trade journey.</div>';
             }
         }
 
-        function renderJourneyChart(idx) {
-            let tr = window.journeyData[idx];
-            let c = document.getElementById('journeyChartContainer');
-            
-            if (!tr || !tr.chart || tr.chart.length === 0) {
-                c.innerHTML = '<div style="color:#787e8e; position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center;">Detailed intraday chart data is no longer available for this historical trade.</div>';
-                return;
-            } else {
-                if (c.innerHTML.includes('Detailed intraday')) {
-                    c.innerHTML = '<div id="journeyLoader" style="display:none;">Loading Chart...</div><div id="journeyChart"></div>';
-                    journeyChart = null; 
-                }
-            }
-            
-            document.querySelectorAll('.journey-pill').forEach((p, i) => {
-                if (i === idx) p.classList.add('active');
+        function selectJourneyTrade(activeIndex) {
+            let ribbon = document.getElementById('journeyRibbon');
+            Array.from(ribbon.children).forEach((p, i) => {
+                if (i === activeIndex) p.classList.add('active');
                 else p.classList.remove('active');
             });
 
-            if (!journeyChart) {
-                journeyChart = LightweightCharts.createChart(document.getElementById('journeyChart'), { 
-                    width: c.clientWidth, height: c.clientHeight, 
-                    layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, 
-                    grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, 
-                    crosshair: { mode: 0 }, 
-                    timeScale: { borderColor: '#262b36', timeVisible: true } 
-                });
-                // Remove default colors so item-level "ghost" colors take effect
-                journeySeries = journeyChart.addCandlestickSeries({ borderVisible: false });
-                new ResizeObserver(() => { journeyChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); }).observe(c);
+            let tr = window.journeyData[activeIndex];
+            if (!tr || !tr.chart || tr.chart.length === 0) {
+                journeySeries.setData([]);
+                journeySeries.setMarkers([]);
+                return;
             }
             
-            // Time snapping logic: Find the exact closest candle to the buy and sell times to ensure perfectly accurate highlighting and markers
             let closestBuyTime = tr.chart[0].time;
             let closestSellTime = tr.chart[tr.chart.length - 1].time;
             
@@ -967,32 +956,28 @@
                 if (Math.abs(pt.time - tr.sell_time) < Math.abs(closestSellTime - tr.sell_time)) closestSellTime = pt.time;
             });
             
-            // Map over the data and apply "ghosted" colors outside the active window
             let styledChart = tr.chart.map(pt => {
-                let isActive = pt.time >= closestBuyTime && pt.time <= closestSellTime;
+                let isInsideHolding = pt.time >= closestBuyTime && pt.time <= closestSellTime;
                 let isUp = pt.close >= pt.open;
-                
-                let upColor = isActive ? '#00c853' : 'rgba(0, 200, 83, 0.15)';
-                let downColor = isActive ? '#ff3d00' : 'rgba(255, 61, 0, 0.15)';
-                let color = isUp ? upColor : downColor;
-                
-                return {
-                    ...pt,
-                    color: color,
-                    wickColor: color,
-                    borderColor: color
-                };
+                let color;
+                if (isInsideHolding) {
+                    color = isUp ? '#00c853' : '#ff3d00';
+                } else {
+                    color = isUp ? 'rgba(0, 200, 83, 0.15)' : 'rgba(255, 61, 0, 0.15)';
+                }
+                return { ...pt, color: color, wickColor: color, borderColor: color };
             });
             
             journeySeries.setData(styledChart);
-            
-            // Add clean buy/sell markers using the snapped timestamps
             journeySeries.setMarkers([
                 { time: closestBuyTime, position: 'belowBar', color: '#00c853', shape: 'arrowUp', text: `BUY ${tr.shares}sh` },
                 { time: closestSellTime, position: 'aboveBar', color: '#ff3d00', shape: 'arrowDown', text: `SELL ${tr.shares}sh` }
             ]);
             
-            journeyChart.timeScale().fitContent();
+            journeyChart.timeScale().setVisibleRange({
+                from: closestBuyTime - 86400, 
+                to: closestSellTime + 86400   
+            });
         }
 
         function initChart() {
