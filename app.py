@@ -1,8 +1,5 @@
-import os
-import json
-import time
-import urllib.request
-import threading
+import os, json, time, urllib.request, threading, re
+import xml.etree.ElementTree as ET
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
@@ -14,6 +11,7 @@ app = Flask(__name__)
 YF_CACHE = {}
 FETCH_LOCKS = {}
 GLOBAL_LOCK = threading.Lock()
+NEWS_CACHE = {}
 
 def fetch_yf_data(ticker, period="1y", interval="1d"):
     if not interval or interval == 'undefined': 
@@ -36,12 +34,10 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
     with lock:
         now = time.time()
         cache_duration = 115 if interval in ['1m', '2m', '5m'] else 300
-        
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
             if not df.empty and (now - cached_time < cache_duration): 
                 return df.copy()
-                
         try:
             df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty: 
@@ -91,7 +87,7 @@ class PortfolioManager:
             wl = ['TQQQ', 'SOXL', 'NVDL', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
         elif any(x in prof for x in ['test w', 'test w-inverse']): 
             wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L', 'SGLN.L', 'SSLN.L', 'RR.L', 'SHEL.L']
-        elif any(x in prof for x in ['test e', 'test u', 'test u1', 'test u2', 'test u3', 'test v']): 
+        elif any(x in prof for x in ['test e', 'test u', 'test u1', 'test u2', 'test u3', 'test v', 'test x', 'test y']): 
             wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
         elif 'test c' in prof: 
             wl = ['AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L']
@@ -109,13 +105,7 @@ class PortfolioManager:
             'holdings': {}, 
             'history': [], 
             'notified_signals': {},
-            'settings': {
-                'period': '1d', 
-                'interval': interval_val, 
-                'style': 'candlestick', 
-                'refresh': '10000', 
-                'ntfy_topic': ''
-            }
+            'settings': {'period': '1d', 'interval': interval_val, 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
     def load(self):
@@ -150,14 +140,15 @@ class PortfolioManager:
     def _ensure_default_user(self):
         try:
             allowed_profiles = [
-                'Ian', 'Test A - Deep Value', 'Test C - 24/5 Global', 
-                'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 
-                'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator', 'Test E11 - Unfiltered Hyper-Scalper', 'Test E12 - E4 Momentum Hybrid', 'Test E13 - E6 Breakeven 0.5% Hybrid',
-                'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
+                'Ian', 'Test A - Deep Value', 
+                'Test E - Rotator', 'Test E2 - EOD Rotator',  
+                'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E8 - Meta-Adaptive Rotator', 'Test E9 - 0.2% Scalp Rotator', 'Test E10 - 0.1% Hyper-Scalp Rotator', 'Test E12 - E4 Momentum Hybrid', 'Test E13 - E6 Breakeven 0.5% Hybrid',
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 
                 'Test U - Tight Rotator', 'Test U1 - Ultra-Tight EOD Rotator', 'Test U2 - Volume-Backed U', 'Test U3 - Breakeven Lock U', 
                 'Test V - Velocity Rotator',
-                'Test W - Adaptive Volatility Rotator', 'Test W-Inverse - Opposite Adaptive Volatility'
+                'Test W - Adaptive Volatility Rotator', 'Test W-Inverse - Opposite Adaptive Volatility',
+                'Test X - Dynamic Target Switch (15m ORB)', 'Test X30 - Dynamic Target Switch (30m ORB)',
+                'Test Y - Market Heat Classifier (15m ORB)', 'Test Y30 - Market Heat Classifier (30m ORB)'
             ]
             needs_save = False
             
@@ -188,7 +179,7 @@ class PortfolioManager:
                 
             if needs_save: 
                 self.save_data(self.data)
-        except Exception as e: 
+        except Exception: 
             pass
 
     def save_data(self, data_to_save):
@@ -468,7 +459,6 @@ class PortfolioManager:
                     
         return round(total, 2)
 
-
 class MarketScoringEngine:
     def __init__(self):
         self.nav_bases = {
@@ -587,40 +577,42 @@ class MarketScoringEngine:
                 if not is_inverse and avg_buy_price > 0: 
                     return {'type': 'Meta Switcher', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': f"Bear Regime ({regime_score}/100): Liquidating Long Position.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Bear Liquidation', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Bear Mode)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': 'Bear Mode', 'hard_pct': -0.50, 'stop_price': current_price}
 
-        if 'test w' in prof: 
-            trail_pct, hard_pct = (1.25, -1.00) if is_3x_etf else ((0.30, -0.50) if ticker.endswith('.L') or ticker in ['PHYS', 'PSLV', 'CEF', 'GLD'] else (1.00, -1.00))
-        elif 'test e12' in prof: 
-            trail_pct, hard_pct = 1.00, -1.00
-        elif 'test e6' in prof: 
-            trail_pct, hard_pct = 0.75, -0.75
-        elif any(x in prof for x in ['test e7', 'test e13']): 
-            trail_pct, hard_pct = 0.50, -0.50
-        elif 'test e5' in prof: 
-            trail_pct, hard_pct = 0.35, -0.35
-        elif 'test e9' in prof: 
-            trail_pct, hard_pct = 0.20, -0.20
-        elif any(x in prof for x in ['test e10', 'test e11']): 
-            trail_pct, hard_pct = 0.10, -0.10
-        elif 'test u1' in prof: 
-            trail_pct, hard_pct = 0.35, -0.35
-        elif any(x in prof for x in ['test u', 'test u2', 'test u3', 'test v']): 
-            trail_pct, hard_pct = 0.50, -0.50
-        elif any(x in prof for x in ['test e', 'test s']): 
-            trail_pct, hard_pct = 1.00, -1.00
-        else: 
-            trail_pct, hard_pct = 0.50, -0.50
+        # CALCULATE PEAK PNL UPFRONT FOR DYNAMIC PROMOTION
+        peak_pnl_pct = ((highest_price - avg_buy_price) / avg_buy_price) * 100.0 if avg_buy_price > 0 else 0.0
+
+        # DYNAMIC PROMOTION LOGIC FOR HYBRID TESTS
+        is_x_promoted = ('test x' in prof) and (peak_pnl_pct >= 0.50) and (vol_ratio >= 1.3)
+        is_y_promoted = ('test y' in prof) and (regime_score > 60)
+
+        if 'test w' in prof: trail_pct, hard_pct = (1.25, -1.00) if is_3x_etf else ((0.30, -0.50) if ticker.endswith('.L') or ticker in ['PHYS', 'PSLV', 'CEF', 'GLD'] else (1.00, -1.00))
+        elif 'test e12' in prof: trail_pct, hard_pct = 1.00, -1.00
+        elif 'test e6' in prof: trail_pct, hard_pct = 0.75, -0.75
+        elif any(x in prof for x in ['test e7', 'test e13']): trail_pct, hard_pct = 0.50, -0.50
+        elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
+        elif 'test e9' in prof: trail_pct, hard_pct = 0.20, -0.20
+        elif any(x in prof for x in ['test e10', 'test e11']): trail_pct, hard_pct = 0.10, -0.10
+        elif 'test u1' in prof: trail_pct, hard_pct = 0.35, -0.35
+        elif any(x in prof for x in ['test u', 'test u2', 'test u3', 'test v']): trail_pct, hard_pct = 0.50, -0.50
+        elif 'test x' in prof:
+            if is_x_promoted: trail_pct, hard_pct = 0.75, -0.75
+            else: trail_pct, hard_pct = 0.50, -0.50
+        elif 'test y' in prof:
+            if is_y_promoted: trail_pct, hard_pct = 0.75, -0.75
+            else: trail_pct, hard_pct = 0.50, -0.50
+        elif any(x in prof for x in ['test e', 'test s']): trail_pct, hard_pct = 1.00, -1.00
+        else: trail_pct, hard_pct = 0.50, -0.50
 
         health_pct, health_color, health_text = 0, "#8a8a9e", "Scanning..."
 
         if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
-            peak_pnl_pct = ((highest_price - avg_buy_price) / avg_buy_price) * 100.0
             
             effective_hard_pct = hard_pct
             effective_stop_price = avg_buy_price * (1 + hard_pct / 100.0)
 
-            if any(x in prof for x in ['test e6', 'test e7', 'test e8', 'test e13']) and peak_pnl_pct >= 0.50:
+            # BREAKEVEN LOCKS 
+            if (any(x in prof for x in ['test e6', 'test e7', 'test e8', 'test e13']) or is_x_promoted or is_y_promoted) and peak_pnl_pct >= 0.50:
                 effective_hard_pct = 0.10
                 effective_stop_price = avg_buy_price * 1.0010
                 if current_price <= effective_stop_price: 
@@ -651,25 +643,32 @@ class MarketScoringEngine:
             
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
 
+        # ORB DELAYS
         current_mins = now_uk.hour * 60 + now_uk.minute
-        is_us_orb = (not ticker.endswith('.L')) and (870 <= current_mins < 885)
-        is_uk_orb = ticker.endswith('.L') and (480 <= current_mins < 495)
+        orb_duration = 30 if '30' in prof else 15
+        is_us_orb = (not ticker.endswith('.L')) and (870 <= current_mins < 870 + orb_duration)
+        is_uk_orb = ticker.endswith('.L') and (480 <= current_mins < 480 + orb_duration)
         
         if is_us_orb or is_uk_orb: 
-            return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "ORB ACTIVE: Blocking new entries during opening 15 minutes of market volatility.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'ORB Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(ORB Wait)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'ORB Filtering', 'hard_pct': hard_pct, 'stop_price': round(current_price * (1 + hard_pct / 100.0), 2)}
+            return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"{orb_duration}m ORB ACTIVE: Blocking new entries during market open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'ORB Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(ORB Wait)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'ORB Filtering', 'hard_pct': hard_pct, 'stop_price': round(current_price * (1 + hard_pct / 100.0), 2)}
 
         if 'test w' in prof and ticker.endswith('.L') and now_uk.hour == 16 and now_uk.minute >= 20 and now_uk.minute < 30:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell', 'hard_pct': 0.0, 'stop_price': current_price}
 
-        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10', 'test e11', 'test e12', 'test e13', 'test u', 'test u1', 'test u2', 'test u3', 'test v']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10', 'test e12', 'test e13', 'test u', 'test u1', 'test u2', 'test u3', 'test v', 'test x', 'test y']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell', 'hard_pct': 0.0, 'stop_price': current_price}
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD ROTATOR SWEEP: Blocking new entries.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked', 'hard_pct': 0.0, 'stop_price': current_price}
 
-        if any(x in prof for x in ['test e', 'test s', 'test u', 'test u1', 'test u2', 'test u3', 'test v', 'test w']) and is_3x_etf and avg_buy_price > 0:
+        # HARD 1.2% CAP FOR TEST U, X (unpromoted), Y (unpromoted)
+        target_profs = ['test e', 'test s', 'test u', 'test u1', 'test u2', 'test u3', 'test v', 'test w']
+        if 'test x' in prof and not is_x_promoted: target_profs.append('test x')
+        if 'test y' in prof and not is_y_promoted: target_profs.append('test y')
+
+        if any(x in prof for x in target_profs) and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             if pnl_pct >= 1.20:
                 return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#00d2ff', 'health_text': 'Target Hit (Selling)', 'hard_pct': 1.20, 'stop_price': round(avg_buy_price * 1.012, 2)}
@@ -1040,8 +1039,8 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test v', 'test w'])
-        is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test u', 'test v', 'test w'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test v', 'test w', 'test x', 'test y'])
+        is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test u', 'test v', 'test w', 'test x', 'test y'])
         
         if not t: 
             t = 'ALL_SHARES'
