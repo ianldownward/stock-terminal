@@ -147,7 +147,6 @@
         .qc-input-row button { background: #333947; border: 1px solid #787e8e; color: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
         .qc-input-row button:hover { background: #4a5265; }
         #qsResult { display: none; margin-top: 10px; font-size: 12px; background: #0f1115; padding: 10px; border-radius: 6px; border: 1px solid #262b36; }
-
         .global-top-right-warning { display: none; background: #ff3d00; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: bold; margin-bottom: 12px; box-shadow: 0 0 15px rgba(255,61,0,0.7); animation: pulseWarning 1.5s infinite; text-align: center; }
         .global-top-right-warning .action-btn-inline { background: #fff; color: #ff3d00; border: none; font-weight: bold; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-left: 8px; cursor: pointer; text-transform: uppercase; display: inline-block; }
         @keyframes pulseWarning { 0% { box-shadow: 0 0 0 0 rgba(255,61,0,0.8); } 70% { box-shadow: 0 0 0 10px rgba(255,61,0,0); } 100% { box-shadow: 0 0 0 0 rgba(255,61,0,0); } }
@@ -231,6 +230,7 @@
         </div>
     </div>
     
+    <!-- NEW TRADE JOURNEY MODAL -->
     <div class="modal-overlay" id="journeyModal">
         <div class="modal">
             <h2><span>Trade Journey Flow</span><button class="btn-cancel" style="padding:4px 8px; font-size:12px" onclick="closeJourneyModal()">Close</button></h2>
@@ -406,19 +406,27 @@
                     <span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:4px;">0 shares</span>
                 </div>
                 
-                <!-- CUSTOM ROTATOR POSITION HEALTH & RE-ENTRY CARD -->
-                <div class="card" id="rotatorHealthCard" style="display:flex; flex-direction:column; justify-content:center; padding:10px;">
-                    <h3 id="rotatorHealthHeader" style="font-size:10px; color:#787e8e; margin:0 0 4px 0; text-transform:uppercase;">Position Health</h3>
-                    <div id="rotatorHealthStatus" style="font-size:13px; font-weight:bold; margin-bottom:6px; color:#8a8a9e;">Scanning...</div>
-                    <div style="width: 100%; height: 8px; background: #0f1115; border:1px solid #262b36; border-radius: 4px; overflow: hidden;">
-                        <div id="rotatorHealthBarFill" style="width: 0%; height: 100%; background: #00c853; transition: width 0.5s ease, background-color 0.5s ease;"></div>
+                <!-- CUSTOM THERMOMETER CARD -->
+                <div class="card" id="rotatorHealthCard" style="grid-column: span 2; padding: 12px; display: flex; flex-direction: column; justify-content: center; background: #1a1d24; border: 1px solid #00d2ff; box-shadow: 0 0 10px rgba(0,210,255,0.1);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                        <h3 id="rotatorHealthHeader" style="margin:0; font-size:11px; color:#00d2ff;">Risk Thermometer</h3>
+                        <span id="rotatorHealthStatus" style="font-size:12px; font-weight:bold; color:#fff;">Current: --</span>
                     </div>
-                    <div id="rotatorHealthFooter" style="display: flex; justify-content: space-between; font-size: 9px; color: #787e8e; margin-top:4px;">
-                        <span>Sell Zone</span><span>Peak Safety</span>
+                    
+                    <div style="display:flex; justify-content:space-between; font-size:9px; font-weight:bold; margin-bottom:4px; color:#8a8a9e;">
+                        <span id="thermoStopLabel" style="color:#ff3d00;">Sell Target: --</span>
+                        <span id="thermoPeakLabel" style="color:#00c853;">Peak: --</span>
                     </div>
+                    
+                    <div style="width: 100%; height: 16px; background: #0f1115; border-radius: 8px; border: 1px solid #262b36; position: relative; overflow: hidden;">
+                        <div id="rotatorHealthBarFill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #ff3d00, #ff9900, #00c853); transition: width 0.5s ease-out;"></div>
+                        <div id="rotatorHealthMarker" style="position: absolute; top: 0; left: 0%; width: 3px; height: 100%; background: #ffffff; box-shadow: 0 0 5px #fff; transition: left 0.5s ease-out;"></div>
+                    </div>
+                    
+                    <div id="rotatorHealthSubtext" style="font-size:10px; color:#8a8a9e; margin-top:8px; text-align:center;">Scanning...</div>
                 </div>
 
-                <!-- BUY PRICE P/L & SELLING THRESHOLD CARD -->
+                <!-- P/L CARD -->
                 <div class="card" id="buyPricePnlCard" style="display:flex; flex-direction:column; justify-content:center;">
                     <h3>P/L From Buy Price</h3>
                     <p id="mBuyPricePnL" style="font-size:15px; font-weight:bold; color:#8a8a9e; margin-top:2px;">£0.00 (0.00%)</p>
@@ -461,7 +469,19 @@
             </h3>
             <div id="ianAlertList"></div>
         </div>
-        <details class="drawer-details" open><summary>Active Profiles Leaderboard</summary><div id="leaderboardUI" style="margin-top:8px;"></div></details>
+        
+        <details class="drawer-details" open>
+            <summary>Active Profiles Leaderboard</summary>
+            <!-- LEADERBOARD SORTING TOGGLES -->
+            <div class="segmented-control" style="margin-top:8px; margin-bottom: 8px;">
+                <input type="radio" name="lb_sort" id="lb_sort_all" value="all" checked onchange="renderLeaderboard()">
+                <label for="lb_sort_all">All Time</label>
+                <input type="radio" name="lb_sort" id="lb_sort_today" value="today" onchange="renderLeaderboard()">
+                <label for="lb_sort_today">Today</label>
+            </div>
+            <div id="leaderboardUI"></div>
+        </details>
+        
         <details class="drawer-details" open><summary>Trade History</summary><ul class="history-list" id="allHistoryUI" style="margin-top:8px;"></ul></details>
     </div>
 
@@ -479,6 +499,8 @@
         let currentHealthPct = 0; let currentHealthColor = '#8a8a9e'; let currentHealthText = 'N/A'; let isRotatorProfile = false;
         let tvBuyPriceLine = null;
         let currentHardPct = -0.50; let currentStopPrice = 0.0;
+        
+        window.masterLeaderboardData = []; // GLOBAL CACHE FOR LEADERBOARD SORTING
         
         let journeyChart = null; 
         let journeySeries = null;
@@ -594,7 +616,6 @@
                     fetch(`/api/data?t=${tick}&p=${document.getElementById('periodSelect').value}&i=${document.getElementById('intervalSelect').value}`).then(res => res.json()).then(data => { if (data.ohlc && data.ohlc.length) { gs.setData(data.ohlc); gc.timeScale().fitContent(); } });
                 }
             }
-            
             if (displayList.length === 0) {
                  let wrapperEl = document.getElementById(`pane0`);
                  wrapperEl.style.display = 'block';
@@ -653,8 +674,7 @@
                 isSettingsLoaded = false; 
                 await fetchData(false); 
                 await fetchUsers(); 
-            } 
-            catch(e) { document.getElementById('loader').style.display = 'none'; }
+            } catch(e) { document.getElementById('loader').style.display = 'none'; }
         }
 
         async function addUserPrompt() {
@@ -731,22 +751,40 @@
             let healthHeader = document.getElementById('rotatorHealthHeader');
             let healthStatus = document.getElementById('rotatorHealthStatus');
             let healthBarFill = document.getElementById('rotatorHealthBarFill');
-            let healthFooter = document.getElementById('rotatorHealthFooter');
+            let healthMarker = document.getElementById('rotatorHealthMarker');
+            let thermoStopLabel = document.getElementById('thermoStopLabel');
+            let thermoPeakLabel = document.getElementById('thermoPeakLabel');
+            let healthSubtext = document.getElementById('rotatorHealthSubtext');
             
             if (isHolding) {
-                healthHeader.innerText = "Position Health (Trailing Stop)";
-                healthStatus.innerText = currentHealthText;
+                let curPr = currentLivePrice.toFixed(2);
+                let stopPr = currentStopPrice > 0 ? currentStopPrice.toFixed(2) : "0.00";
+                
+                healthHeader.innerText = "Risk Thermometer";
+                healthStatus.innerText = `Price: £${curPr}`;
                 healthStatus.style.color = currentHealthColor;
-                healthBarFill.style.width = `${currentHealthPct}%`;
-                healthBarFill.style.backgroundColor = currentHealthColor;
-                healthFooter.innerHTML = `<span>Sell Zone</span><span>Peak Safety</span>`;
+                
+                thermoStopLabel.innerText = `Sell: £${stopPr}`;
+                thermoPeakLabel.innerText = "Peak";
+                
+                let safePct = Math.max(0, Math.min(100, currentHealthPct));
+                healthBarFill.style.width = `${safePct}%`;
+                healthMarker.style.left = `calc(${safePct}% - 1.5px)`;
+                
+                healthSubtext.innerText = currentHealthText;
             } else {
-                healthHeader.innerText = "Re-entry Scanner (Buy Trigger)";
-                healthStatus.innerText = currentHealthText.includes('Hunting') ? currentHealthText : "Scanning Watchlist...";
+                healthHeader.innerText = "Re-entry Scanner";
+                healthStatus.innerText = "Scanning...";
                 healthStatus.style.color = currentHealthColor;
-                healthBarFill.style.width = `${currentHealthPct}%`;
-                healthBarFill.style.backgroundColor = currentHealthColor;
-                healthFooter.innerHTML = `<span>0/100</span><span>Buy Trigger: 65/100</span>`;
+                
+                thermoStopLabel.innerText = "0/100";
+                thermoPeakLabel.innerText = "Buy Trigger: 65/100";
+                
+                let safePct = Math.max(0, Math.min(100, currentHealthPct));
+                healthBarFill.style.width = `${safePct}%`;
+                healthMarker.style.left = `calc(${safePct}% - 1.5px)`;
+                
+                healthSubtext.innerText = currentHealthText.includes('Hunting') ? currentHealthText : "Watching for anomaly signals.";
             }
 
             let pnlCard = document.getElementById('buyPricePnlCard');
@@ -757,10 +795,8 @@
                 pnlCard.style.display = "flex";
                 pnlDisplay.innerText = currentPnLData['all'].val;
                 pnlDisplay.style.color = currentPnLData['all'].color;
-                
                 let stopType = currentHardPct > 0 ? "Breakeven" : "Stop";
-                let stopPriceFormatted = currentStopPrice > 0 ? ` (Selling at: £${currentStopPrice.toFixed(2)})` : "";
-                pnlSubText.innerText = `${stopType}: ${currentHardPct > 0 ? '+' : ''}${currentHardPct.toFixed(2)}%${stopPriceFormatted}`;
+                pnlSubText.innerText = `${stopType}: ${currentHardPct > 0 ? '+' : ''}${currentHardPct.toFixed(2)}%`;
             } else {
                 pnlCard.style.display = "none";
             }
@@ -806,6 +842,46 @@
                 hist.forEach(i => { let buy = i.action === 'BUY', isShort = i.trade_type === 'SHORT' || ['SQQQ', '3SUS.L'].includes(i.ticker), badge = isShort ? `<span class="badge-direction badge-short">SHORT</span>` : '', li = document.createElement('li'); li.className = 'history-item'; li.innerHTML = `<span class="btn-undo" onclick="undoTrade('${i.id}')">✕</span><div style="font-size:10px; color:#00d2ff; font-weight:bold; margin-bottom:2px; display:flex; align-items:center;">${i.ticker} ${badge}</div><div class="h-action ${buy?'h-buy':'h-sell'}">${i.action} ${i.shares} Shares</div><div class="h-meta">Total: £${i.amount.toFixed(2)} @ ${parseFloat(i.price).toFixed(2)}</div><div class="h-meta" style="font-size:9px; color:#525866;">${i.time}</div>`; aui.appendChild(li); });
             }
         }
+        
+        function renderLeaderboard() {
+            if (!window.masterLeaderboardData) return;
+            let sortMode = document.querySelector('input[name="lb_sort"]:checked').value;
+            let lbData = [...window.masterLeaderboardData];
+            
+            if (sortMode === 'all') {
+                lbData.sort((a, b) => b.equity - a.equity);
+            } else {
+                lbData.sort((a, b) => b.daily_pnl - a.daily_pnl);
+            }
+
+            let currentActiveProf = document.getElementById('userSelect').value.trim();
+            let lbHtml = lbData.map(lb => { 
+                let isProfit = lb.daily_pnl >= 0, color = isProfit ? '#00c853' : '#ff3d00';
+                let pnlFormatted = `${isProfit ? '+' : ''}£${lb.daily_pnl.toFixed(2)}`;
+                let activeBadge = lb.has_active_holds ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
+                let isActiveCard = lb.user === currentActiveProf ? 'active-profile-card' : '';
+                
+                // Using flex-wrap and text-overflow to fix the "housed in others" nesting layout bug
+                return `
+                    <div class="lb-item ${isActiveCard}" onclick="onUserChange('${lb.user}')">
+                        <div class="lb-header">
+                            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px; max-width:60%;">
+                                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${lb.user}</span>
+                                ${activeBadge}
+                            </div>
+                            <div style="text-align:right; display:flex; align-items:center; gap:8px;">
+                                <div>
+                                    <span style="color:${color}; font-weight:bold;">£${lb.equity.toFixed(2)}</span>
+                                    <div style="font-size:10px; color:${color};">(${pnlFormatted} Today)</div>
+                                </div>
+                                <span onclick="event.stopPropagation(); let d = this.parentElement.parentElement.nextElementSibling; d.style.display = d.style.display === 'block' ? 'none' : 'block';" style="color:#787e8e; font-size:11px; padding:2px 4px; border:1px solid #262b36; border-radius:4px;">ⓘ</span>
+                            </div>
+                        </div>
+                        <div class="lb-desc">${profileDesc[lb.user] || 'Custom execution profile.'}</div>
+                    </div>`; 
+            }).join('');
+            document.getElementById('leaderboardUI').innerHTML = lbHtml;
+        }
 
         function showAnomalyReason() { if (currentAnomalyReason) { document.getElementById('reasonText').innerText = currentAnomalyReason; document.getElementById('reasonModal').style.display = 'flex'; } }
         function closeQuickScore() { document.getElementById('qsResult').style.display = 'none'; document.getElementById('qsTicker').value = ''; }
@@ -838,7 +914,6 @@
 
         async function loadRecommended(t, s, b, sell) { document.getElementById('recModal').style.display = 'none'; await fetch('/api/watchlist/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: t})}); selectStock(t); setTimeout(openAlertModal, 500); }
 
-        // --- NEW TRADE JOURNEY UNIFIED CHART ENGINE ---
         function openJourneyModal() {
             document.getElementById('journeyModal').style.display = 'flex';
             setTimeout(() => { loadTradeJourney(); }, 50);
@@ -1143,28 +1218,8 @@
                 if (p.is_multi) masterData = p.lines; else masterData = p.ohlc;
                 masterMathLine = p.mathLine || []; globalPortfolioData = p.portfolio;
                 if (p.leaderboard) {
-                    let currentActiveProf = document.getElementById('userSelect').value.trim();
-                    let lbHtml = p.leaderboard.map(lb => { 
-                        let isProfit = lb.daily_pnl >= 0, color = isProfit ? '#00c853' : '#ff3d00';
-                        let pnlFormatted = `${isProfit ? '+' : ''}£${lb.daily_pnl.toFixed(2)}`;
-                        let activeBadge = lb.has_active_holds ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
-                        let isActiveCard = lb.user === currentActiveProf ? 'active-profile-card' : '';
-                        return `
-                            <div class="lb-item ${isActiveCard}" onclick="onUserChange('${lb.user}')">
-                                <div class="lb-header">
-                                    <span>${lb.user}${activeBadge}</span>
-                                    <div style="text-align:right; display:flex; align-items:center; gap:8px;">
-                                        <div>
-                                            <span style="color:${color}; font-weight:bold;">£${lb.equity.toFixed(2)}</span>
-                                            <div style="font-size:10px; color:${color};">(${pnlFormatted} Today)</div>
-                                        </div>
-                                        <span onclick="event.stopPropagation(); let d = this.closest('.lb-item').querySelector('.lb-desc'); d.style.display = d.style.display === 'block' ? 'none' : 'block';" style="color:#787e8e; font-size:11px; padding:2px 4px; border:1px solid #262b36; border-radius:4px;">ⓘ</span>
-                                    </div>
-                                </div>
-                                <div class="lb-desc">${profileDesc[lb.user] || 'Custom execution profile.'}</div>
-                            </div>`; 
-                    }).join('');
-                    document.getElementById('leaderboardUI').innerHTML = lbHtml;
+                    window.masterLeaderboardData = p.leaderboard;
+                    renderLeaderboard();
                 }
                 if (!isSettingsLoaded && globalPortfolioData.settings) {
                     let s = globalPortfolioData.settings;
