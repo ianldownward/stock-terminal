@@ -338,7 +338,6 @@ class PortfolioManager:
                 return None
             ud = self.user_data(username)
             
-            # --- 15-SECOND REAL-WORLD BROKER LIMITER ---
             now_ts = int(time.time())
             if 'trade_cooldowns' not in ud: 
                 ud['trade_cooldowns'] = {}
@@ -397,10 +396,9 @@ class PortfolioManager:
             else: 
                 ud['holdings'].pop(ticker, None)
             
-            # UPDATE COOLDOWN
             ud['trade_cooldowns'][ticker] = now_ts
-            
             self.save_data(self.data)
+            
             ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
             if ntfy_topic: 
                 send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
@@ -1192,8 +1190,7 @@ def trade_journey():
     for tr in hist:
         tk = tr.get('ticker')
         if tr.get('action') == 'BUY':
-            if tk not in buys: 
-                buys[tk] = []
+            if tk not in buys: buys[tk] = []
             buys[tk].append(tr)
         elif tr.get('action') == 'SELL':
             if tk in buys and len(buys[tk]) > 0:
@@ -1218,8 +1215,8 @@ def trade_journey():
                     'sell_time': tr.get('timestamp'),
                     'buy_date': b.get('time'),
                     'sell_date': tr.get('time'),
-                    'start_ts': b.get('timestamp') - 86400,
-                    'end_ts': tr.get('timestamp') + 86400,
+                    'start_ts': b.get('timestamp'),
+                    'end_ts': tr.get('timestamp'),
                     'saved_chart': tr.get('journey_chart', None)
                 })
     
@@ -1228,12 +1225,11 @@ def trade_journey():
     
     def fetch_trade_chart(tr):
         if tr['saved_chart'] is not None and len(tr['saved_chart']) > 0:
-            tr['chart'] = tr['saved_chart']
+            tr['chart'] = [c for c in tr['saved_chart'] if tr['start_ts'] <= c['time'] <= tr['end_ts']]
             return tr, False
             
         tk = tr['ticker']
-        df = fetch_yf_data(tk, "60d", "5m")
-        if df.empty: df = fetch_yf_data(tk, "1mo", "5m")
+        df = fetch_yf_data(tk, "1mo", "5m")
         if df.empty: df = fetch_yf_data(tk, "5d", "5m")
         
         chart_data = []
