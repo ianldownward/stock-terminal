@@ -1350,7 +1350,17 @@ def get_data():
             t_buys = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
             if t_buys: 
                 avg_buy_p = t_buys[0].get('price', 0.0)
-            highest_p = (holds_dict.get(t) or {}).get('high_water', last_p)
+            
+            # 1. Get stored peak (default to buy price if missing)
+            highest_p = (holds_dict.get(t) or {}).get('high_water', avg_buy_p if avg_buy_p > 0 else last_p)
+            
+            # 2. TRACK NEW HIGHS: If current price beats the peak, save the new peak!
+            if last_p > highest_p:
+                highest_p = last_p
+                if 'holdings' not in ud: ud['holdings'] = {}
+                if t not in ud['holdings']: ud['holdings'][t] = {}
+                ud['holdings'][t]['high_water'] = highest_p
+                portfolio_store.save_data(portfolio_store.data)
 
         if is_momentum: 
             # Force the engine to always use 5 days of background data so it never goes blind on the 1-Day chart view
