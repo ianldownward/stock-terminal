@@ -647,7 +647,15 @@ class MarketScoringEngine:
             else: 
                 health_color, health_text = "#ff4a4a", f"Danger Zone {pnl_str}"
             
-            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
+            # DYNAMIC STOP CALCULATOR FOR ACTIVE POSITIONS
+        effective_stop_price = current_price * (1.0 + (hard_pct / 100.0))
+        if avg_buy_price > 0:
+            hard_stop = avg_buy_price * (1.0 + (hard_pct / 100.0))
+            trailing_stop = highest_price * (1.0 - (trail_pct / 100.0)) if highest_price > 0 else 0
+            breakeven_stop = (avg_buy_price * 1.0010) if (peak_pnl_pct >= 0.50 and (any(x in prof for x in ['test e6', 'test e7', 'test e8', 'test e13']) or is_x_promoted or is_y_promoted)) else 0
+            effective_stop_price = max(hard_stop, trailing_stop, breakeven_stop)
+
+        return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': avg_buy_price if avg_buy_price > 0 else current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'hard_pct': effective_hard_pct if 'effective_hard_pct' in locals() else hard_pct, 'stop_price': round(effective_stop_price, 2)}
 
         # ORB DELAYS
         current_mins = now_uk.hour * 60 + now_uk.minute
