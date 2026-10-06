@@ -653,15 +653,18 @@ class MarketScoringEngine:
             # If position is active and healthy, return standard riding status
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': avg_buy_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
 
-        # ORB DELAYS (Strictly isolated to Test X and Test Y)
-        if any(x in prof for x in ['test x', 'test y']):
-            current_mins = now_uk.hour * 60 + now_uk.minute
-            orb_duration = 30 if '30' in prof else 15
+        # DYNAMIC ORB DELAYS (3m Spread Clearer, 15m/30m Sniper)
+        current_mins = now_uk.hour * 60 + now_uk.minute
+        orb_duration = 0
+        if '30' in prof: orb_duration = 30
+        elif any(x in prof for x in ['test x', 'test y']): orb_duration = 15
+        elif 'test e' in prof: orb_duration = 3
+        
+        if orb_duration > 0:
             is_us_orb = (not ticker.endswith('.L')) and (870 <= current_mins < 870 + orb_duration)
             is_uk_orb = ticker.endswith('.L') and (480 <= current_mins < 480 + orb_duration)
-            
             if is_us_orb or is_uk_orb: 
-                return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"{orb_duration}m ORB ACTIVE: Blocking new entries during market open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'ORB Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(ORB Wait)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'ORB Filtering', 'hard_pct': hard_pct, 'stop_price': round(effective_stop_price, 2)}
+                return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"{orb_duration}m ORB ACTIVE: Letting opening spread clear.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2) if 'effective_stop_price' in locals() else current_price, 'status': 'ORB Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(ORB Wait)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'ORB Filtering', 'hard_pct': hard_pct, 'stop_price': round(effective_stop_price, 2) if 'effective_stop_price' in locals() else current_price}
 
         if 'test w' in prof and ticker.endswith('.L') and now_uk.hour == 16 and now_uk.minute >= 20 and now_uk.minute < 30:
             if avg_buy_price > 0:
@@ -788,8 +791,83 @@ class MarketScoringEngine:
 
 portfolio_store = PortfolioManager()
 
-def process_auto_profile(prof_name):
-    pass
+def process_auto_profile():
+    engine = MarketScoringEngine()
+    while True:
+        try:
+            portfolio_store.reload()
+            regime = engine.check_market_regime()
+            
+            for u in list(portfolio_store.data.get('users', {}).keys()):
+                # Skip manual profiles for auto-trading
+                if u.lower() == 'ian' or 'test a' in u.lower():
+                    continue
+                    
+                ud = portfolio_store.user_data(u)
+                hist = ud.get('history', [])
+                holds = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker'), u) > 0]))
+                
+                # 1. PROCESS SELLS & HEADLESS PEAK TRACKING
+                for t in holds:
+                    df = fetch_yf_data(t, "5d", "5m")
+                    if not df.empty:
+                        last_p = df['Close'].iloc[-1]
+                        t_buys = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
+                        avg_buy_p = t_buys[0].get('price', 0.0) if t_buys else 0.0
+                        
+                        # Headless Peak Tracker (Updates DB even if browser is closed)
+                        highest_p = (ud.get('holdings', {}).get(t) or {}).get('high_water', avg_buy_p if avg_buy_p > 0 else last_p)
+                        if last_p > highest_p:
+                            highest_p = last_p
+                            if 'holdings' not in ud: ud['holdings'] = {}
+                            if t not in ud['holdings']: ud['holdings'][t] = {}
+                            ud['holdings'][t]['high_water'] = highest_p
+                            portfolio_store.save_data(portfolio_store.data)
+                            
+                        st = engine.score_momentum(df, last_p, avg_buy_p, highest_p, profile=u, regime=regime)
+                        
+                        if st['action_main'] == 'SELL':
+                            shares_to_sell = portfolio_store.get_shares(t, u)
+                            if shares_to_sell > 0:
+                                portfolio_store.execute_trade(t, 'SELL', shares_to_sell, last_p, username=u)
+                
+                # 2. PROCESS BUYS (Only if sitting in 100% cash)
+                portfolio_store.reload()
+                ud = portfolio_store.user_data(u)
+                hist = ud.get('history', [])
+                active_holds = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker'), u) > 0]))
+                
+                if len(active_holds) == 0:
+                    wl = ud.get('watchlist', [])
+                    best_buy, best_score, best_price = None, 0, 0
+                    
+                    for t in wl:
+                        df = fetch_yf_data(t, "5d", "5m")
+                        if not df.empty:
+                            last_p = df['Close'].iloc[-1]
+                            st = engine.score_momentum(df, last_p, 0.0, 0.0, profile=u, regime=regime)
+                            
+                            # Find the absolute strongest anomaly in the watchlist
+                            if st['action_main'] == 'BUY' and st['score'] > best_score:
+                                best_score = st['score']
+                                best_buy = t
+                                best_price = last_p
+                                
+                    if best_buy:
+                        mb = ud.get('master_budget', 5000.0)
+                        net_hist = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist)
+                        init_man = sum(pos.get('manual_val', 0.0) for pos in (ud.get('initial_positions') or {}).values())
+                        avail_cash = mb + net_hist - init_man
+                        
+                        cost_per_sh = best_price / 100.0 if best_buy.endswith('.L') and best_price > 100 else best_price
+                        if cost_per_sh > 0 and avail_cash >= cost_per_sh:
+                            shares_to_buy = int(avail_cash // cost_per_sh)
+                            if shares_to_buy > 0:
+                                portfolio_store.execute_trade(best_buy, 'BUY', shares_to_buy, best_price, username=u)
+
+        except Exception:
+            pass
+        time.sleep(15)
 
 threading.Thread(target=process_auto_profile, daemon=True).start()
 
