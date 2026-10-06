@@ -797,6 +797,8 @@ def process_auto_profile():
         try:
             portfolio_store.reload()
             regime = engine.check_market_regime()
+            now_uk = pd.Timestamp.now(tz='Europe/London')
+            current_mins = now_uk.hour * 60 + now_uk.minute
             
             for u in list(portfolio_store.data.get('users', {}).keys()):
                 # Skip manual profiles for auto-trading
@@ -831,7 +833,7 @@ def process_auto_profile():
                             if shares_to_sell > 0:
                                 portfolio_store.execute_trade(t, 'SELL', shares_to_sell, last_p, username=u)
                 
-                # 2. PROCESS BUYS (Only if sitting in 100% cash)
+                # 2. PROCESS BUYS (Only if sitting in 100% cash AND market is open)
                 portfolio_store.reload()
                 ud = portfolio_store.user_data(u)
                 hist = ud.get('history', [])
@@ -842,6 +844,13 @@ def process_auto_profile():
                     best_buy, best_score, best_price = None, 0, 0
                     
                     for t in wl:
+                        # Ensure the specific market (US vs UK) is actually open
+                        is_us = not t.endswith('.L')
+                        is_open = (870 <= current_mins < 1260) if is_us else (480 <= current_mins < 990)
+                        
+                        if not is_open:
+                            continue
+                            
                         df = fetch_yf_data(t, "5d", "5m")
                         if not df.empty:
                             last_p = df['Close'].iloc[-1]
