@@ -1344,7 +1344,11 @@ def get_data():
             highest_p = (holds_dict.get(t) or {}).get('high_water', last_p)
 
         if is_momentum: 
-            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
+            # Force the engine to always use 5 days of background data so it never goes blind on the 1-Day chart view
+            scoring_df = pnl_dfs_5m.get(t)
+            if scoring_df is None or scoring_df.empty: 
+                scoring_df = fetch_yf_data(t, "5d", "5m")
+            st = engine.score_momentum(scoring_df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0, avg_buy_price=avg_buy_p, highest_price=highest_p) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p, avg_buy_price=avg_buy_p, highest_price=highest_p)
