@@ -2492,6 +2492,20 @@
             }
         }
 
+        function selectStock(ticker, element = null) {
+            currentTicker = ticker;
+            document.querySelectorAll('.watchlist-item').forEach(el => el.classList.remove('active'));
+            if (element) {
+                element.classList.add('active');
+            } else {
+                let activeElem = document.querySelector(`li.watchlist-item[data-symbol="${ticker}"]`);
+                if (activeElem) activeElem.classList.add('active');
+            }
+            document.getElementById('activeTitle').innerHTML = "Loading " + ticker + "...";
+            document.getElementById('loader').style.display = 'block';
+            fetchData(false);
+        }
+        
         document.getElementById('watchlistUI').addEventListener('click', async e => {
             let li = e.target.closest('li.watchlist-item'); 
             if (!li) return; 
