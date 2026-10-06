@@ -603,10 +603,15 @@ class MarketScoringEngine:
         else: trail_pct, hard_pct = 0.50, -0.50
 
         health_pct, health_color, health_text = 0, "#8a8a9e", "Scanning..."
+        effective_stop_price = current_price * (1.0 + (hard_pct / 100.0))
+        pnl_str = "0.00%"
+        pnl_pct = 0.0
+        drop_from_peak_pct = 0.0
 
         if avg_buy_price > 0 and highest_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
+            pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
             
             # 1. Calculate trailing stop level from peak price
             trailing_stop_price = highest_price * (1.0 - (trail_pct / 100.0))
@@ -622,23 +627,21 @@ class MarketScoringEngine:
                 effective_stop_price = max(effective_stop_price, breakeven_stop_price)
                 
                 if current_price <= effective_stop_price: 
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)", 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)", 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
             
             elif 'test u3' in prof and peak_pnl_pct >= 0.40:
                 effective_hard_pct = 0.10
-                effective_stop_price = avg_buy_price * 1.0010
+                effective_stop_price = max(effective_stop_price, avg_buy_price * 1.0010)
                 if current_price <= effective_stop_price: 
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)", 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
-
-            pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)", 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
 
             if 'test v' in prof and vol_ratio >= 1.5 and (drop_from_peak_pct >= 0.30 or pnl_pct <= -0.30):
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"VELOCITY BRAKE: Fast 0.30%+ drop on surging {vol_ratio:.1f}x volume.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Velocity Stop', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Velocity Exit)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': f"Velocity Brake {pnl_str}", 'hard_pct': effective_hard_pct, 'stop_price': current_price}
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"VELOCITY BRAKE: Fast 0.30%+ drop on surging {vol_ratio:.1f}x volume.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'Velocity Stop', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Velocity Exit)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': f"Velocity Brake {pnl_str}", 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
 
             health_pct = int(max(0, min(100, 100 - (drop_from_peak_pct / trail_pct * 100))))
             
             if drop_from_peak_pct >= trail_pct or pnl_pct <= hard_pct:
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"STOP TRIPPED {pnl_str}. Peak: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Tripped', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': f"Stop Tripped {pnl_str}", 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"STOP TRIPPED {pnl_str}. Peak: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'Stop Tripped', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': f"Stop Tripped {pnl_str}", 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
             
             elif health_pct >= 70: 
                 health_color, health_text = "#00c853", f"Strong Trend {pnl_str}"
@@ -646,36 +649,28 @@ class MarketScoringEngine:
                 health_color, health_text = "#ff9900", f"Pullback {pnl_str}"
             else: 
                 health_color, health_text = "#ff4a4a", f"Danger Zone {pnl_str}"
+                
+            # If position is active and healthy, return standard riding status
+            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': avg_buy_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
+
+        # ORB DELAYS (Strictly isolated to Test X and Test Y)
+        if any(x in prof for x in ['test x', 'test y']):
+            current_mins = now_uk.hour * 60 + now_uk.minute
+            orb_duration = 30 if '30' in prof else 15
+            is_us_orb = (not ticker.endswith('.L')) and (870 <= current_mins < 870 + orb_duration)
+            is_uk_orb = ticker.endswith('.L') and (480 <= current_mins < 480 + orb_duration)
             
-            # DYNAMIC STOP CALCULATOR FOR ACTIVE POSITIONS
-        effective_stop_price = current_price * (1.0 + (hard_pct / 100.0))
-        if avg_buy_price > 0:
-            hard_stop = avg_buy_price * (1.0 + (hard_pct / 100.0))
-            trailing_stop = highest_price * (1.0 - (trail_pct / 100.0)) if highest_price > 0 else 0
-            breakeven_stop = (avg_buy_price * 1.0010) if (peak_pnl_pct >= 0.50 and (any(x in prof for x in ['test e6', 'test e7', 'test e8', 'test e13']) or is_x_promoted or is_y_promoted)) else 0
-            effective_stop_price = max(hard_stop, trailing_stop, breakeven_stop)
-
-        return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': avg_buy_price if avg_buy_price > 0 else current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text, 'hard_pct': effective_hard_pct if 'effective_hard_pct' in locals() else hard_pct, 'stop_price': round(effective_stop_price, 2)}
-
-        # ORB DELAYS
-        current_mins = now_uk.hour * 60 + now_uk.minute
-        orb_duration = 30 if '30' in prof else 15
-        is_us_orb = (not ticker.endswith('.L')) and (870 <= current_mins < 870 + orb_duration)
-        is_uk_orb = ticker.endswith('.L') and (480 <= current_mins < 480 + orb_duration)
-        
-        if is_us_orb or is_uk_orb: 
-            return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"{orb_duration}m ORB ACTIVE: Blocking new entries during market open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'ORB Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(ORB Wait)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'ORB Filtering', 'hard_pct': hard_pct, 'stop_price': round(current_price * (1 + hard_pct / 100.0), 2)}
+            if is_us_orb or is_uk_orb: 
+                return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"{orb_duration}m ORB ACTIVE: Blocking new entries during market open.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'ORB Blocked', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(ORB Wait)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'ORB Filtering', 'hard_pct': hard_pct, 'stop_price': round(effective_stop_price, 2)}
 
         if 'test w' in prof and ticker.endswith('.L') and now_uk.hour == 16 and now_uk.minute >= 20 and now_uk.minute < 30:
             if avg_buy_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell', 'hard_pct': 0.0, 'stop_price': current_price}
+                return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell', 'hard_pct': 0.0, 'stop_price': round(effective_stop_price, 2)}
 
         if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e8', 'test e9', 'test e10', 'test e12', 'test e13', 'test u', 'test u1', 'test u2', 'test u3', 'test v', 'test x', 'test y']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
-                pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell', 'hard_pct': 0.0, 'stop_price': current_price}
-            return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD ROTATOR SWEEP: Blocking new entries.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked', 'hard_pct': 0.0, 'stop_price': current_price}
+                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell', 'hard_pct': 0.0, 'stop_price': round(effective_stop_price, 2)}
+            return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD ROTATOR SWEEP: Blocking new entries.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': round(effective_stop_price, 2), 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked', 'hard_pct': 0.0, 'stop_price': round(effective_stop_price, 2)}
 
         # HARD 1.2% CAP FOR TEST U, X (unpromoted), Y (unpromoted)
         target_profs = ['test e', 'test s', 'test u', 'test u1', 'test u2', 'test u3', 'test v', 'test w']
