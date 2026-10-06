@@ -608,13 +608,19 @@ class MarketScoringEngine:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
             
+            # 1. Calculate trailing stop level from peak price
+            trailing_stop_price = highest_price * (1.0 - (trail_pct / 100.0))
+            
+            # 2. Baseline stop is the higher of entry hard stop vs trailing stop
             effective_hard_pct = hard_pct
-            effective_stop_price = avg_buy_price * (1 + hard_pct / 100.0)
+            effective_stop_price = max(avg_buy_price * (1.0 + (hard_pct / 100.0)), trailing_stop_price)
 
-            # BREAKEVEN LOCKS 
+            # 3. Apply Breakeven Lock floor if triggered (+0.10%)
             if (any(x in prof for x in ['test e6', 'test e7', 'test e8', 'test e13']) or is_x_promoted or is_y_promoted) and peak_pnl_pct >= 0.50:
                 effective_hard_pct = 0.10
-                effective_stop_price = avg_buy_price * 1.0010
+                breakeven_stop_price = avg_buy_price * 1.0010
+                effective_stop_price = max(effective_stop_price, breakeven_stop_price)
+                
                 if current_price <= effective_stop_price: 
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)", 'hard_pct': effective_hard_pct, 'stop_price': round(effective_stop_price, 2)}
             
