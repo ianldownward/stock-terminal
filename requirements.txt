@@ -3,3 +3,4 @@ gunicorn
 pandas
 yfinance
 pymongo[srv]
+requests
