@@ -16,6 +16,20 @@ def send_push_notification(topic, title, message):
     except Exception: 
         pass
 
+# Exact accrued performance baselines for your 10 active profiles
+REAL_PROFILE_BASELINES = {
+    'Test E6 - Breakeven Rotator': 5480.82,
+    'Test E7 - Breakeven 0.5% Rotator': 5383.26,
+    'Test E4 - Clean EOD Rotator': 5321.55,
+    'Test E12 - E4 Momentum Hybrid': 5248.63,
+    'Test E8 - Meta-Adaptive Rotator': 5245.30,
+    'Test U - Tight Rotator': 5231.86,
+    'Test E13 - E6 Breakeven 0.5% Hybrid': 5193.22,
+    'Test A - Deep Value': 5016.42,
+    'Test E - Rotator': 4975.89,
+    'Test X - Dynamic Target Switch (15m ORB)': 4966.65
+}
+
 class PortfolioManager:
     def __init__(self):
         self.trade_lock = threading.Lock()
@@ -36,14 +50,18 @@ class PortfolioManager:
         self._ensure_default_user()
 
     def default_user_state(self, username=""):
-        prof = str(username).strip().lower()
-        if 'test a' in prof:
+        prof_name = str(username).strip()
+        prof_lower = prof_name.lower()
+        
+        starting_budget = REAL_PROFILE_BASELINES.get(prof_name, 5000.0)
+
+        if 'test a' in prof_lower:
             wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
         else:
             wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
 
         return {
-            'master_budget': 5000.0,
+            'master_budget': starting_budget,
             'watchlist': wl, 
             'initial_positions': {}, 
             'holdings': {}, 
@@ -79,18 +97,7 @@ class PortfolioManager:
 
     def _ensure_default_user(self):
         try:
-            allowed_profiles = [
-                'Test E6 - Breakeven Rotator',
-                'Test E7 - Breakeven 0.5% Rotator',
-                'Test E4 - Clean EOD Rotator',
-                'Test E12 - E4 Momentum Hybrid',
-                'Test E8 - Meta-Adaptive Rotator',
-                'Test U - Tight Rotator',
-                'Test E13 - E6 Breakeven 0.5% Hybrid',
-                'Test A - Deep Value',
-                'Test E - Rotator',
-                'Test X - Dynamic Target Switch (15m ORB)'
-            ]
+            allowed_profiles = list(REAL_PROFILE_BASELINES.keys())
             needs_save = False
             
             if not isinstance(self.data, dict):
@@ -101,22 +108,23 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Purge legacy profiles
+            # Purge legacy profiles not in approved list
             existing = list(self.data['users'].keys())
             for u in existing:
                 if u not in allowed_profiles:
                     del self.data['users'][u]
                     needs_save = True
 
-            # Enforce clean £5000 baseline across all 10 profiles, fixing MongoDB corrupted budgets
+            # Enforce real accrued performance baseline across all 10 profiles
             for p in allowed_profiles:
+                target_baseline = REAL_PROFILE_BASELINES.get(p, 5000.0)
                 if p not in self.data['users'] or not isinstance(self.data['users'][p], dict) or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
                 else:
                     u_data = self.data['users'][p]
                     mb = safe_float(u_data.get('master_budget'))
-                    # Reset profiles with corrupted figures (< £1000)
+                    # Reset profiles with corrupted low numbers (< £1000) or missing structure
                     if mb < 1000 or mb > 20000:
                         self.data['users'][p] = self.default_user_state(p)
                         needs_save = True
@@ -129,12 +137,6 @@ class PortfolioManager:
                 self.save_data(self.data)
         except Exception: 
             pass
-
-    def wipe_all_to_clean_baseline(self):
-        """Overwrites MongoDB and local JSON with clean £5,000 baseline for all 10 profiles."""
-        self.data = {'active_user': 'Test E6 - Breakeven Rotator', 'users': {}}
-        self._ensure_default_user()
-        self.save_data(self.data)
 
     def save_data(self, data_to_save):
         if self.client and self.collection is not None:
@@ -197,7 +199,10 @@ class PortfolioManager:
         return self.user_data()
 
     def reset_all_profiles_to_5000(self):
-        self.wipe_all_to_clean_baseline()
+        self.reload()
+        for p, baseline in REAL_PROFILE_BASELINES.items():
+            self.data['users'][p] = self.default_user_state(p)
+        self.save_data(self.data)
 
     def update_settings(self, settings):
         self.reload()

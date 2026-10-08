@@ -2,61 +2,61 @@
   "active_user": "Test E6 - Breakeven Rotator",
   "users": {
     "Test E6 - Breakeven Rotator": {
-      "master_budget": 5000.0,
+      "master_budget": 5480.82,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E7 - Breakeven 0.5% Rotator": {
-      "master_budget": 5000.0,
+      "master_budget": 5383.26,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E4 - Clean EOD Rotator": {
-      "master_budget": 5000.0,
+      "master_budget": 5321.55,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E12 - E4 Momentum Hybrid": {
-      "master_budget": 5000.0,
+      "master_budget": 5248.63,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E8 - Meta-Adaptive Rotator": {
-      "master_budget": 5000.0,
+      "master_budget": 5245.30,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test U - Tight Rotator": {
-      "master_budget": 5000.0,
+      "master_budget": 5231.86,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E13 - E6 Breakeven 0.5% Hybrid": {
-      "master_budget": 5000.0,
+      "master_budget": 5193.22,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test A - Deep Value": {
-      "master_budget": 5000.0,
+      "master_budget": 5016.42,
       "watchlist": ["YCA.L", "U-UN.TO", "PHYS", "PSLV", "CEF", "SGLN.L", "SSLN.L", "RIO.L", "BP.L", "SHEL.L", "AZN.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E - Rotator": {
-      "master_budget": 5000.0,
+      "master_budget": 4975.89,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test X - Dynamic Target Switch (15m ORB)": {
-      "master_budget": 5000.0,
+      "master_budget": 4966.65,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}

@@ -57,17 +57,28 @@ def find_matching_user(users_dict, requested_name):
 
 def fetch_ticker_fast(tick, period="1d", interval="5m"):
     tick = tick.upper().strip()
-    cache_key_spec = f"{tick}_{period}_{interval}"
-    cached_spec = YF_CACHE.get(cache_key_spec)
-    if cached_spec and isinstance(cached_spec[1], pd.DataFrame) and not cached_spec[1].empty:
-        return tick, cached_spec[1]
+    cache_key = f"{tick}_{period}_{interval}"
+    cached = YF_CACHE.get(cache_key)
+    if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
+        if time.time() - cached[0] < 300:
+            return tick, cached[1]
 
-    cache_key_std = f"{tick}_5m"
-    cached_std = YF_CACHE.get(cache_key_std)
-    if cached_std and isinstance(cached_std[1], pd.DataFrame) and not cached_std[1].empty:
-        return tick, cached_std[1]
+    if yf:
+        try:
+            df = yf.Ticker(tick).history(period=period, interval=interval)
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                YF_CACHE[cache_key] = (time.time(), df)
+                return tick, df
+        except Exception:
+            pass
 
-    # Non-blocking fallback
+    # Fallback to standard 1d 5m cache
+    std_cached = YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
+    if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
+        return tick, std_cached[1]
+
     return tick, pd.DataFrame()
 
 @app.route('/')
@@ -229,9 +240,9 @@ def get_data():
         for tk in active_holds:
             sh = open_positions[tk]
             p = get_last_traded_price(ud, tk, default=10.0)
-            cached_item = YF_CACHE.get(f"{tk}_5m")
-            if cached_item and isinstance(cached_item[1], pd.DataFrame) and not cached_item[1].empty: 
-                p = normalize_price(tk, extract_val(cached_item[1].iloc[-1], 'Close'))
+            _, df_hold = fetch_ticker_fast(tk, "1d", "5m")
+            if not df_hold.empty: 
+                p = normalize_price(tk, extract_val(df_hold.iloc[-1], 'Close'))
             tot_own += sh * p
 
         total_equity = cash_balance + tot_own
@@ -241,8 +252,7 @@ def get_data():
         master_pnl_data = {'all': {'val': pnl_formatted, 'color': pnl_color}}
 
         engine = MarketScoringEngine()
-        cached_qqq = YF_CACHE.get('QQQ_5m')
-        df_qqq = cached_qqq[1] if cached_qqq and isinstance(cached_qqq[1], pd.DataFrame) else pd.DataFrame()
+        _, df_qqq = fetch_ticker_fast('QQQ', '1d', '5m')
         regime = engine.check_market_regime(df_qqq)
 
         leaderboard = []
@@ -272,9 +282,9 @@ def get_data():
                 for tk_lb, sh_lb in sh_lb_map.items():
                     if round(sh_lb, 4) >= 0.01:
                         p_lb = get_last_traded_price(u_data, tk_lb, default=10.0)
-                        cached_lb = YF_CACHE.get(f"{tk_lb}_5m")
-                        if cached_lb and isinstance(cached_lb[1], pd.DataFrame) and not cached_lb[1].empty: 
-                            p_lb = normalize_price(tk_lb, extract_val(cached_lb[1].iloc[-1], 'Close'))
+                        _, df_lb = fetch_ticker_fast(tk_lb, "1d", "5m")
+                        if not df_lb.empty: 
+                            p_lb = normalize_price(tk_lb, extract_val(df_lb.iloc[-1], 'Close'))
                         holdings_val_lb += sh_lb * p_lb
 
                 tot_eq_now = cash_now + holdings_val_lb
@@ -286,15 +296,26 @@ def get_data():
                     'budget': mb_lb, 'daily_pnl': pnl_lb, 'has_active_holds': has_holds
                 })
 
-        # --- ALL SHARES / MULTI-LINE PERFORMANCE (100% In-Memory) ---
+        # --- ALL SHARES / MULTI-LINE PERFORMANCE ---
         if t == 'ALL_SHARES':
             lines = []
             colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
             watchlist_sample = wl[:10]
+            fetched_dfs = {}
+            
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = [executor.submit(fetch_ticker_fast, tick, req_period, req_interval) for tick in watchlist_sample]
+                for future in futures:
+                    try:
+                        tick, df_t = future.result()
+                        if not df_t.empty:
+                            fetched_dfs[tick] = df_t
+                    except Exception:
+                        pass
 
             c_idx = 0
             for tick in watchlist_sample:
-                _, df_t = fetch_ticker_fast(tick, req_period, req_interval)
+                df_t = fetched_dfs.get(tick)
                 line_data = []
                 if isinstance(df_t, pd.DataFrame) and not df_t.empty:
                     base_price = normalize_price(tick, extract_val(df_t.iloc[0], 'Close'))
@@ -302,12 +323,15 @@ def get_data():
                         for idx, row in df_t.iterrows():
                             cp = normalize_price(tick, extract_val(row, 'Close'))
                             val = round(((cp - base_price) / base_price) * 100.0, 2)
-                            line_data.append({'time': int(idx.timestamp()), 'value': val})
+                            t_fmt = idx.strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else int(idx.timestamp())
+                            line_data.append({'time': t_fmt, 'value': val})
 
                 if not line_data:
+                    t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
+                    t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
                     line_data = [
-                        {'time': now_ts - 300, 'value': 0.0},
-                        {'time': now_ts, 'value': 0.0}
+                        {'time': t_fallback, 'value': 0.0},
+                        {'time': t_curr, 'value': 0.0}
                     ]
 
                 lines.append({'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data})
@@ -328,15 +352,28 @@ def get_data():
                 }
             })
 
-        # --- SINGLE TICKER OHLC (100% In-Memory) ---
+        # --- SINGLE TICKER OHLC ---
         _, cache_df = fetch_ticker_fast(t, req_period, req_interval)
         data = []
         if isinstance(cache_df, pd.DataFrame) and not cache_df.empty:
-            data = [{'time': int(i.timestamp()), 'open': normalize_price(t, extract_val(r, 'Open')), 'high': normalize_price(t, extract_val(r, 'High')), 'low': normalize_price(t, extract_val(r, 'Low')), 'close': normalize_price(t, extract_val(r, 'Close'))} for i, r in cache_df.iterrows()]
+            for i, r in cache_df.iterrows():
+                t_fmt = i.strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else int(i.timestamp())
+                data.append({
+                    'time': t_fmt,
+                    'open': normalize_price(t, extract_val(r, 'Open')),
+                    'high': normalize_price(t, extract_val(r, 'High')),
+                    'low': normalize_price(t, extract_val(r, 'Low')),
+                    'close': normalize_price(t, extract_val(r, 'Close'))
+                })
 
         hist_fallback = get_last_traded_price(ud, t, default=10.0)
         if not data:
-            data = [{'time': now_ts - 300, 'open': hist_fallback, 'high': hist_fallback, 'low': hist_fallback, 'close': hist_fallback}, {'time': now_ts, 'open': hist_fallback, 'high': hist_fallback, 'low': hist_fallback, 'close': hist_fallback}]
+            t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
+            t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
+            data = [
+                {'time': t_fallback, 'open': hist_fallback, 'high': hist_fallback, 'low': hist_fallback, 'close': hist_fallback},
+                {'time': t_curr, 'open': hist_fallback, 'high': hist_fallback, 'low': hist_fallback, 'close': hist_fallback}
+            ]
 
         last_p = round(safe_float(data[-1]['close'], hist_fallback), 2)
         
@@ -388,12 +425,14 @@ def get_data():
                 lb_fb.append({'user': u_k, 'equity': 5000.0, 'budget': 5000.0, 'daily_pnl': 0.0, 'has_active_holds': False})
         
         is_multi_view = (t == 'ALL_SHARES')
-        fallback_lines = [{'ticker': tk, 'color': '#00d2ff', 'data': [{'time': now_ts - 300, 'value': 0.0}, {'time': now_ts, 'value': 0.0}]} for tk in ['TQQQ', 'SOXL', 'NVDL', 'NVDA']]
+        t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
+        t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
+        fallback_lines = [{'ticker': tk, 'color': '#00d2ff', 'data': [{'time': t_fallback, 'value': 0.0}, {'time': t_curr, 'value': 0.0}]} for tk in ['TQQQ', 'SOXL', 'NVDL', 'NVDA']]
         
         return jsonify({
             'is_multi': is_multi_view,
             'lines': fallback_lines if is_multi_view else [],
-            'ohlc': [] if is_multi_view else [{'time': now_ts, 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
+            'ohlc': [] if is_multi_view else [{'time': t_curr, 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
             'mathLine': [], 'wl_status': {}, 'name': 'ALL_SHARES' if is_multi_view else 'NVDA',
             'portfolio': ud_fb if ud_fb else {'watchlist': ['NVDA'], 'history': [], 'holdings': {}},
             'leaderboard': lb_fb,
