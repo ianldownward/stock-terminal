@@ -101,16 +101,24 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
+            # Delete legacy or non-approved profiles
             existing = list(self.data['users'].keys())
             for u in existing:
                 if u not in allowed_profiles:
                     del self.data['users'][u]
                     needs_save = True
 
+            # Ensure all 10 approved profiles exist with clean £5000.0 budget
             for p in allowed_profiles:
                 if p not in self.data['users'] or not isinstance(self.data['users'][p], dict) or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
+                else:
+                    # Clean up corrupted negative balances or orphaned trade artifacts
+                    u_data = self.data['users'][p]
+                    if safe_float(u_data.get('master_budget')) <= 0:
+                        u_data['master_budget'] = 5000.0
+                        needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = allowed_profiles[0]
@@ -120,6 +128,12 @@ class PortfolioManager:
                 self.save_data(self.data)
         except Exception: 
             pass
+
+    def wipe_all_to_clean_baseline(self):
+        """Resets all 10 strategy profiles to clean £5,000 cash balance and clears old trade history."""
+        self.data = {'active_user': 'Test E6 - Breakeven Rotator', 'users': {}}
+        self._ensure_default_user()
+        self.save_data(self.data)
 
     def save_data(self, data_to_save):
         if self.client and self.collection is not None:
@@ -182,16 +196,7 @@ class PortfolioManager:
         return self.user_data()
 
     def reset_all_profiles_to_5000(self):
-        self.reload()
-        if 'users' in self.data and isinstance(self.data['users'], dict):
-            for u in list(self.data['users'].keys()):
-                wl = self.data['users'][u].get('watchlist', [])
-                st = self.data['users'][u].get('settings', {})
-                self.data['users'][u] = self.default_user_state(u)
-                if wl: self.data['users'][u]['watchlist'] = wl
-                if st: self.data['users'][u]['settings'] = st
-                self.data['users'][u]['master_budget'] = 5000.0
-            self.save_data(self.data)
+        self.wipe_all_to_clean_baseline()
 
     def update_settings(self, settings):
         self.reload()

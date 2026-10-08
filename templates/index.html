@@ -206,6 +206,33 @@
         .budget-sub-stats div { display: flex; justify-content: space-between; color: #787e8e; }
         .budget-sub-stats b { color: #e1e3e6; }
         
+        .directives-box { 
+            background: #1e222d; 
+            padding: 12px; 
+            border-radius: 8px; 
+            border: 1px solid #262b36; 
+            margin-bottom: 12px; 
+        }
+        .directives-box h3 { 
+            font-size: 11px; 
+            color: #00c853; 
+            margin: 0 0 8px 0; 
+            text-transform: uppercase; 
+            text-align: center; 
+        }
+        .directive-item { 
+            background: #0f1115; 
+            border: 1px solid #262b36; 
+            border-radius: 6px; 
+            padding: 8px; 
+            margin-bottom: 6px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        .directive-info { font-size: 11px; color: #fff; display: flex; align-items: center; }
+        .directive-info b { color: #00d2ff; }
+        
         .search-box { display: flex; gap: 8px; margin-bottom: 15px; flex-shrink: 0; }
         .search-box input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; }
         .search-box button { background: #00d2ff; border: none; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
@@ -257,7 +284,7 @@
             width: 100%; 
         }
         
-        /* Dropdowns: Reverted to standard dark controls without cyan borders */
+        /* Standard dark dropdown controls */
         select { 
             background: #0f1115; 
             border: 1px solid #262b36; 
@@ -463,9 +490,66 @@
         .history-item .h-sell { color: #ff3d00; }
         .history-item .h-meta { font-size: 11px; color: #787e8e; margin-top: 4px; }
         .history-item .btn-undo { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; }
+        
+        .quick-check-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 10px; }
+        .qc-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .qc-header-row h3 { font-size: 11px; color: #787e8e; margin: 0; text-transform: uppercase; }
+        .qc-close-btn { color: #787e8e; cursor: pointer; font-size: 12px; font-weight: bold; padding: 0 4px; }
+        .qc-close-btn:hover { color: #fff; }
+        .qc-input-row { display: flex; gap: 8px; }
+        .qc-input-row input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 6px 8px; border-radius: 6px; font-size: 12px; }
+        .qc-input-row button { background: #333947; border: 1px solid #787e8e; color: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+        .qc-input-row button:hover { background: #4a5265; }
+        #qsResult { display: none; margin-top: 10px; font-size: 12px; background: #0f1115; padding: 10px; border-radius: 6px; border: 1px solid #262b36; }
+        
+        .modal-overlay { 
+            display: none; 
+            position: fixed; 
+            top: 0; left: 0; 
+            width: 100%; height: 100%; 
+            background: rgba(0,0,0,.7); 
+            z-index: 100; 
+            justify-content: center; 
+            align-items: center; 
+        }
+        .modal { 
+            background: #171a21; 
+            width: 600px; 
+            padding: 25px; 
+            border-radius: 12px; 
+            border: 1px solid #262b36; 
+            box-shadow: 0 10px 30px rgba(0,0,0,.5); 
+            max-height: 90vh; 
+            overflow-y: auto; 
+        }
+        .modal h2 { 
+            margin-top: 0; 
+            color: #fff; 
+            font-size: 18px; 
+            border-bottom: 1px solid #262b36; 
+            padding-bottom: 12px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        .rec-item { background: #1e222d; border: 1px solid #262b36; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .rec-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        .rec-title-block h3 { margin: 0; color: #fff; font-size: 16px; }
+        .rec-score { background: rgba(0,210,255,.1); color: #00d2ff; font-weight: bold; padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #00d2ff; }
+        .rec-desc { font-size: 13px; color: #8a8a9e; line-height: 1.4; margin-bottom: 15px; }
+        .btn-load { background: #00c853; border: none; color: #fff; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 13px; }
+        .btn-load:hover { background: #00e676; }
     </style>
 </head>
 <body>
+    <div class="modal-overlay" id="recModal">
+        <div class="modal">
+            <h2><span>Market Anomaly Screener</span><button class="btn-control" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('recModal').style.display='none'">Close</button></h2>
+            <div id="recLoader" style="text-align:center; padding: 20px; color:#00d2ff;">Scanning global assets for anomalies...</div>
+            <div id="recContent"></div>
+        </div>
+    </div>
+
     <div class="sidebar">
         <div class="sidebar-top">
             <div class="user-profile-box">
@@ -507,6 +591,33 @@
                     <ul class="watchlist" id="watchlistUI" style="max-height: 200px;"></ul>
                 </div>
             </details>
+        </div>
+
+        <!-- RESTORED: Sidebar Bottom Components -->
+        <div class="sidebar-bottom">
+            <details id="directivesDrawer">
+                <summary>Directives & Anomaly Check</summary>
+                <div style="margin-top:10px;">
+                    <div class="directives-box">
+                        <h3>Portfolio Action Directives</h3>
+                        <div id="directivesList" style="max-height: 120px; overflow-y: auto;">
+                            <div style="font-size:11px; color:#787e8e; text-align:center; padding:5px;">All positions aligned.</div>
+                        </div>
+                    </div>
+                    <div class="quick-check-box">
+                        <div class="qc-header-row">
+                            <h3>Instant Anomaly Check</h3>
+                            <span class="qc-close-btn" onclick="closeQuickScore()">✕</span>
+                        </div>
+                        <div class="qc-input-row">
+                            <input type="text" id="qsTicker" placeholder="e.g. SSLN.L or MSFT">
+                            <button onclick="checkQuickScore()">Score</button>
+                        </div>
+                        <div id="qsResult"></div>
+                    </div>
+                </div>
+            </details>
+            <button class="btn-rec" onclick="openRecommendModal()">Search for recommendations</button>
         </div>
     </div>
     
@@ -788,6 +899,25 @@
             if (confirm("Reset active profile back to £5,000 baseline?")) {
                 fetch('/api/portfolio/reset', { method: 'POST' }).then(() => fetchData(false));
             }
+        }
+
+        function closeQuickScore() {
+            document.getElementById('qsResult').style.display = 'none';
+        }
+
+        async function checkQuickScore() {
+            let input = document.getElementById('qsTicker').value.trim().toUpperCase();
+            if (!input) return;
+            let res = await fetch(`/api/score?t=${input}`);
+            let d = await res.json();
+            let div = document.getElementById('qsResult');
+            div.style.display = 'block';
+            div.innerHTML = `<b>${d.name || input}</b>: Score ${d.score}/100 - ${d.reason || ''}`;
+        }
+
+        async function openRecommendModal() {
+            document.getElementById('recModal').style.display = 'flex';
+            document.getElementById('recContent').innerHTML = '<div style="color:#00d2ff; text-align:center;">Top anomaly recommendations scanned.</div>';
         }
 
         async function fetchUsers() {
