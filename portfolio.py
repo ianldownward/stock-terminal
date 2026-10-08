@@ -16,18 +16,17 @@ def send_push_notification(topic, title, message):
     except Exception: 
         pass
 
-# Exact accrued performance baselines for your 10 active profiles
 REAL_PROFILE_BASELINES = {
-    'Test E6 - Breakeven Rotator': 5480.82,
-    'Test E7 - Breakeven 0.5% Rotator': 5383.26,
-    'Test E4 - Clean EOD Rotator': 5321.55,
+    'Test E6 - Breakeven Rotator': 5434.52,
+    'Test E - Rotator': 5300.19,
+    'Test E8 - Meta-Adaptive Rotator': 5288.70,
+    'Test E4 - Clean EOD Rotator': 5273.04,
+    'Test E7 - Breakeven 0.5% Rotator': 5265.76,
     'Test E12 - E4 Momentum Hybrid': 5248.63,
-    'Test E8 - Meta-Adaptive Rotator': 5245.30,
-    'Test U - Tight Rotator': 5231.86,
+    'Test U - Tight Rotator': 5144.00,
     'Test E13 - E6 Breakeven 0.5% Hybrid': 5193.22,
     'Test A - Deep Value': 5016.42,
-    'Test E - Rotator': 4975.89,
-    'Test X - Dynamic Target Switch (15m ORB)': 4966.65
+    'Test X - Dynamic Target Switch (15m ORB)': 4930.64
 }
 
 class PortfolioManager:
@@ -40,19 +39,18 @@ class PortfolioManager:
         mongo_uri = os.environ.get('MONGO_URI')
         if mongo_uri and MongoClient:
             try:
-                self.client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000, connectTimeoutMS=2000, socketTimeoutMS=2000)
+                self.client = MongoClient(mongo_uri, serverSelectionTimeoutMS=1000, connectTimeoutMS=1000, socketTimeoutMS=1000)
                 self.collection = self.client['stock_terminal']['portfolio']
             except Exception: 
                 self.client = None
                 self.collection = None
         
-        self.data = self.load()
+        self.data = self.load_initial()
         self._ensure_default_user()
 
     def default_user_state(self, username=""):
         prof_name = str(username).strip()
         prof_lower = prof_name.lower()
-        
         starting_budget = REAL_PROFILE_BASELINES.get(prof_name, 5000.0)
 
         if 'test a' in prof_lower:
@@ -69,16 +67,7 @@ class PortfolioManager:
             'settings': {'period': '1d', 'interval': '5m', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
-    def load(self):
-        if self.client and self.collection is not None:
-            try:
-                doc = self.collection.find_one({"_id": "main_store"})
-                if doc and isinstance(doc.get('users'), dict) and len(doc.get('users')) > 0:
-                    doc.pop('_id', None)
-                    return doc
-            except Exception: 
-                pass
-        
+    def load_initial(self):
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, 'r') as f:
@@ -88,11 +77,22 @@ class PortfolioManager:
             except Exception: 
                 pass
         
+        if self.client and self.collection is not None:
+            try:
+                doc = self.collection.find_one({"_id": "main_store"})
+                if doc and isinstance(doc.get('users'), dict) and len(doc.get('users')) > 0:
+                    doc.pop('_id', None)
+                    return doc
+            except Exception: 
+                pass
+
         initial = {'active_user': 'Test E6 - Breakeven Rotator', 'users': {}}
         return initial
 
     def reload(self):
-        self.data = self.load()
+        # Memory-first reload to prevent blocking HTTP threads on Mongo Atlas
+        if not isinstance(self.data, dict) or 'users' not in self.data:
+            self.data = self.load_initial()
         self._ensure_default_user()
 
     def _ensure_default_user(self):
@@ -108,7 +108,7 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Purge legacy profiles not in approved list
+            # Purge non-approved profiles
             existing = list(self.data['users'].keys())
             for u in existing:
                 if u not in allowed_profiles:
@@ -116,17 +116,16 @@ class PortfolioManager:
                     needs_save = True
 
             # Enforce real accrued performance baseline across all 10 profiles
-            for p in allowed_profiles:
-                target_baseline = REAL_PROFILE_BASELINES.get(p, 5000.0)
+            for p, target_baseline in REAL_PROFILE_BASELINES.items():
                 if p not in self.data['users'] or not isinstance(self.data['users'][p], dict) or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
                 else:
                     u_data = self.data['users'][p]
                     mb = safe_float(u_data.get('master_budget'))
-                    # Reset profiles with corrupted low numbers (< £1000) or missing structure
-                    if mb < 1000 or mb > 20000:
-                        self.data['users'][p] = self.default_user_state(p)
+                    # Overwrite MongoDB corrupted baseline figures (< £1000 or exactly £5000)
+                    if mb < 1000 or mb == 5000.0:
+                        u_data['master_budget'] = target_baseline
                         needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
@@ -139,16 +138,17 @@ class PortfolioManager:
             pass
 
     def save_data(self, data_to_save):
-        if self.client and self.collection is not None:
-            try: 
-                self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
-            except Exception: 
-                pass
         try:
             with open(self.filename, 'w') as f: 
                 json.dump(data_to_save, f, indent=2)
         except Exception: 
             pass
+            
+        if self.client and self.collection is not None:
+            try: 
+                self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
+            except Exception: 
+                pass
 
     def active_username(self): 
         if isinstance(self.data, dict) and self.data.get('active_user'):

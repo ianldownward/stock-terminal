@@ -272,7 +272,6 @@
             width: 100%; 
         }
         
-        /* Dropdowns: Reverted to standard dark controls without cyan borders */
         select { 
             background: #0f1115; 
             border: 1px solid #262b36; 
@@ -287,7 +286,6 @@
             border-color: #00d2ff; 
         }
 
-        /* Top Action Buttons: Cyan accents */
         .btn-control { 
             background: #0f1115; 
             border: 1px solid #00d2ff; 
@@ -1082,11 +1080,14 @@
             } else {
                 if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
                 let style = document.getElementById('styleSelect') ? document.getElementById('styleSelect').value : 'candlestick';
-                if (!tvSeries) {
-                    if (style === 'line') tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
-                    else if (style === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff' });
-                    else tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false });
-                }
+                
+                // Re-initialize series to prevent LightweightCharts price scale misalignment across timeframe changes
+                if (tvSeries) { try { tvChart.removeSeries(tvSeries); } catch(e){} tvSeries = null; }
+
+                if (style === 'line') tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
+                else if (style === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff' });
+                else tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false });
+
                 if (Array.isArray(masterData) && masterData.length > 0) {
                     tvSeries.setData(masterData);
                     try { tvChart.timeScale().fitContent(); } catch(e){}
@@ -1098,10 +1099,14 @@
             let loader = document.getElementById('loader'); 
             if (!silent && loader) loader.style.display = 'block';
             
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second hard timeout guarantee
+
             try {
                 let pSelect = document.getElementById('periodSelect').value;
                 let iSelect = document.getElementById('intervalSelect').value;
-                let res = await fetch(`/api/data?t=${currentTicker}&p=${pSelect}&i=${iSelect}`); 
+                let res = await fetch(`/api/data?t=${currentTicker}&p=${pSelect}&i=${iSelect}`, { signal: controller.signal }); 
+                clearTimeout(timeoutId);
                 let p = await res.json(); 
                 
                 if (p.is_multi) masterData = p.lines || []; 
@@ -1135,7 +1140,7 @@
             } catch(e) { 
                 console.error("fetchData error:", e);
             } finally {
-                // Removes loader overlay unconditionally
+                // Guaranteed removal of the loader overlay
                 if (loader) loader.style.display = 'none';
             }
         }

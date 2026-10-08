@@ -1,6 +1,5 @@
 import os, time
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
 try:
     import yfinance as yf
 except ImportError:
@@ -60,21 +59,9 @@ def fetch_ticker_fast(tick, period="1d", interval="5m"):
     cache_key = f"{tick}_{period}_{interval}"
     cached = YF_CACHE.get(cache_key)
     if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
-        if time.time() - cached[0] < 300:
-            return tick, cached[1]
+        return tick, cached[1]
 
-    if yf:
-        try:
-            df = yf.Ticker(tick).history(period=period, interval=interval)
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-                YF_CACHE[cache_key] = (time.time(), df)
-                return tick, df
-        except Exception:
-            pass
-
-    # Fallback to standard 1d 5m cache
+    # Non-blocking check against standard cache keys
     std_cached = YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
     if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
         return tick, std_cached[1]
@@ -301,30 +288,23 @@ def get_data():
             lines = []
             colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
             watchlist_sample = wl[:10]
-            fetched_dfs = {}
-            
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                futures = [executor.submit(fetch_ticker_fast, tick, req_period, req_interval) for tick in watchlist_sample]
-                for future in futures:
-                    try:
-                        tick, df_t = future.result()
-                        if not df_t.empty:
-                            fetched_dfs[tick] = df_t
-                    except Exception:
-                        pass
 
             c_idx = 0
             for tick in watchlist_sample:
-                df_t = fetched_dfs.get(tick)
+                _, df_t = fetch_ticker_fast(tick, req_period, req_interval)
                 line_data = []
+                seen_times = set()
                 if isinstance(df_t, pd.DataFrame) and not df_t.empty:
-                    base_price = normalize_price(tick, extract_val(df_t.iloc[0], 'Close'))
+                    df_sorted = df_t.sort_index()
+                    base_price = normalize_price(tick, extract_val(df_sorted.iloc[0], 'Close'))
                     if base_price > 0:
-                        for idx, row in df_t.iterrows():
+                        for idx, row in df_sorted.iterrows():
                             cp = normalize_price(tick, extract_val(row, 'Close'))
                             val = round(((cp - base_price) / base_price) * 100.0, 2)
                             t_fmt = idx.strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else int(idx.timestamp())
-                            line_data.append({'time': t_fmt, 'value': val})
+                            if t_fmt not in seen_times:
+                                seen_times.add(t_fmt)
+                                line_data.append({'time': t_fmt, 'value': val})
 
                 if not line_data:
                     t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
@@ -355,16 +335,20 @@ def get_data():
         # --- SINGLE TICKER OHLC ---
         _, cache_df = fetch_ticker_fast(t, req_period, req_interval)
         data = []
+        seen_times = set()
         if isinstance(cache_df, pd.DataFrame) and not cache_df.empty:
-            for i, r in cache_df.iterrows():
+            df_sorted = cache_df.sort_index()
+            for i, r in df_sorted.iterrows():
                 t_fmt = i.strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else int(i.timestamp())
-                data.append({
-                    'time': t_fmt,
-                    'open': normalize_price(t, extract_val(r, 'Open')),
-                    'high': normalize_price(t, extract_val(r, 'High')),
-                    'low': normalize_price(t, extract_val(r, 'Low')),
-                    'close': normalize_price(t, extract_val(r, 'Close'))
-                })
+                if t_fmt not in seen_times:
+                    seen_times.add(t_fmt)
+                    data.append({
+                        'time': t_fmt,
+                        'open': normalize_price(t, extract_val(r, 'Open')),
+                        'high': normalize_price(t, extract_val(r, 'High')),
+                        'low': normalize_price(t, extract_val(r, 'Low')),
+                        'close': normalize_price(t, extract_val(r, 'Close'))
+                    })
 
         hist_fallback = get_last_traded_price(ud, t, default=10.0)
         if not data:

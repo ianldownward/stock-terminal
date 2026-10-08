@@ -2,19 +2,31 @@
   "active_user": "Test E6 - Breakeven Rotator",
   "users": {
     "Test E6 - Breakeven Rotator": {
-      "master_budget": 5480.82,
+      "master_budget": 5434.52,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
-    "Test E7 - Breakeven 0.5% Rotator": {
-      "master_budget": 5383.26,
+    "Test E - Rotator": {
+      "master_budget": 5300.19,
+      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
+      "initial_positions": {}, "holdings": {}, "history": [],
+      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
+    },
+    "Test E8 - Meta-Adaptive Rotator": {
+      "master_budget": 5288.70,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E4 - Clean EOD Rotator": {
-      "master_budget": 5321.55,
+      "master_budget": 5273.04,
+      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
+      "initial_positions": {}, "holdings": {}, "history": [],
+      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
+    },
+    "Test E7 - Breakeven 0.5% Rotator": {
+      "master_budget": 5265.76,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
@@ -25,14 +37,8 @@
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
-    "Test E8 - Meta-Adaptive Rotator": {
-      "master_budget": 5245.30,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
-      "initial_positions": {}, "holdings": {}, "history": [],
-      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
-    },
     "Test U - Tight Rotator": {
-      "master_budget": 5231.86,
+      "master_budget": 5144.00,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
@@ -49,14 +55,8 @@
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
-    "Test E - Rotator": {
-      "master_budget": 4975.89,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
-      "initial_positions": {}, "holdings": {}, "history": [],
-      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
-    },
     "Test X - Dynamic Target Switch (15m ORB)": {
-      "master_budget": 4966.65,
+      "master_budget": 4930.64,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
