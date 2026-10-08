@@ -298,10 +298,9 @@ def get_data():
         if t == 'ALL_SHARES':
             lines = []
             colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
-            
-            # Parallel multi-thread fetch for fast initial loading without blocking
             watchlist_sample = wl[:10]
             fetched_dfs = {}
+            
             with ThreadPoolExecutor(max_workers=5) as executor:
                 futures = [executor.submit(fetch_ticker_fast, tick, req_period, req_interval) for tick in watchlist_sample]
                 for future in futures:
@@ -312,19 +311,28 @@ def get_data():
                     except Exception:
                         pass
 
+            now_ts = int(time.time())
             c_idx = 0
             for tick in watchlist_sample:
                 df_t = fetched_dfs.get(tick)
+                line_data = []
                 if isinstance(df_t, pd.DataFrame) and not df_t.empty:
                     base_price = normalize_price(tick, extract_val(df_t.iloc[0], 'Close'))
                     if base_price > 0:
-                        line_data = []
                         for idx, row in df_t.iterrows():
                             cp = normalize_price(tick, extract_val(row, 'Close'))
                             val = round(((cp - base_price) / base_price) * 100.0, 2)
                             line_data.append({'time': int(idx.timestamp()), 'value': val})
-                        lines.append({'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data})
-                        c_idx += 1
+
+                # Fallback baseline line if cache warming up so chart renders immediately
+                if not line_data:
+                    line_data = [
+                        {'time': now_ts - 300, 'value': 0.0},
+                        {'time': now_ts, 'value': 0.0}
+                    ]
+
+                lines.append({'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data})
+                c_idx += 1
 
             return jsonify({
                 'is_multi': True, 'lines': lines, 'wl_status': {}, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'leaderboard': leaderboard,
@@ -402,10 +410,13 @@ def get_data():
                 lb_fb.append({'user': u_k, 'equity': 5000.0, 'budget': 5000.0, 'daily_pnl': 0.0, 'has_active_holds': False})
         
         is_multi_view = (t == 'ALL_SHARES')
+        now_ts = int(time.time())
+        fallback_lines = [{'ticker': tk, 'color': '#00d2ff', 'data': [{'time': now_ts - 300, 'value': 0.0}, {'time': now_ts, 'value': 0.0}]} for tk in ['TQQQ', 'SOXL', 'NVDL', 'NVDA']]
+        
         return jsonify({
             'is_multi': is_multi_view,
-            'lines': [] if is_multi_view else [],
-            'ohlc': [] if is_multi_view else [{'time': int(time.time()), 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
+            'lines': fallback_lines if is_multi_view else [],
+            'ohlc': [] if is_multi_view else [{'time': now_ts, 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
             'mathLine': [], 'wl_status': {}, 'name': 'ALL_SHARES' if is_multi_view else 'NVDA',
             'portfolio': ud_fb if ud_fb else {'watchlist': ['NVDA'], 'history': [], 'holdings': {}},
             'leaderboard': lb_fb,
