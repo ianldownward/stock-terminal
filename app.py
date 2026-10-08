@@ -1,11 +1,5 @@
 import os, time
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
-
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
 from engine import MarketScoringEngine, safe_float, normalize_price
@@ -56,27 +50,18 @@ def find_matching_user(users_dict, requested_name):
     return first_key, users_dict.get(first_key, portfolio_store.default_user_state(first_key))
 
 def fetch_ticker_fast(tick, period="1d", interval="5m"):
-    cache_key = f"{tick}_{period}_{interval}"
-    cached = YF_CACHE.get(cache_key)
-    if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
-        if time.time() - cached[0] < 60:
-            return tick, cached[1]
+    tick = tick.upper().strip()
+    cache_key_std = f"{tick}_5m"
+    cached_std = YF_CACHE.get(cache_key_std)
+    if cached_std and isinstance(cached_std[1], pd.DataFrame) and not cached_std[1].empty:
+        return tick, cached_std[1]
     
-    if yf:
-        try:
-            df = yf.Ticker(tick).history(period=period, interval=interval)
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-                YF_CACHE[cache_key] = (time.time(), df)
-                return tick, df
-        except Exception:
-            pass
+    cache_key_spec = f"{tick}_{period}_{interval}"
+    cached_spec = YF_CACHE.get(cache_key_spec)
+    if cached_spec and isinstance(cached_spec[1], pd.DataFrame) and not cached_spec[1].empty:
+        return tick, cached_spec[1]
 
-    fallback_cached = YF_CACHE.get(f"{tick}_1d_5m")
-    if fallback_cached and isinstance(fallback_cached[1], pd.DataFrame):
-        return tick, fallback_cached[1]
-
+    # Return empty DataFrame instantly without blocking Flask thread
     return tick, pd.DataFrame()
 
 @app.route('/')
@@ -172,10 +157,7 @@ def get_score():
     try:
         active_profile = portfolio_store.active_username()
         _, df = fetch_ticker_fast(t, "1d", "5m")
-        if df.empty:
-            return jsonify({'error': 'Ticker not found.'}), 400
-            
-        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close'))
+        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close')) if not df.empty else 10.0
         engine = MarketScoringEngine()
         _, df_qqq = fetch_ticker_fast('QQQ', "1d", "5m")
         regime = engine.check_market_regime(df_qqq)
@@ -202,11 +184,16 @@ def get_directives():
 def get_recommendations():
     return jsonify({'recommendations': []})
 
+@app.route('/api/trade_journey', methods=['GET'])
+def trade_journey():
+    return jsonify({'trades': []})
+
 @app.route('/api/data', methods=['GET'])
 def get_data():
     t = request.args.get('t', '').upper().strip() or 'ALL_SHARES'
     req_period = request.args.get('p', '1d').strip()
     req_interval = request.args.get('i', '5m').strip()
+    now_ts = int(time.time())
     
     try:
         portfolio_store.reload()
@@ -240,8 +227,8 @@ def get_data():
         for tk in active_holds:
             sh = open_positions[tk]
             p = get_last_traded_price(ud, tk, default=10.0)
-            cached_item = YF_CACHE.get(f"{tk}_1d_5m")
-            if cached_item and not cached_item[1].empty: 
+            cached_item = YF_CACHE.get(f"{tk}_5m")
+            if cached_item and isinstance(cached_item[1], pd.DataFrame) and not cached_item[1].empty: 
                 p = normalize_price(tk, extract_val(cached_item[1].iloc[-1], 'Close'))
             tot_own += sh * p
 
@@ -252,7 +239,8 @@ def get_data():
         master_pnl_data = {'all': {'val': pnl_formatted, 'color': pnl_color}}
 
         engine = MarketScoringEngine()
-        _, df_qqq = fetch_ticker_fast('QQQ', '1d', '5m')
+        cached_qqq = YF_CACHE.get('QQQ_5m')
+        df_qqq = cached_qqq[1] if cached_qqq and isinstance(cached_qqq[1], pd.DataFrame) else pd.DataFrame()
         regime = engine.check_market_regime(df_qqq)
 
         leaderboard = []
@@ -282,8 +270,8 @@ def get_data():
                 for tk_lb, sh_lb in sh_lb_map.items():
                     if round(sh_lb, 4) >= 0.01:
                         p_lb = get_last_traded_price(u_data, tk_lb, default=10.0)
-                        cached_lb = YF_CACHE.get(f"{tk_lb}_1d_5m")
-                        if cached_lb and not cached_lb[1].empty: 
+                        cached_lb = YF_CACHE.get(f"{tk_lb}_5m")
+                        if cached_lb and isinstance(cached_lb[1], pd.DataFrame) and not cached_lb[1].empty: 
                             p_lb = normalize_price(tk_lb, extract_val(cached_lb[1].iloc[-1], 'Close'))
                         holdings_val_lb += sh_lb * p_lb
 
@@ -296,27 +284,16 @@ def get_data():
                     'budget': mb_lb, 'daily_pnl': pnl_lb, 'has_active_holds': has_holds
                 })
 
-        # --- ALL SHARES / MULTI-LINE PERFORMANCE ---
+        # --- ALL SHARES / MULTI-LINE PERFORMANCE (100% In-Memory) ---
         if t == 'ALL_SHARES':
             lines = []
             colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
             watchlist_sample = wl[:10]
-            fetched_dfs = {}
-            
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                futures = [executor.submit(fetch_ticker_fast, tick, req_period, req_interval) for tick in watchlist_sample]
-                for future in futures:
-                    try:
-                        tick, df_t = future.result()
-                        if not df_t.empty:
-                            fetched_dfs[tick] = df_t
-                    except Exception:
-                        pass
 
-            now_ts = int(time.time())
             c_idx = 0
             for tick in watchlist_sample:
-                df_t = fetched_dfs.get(tick)
+                cached_item = YF_CACHE.get(f"{tick}_5m")
+                df_t = cached_item[1] if cached_item and isinstance(cached_item[1], pd.DataFrame) else pd.DataFrame()
                 line_data = []
                 if isinstance(df_t, pd.DataFrame) and not df_t.empty:
                     base_price = normalize_price(tick, extract_val(df_t.iloc[0], 'Close'))
@@ -350,15 +327,15 @@ def get_data():
                 }
             })
 
-        # --- SINGLE TICKER OHLC ---
-        _, cache_df = fetch_ticker_fast(t, req_period, req_interval)
+        # --- SINGLE TICKER OHLC (100% In-Memory) ---
+        cached_single = YF_CACHE.get(f"{t}_5m")
+        cache_df = cached_single[1] if cached_single and isinstance(cached_single[1], pd.DataFrame) else pd.DataFrame()
         data = []
         if isinstance(cache_df, pd.DataFrame) and not cache_df.empty:
             data = [{'time': int(i.timestamp()), 'open': normalize_price(t, extract_val(r, 'Open')), 'high': normalize_price(t, extract_val(r, 'High')), 'low': normalize_price(t, extract_val(r, 'Low')), 'close': normalize_price(t, extract_val(r, 'Close'))} for i, r in cache_df.iterrows()]
 
         hist_fallback = get_last_traded_price(ud, t, default=10.0)
         if not data:
-            now_ts = int(time.time())
             data = [{'time': now_ts - 300, 'open': hist_fallback, 'high': hist_fallback, 'low': hist_fallback, 'close': hist_fallback}, {'time': now_ts, 'open': hist_fallback, 'high': hist_fallback, 'low': hist_fallback, 'close': hist_fallback}]
 
         last_p = round(safe_float(data[-1]['close'], hist_fallback), 2)
@@ -411,7 +388,6 @@ def get_data():
                 lb_fb.append({'user': u_k, 'equity': 5000.0, 'budget': 5000.0, 'daily_pnl': 0.0, 'has_active_holds': False})
         
         is_multi_view = (t == 'ALL_SHARES')
-        now_ts = int(time.time())
         fallback_lines = [{'ticker': tk, 'color': '#00d2ff', 'data': [{'time': now_ts - 300, 'value': 0.0}, {'time': now_ts, 'value': 0.0}]} for tk in ['TQQQ', 'SOXL', 'NVDL', 'NVDA']]
         
         return jsonify({

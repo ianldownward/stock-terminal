@@ -220,18 +220,6 @@
             text-transform: uppercase; 
             text-align: center; 
         }
-        .directive-item { 
-            background: #0f1115; 
-            border: 1px solid #262b36; 
-            border-radius: 6px; 
-            padding: 8px; 
-            margin-bottom: 6px; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-        }
-        .directive-info { font-size: 11px; color: #fff; display: flex; align-items: center; }
-        .directive-info b { color: #00d2ff; }
         
         .search-box { display: flex; gap: 8px; margin-bottom: 15px; flex-shrink: 0; }
         .search-box input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; }
@@ -284,7 +272,7 @@
             width: 100%; 
         }
         
-        /* Standard dark dropdown controls */
+        /* Dropdowns: Reverted to standard dark controls without cyan borders */
         select { 
             background: #0f1115; 
             border: 1px solid #262b36; 
@@ -593,7 +581,6 @@
             </details>
         </div>
 
-        <!-- RESTORED: Sidebar Bottom Components -->
         <div class="sidebar-bottom">
             <details id="directivesDrawer">
                 <summary>Directives & Anomaly Check</summary>
@@ -1148,6 +1135,7 @@
             } catch(e) { 
                 console.error("fetchData error:", e);
             } finally {
+                // Removes loader overlay unconditionally
                 if (loader) loader.style.display = 'none';
             }
         }
