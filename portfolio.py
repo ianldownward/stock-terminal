@@ -15,6 +15,7 @@ def send_push_notification(topic, title, message):
 class PortfolioManager:
     def __init__(self):
         self.trade_lock = threading.Lock()
+        self.filename = 'portfolio.json'
         self.mongo_uri = os.environ.get('MONGO_URI')
         if self.mongo_uri:
             try:
@@ -24,7 +25,6 @@ class PortfolioManager:
                 self.client = None
         else:
             self.client = None
-            self.filename = 'portfolio.json'
         
         self.data = self.load()
         self._ensure_default_user()
@@ -72,7 +72,6 @@ class PortfolioManager:
 
     def _ensure_default_user(self):
         try:
-            # Your exact 10 approved strategy profiles
             allowed_profiles = [
                 'Test E6 - Breakeven Rotator',
                 'Test E7 - Breakeven 0.5% Rotator',
@@ -91,14 +90,12 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Purge non-approved profiles
             existing = list(self.data['users'].keys())
             for u in existing:
                 if u not in allowed_profiles:
                     del self.data['users'][u]
                     needs_save = True
 
-            # Ensure all 10 profiles exist
             for p in allowed_profiles:
                 if p not in self.data['users']:
                     self.data['users'][p] = self.default_user_state(p)
@@ -137,50 +134,64 @@ class PortfolioManager:
             self.save_data(self.data)
         return self.data['users'][au]
 
+    def add_user(self, username):
+        if not username or not username.strip(): return
+        self.reload()
+        u = username.strip()
+        if 'users' not in self.data: self.data['users'] = {}
+        if u not in self.data['users']:
+            self.data['users'][u] = self.default_user_state(u)
+        self.data['active_user'] = u
+        self.save_data(self.data)
+
+    def delete_user(self, username):
+        self.reload()
+        if 'users' in self.data and username in self.data['users'] and len(self.data['users']) > 1:
+            del self.data['users'][username]
+            if self.data.get('active_user') == username:
+                self.data['active_user'] = list(self.data['users'].keys())[0]
+            self.save_data(self.data)
+            return True
+        return False
+
     def switch_user(self, username):
         if 'users' in self.data and username in self.data['users']:
             self.data['active_user'] = username
             self.save_data(self.data)
 
-    def get_shares(self, ticker, username=None):
-        if not ticker: return 0.0
-        ud = self.user_data(username)
-        init_pos = ud.get('initial_positions') or {}
-        init_sh = safe_float((init_pos.get(ticker) or {}).get('shares', 0))
-        net_sh = sum(safe_float(t.get('shares', 0)) if str(t.get('action')).upper() == 'BUY' else -safe_float(t.get('shares', 0)) for t in ud.get('history', []) if t.get('ticker') == ticker)
-        return max(0.0, init_sh + net_sh)
+    def reset_all(self):
+        self.reload()
+        au = self.active_username()
+        self.data['users'][au] = self.default_user_state(au)
+        self.save_data(self.data)
+        return self.user_data()
 
-    def execute_trade(self, ticker, action_type, shares, price, username=None):
-        with self.trade_lock:
-            if not ticker or shares <= 0: return None
-            ud = self.user_data(username)
-            action = 'BUY' if 'BUY' in action_type.upper() else 'SELL'
-            cost_per_sh = normalize_price(ticker, price)
-            
-            if action == 'SELL':
-                curr_tot = self.get_shares(ticker, username)
-                if curr_tot < shares: shares = curr_tot
-                if shares <= 0: return None
-                
-            tot_amt = round(shares * cost_per_sh, 2)
-            now = pd.Timestamp.now(tz='Europe/London')
-            
-            entry = {
-                'id': str(int(time.time() * 1000)), 
-                'ticker': ticker, 
-                'trade_type': 'SHORT' if ticker in ['SQQQ', '3SUS.L'] else 'LONG', 
-                'action': action, 
-                'shares': shares, 
-                'price': price, 
-                'amount': tot_amt, 
-                'time': now.strftime('%d %b %H:%M'), 
-                'date_str': now.strftime('%Y-%m-%d'), 
-                'timestamp': int(now.timestamp())
-            }
-            
-            if 'history' not in ud: ud['history'] = []
-            ud['history'].insert(0, entry)
-            self.save_data(self.data)
-            return entry
+    def reset_all_profiles_to_5000(self):
+        self.reload()
+        for u in list(self.data.get('users', {}).keys()):
+            wl = self.data['users'][u].get('watchlist', [])
+            st = self.data['users'][u].get('settings', {})
+            self.data['users'][u] = self.default_user_state(u)
+            if wl: self.data['users'][u]['watchlist'] = wl
+            if st: self.data['users'][u]['settings'] = st
+            self.data['users'][u]['master_budget'] = 5000.0
+        self.save_data(self.data)
 
-portfolio_store = PortfolioManager()
+    def update_settings(self, settings):
+        self.reload()
+        ud = self.user_data()
+        if 'settings' not in ud: ud['settings'] = {}
+        ud['settings'].update(settings)
+        self.save_data(self.data)
+
+    def update_budget(self, budget):
+        self.reload()
+        ud = self.user_data()
+        ud['master_budget'] = safe_float(budget, 5000.0)
+        self.save_data(self.data)
+
+    def add_watchlist(self, ticker):
+        if not ticker: return
+        self.reload()
+        ud = self.user_data()
+        tk = ticker.strip().upper()

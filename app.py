@@ -2,7 +2,7 @@ import os, time
 import pandas as pd
 import yfinance as yf
 from flask import Flask, jsonify, request, render_template
-from portfolio import portfolio_store
+from portfolio import portfolio_store, send_push_notification
 from engine import MarketScoringEngine, safe_float, normalize_price
 from worker import YF_CACHE, start_threads
 
@@ -58,6 +58,108 @@ def select_user():
         return jsonify({'status': 'ok', 'active_user': real_key})
     except Exception:
         return jsonify({'status': 'ok', 'active_user': portfolio_store.active_username()})
+
+@app.route('/api/users/add', methods=['POST'])
+def add_user():
+    b = request.get_json() or {}
+    portfolio_store.add_user(b.get('username', ''))
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/users/delete', methods=['POST'])
+def delete_user():
+    b = request.get_json() or {}
+    success = portfolio_store.delete_user(b.get('username', ''))
+    return jsonify({'status': 'ok' if success else 'error'})
+
+@app.route('/api/portfolio', methods=['GET'])
+def get_portfolio():
+    return jsonify(portfolio_store.user_data())
+
+@app.route('/api/portfolio/reset', methods=['POST'])
+def reset_portfolio():
+    return jsonify({'status': 'ok', 'portfolio': portfolio_store.reset_all()})
+
+@app.route('/api/portfolio/reset_all_profiles', methods=['POST'])
+def reset_all_profiles():
+    portfolio_store.reset_all_profiles_to_5000()
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/portfolio/settings', methods=['POST'])
+def update_settings():
+    b = request.get_json() or {}
+    portfolio_store.update_settings(b.get('settings', {}))
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/portfolio/budget', methods=['POST'])
+def update_budget():
+    b = request.get_json() or {}
+    portfolio_store.update_budget(b.get('budget', 5000))
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/watchlist/add', methods=['POST'])
+def add_watchlist():
+    b = request.get_json() or {}
+    portfolio_store.add_watchlist(b.get('ticker', ''))
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/watchlist/delete', methods=['POST'])
+def delete_watchlist():
+    b = request.get_json() or {}
+    portfolio_store.remove_watchlist(b.get('ticker', ''))
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/portfolio/holding', methods=['POST'])
+def update_holding():
+    b = request.get_json() or {}
+    shares = portfolio_store.set_holding_value(b.get('ticker'), b.get('value_owned', 0), b.get('price', 1))
+    return jsonify({'status': 'ok', 'shares': shares})
+
+@app.route('/api/trade/execute', methods=['POST'])
+def execute_trade():
+    b = request.get_json() or {}
+    entry = portfolio_store.execute_trade(b.get('ticker'), b.get('action'), safe_float(b.get('shares')), safe_float(b.get('price')), b.get('username'))
+    return jsonify({'status': 'ok', 'entry': entry})
+
+@app.route('/api/trade/undo', methods=['POST'])
+def undo_trade():
+    b = request.get_json() or {}
+    success = portfolio_store.undo_trade(b.get('id'))
+    return jsonify({'status': 'ok' if success else 'error'})
+
+@app.route('/api/score', methods=['GET'])
+def get_score():
+    t = request.args.get('t', '').upper().strip()
+    try:
+        active_profile = portfolio_store.active_username()
+        df = YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame()))[1]
+        if df.empty:
+            try:
+                df = yf.Ticker(t).history(period="1d", interval="5m")
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+            except Exception:
+                pass
+        if df.empty:
+            return jsonify({'error': 'Ticker not found.'}), 400
+            
+        cur = normalize_price(t, float(df['Close'].iloc[-1]))
+        engine = MarketScoringEngine()
+        df_qqq = YF_CACHE.get('QQQ_5m', (0, pd.DataFrame()))[1]
+        regime = engine.check_market_regime(df_qqq)
+        res = engine.score_momentum(df, cur, profile=active_profile, regime=regime)
+        res.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/push_test', methods=['POST'])
+def test_push():
+    b = request.get_json() or {}
+    topic = b.get('topic', '')
+    if topic:
+        send_push_notification(topic, "Terminal Alert Test", "Push notifications are working!")
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error', 'message': 'No topic provided'})
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
