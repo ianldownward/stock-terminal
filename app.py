@@ -1,5 +1,11 @@
 import os, time
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
+
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
 from engine import MarketScoringEngine, safe_float, normalize_price
@@ -48,6 +54,24 @@ def find_matching_user(users_dict, requested_name):
             return k, v
     first_key = list(users_dict.keys())[0] if users_dict else 'Test E6 - Breakeven Rotator'
     return first_key, users_dict.get(first_key, portfolio_store.default_user_state(first_key))
+
+def fetch_ticker_fast(tick, period="1d", interval="5m"):
+    cache_key = f"{tick}_5m"
+    cached = YF_CACHE.get(cache_key)
+    if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
+        return tick, cached[1]
+    
+    if yf:
+        try:
+            df = yf.Ticker(tick).history(period=period, interval=interval)
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                YF_CACHE[cache_key] = (time.time(), df)
+                return tick, df
+        except Exception:
+            pass
+    return tick, pd.DataFrame()
 
 @app.route('/')
 def index():
@@ -141,10 +165,13 @@ def get_score():
     t = request.args.get('t', '').upper().strip()
     try:
         active_profile = portfolio_store.active_username()
-        df = YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame()))[1]
-        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close')) if not df.empty else 10.0
+        _, df = fetch_ticker_fast(t)
+        if df.empty:
+            return jsonify({'error': 'Ticker not found.'}), 400
+            
+        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close'))
         engine = MarketScoringEngine()
-        df_qqq = YF_CACHE.get('QQQ_5m', (0, pd.DataFrame()))[1]
+        _, df_qqq = fetch_ticker_fast('QQQ')
         regime = engine.check_market_regime(df_qqq)
         res = engine.score_momentum(df, cur, profile=active_profile, regime=regime)
         res.update({'ticker': t, 'name': engine.asset_names.get(t, t), 'price': round(cur, 2)})
@@ -176,6 +203,9 @@ def trade_journey():
 @app.route('/api/data', methods=['GET'])
 def get_data():
     t = request.args.get('t', '').upper().strip() or 'ALL_SHARES'
+    req_period = request.args.get('p', '1d').strip()
+    req_interval = request.args.get('i', '5m').strip()
+    
     try:
         portfolio_store.reload()
         users_dict = portfolio_store.data.get('users', {})
@@ -208,8 +238,9 @@ def get_data():
         for tk in active_holds:
             sh = open_positions[tk]
             p = get_last_traded_price(ud, tk, default=10.0)
-            df_tk = YF_CACHE.get(f"{tk}_5m", (0, pd.DataFrame()))[1]
-            if not df_tk.empty: p = normalize_price(tk, extract_val(df_tk.iloc[-1], 'Close'))
+            cached_item = YF_CACHE.get(f"{tk}_5m")
+            if cached_item and not cached_item[1].empty: 
+                p = normalize_price(tk, extract_val(cached_item[1].iloc[-1], 'Close'))
             tot_own += sh * p
 
         total_equity = cash_balance + tot_own
@@ -219,7 +250,7 @@ def get_data():
         master_pnl_data = {'all': {'val': pnl_formatted, 'color': pnl_color}}
 
         engine = MarketScoringEngine()
-        df_qqq = YF_CACHE.get('QQQ_5m', (0, pd.DataFrame()))[1]
+        _, df_qqq = fetch_ticker_fast('QQQ')
         regime = engine.check_market_regime(df_qqq)
 
         leaderboard = []
@@ -249,8 +280,9 @@ def get_data():
                 for tk_lb, sh_lb in sh_lb_map.items():
                     if round(sh_lb, 4) >= 0.01:
                         p_lb = get_last_traded_price(u_data, tk_lb, default=10.0)
-                        df_lb = YF_CACHE.get(f"{tk_lb}_5m", (0, pd.DataFrame()))[1]
-                        if not df_lb.empty: p_lb = normalize_price(tk_lb, extract_val(df_lb.iloc[-1], 'Close'))
+                        cached_lb = YF_CACHE.get(f"{tk_lb}_5m")
+                        if cached_lb and not cached_lb[1].empty: 
+                            p_lb = normalize_price(tk_lb, extract_val(cached_lb[1].iloc[-1], 'Close'))
                         holdings_val_lb += sh_lb * p_lb
 
                 tot_eq_now = cash_now + holdings_val_lb
@@ -266,9 +298,23 @@ def get_data():
         if t == 'ALL_SHARES':
             lines = []
             colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
+            
+            # Parallel multi-thread fetch for fast initial loading without blocking
+            watchlist_sample = wl[:10]
+            fetched_dfs = {}
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = [executor.submit(fetch_ticker_fast, tick, req_period, req_interval) for tick in watchlist_sample]
+                for future in futures:
+                    try:
+                        tick, df_t = future.result()
+                        if not df_t.empty:
+                            fetched_dfs[tick] = df_t
+                    except Exception:
+                        pass
+
             c_idx = 0
-            for tick in wl[:15]:
-                df_t = YF_CACHE.get(f"{tick}_5m", (0, pd.DataFrame()))[1]
+            for tick in watchlist_sample:
+                df_t = fetched_dfs.get(tick)
                 if isinstance(df_t, pd.DataFrame) and not df_t.empty:
                     base_price = normalize_price(tick, extract_val(df_t.iloc[0], 'Close'))
                     if base_price > 0:
@@ -296,7 +342,7 @@ def get_data():
             })
 
         # --- SINGLE TICKER OHLC ---
-        cache_df = YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame()))[1]
+        _, cache_df = fetch_ticker_fast(t, req_period, req_interval)
         data = []
         if isinstance(cache_df, pd.DataFrame) and not cache_df.empty:
             data = [{'time': int(i.timestamp()), 'open': normalize_price(t, extract_val(r, 'Open')), 'high': normalize_price(t, extract_val(r, 'High')), 'low': normalize_price(t, extract_val(r, 'Low')), 'close': normalize_price(t, extract_val(r, 'Close'))} for i, r in cache_df.iterrows()]
