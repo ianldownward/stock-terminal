@@ -26,7 +26,7 @@ class PortfolioManager:
         mongo_uri = os.environ.get('MONGO_URI')
         if mongo_uri and MongoClient:
             try:
-                self.client = MongoClient(mongo_uri, serverSelectionTimeoutMS=3000)
+                self.client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000, connectTimeoutMS=2000, socketTimeoutMS=2000)
                 self.collection = self.client['stock_terminal']['portfolio']
             except Exception: 
                 self.client = None
@@ -101,23 +101,24 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Delete legacy or non-approved profiles
+            # Purge legacy profiles
             existing = list(self.data['users'].keys())
             for u in existing:
                 if u not in allowed_profiles:
                     del self.data['users'][u]
                     needs_save = True
 
-            # Ensure all 10 approved profiles exist with clean £5000.0 budget
+            # Enforce clean £5000 baseline across all 10 profiles, fixing MongoDB corrupted budgets
             for p in allowed_profiles:
                 if p not in self.data['users'] or not isinstance(self.data['users'][p], dict) or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
                 else:
-                    # Clean up corrupted negative balances or orphaned trade artifacts
                     u_data = self.data['users'][p]
-                    if safe_float(u_data.get('master_budget')) <= 0:
-                        u_data['master_budget'] = 5000.0
+                    mb = safe_float(u_data.get('master_budget'))
+                    # Reset profiles with corrupted figures (< £1000)
+                    if mb < 1000 or mb > 20000:
+                        self.data['users'][p] = self.default_user_state(p)
                         needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
@@ -130,7 +131,7 @@ class PortfolioManager:
             pass
 
     def wipe_all_to_clean_baseline(self):
-        """Resets all 10 strategy profiles to clean £5,000 cash balance and clears old trade history."""
+        """Overwrites MongoDB and local JSON with clean £5,000 baseline for all 10 profiles."""
         self.data = {'active_user': 'Test E6 - Breakeven Rotator', 'users': {}}
         self._ensure_default_user()
         self.save_data(self.data)

@@ -1,5 +1,11 @@
 import os, time
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
+
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
 from engine import MarketScoringEngine, safe_float, normalize_price
@@ -51,17 +57,17 @@ def find_matching_user(users_dict, requested_name):
 
 def fetch_ticker_fast(tick, period="1d", interval="5m"):
     tick = tick.upper().strip()
-    cache_key_std = f"{tick}_5m"
-    cached_std = YF_CACHE.get(cache_key_std)
-    if cached_std and isinstance(cached_std[1], pd.DataFrame) and not cached_std[1].empty:
-        return tick, cached_std[1]
-    
     cache_key_spec = f"{tick}_{period}_{interval}"
     cached_spec = YF_CACHE.get(cache_key_spec)
     if cached_spec and isinstance(cached_spec[1], pd.DataFrame) and not cached_spec[1].empty:
         return tick, cached_spec[1]
 
-    # Return empty DataFrame instantly without blocking Flask thread
+    cache_key_std = f"{tick}_5m"
+    cached_std = YF_CACHE.get(cache_key_std)
+    if cached_std and isinstance(cached_std[1], pd.DataFrame) and not cached_std[1].empty:
+        return tick, cached_std[1]
+
+    # Non-blocking fallback
     return tick, pd.DataFrame()
 
 @app.route('/')
@@ -184,10 +190,6 @@ def get_directives():
 def get_recommendations():
     return jsonify({'recommendations': []})
 
-@app.route('/api/trade_journey', methods=['GET'])
-def trade_journey():
-    return jsonify({'trades': []})
-
 @app.route('/api/data', methods=['GET'])
 def get_data():
     t = request.args.get('t', '').upper().strip() or 'ALL_SHARES'
@@ -292,8 +294,7 @@ def get_data():
 
             c_idx = 0
             for tick in watchlist_sample:
-                cached_item = YF_CACHE.get(f"{tick}_5m")
-                df_t = cached_item[1] if cached_item and isinstance(cached_item[1], pd.DataFrame) else pd.DataFrame()
+                _, df_t = fetch_ticker_fast(tick, req_period, req_interval)
                 line_data = []
                 if isinstance(df_t, pd.DataFrame) and not df_t.empty:
                     base_price = normalize_price(tick, extract_val(df_t.iloc[0], 'Close'))
@@ -328,8 +329,7 @@ def get_data():
             })
 
         # --- SINGLE TICKER OHLC (100% In-Memory) ---
-        cached_single = YF_CACHE.get(f"{t}_5m")
-        cache_df = cached_single[1] if cached_single and isinstance(cached_single[1], pd.DataFrame) else pd.DataFrame()
+        _, cache_df = fetch_ticker_fast(t, req_period, req_interval)
         data = []
         if isinstance(cache_df, pd.DataFrame) and not cache_df.empty:
             data = [{'time': int(i.timestamp()), 'open': normalize_price(t, extract_val(r, 'Open')), 'high': normalize_price(t, extract_val(r, 'High')), 'low': normalize_price(t, extract_val(r, 'Low')), 'close': normalize_price(t, extract_val(r, 'Close'))} for i, r in cache_df.iterrows()]
