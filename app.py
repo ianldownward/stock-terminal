@@ -14,6 +14,15 @@ app = Flask(__name__)
 # Start background price cache & auto-trading threads
 start_threads()
 
+def extract_val(row, col_name, default=10.0):
+    try:
+        val = row[col_name]
+        if isinstance(val, pd.Series):
+            val = val.iloc[0] if not val.empty else default
+        return float(val)
+    except Exception:
+        return default
+
 def get_last_traded_price(ud, ticker, default=10.0):
     if not isinstance(ud, dict) or not ticker:
         return default
@@ -147,7 +156,7 @@ def get_score():
         if df.empty:
             return jsonify({'error': 'Ticker not found.'}), 400
             
-        cur = normalize_price(t, float(df['Close'].iloc[-1]))
+        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close'))
         engine = MarketScoringEngine()
         df_qqq = YF_CACHE.get('QQQ_5m', (0, pd.DataFrame()))[1]
         regime = engine.check_market_regime(df_qqq)
@@ -180,6 +189,7 @@ def trade_journey():
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
+    t = request.args.get('t', '').upper().strip() or 'ALL_SHARES'
     try:
         portfolio_store.reload()
         users_dict = portfolio_store.data.get('users', {})
@@ -206,9 +216,6 @@ def get_data():
                     if tk: open_positions[tk] = open_positions.get(tk, 0.0) - qty
 
         active_holds = [tk for tk, sh in open_positions.items() if round(sh, 4) >= 0.01]
-        t = request.args.get('t', '').upper().strip()
-        if not t:
-            t = 'ALL_SHARES'
 
         cash_balance = mb + net_history
         tot_own = 0.0
@@ -216,7 +223,7 @@ def get_data():
             sh = open_positions[tk]
             p = get_last_traded_price(ud, tk, default=10.0)
             df_tk = YF_CACHE.get(f"{tk}_5m", (0, pd.DataFrame()))[1]
-            if not df_tk.empty: p = normalize_price(tk, float(df_tk['Close'].iloc[-1]))
+            if not df_tk.empty: p = normalize_price(tk, extract_val(df_tk.iloc[-1], 'Close'))
             tot_own += sh * p
 
         total_equity = cash_balance + tot_own
@@ -257,7 +264,7 @@ def get_data():
                     if round(sh_lb, 4) >= 0.01:
                         p_lb = get_last_traded_price(u_data, tk_lb, default=10.0)
                         df_lb = YF_CACHE.get(f"{tk_lb}_5m", (0, pd.DataFrame()))[1]
-                        if not df_lb.empty: p_lb = normalize_price(tk_lb, float(df_lb['Close'].iloc[-1]))
+                        if not df_lb.empty: p_lb = normalize_price(tk_lb, extract_val(df_lb.iloc[-1], 'Close'))
                         holdings_val_lb += sh_lb * p_lb
 
                 tot_eq_now = cash_now + holdings_val_lb
@@ -285,11 +292,11 @@ def get_data():
                     except Exception:
                         pass
                 if isinstance(df_t, pd.DataFrame) and not df_t.empty:
-                    base_price = normalize_price(tick, float(df_t['Close'].iloc[0]))
+                    base_price = normalize_price(tick, extract_val(df_t.iloc[0], 'Close'))
                     if base_price > 0:
                         line_data = []
                         for idx, row in df_t.iterrows():
-                            cp = normalize_price(tick, float(row['Close']))
+                            cp = normalize_price(tick, extract_val(row, 'Close'))
                             val = round(((cp - base_price) / base_price) * 100.0, 2)
                             line_data.append({'time': int(idx.timestamp()), 'value': val})
                         lines.append({'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data})
@@ -325,7 +332,7 @@ def get_data():
 
         data = []
         if isinstance(cache_df, pd.DataFrame) and not cache_df.empty:
-            data = [{'time': int(i.timestamp()), 'open': normalize_price(t, r['Open']), 'high': normalize_price(t, r['High']), 'low': normalize_price(t, r['Low']), 'close': normalize_price(t, r['Close'])} for i, r in cache_df.iterrows()]
+            data = [{'time': int(i.timestamp()), 'open': normalize_price(t, extract_val(r, 'Open')), 'high': normalize_price(t, extract_val(r, 'High')), 'low': normalize_price(t, extract_val(r, 'Low')), 'close': normalize_price(t, extract_val(r, 'Close'))} for i, r in cache_df.iterrows()]
 
         hist_fallback = get_last_traded_price(ud, t, default=10.0)
         if not data:
@@ -375,11 +382,20 @@ def get_data():
         })
     except Exception as err:
         fallback_pnl = {'all': {'val': '£0.00', 'color': '#8a8a9e'}}
+        ud_fb = portfolio_store.user_data() if portfolio_store else {}
+        lb_fb = []
+        if portfolio_store and isinstance(portfolio_store.data.get('users'), dict):
+            for u_k in portfolio_store.data['users'].keys():
+                lb_fb.append({'user': u_k, 'equity': 5000.0, 'budget': 5000.0, 'daily_pnl': 0.0, 'has_active_holds': False})
+        
+        is_multi_view = (t == 'ALL_SHARES')
         return jsonify({
-            'is_multi': False,
-            'ohlc': [{'time': int(time.time()), 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
-            'mathLine': [], 'wl_status': {}, 'name': 'NVDA', 'portfolio': {'watchlist': ['NVDA'], 'history': [], 'holdings': {}},
-            'leaderboard': [],
+            'is_multi': is_multi_view,
+            'lines': [] if is_multi_view else [],
+            'ohlc': [] if is_multi_view else [{'time': int(time.time()), 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
+            'mathLine': [], 'wl_status': {}, 'name': 'ALL_SHARES' if is_multi_view else 'NVDA',
+            'portfolio': ud_fb if ud_fb else {'watchlist': ['NVDA'], 'history': [], 'holdings': {}},
+            'leaderboard': lb_fb,
             'metrics': {
                 'price': 100.0, 'price_display': '£100.00', 'discount': '--', 'buy_score': '--', 'tranches': 0,
                 'status': 'Standby', 'color': '#8a8a9e', 'reason': f'Recovered: {str(err)}', 'action_main': 'HOLD',

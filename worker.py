@@ -1,6 +1,9 @@
 import time, threading
 import pandas as pd
-import yfinance as yf
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
 from portfolio import portfolio_store
 from engine import MarketScoringEngine, normalize_price
 
@@ -23,14 +26,15 @@ def start_unified_background_worker():
 
                 for tk in list(all_tickers):
                     try:
-                        df_single = yf.Ticker(tk).history(period="1d", interval="5m")
-                        if isinstance(df_single, pd.DataFrame) and not df_single.empty:
-                            if isinstance(df_single.columns, pd.MultiIndex):
-                                df_single.columns = df_single.columns.get_level_values(0)
-                            YF_CACHE[f"{tk}_5m"] = (time.time(), df_single)
+                        if yf:
+                            df_single = yf.Ticker(tk).history(period="1d", interval="5m")
+                            if isinstance(df_single, pd.DataFrame) and not df_single.empty:
+                                if isinstance(df_single.columns, pd.MultiIndex):
+                                    df_single.columns = df_single.columns.get_level_values(0)
+                                YF_CACHE[f"{tk}_5m"] = (time.time(), df_single)
                     except Exception:
                         pass
-                    time.sleep(0.3)
+                    time.sleep(0.1)
             except Exception:
                 pass
             time.sleep(15)
