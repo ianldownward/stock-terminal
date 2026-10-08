@@ -29,7 +29,8 @@ def get_last_traded_price(ud, ticker, default=10.0):
 
 def find_matching_user(users_dict, requested_name):
     if not isinstance(users_dict, dict) or not users_dict:
-        return 'Test E6 - Breakeven Rotator', {}
+        portfolio_store._ensure_default_user()
+        users_dict = portfolio_store.data.get('users', {})
     if requested_name in users_dict:
         return requested_name, users_dict[requested_name]
     req_str = str(requested_name or '').strip().lower()
@@ -40,8 +41,8 @@ def find_matching_user(users_dict, requested_name):
         k_str = str(k).strip().lower()
         if k_str in req_str or req_str in k_str:
             return k, v
-    first_key = list(users_dict.keys())[0]
-    return first_key, users_dict[first_key]
+    first_key = list(users_dict.keys())[0] if users_dict else 'Test E6 - Breakeven Rotator'
+    return first_key, users_dict.get(first_key, portfolio_store.default_user_state(first_key))
 
 @app.route('/')
 def index():
@@ -49,7 +50,8 @@ def index():
 
 @app.route('/api/users', methods=['GET'])
 def get_users():
-    users_dict = portfolio_store.data.get('users', {}) if isinstance(getattr(portfolio_store, 'data', None), dict) else {}
+    portfolio_store.reload()
+    users_dict = portfolio_store.data.get('users', {})
     return jsonify({'users': list(users_dict.keys()), 'active_user': portfolio_store.active_username()})
 
 @app.route('/api/users/select', methods=['POST'])
@@ -179,11 +181,12 @@ def trade_journey():
 @app.route('/api/data', methods=['GET'])
 def get_data():
     try:
-        users_dict = portfolio_store.data.get('users', {}) if isinstance(getattr(portfolio_store, 'data', None), dict) else {}
-        target_user = request.args.get('user', '').strip() or getattr(portfolio_store, 'active_username', lambda: 'Test E6 - Breakeven Rotator')()
+        portfolio_store.reload()
+        users_dict = portfolio_store.data.get('users', {})
+        target_user = request.args.get('user', '').strip() or portfolio_store.active_username()
         real_key, ud = find_matching_user(users_dict, target_user)
 
-        wl = ud.get('watchlist') if isinstance(ud.get('watchlist'), list) else ['NVDA', 'TQQQ', 'SOXL']
+        wl = ud.get('watchlist') if isinstance(ud.get('watchlist'), list) and ud.get('watchlist') else ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META']
         hist = ud.get('history') if isinstance(ud.get('history'), list) else []
         mb = safe_float(ud.get('master_budget'), 5000.0)
 

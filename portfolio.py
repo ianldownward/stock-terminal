@@ -55,7 +55,7 @@ class PortfolioManager:
         if self.client and self.collection is not None:
             try:
                 doc = self.collection.find_one({"_id": "main_store"})
-                if doc:
+                if doc and isinstance(doc.get('users'), dict) and len(doc.get('users')) > 0:
                     doc.pop('_id', None)
                     return doc
             except Exception: 
@@ -65,13 +65,12 @@ class PortfolioManager:
             try:
                 with open(self.filename, 'r') as f:
                     data = json.load(f)
-                    if isinstance(data, dict):
+                    if isinstance(data, dict) and isinstance(data.get('users'), dict) and len(data.get('users')) > 0:
                         return data
             except Exception: 
                 pass
         
         initial = {'active_user': 'Test E6 - Breakeven Rotator', 'users': {}}
-        self.save_data(initial)
         return initial
 
     def reload(self):
@@ -109,7 +108,7 @@ class PortfolioManager:
                     needs_save = True
 
             for p in allowed_profiles:
-                if p not in self.data['users']:
+                if p not in self.data['users'] or not isinstance(self.data['users'][p], dict) or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
 
@@ -126,7 +125,6 @@ class PortfolioManager:
         if self.client and self.collection is not None:
             try: 
                 self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
-                return
             except Exception: 
                 pass
         try:
@@ -136,13 +134,16 @@ class PortfolioManager:
             pass
 
     def active_username(self): 
-        return self.data.get('active_user', 'Test E6 - Breakeven Rotator') if isinstance(self.data, dict) else 'Test E6 - Breakeven Rotator'
+        if isinstance(self.data, dict) and self.data.get('active_user'):
+            return self.data['active_user']
+        return 'Test E6 - Breakeven Rotator'
 
     def user_data(self, username=None):
+        self._ensure_default_user()
         au = username if username else self.active_username()
         if 'users' not in self.data or not isinstance(self.data['users'], dict): 
             self.data['users'] = {}
-        if au not in self.data['users']:
+        if au not in self.data['users'] or not isinstance(self.data['users'][au], dict):
             self.data['users'][au] = self.default_user_state(au)
             self.save_data(self.data)
         return self.data['users'][au]
