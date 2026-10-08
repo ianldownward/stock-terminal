@@ -1,9 +1,5 @@
 import os, time
 import pandas as pd
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
 from engine import MarketScoringEngine, safe_float, normalize_price
@@ -146,17 +142,7 @@ def get_score():
     try:
         active_profile = portfolio_store.active_username()
         df = YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame()))[1]
-        if df.empty and yf:
-            try:
-                df = yf.Ticker(t).history(period="1d", interval="5m")
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-            except Exception:
-                pass
-        if df.empty:
-            return jsonify({'error': 'Ticker not found.'}), 400
-            
-        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close'))
+        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close')) if not df.empty else 10.0
         engine = MarketScoringEngine()
         df_qqq = YF_CACHE.get('QQQ_5m', (0, pd.DataFrame()))[1]
         regime = engine.check_market_regime(df_qqq)
@@ -283,14 +269,6 @@ def get_data():
             c_idx = 0
             for tick in wl[:15]:
                 df_t = YF_CACHE.get(f"{tick}_5m", (0, pd.DataFrame()))[1]
-                if df_t.empty and yf:
-                    try:
-                        df_t = yf.Ticker(tick).history(period="1d", interval="5m")
-                        if isinstance(df_t.columns, pd.MultiIndex):
-                            df_t.columns = df_t.columns.get_level_values(0)
-                        YF_CACHE[f"{tick}_5m"] = (time.time(), df_t)
-                    except Exception:
-                        pass
                 if isinstance(df_t, pd.DataFrame) and not df_t.empty:
                     base_price = normalize_price(tick, extract_val(df_t.iloc[0], 'Close'))
                     if base_price > 0:
@@ -319,17 +297,6 @@ def get_data():
 
         # --- SINGLE TICKER OHLC ---
         cache_df = YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame()))[1]
-        if cache_df.empty and yf:
-            try:
-                df_direct = yf.Ticker(t).history(period="1d", interval="5m")
-                if isinstance(df_direct, pd.DataFrame) and not df_direct.empty:
-                    if isinstance(df_direct.columns, pd.MultiIndex):
-                        df_direct.columns = df_direct.columns.get_level_values(0)
-                    YF_CACHE[f"{t}_5m"] = (time.time(), df_direct)
-                    cache_df = df_direct
-            except Exception:
-                pass
-
         data = []
         if isinstance(cache_df, pd.DataFrame) and not cache_df.empty:
             data = [{'time': int(i.timestamp()), 'open': normalize_price(t, extract_val(r, 'Open')), 'high': normalize_price(t, extract_val(r, 'High')), 'low': normalize_price(t, extract_val(r, 'Low')), 'close': normalize_price(t, extract_val(r, 'Close'))} for i, r in cache_df.iterrows()]
