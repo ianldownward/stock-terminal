@@ -84,6 +84,15 @@ def generate_fallback_df(ticker, count=78, interval='5m'):
         })
     return pd.DataFrame(records).set_index('Date')
 
+def get_cached_df(ticker, default_count=78, interval="5m"):
+    entry = YF_CACHE.get(f"{ticker}_5d_{interval}") or YF_CACHE.get(f"{ticker}_1d_{interval}") or YF_CACHE.get(f"{ticker}_5m") or YF_CACHE.get(f"{ticker}_5d_5m")
+    if entry and isinstance(entry, tuple) and len(entry) == 2 and isinstance(entry[1], pd.DataFrame) and not entry[1].empty:
+        return entry[1]
+    
+    df_fb = generate_fallback_df(ticker, default_count, interval)
+    YF_CACHE[f"{ticker}_5d_5m"] = (time.time(), df_fb)
+    return df_fb
+
 def is_market_open(ticker):
     now_uk = pd.Timestamp.now(tz='Europe/London')
     current_mins = now_uk.hour * 60 + now_uk.minute
@@ -144,9 +153,7 @@ def process_auto_profile():
     while True:
         try:
             portfolio_store.reload()
-            df_qqq = YF_CACHE.get('QQQ_5d_5m', YF_CACHE.get('QQQ_5m', (0, pd.DataFrame())))[1]
-            if df_qqq.empty:
-                df_qqq = generate_fallback_df('QQQ', 78, '5m')
+            df_qqq = get_cached_df('QQQ')
             regime = engine.check_market_regime(df_qqq)
             eod_sweep = is_eod_sweep_time()
             
@@ -159,9 +166,7 @@ def process_auto_profile():
                     
                     # 1. PROCESS SELLS
                     for t in holds:
-                        df = YF_CACHE.get(f"{t}_5d_5m", YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame())))[1]
-                        if df.empty:
-                            df = generate_fallback_df(t, 78, '5m')
+                        df = get_cached_df(t)
                         last_p = normalize_price(t, float(df['Close'].iloc[-1]))
                         t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and str(tr.get('action')).upper() == 'BUY']
                         avg_buy_p = normalize_price(t, t_buys[0].get('price', last_p)) if t_buys else last_p
@@ -194,12 +199,7 @@ def process_auto_profile():
                             for t in wl:
                                 if not is_market_open(t):
                                     continue
-                                cache_entry = YF_CACHE.get(f"{t}_5d_5m") or YF_CACHE.get(f"{t}_5m")
-                                df = cache_entry[1] if cache_entry and isinstance(cache_entry[1], pd.DataFrame) else pd.DataFrame()
-                                if df.empty:
-                                    df = generate_fallback_df(t, 78, "5m")
-                                    YF_CACHE[f"{t}_5d_5m"] = (time.time(), df)
-                                
+                                df = get_cached_df(t)
                                 last_p = normalize_price(t, float(df['Close'].iloc[-1]))
                                 if t in engine.nav_bases:
                                     st = engine.score_nav_asset(t, last_p, 1.0, 0.0, 0.0)

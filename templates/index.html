@@ -963,8 +963,11 @@
             } catch(e) {}
         }
 
-        async function onUserChange(username) {
+        aasync function onUserChange(username) {
             if (!username) return; 
+            let sel = document.getElementById('userSelect');
+            if (sel) sel.value = username;
+
             await fetch('/api/users/select', { 
                 method: 'POST', 
                 headers: {'Content-Type': 'application/json'}, 
@@ -1176,7 +1179,7 @@
                     if (fillEl) fillEl.style.backgroundColor = p.metrics.regime.color || '#8a8a9e'; 
                     if (textEl) textEl.innerText = `${p.metrics.regime.score || 50}/100 - ${p.metrics.regime.state || 'Room Temp'}`; 
                 }
-                
+
                 // DYNAMIC RISK THERMOMETER & BUY SETUP READINESS UPDATE
                 if (p.metrics) {
                     let healthHeader = document.getElementById('rotatorHealthHeader');
