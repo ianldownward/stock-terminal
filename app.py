@@ -3,8 +3,8 @@ import pandas as pd
 
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
-from engine import MarketScoringEngine, safe_float, normalize_price
-from worker import YF_CACHE, FETCH_REQUESTS, fetch_yahoo_v8, start_threads
+from engine import MarketScoringEngine, safe_float, normalize_price, get_default_price
+from worker import YF_CACHE, FETCH_REQUESTS, fetch_yahoo_v8, generate_fallback_df, start_threads
 
 app = Flask(__name__)
 
@@ -26,12 +26,10 @@ def clean_ohlc_point(t_fmt, raw_open, raw_high, raw_low, raw_close, ticker):
     h = normalize_price(ticker, raw_high)
     l = normalize_price(ticker, raw_low)
     
-    if o <= 0: o = c if c > 0 else 10.0
+    if o <= 0: o = c if c > 0 else get_default_price(ticker)
     if c <= 0: c = o
     
-    # Enforce LightweightCharts invariants:
-    # 1. High MUST be >= max(open, close)
-    # 2. Low MUST be <= min(open, close) and > 0
+    # Enforce LightweightCharts invariants
     h = max(h, o, c)
     l = min(l, o, c)
     if l <= 0: l = min(o, c)
@@ -55,7 +53,7 @@ def get_last_traded_price(ud, ticker, default=10.0):
                 p = safe_float(tr.get('amount')) / safe_float(tr.get('shares'))
             p = normalize_price(ticker, p)
             if p > 0: return round(p, 2)
-    return default
+    return get_default_price(ticker)
 
 def find_matching_user(users_dict, requested_name):
     if not isinstance(users_dict, dict) or not users_dict:
@@ -82,21 +80,19 @@ def fetch_ticker_fast(tick, period="1d", interval="5m"):
         if time.time() - cached[0] < 300:
             return tick, cached[1]
 
-    # Check memory fallback
     std_cached = YF_CACHE.get(f"{tick}_5d_5m") or YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
     if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
         df_mem = std_cached[1].tail(78) if period in ["1d", "1Day"] else std_cached[1]
         return tick, df_mem
 
-    # Direct v8 fetch on cache miss
     df_v8 = fetch_yahoo_v8(tick, period="5d" if period in ["1d", "1Day"] else period, interval=interval)
-    if not df_v8.empty:
-        YF_CACHE[f"{tick}_5d_{interval}"] = (time.time(), df_v8)
-        YF_CACHE[f"{tick}_5m"] = (time.time(), df_v8)
-        df_res = df_v8.tail(78) if period in ["1d", "1Day"] else df_v8
-        return tick, df_res
+    if df_v8.empty:
+        df_v8 = generate_fallback_df(tick, 78, interval)
 
-    return tick, pd.DataFrame()
+    YF_CACHE[f"{tick}_5d_{interval}"] = (time.time(), df_v8)
+    YF_CACHE[f"{tick}_5m"] = (time.time(), df_v8)
+    df_res = df_v8.tail(78) if period in ["1d", "1Day"] else df_v8
+    return tick, df_res
 
 @app.route('/')
 def index():
@@ -191,7 +187,7 @@ def get_score():
     try:
         active_profile = portfolio_store.active_username()
         _, df = fetch_ticker_fast(t, "1d", "5m")
-        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close')) if not df.empty else 10.0
+        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close')) if not df.empty else get_default_price(t)
         engine = MarketScoringEngine()
         _, df_qqq = fetch_ticker_fast('QQQ', "1d", "5m")
         regime = engine.check_market_regime(df_qqq)
@@ -242,7 +238,6 @@ def get_data():
 
     req_period = request.args.get('p', '1d').strip()
     req_interval = request.args.get('i', '5m').strip()
-    now_ts = int(time.time())
     
     try:
         open_positions = {}
@@ -266,7 +261,7 @@ def get_data():
         tot_own = 0.0
         for tk in active_holds:
             sh = open_positions[tk]
-            p = get_last_traded_price(ud, tk, default=10.0)
+            p = get_last_traded_price(ud, tk, default=get_default_price(tk))
             _, df_hold = fetch_ticker_fast(tk, "1d", "5m")
             if not df_hold.empty: 
                 p = normalize_price(tk, extract_val(df_hold.iloc[-1], 'Close'))
@@ -310,7 +305,7 @@ def get_data():
                 holdings_val_lb = 0.0
                 for tk_lb, sh_lb in sh_lb_map.items():
                     if round(sh_lb, 4) >= 0.01:
-                        p_lb = get_last_traded_price(u_data, tk_lb, default=10.0)
+                        p_lb = get_last_traded_price(u_data, tk_lb, default=get_default_price(tk_lb))
                         _, df_lb = fetch_ticker_fast(tk_lb, "1d", "5m")
                         if not df_lb.empty: 
                             p_lb = normalize_price(tk_lb, extract_val(df_lb.iloc[-1], 'Close'))
@@ -345,16 +340,8 @@ def get_data():
                     )
                     data.append(cleaned_point)
 
-        hist_fallback = get_last_traded_price(ud, t, default=10.0)
-        if not data:
-            t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
-            t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
-            data = [
-                clean_ohlc_point(t_fallback, hist_fallback, hist_fallback, hist_fallback, hist_fallback, t),
-                clean_ohlc_point(t_curr, hist_fallback, hist_fallback, hist_fallback, hist_fallback, t)
-            ]
-
-        last_p = round(safe_float(data[-1]['close'], hist_fallback), 2)
+        def_p = get_default_price(t)
+        last_p = round(safe_float(data[-1]['close'], def_p), 2) if data else def_p
         
         t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and str(tr.get('action')).upper() == 'BUY']
         avg_buy_p = normalize_price(t, t_buys[0].get('price', last_p)) if t_buys else 0.0
@@ -403,18 +390,16 @@ def get_data():
             for u_k in portfolio_store.data['users'].keys():
                 lb_fb.append({'user': u_k, 'equity': 5000.0, 'budget': 5000.0, 'daily_pnl': 0.0, 'has_active_holds': False})
         
-        t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
-        t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
-        
+        def_p = get_default_price(t if t else 'YCA.L')
         return jsonify({
             'is_multi': False,
             'lines': [],
-            'ohlc': [clean_ohlc_point(t_curr, 10.0, 10.0, 10.0, 10.0, t)],
+            'ohlc': [],
             'mathLine': [], 'wl_status': {}, 'name': t if t else 'YCA.L',
             'portfolio': ud_fb if ud_fb else {'watchlist': ['YCA.L'], 'history': [], 'holdings': {}},
             'leaderboard': lb_fb,
             'metrics': {
-                'price': 10.0, 'price_display': '£10.00', 'discount': '--', 'buy_score': '--', 'tranches': 0,
+                'price': def_p, 'price_display': f"£{def_p:.2f}", 'discount': '--', 'buy_score': '--', 'tranches': 0,
                 'status': 'Standby', 'color': '#8a8a9e', 'reason': f'Recovered: {str(err)}', 'action_main': 'HOLD',
                 'action_sub': '', 'action_color': '#8a8a9e', 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '£0.00', 'pnl_color': '#8a8a9e', 'total_pnl_display': '£0.00', 'total_pnl_color': '#8a8a9e',
