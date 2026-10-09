@@ -115,7 +115,7 @@ def find_matching_user(users_dict, requested_name):
             return k, v
     for k, v in users_dict.items():
         k_str = str(k).strip().lower()
-        if k_str in req_str or req_str in k_str:
+        if k_str == req_str:
             return k, v
     first_key = list(users_dict.keys())[0] if users_dict else 'Test E6 - Breakeven Rotator'
     return first_key, users_dict.get(first_key, portfolio_store.default_user_state(first_key))
@@ -272,6 +272,10 @@ def get_data():
     target_user = request.args.get('user', '').strip() or portfolio_store.active_username()
     real_key, ud = find_matching_user(users_dict, target_user)
 
+    # Automatically switch active user in store if user parameter was passed
+    if request.args.get('user', '').strip():
+        portfolio_store.switch_user(real_key)
+
     # RUN EAGER INLINE AUTO-TRADE CHECK FOR REAL_KEY ON EVERY DATA POLL
     evaluate_profile_auto_trade(real_key)
     ud = portfolio_store.user_data(real_key)
@@ -416,6 +420,7 @@ def get_data():
                 'action_sub': st.get('action_sub', ''),
                 'action_color': st.get('action_color', '#8a8a9e'),
                 'shares_owned': sh_own,
+                'active_holds': active_holds,
                 'value_owned': round(sh_own * last_p, 2),
                 'pnl_display': pnl_formatted, 'pnl_color': pnl_color,
                 'total_pnl_display': pnl_formatted, 'total_pnl_color': pnl_color,

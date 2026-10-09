@@ -707,13 +707,13 @@
                 
                 <div class="card" id="rotatorHealthCard" style="flex: 1.2; border: 1px solid #00d2ff; background: #1a1d24;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-                        <h3 id="rotatorHealthHeader" style="margin:0; font-size:11px; color:#00d2ff; text-transform:uppercase;">Risk Thermometer</h3>
+                        <h3 id="rotatorHealthHeader" style="margin:0; font-size:11px; color:#00d2ff; text-transform:uppercase;">Buy Setup Readiness</h3>
                         <span id="rotatorHealthStatus" style="font-size:12px; font-weight:bold; color:#fff;">--</span>
                     </div>
                     <div style="width: 100%; height: 16px; background: linear-gradient(90deg, #ff3d00 0%, #ff9900 50%, #00c853 100%); border-radius: 8px; position: relative;">
                         <div id="rotatorHealthMarker" style="position: absolute; top: -2px; left: 0%; width: 4px; height: 20px; background: #ffffff; border-radius: 2px; display: none;"></div>
                     </div>
-                    <div id="rotatorHealthSubtext" style="font-size:10px; color:#8a8a9e; margin-top:8px; text-align:center;">No Position</div>
+                    <div id="rotatorHealthSubtext" style="font-size:10px; color:#8a8a9e; margin-top:8px; text-align:center;">Scanning...</div>
                 </div>
 
                 <div class="card" id="sentimentCard" style="flex: 1;">
@@ -1008,7 +1008,7 @@
             fetch('/api/portfolio/holding', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: currentTicker, value_owned: v, price: 10.0})}).then(() => fetchData(false));
         }
 
-        function renderWatchlist(watchlist) {
+        function renderWatchlist(watchlist, activeHolds = []) {
             let ul = document.getElementById('watchlistUI'); 
             ul.innerHTML = '';
             
@@ -1018,9 +1018,11 @@
             }
 
             watchlist.forEach(symbol => {
+                let isHeld = Array.isArray(activeHolds) && activeHolds.includes(symbol);
+                let heldBadge = isHeld ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
                 let li = document.createElement('li'); 
                 li.className = `watchlist-item ${symbol === currentTicker ? 'active' : ''}`; 
-                li.innerHTML = `<span class="ticker">${symbol}</span><button class="btn-delete" onclick="deleteWatchlist('${symbol}', event)">✕</button>`; 
+                li.innerHTML = `<div><span class="ticker">${symbol}</span>${heldBadge}</div><button class="btn-delete" onclick="deleteWatchlist('${symbol}', event)">✕</button>`; 
                 li.onclick = () => selectStock(symbol);
                 ul.appendChild(li);
             });
@@ -1037,7 +1039,7 @@
         }
 
         function renderLeaderboard(leaderboard) {
-            let activeProf = document.getElementById('userSelect').value;
+            let activeProf = document.getElementById('userSelect') ? document.getElementById('userSelect').value : '';
             let sortMode = document.querySelector('input[name="lb_sort"]:checked') ? document.querySelector('input[name="lb_sort"]:checked').value : 'all';
             let lbData = Array.isArray(leaderboard) ? [...leaderboard] : [];
 
@@ -1114,7 +1116,6 @@
             else tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false });
 
             if (Array.isArray(masterData) && masterData.length > 0) {
-                // Sanitize OHLC data to guarantee LightweightCharts invariants
                 let cleanData = masterData.map(d => {
                     let o = parseFloat(d.open) || parseFloat(d.close) || 10.0;
                     let c = parseFloat(d.close) || o;
@@ -1138,20 +1139,22 @@
             if (!silent && loader) loader.style.display = 'block';
             
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 4000); // 4-second timeout guarantee
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
 
             try {
                 let pSelect = document.getElementById('periodSelect').value;
                 let iSelect = document.getElementById('intervalSelect').value;
+                let activeUser = document.getElementById('userSelect') ? document.getElementById('userSelect').value : '';
                 let reqTk = currentTicker ? currentTicker : '';
-                let res = await fetch(`/api/data?t=${reqTk}&p=${pSelect}&i=${iSelect}`, { signal: controller.signal }); 
+                let res = await fetch(`/api/data?t=${reqTk}&p=${pSelect}&i=${iSelect}&user=${encodeURIComponent(activeUser)}`, { signal: controller.signal }); 
                 clearTimeout(timeoutId);
                 let p = await res.json(); 
                 
                 masterData = p.ohlc || [];
                 globalPortfolioData = p.portfolio || {};
                 
-                renderWatchlist(globalPortfolioData.watchlist);
+                let activeHolds = (p.metrics && p.metrics.active_holds) ? p.metrics.active_holds : [];
+                renderWatchlist(globalPortfolioData.watchlist, activeHolds);
                 renderLeaderboard(p.leaderboard);
                 renderHistory(globalPortfolioData.history);
                 
@@ -1207,12 +1210,11 @@
                         }
                     }
                 }
-
+                
                 renderChart();
             } catch(e) { 
                 console.error("fetchData error:", e);
             } finally {
-                // Guaranteed removal of the loader overlay
                 if (loader) loader.style.display = 'none';
             }
         }
