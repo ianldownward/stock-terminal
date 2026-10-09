@@ -1,1 +1,4 @@
-flask\npandas\ngunicorn\npymongo
+flask
+pandas
+gunicorn
+pymongo
