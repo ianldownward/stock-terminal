@@ -59,7 +59,7 @@ def fetch_yahoo_v8(ticker, period="5d", interval="5m"):
         return pd.DataFrame()
 
 def generate_fallback_df(ticker, count=78, interval='5m'):
-    """Generates realistic baseline OHLC bars with active intraday volatility."""
+    """Generates realistic baseline OHLC bars with macro trend cycles."""
     now_ts = int(time.time())
     base_pound = get_default_price(ticker)
     step_sec = 300 if interval == '5m' else 86400
@@ -72,7 +72,8 @@ def generate_fallback_df(ticker, count=78, interval='5m'):
     for i in range(count):
         t_val = now_ts - (count - i) * step_sec
         dt = pd.to_datetime(t_val, unit='s', utc=True).tz_convert('Europe/London')
-        wave = math.sin(i / 4.0) * 0.008 * current_p
+        # 75-bar macro wave creates sustained multi-hour trends for EMA crossovers
+        wave = math.sin(i / 12.0) * 0.015 * current_p
         drift = ((random.random() - 0.48) * 0.002 * current_p) + wave
         open_p = round(current_p, 4)
         close_p = round(max(0.1, current_p + drift), 4)
