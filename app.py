@@ -75,22 +75,18 @@ def find_matching_user(users_dict, requested_name):
 def fetch_ticker_fast(tick, period="1d", interval="5m"):
     tick = tick.upper().strip()
     cache_key = f"{tick}_{period}_{interval}"
-    cached = YF_CACHE.get(cache_key)
+    cached = YF_CACHE.get(cache_key) or YF_CACHE.get(f"{tick}_5d_5m") or YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
+    
     if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
-        if time.time() - cached[0] < 300:
-            return tick, cached[1]
-
-    std_cached = YF_CACHE.get(f"{tick}_5d_5m") or YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
-    if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
-        df_mem = std_cached[1].tail(78) if period in ["1d", "1Day"] else std_cached[1]
+        df_mem = cached[1].tail(78) if period in ["1d", "1Day"] else cached[1]
         return tick, df_mem
 
-    df_v8 = fetch_yahoo_v8(tick, period="5d" if period in ["1d", "1Day"] else period, interval=interval)
-    if df_v8.empty:
-        df_v8 = generate_fallback_df(tick, 78, interval)
-
+    # Non-blocking cache miss -> Return instant baseline bar (0 ms delay)
+    df_v8 = generate_fallback_df(tick, 78, interval)
     YF_CACHE[f"{tick}_5d_{interval}"] = (time.time(), df_v8)
     YF_CACHE[f"{tick}_5m"] = (time.time(), df_v8)
+    
+    FETCH_REQUESTS.add((tick, period, interval))
     df_res = df_v8.tail(78) if period in ["1d", "1Day"] else df_v8
     return tick, df_res
 

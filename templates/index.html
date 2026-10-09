@@ -963,7 +963,7 @@
             } catch(e) {}
         }
 
-        aasync function onUserChange(username) {
+        async function onUserChange(username) {
             if (!username) return; 
             let sel = document.getElementById('userSelect');
             if (sel) sel.value = username;
