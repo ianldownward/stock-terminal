@@ -4,12 +4,60 @@ import pandas as pd
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
 from engine import MarketScoringEngine, safe_float, normalize_price, get_default_price
-from worker import YF_CACHE, FETCH_REQUESTS, fetch_yahoo_v8, generate_fallback_df, start_threads
+from worker import YF_CACHE, FETCH_REQUESTS, fetch_yahoo_v8, generate_fallback_df, get_cached_df, is_market_open, is_eod_sweep_time, start_threads
 
 app = Flask(__name__)
 
 # Start background price cache & auto-trading threads
 start_threads()
+
+def evaluate_profile_auto_trade(username):
+    """Guarantees instant automated trade execution inline when frontend polls /api/data."""
+    try:
+        portfolio_store.reload()
+        engine_inst = MarketScoringEngine()
+        ud = portfolio_store.user_data(username)
+        hist = ud.get('history', []) if isinstance(ud.get('history'), list) else []
+        
+        # Check active holds
+        active_holds = list(set([tr.get('ticker') for tr in hist if isinstance(tr, dict) and portfolio_store.get_shares(tr.get('ticker'), username) > 0]))
+        if len(active_holds) > 0:
+            return None # Already holds a position!
+
+        df_qqq = get_cached_df('QQQ')
+        regime = engine_inst.check_market_regime(df_qqq)
+        eod_sweep = is_eod_sweep_time()
+
+        if not eod_sweep:
+            wl = ud.get('watchlist', []) if isinstance(ud.get('watchlist'), list) else []
+            best_buy, best_score, best_price = None, -1, 0
+            for t in wl:
+                if not is_market_open(t):
+                    continue
+                df = get_cached_df(t)
+                last_p = normalize_price(t, float(df['Close'].iloc[-1]))
+                if t in engine_inst.nav_bases:
+                    st = engine_inst.score_nav_asset(t, last_p, 1.0, 0.0, 0.0)
+                else:
+                    st = engine_inst.score_momentum(df, last_p, 0.0, 0.0, profile=username, regime=regime)
+
+                if st.get('action_main') == 'BUY' and safe_float(st.get('score', 0)) >= best_score:
+                    best_score = safe_float(st['score'])
+                    best_buy = t
+                    best_price = last_p
+
+            if best_buy:
+                mb = float(ud.get('master_budget', 5000.0))
+                net_hist = sum(-float(tr.get('amount', 0)) if str(tr.get('action')).upper() == 'BUY' else float(tr.get('amount', 0)) for tr in hist if isinstance(tr, dict))
+                avail_cash = mb + net_hist
+                if best_price > 0 and avail_cash >= best_price:
+                    sh = int(avail_cash // best_price)
+                    if sh > 0:
+                        trade = portfolio_store.execute_trade(best_buy, 'BUY', sh, best_price, username=username)
+                        return trade
+    except Exception:
+        pass
+    return None
 
 def extract_val(row, col_name, default=10.0):
     try:
@@ -224,6 +272,10 @@ def get_data():
     target_user = request.args.get('user', '').strip() or portfolio_store.active_username()
     real_key, ud = find_matching_user(users_dict, target_user)
 
+    # RUN EAGER INLINE AUTO-TRADE CHECK FOR REAL_KEY ON EVERY DATA POLL
+    evaluate_profile_auto_trade(real_key)
+    ud = portfolio_store.user_data(real_key)
+
     wl = ud.get('watchlist') if isinstance(ud.get('watchlist'), list) and ud.get('watchlist') else ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META']
     hist = ud.get('history') if isinstance(ud.get('history'), list) else []
     mb = safe_float(ud.get('master_budget'), 5000.0)
@@ -271,9 +323,9 @@ def get_data():
         pnl_color = '#00c853' if master_pnl_val >= 0 else '#ff3d00'
         master_pnl_data = {'all': {'val': pnl_formatted, 'color': pnl_color}}
 
-        engine = MarketScoringEngine()
+        engine_inst = MarketScoringEngine()
         _, df_qqq = fetch_ticker_fast('QQQ', '1d', '5m')
-        regime = engine.check_market_regime(df_qqq)
+        regime = engine_inst.check_market_regime(df_qqq)
 
         leaderboard = []
         if isinstance(users_dict, dict):
@@ -343,10 +395,10 @@ def get_data():
         avg_buy_p = normalize_price(t, t_buys[0].get('price', last_p)) if t_buys else 0.0
         highest_p = (ud.get('holdings', {}).get(t) or {}).get('high_water', avg_buy_p if avg_buy_p > 0 else last_p)
 
-        if t in engine.nav_bases:
-            st = engine.score_nav_asset(t, last_p, 1.0, avg_buy_p, highest_p)
+        if t in engine_inst.nav_bases:
+            st = engine_inst.score_nav_asset(t, last_p, 1.0, avg_buy_p, highest_p)
         else:
-            st = engine.score_momentum(cache_df if not cache_df.empty else pd.DataFrame(), last_p, avg_buy_p, highest_p, profile=real_key, regime=regime)
+            st = engine_inst.score_momentum(cache_df if not cache_df.empty else pd.DataFrame(), last_p, avg_buy_p, highest_p, profile=real_key, regime=regime)
 
         sh_own = open_positions.get(t, 0.0)
 
