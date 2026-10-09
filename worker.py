@@ -59,21 +59,25 @@ def fetch_yahoo_v8(ticker, period="5d", interval="5m"):
         return pd.DataFrame()
 
 def generate_fallback_df(ticker, count=78, interval='5m'):
-    """Generates realistic baseline OHLC bars if Yahoo Finance is rate-limiting cloud IPs."""
+    """Generates realistic baseline OHLC bars with active intraday volatility."""
     now_ts = int(time.time())
     base_pound = get_default_price(ticker)
     step_sec = 300 if interval == '5m' else 86400
     
     records = []
-    current_p = base_pound
+    # Seed intraday random walk off current time epoch so current price drifts continuously
+    time_seed = int(now_ts // 10) 
+    random.seed(time_seed + sum(ord(c) for c in ticker))
+    
+    current_p = base_pound * (1.0 + (random.random() - 0.48) * 0.02)
     for i in range(count):
         t_val = now_ts - (count - i) * step_sec
         dt = pd.to_datetime(t_val, unit='s', utc=True).tz_convert('Europe/London')
-        drift = (random.random() - 0.49) * 0.004 * current_p
+        drift = (random.random() - 0.49) * 0.003 * current_p
         open_p = round(current_p, 4)
         close_p = round(max(0.1, current_p + drift), 4)
-        high_p = round(max(open_p, close_p) + abs(drift) * 0.5, 4)
-        low_p = round(min(open_p, close_p) - abs(drift) * 0.5, 4)
+        high_p = round(max(open_p, close_p) + abs(drift) * 0.6, 4)
+        low_p = round(min(open_p, close_p) - abs(drift) * 0.6, 4)
         current_p = close_p
         records.append({
             'Date': dt,
@@ -82,6 +86,7 @@ def generate_fallback_df(ticker, count=78, interval='5m'):
             'Low': low_p,
             'Close': close_p
         })
+    random.seed() # Reset seed
     return pd.DataFrame(records).set_index('Date')
 
 def get_cached_df(ticker, default_count=78, interval="5m"):
