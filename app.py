@@ -60,15 +60,44 @@ def fetch_ticker_fast(tick, period="1d", interval="5m"):
     cache_key = f"{tick}_{period}_{interval}"
     cached = YF_CACHE.get(cache_key)
     if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
-        return tick, cached[1]
+        if time.time() - cached[0] < 300:
+            return tick, cached[1]
 
-    # Queue request for background thread so Flask route NEVER blocks
-    FETCH_REQUESTS.add((tick, period, interval))
-
-    # Return standard 1d 5m fallback from memory if available
-    std_cached = YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
+    # Memory fallback
+    std_cached = YF_CACHE.get(f"{tick}_5d_5m") or YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
     if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
-        return tick, std_cached[1]
+        df_mem = std_cached[1].tail(78) if period in ["1d", "1Day"] else std_cached[1]
+        return tick, df_mem
+
+    # Live robust fetch on cache miss
+    if yf:
+        try:
+            fetch_period = "5d" if period in ["1d", "1Day"] else period
+            ticker_obj = yf.Ticker(tick)
+            df = ticker_obj.history(period=fetch_period, interval=interval)
+            
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+                
+                YF_CACHE[f"{tick}_{fetch_period}_{interval}"] = (time.time(), df)
+                YF_CACHE[f"{tick}_5m"] = (time.time(), df)
+                
+                df_res = df.tail(78) if period in ["1d", "1Day"] else df
+                return tick, df_res
+        except Exception:
+            pass
+
+        try:
+            df_dl = yf.download(tick, period="5d", interval="5m", progress=False)
+            if isinstance(df_dl, pd.DataFrame) and not df_dl.empty:
+                if isinstance(df_dl.columns, pd.MultiIndex):
+                    df_dl.columns = [c[0] if isinstance(c, tuple) else c for c in df_dl.columns]
+                YF_CACHE[f"{tick}_5m"] = (time.time(), df_dl)
+                df_res = df_dl.tail(78) if period in ["1d", "1Day"] else df_dl
+                return tick, df_res
+        except Exception:
+            pass
 
     return tick, pd.DataFrame()
 
@@ -317,7 +346,7 @@ def get_data():
                         'close': normalize_price(t, extract_val(r, 'Close'))
                     })
 
-        hist_fallback = get_last_traded_price(ud, t, default=10.0)
+        hist_fallback = get_last_traded_price(ud, t, default=30.0)
         if not data:
             t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
             t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
@@ -381,12 +410,12 @@ def get_data():
         return jsonify({
             'is_multi': False,
             'lines': [],
-            'ohlc': [{'time': t_curr, 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
-            'mathLine': [], 'wl_status': {}, 'name': t if t else 'NVDA',
-            'portfolio': ud_fb if ud_fb else {'watchlist': ['NVDA'], 'history': [], 'holdings': {}},
+            'ohlc': [{'time': t_curr, 'open': 30.0, 'high': 30.0, 'low': 30.0, 'close': 30.0}],
+            'mathLine': [], 'wl_status': {}, 'name': t if t else 'SGLN.L',
+            'portfolio': ud_fb if ud_fb else {'watchlist': ['SGLN.L'], 'history': [], 'holdings': {}},
             'leaderboard': lb_fb,
             'metrics': {
-                'price': 100.0, 'price_display': '£100.00', 'discount': '--', 'buy_score': '--', 'tranches': 0,
+                'price': 30.0, 'price_display': '£30.00', 'discount': '--', 'buy_score': '--', 'tranches': 0,
                 'status': 'Standby', 'color': '#8a8a9e', 'reason': f'Recovered: {str(err)}', 'action_main': 'HOLD',
                 'action_sub': '', 'action_color': '#8a8a9e', 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '£0.00', 'pnl_color': '#8a8a9e', 'total_pnl_display': '£0.00', 'total_pnl_color': '#8a8a9e',

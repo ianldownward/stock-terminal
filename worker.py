@@ -5,7 +5,7 @@ try:
 except ImportError:
     yf = None
 from portfolio import portfolio_store
-from engine import MarketScoringEngine, safe_float, normalize_price
+from engine import MarketScoringEngine, normalize_price
 
 YF_CACHE = {}
 FETCH_REQUESTS = set()
@@ -28,7 +28,7 @@ def start_unified_background_worker():
         while True:
             try:
                 users_dict = portfolio_store.data.get('users', {}) if isinstance(getattr(portfolio_store, 'data', None), dict) else {}
-                all_tickers = set(['NVDA', 'TQQQ', 'SOXL', 'QQQ', 'AMZN', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SHEL.L', 'BP.L', 'SSLN.L', 'SGLN.L', 'YCA.L', 'RIO.L', 'AZN.L'])
+                all_tickers = set(['NVDA', 'TQQQ', 'SOXL', 'QQQ', 'AMZN', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SHEL.L', 'BP.L', 'SSLN.L', 'SGLN.L', 'YCA.L', 'RIO.L', 'AZN.L', 'PHYS', 'PSLV', 'CEF'])
                 if isinstance(users_dict, dict):
                     for u_data in users_dict.values():
                         if isinstance(u_data, dict):
@@ -38,37 +38,16 @@ def start_unified_background_worker():
                                 if isinstance(tk, str) and tk.strip():
                                     all_tickers.add(tk.strip().upper())
 
-                while FETCH_REQUESTS:
-                    req = FETCH_REQUESTS.pop()
-                    if isinstance(req, tuple) and len(req) == 3:
-                        tk, p, i = req
-                        if yf:
-                            try:
-                                df_req = yf.Ticker(tk).history(period=p, interval=i)
-                                if isinstance(df_req, pd.DataFrame) and not df_req.empty:
-                                    if isinstance(df_req.columns, pd.MultiIndex):
-                                        df_req.columns = df_req.columns.get_level_values(0)
-                                    YF_CACHE[f"{tk}_{p}_{i}"] = (time.time(), df_req)
-                            except Exception:
-                                pass
-
                 for tk in list(all_tickers):
                     try:
                         if yf:
-                            # 1. Fetch 1d 5m
-                            df_1d = yf.Ticker(tk).history(period="1d", interval="5m")
-                            if isinstance(df_1d, pd.DataFrame) and not df_1d.empty:
-                                if isinstance(df_1d.columns, pd.MultiIndex):
-                                    df_1d.columns = df_1d.columns.get_level_values(0)
-                                YF_CACHE[f"{tk}_1d_5m"] = (time.time(), df_1d)
-                                YF_CACHE[f"{tk}_5m"] = (time.time(), df_1d)
-
-                            # 2. Fetch 5d 5m
                             df_5d = yf.Ticker(tk).history(period="5d", interval="5m")
                             if isinstance(df_5d, pd.DataFrame) and not df_5d.empty:
                                 if isinstance(df_5d.columns, pd.MultiIndex):
-                                    df_5d.columns = df_5d.columns.get_level_values(0)
+                                    df_5d.columns = [c[0] if isinstance(c, tuple) else c for c in df_5d.columns]
                                 YF_CACHE[f"{tk}_5d_5m"] = (time.time(), df_5d)
+                                YF_CACHE[f"{tk}_1d_5m"] = (time.time(), df_5d.tail(78))
+                                YF_CACHE[f"{tk}_5m"] = (time.time(), df_5d)
                     except Exception:
                         pass
                     time.sleep(0.1)
@@ -84,7 +63,7 @@ def process_auto_profile():
     while True:
         try:
             portfolio_store.reload()
-            df_qqq = YF_CACHE.get('QQQ_1d_5m', YF_CACHE.get('QQQ_5m', (0, pd.DataFrame())))[1]
+            df_qqq = YF_CACHE.get('QQQ_5d_5m', YF_CACHE.get('QQQ_5m', (0, pd.DataFrame())))[1]
             regime = engine.check_market_regime(df_qqq)
             eod_sweep = is_eod_sweep_time()
             
@@ -97,7 +76,7 @@ def process_auto_profile():
                     
                     # 1. PROCESS SELLS
                     for t in holds:
-                        df = YF_CACHE.get(f"{t}_1d_5m", YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame())))[1]
+                        df = YF_CACHE.get(f"{t}_5d_5m", YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame())))[1]
                         if not df.empty:
                             last_p = normalize_price(t, float(df['Close'].iloc[-1]))
                             t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and str(tr.get('action')).upper() == 'BUY']
@@ -110,7 +89,7 @@ def process_auto_profile():
                                 portfolio_store.save_data(portfolio_store.data)
                             
                             sh = portfolio_store.get_shares(t, u)
-                            # EOD Cash Sweep (Skip Test A so value positions can be held long term)
+                            # EOD Cash Sweep (Excludes Test A so physical value holdings are kept)
                             if eod_sweep and sh > 0 and 'test a' not in u.lower():
                                 portfolio_store.execute_trade(t, 'SELL', sh, last_p, username=u)
                                 continue
@@ -132,7 +111,7 @@ def process_auto_profile():
                             for t in wl:
                                 if not is_market_open(t):
                                     continue
-                                df = YF_CACHE.get(f"{t}_1d_5m", YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame())))[1]
+                                df = YF_CACHE.get(f"{t}_5d_5m", YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame())))[1]
                                 if not df.empty:
                                     last_p = normalize_price(t, float(df['Close'].iloc[-1]))
                                     if t in engine.nav_bases:
