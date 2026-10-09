@@ -2,61 +2,61 @@
   "active_user": "Test E6 - Breakeven Rotator",
   "users": {
     "Test E6 - Breakeven Rotator": {
-      "master_budget": 5434.52,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
-      "initial_positions": {}, "holdings": {}, "history": [],
-      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
-    },
-    "Test E - Rotator": {
-      "master_budget": 5300.19,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
-      "initial_positions": {}, "holdings": {}, "history": [],
-      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
-    },
-    "Test E8 - Meta-Adaptive Rotator": {
-      "master_budget": 5288.70,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
-      "initial_positions": {}, "holdings": {}, "history": [],
-      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
-    },
-    "Test E4 - Clean EOD Rotator": {
-      "master_budget": 5273.04,
+      "master_budget": 5000.0,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E7 - Breakeven 0.5% Rotator": {
-      "master_budget": 5265.76,
+      "master_budget": 5000.0,
+      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
+      "initial_positions": {}, "holdings": {}, "history": [],
+      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
+    },
+    "Test E4 - Clean EOD Rotator": {
+      "master_budget": 5000.0,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E12 - E4 Momentum Hybrid": {
-      "master_budget": 5248.63,
+      "master_budget": 5000.0,
+      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
+      "initial_positions": {}, "holdings": {}, "history": [],
+      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
+    },
+    "Test E8 - Meta-Adaptive Rotator": {
+      "master_budget": 5000.0,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test U - Tight Rotator": {
-      "master_budget": 5144.00,
+      "master_budget": 5000.0,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test E13 - E6 Breakeven 0.5% Hybrid": {
-      "master_budget": 5193.22,
+      "master_budget": 5000.0,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
     "Test A - Deep Value": {
-      "master_budget": 5016.42,
+      "master_budget": 5000.0,
       "watchlist": ["YCA.L", "U-UN.TO", "PHYS", "PSLV", "CEF", "SGLN.L", "SSLN.L", "RIO.L", "BP.L", "SHEL.L", "AZN.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
     },
+    "Test E - Rotator": {
+      "master_budget": 5000.0,
+      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
+      "initial_positions": {}, "holdings": {}, "history": [],
+      "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}
+    },
     "Test X - Dynamic Target Switch (15m ORB)": {
-      "master_budget": 4930.64,
+      "master_budget": 5000.0,
       "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META", "MSTR", "PLTR", "COIN", "AVGO", "SQQQ", "3SUS.L"],
       "initial_positions": {}, "holdings": {}, "history": [],
       "settings": {"period": "1d", "interval": "5m", "style": "candlestick", "refresh": "10000", "ntfy_topic": ""}

@@ -626,6 +626,7 @@
                         
                         <button class="btn-control" onclick="clearManualLines()">Clear</button>
                         <button class="btn-control" onclick="resetTerminalData()">Reset User</button>
+                        <button class="btn-control" onclick="resetAllProfilesData()">Reset All Profiles</button>
                         
                         <button id="btnFullscreen" class="btn-control btn-icon-fullscreen" onclick="toggleFullScreen()" title="Full Screen">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
@@ -881,13 +882,15 @@
         }
 
         function resetTerminalData() {
-            if (confirm("Reset active profile back to £5,000 baseline?")) {
+            if (confirm("Reset active profile back to clean £5,000 baseline?")) {
                 fetch('/api/portfolio/reset', { method: 'POST' }).then(() => fetchData(false));
             }
         }
 
-        function closeQuickScore() {
-            document.getElementById('qsResult').style.display = 'none';
+        function resetAllProfilesData() {
+            if (confirm("Reset ALL 10 strategy profiles back to clean £5,000 baseline?")) {
+                fetch('/api/portfolio/reset_all_profiles', { method: 'POST' }).then(() => fetchData(false));
+            }
         }
 
         async function checkQuickScore() {
