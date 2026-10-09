@@ -1,14 +1,66 @@
-import time, threading
+import time, threading, json, urllib.request
 import pandas as pd
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
+
 from portfolio import portfolio_store
-from engine import MarketScoringEngine, normalize_price
+from engine import MarketScoringEngine, safe_float, normalize_price
 
 YF_CACHE = {}
 FETCH_REQUESTS = set()
+
+def fetch_yahoo_v8(ticker, period="5d", interval="5m"):
+    """
+    Direct, pure-python Yahoo Finance API v8 fetcher with custom User-Agent.
+    Bypasses cloud server scraper blocks and yfinance library bugs.
+    """
+    ticker = str(ticker).strip().upper()
+    range_map = {"1d": "1d", "5d": "5d", "1mo": "1mo", "6mo": "6mo", "1y": "1y"}
+    r = range_map.get(period, "5d")
+    
+    url = f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker}?range={r}&interval={interval}&includePrePost=false"
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+    })
+    
+    try:
+        with urllib.request.urlopen(req, timeout=4) as response:
+            res = json.loads(response.read().decode('utf-8'))
+            chart = res.get('chart', {}).get('result', [])
+            if not chart:
+                return pd.DataFrame()
+            
+            chart_data = chart[0]
+            timestamps = chart_data.get('timestamp', [])
+            quote = chart_data.get('indicators', {}).get('quote', [{}])[0]
+            
+            if not timestamps or not quote:
+                return pd.DataFrame()
+                
+            opens = quote.get('open', [])
+            highs = quote.get('high', [])
+            lows = quote.get('low', [])
+            closes = quote.get('close', [])
+            
+            records = []
+            for t, o, h, l, c in zip(timestamps, opens, highs, lows, closes):
+                if c is not None and o is not None and h is not None and l is not None:
+                    dt = pd.to_datetime(t, unit='s', utc=True).tz_convert('Europe/London')
+                    records.append({
+                        'Date': dt,
+                        'Open': float(o),
+                        'High': float(h),
+                        'Low': float(l),
+                        'Close': float(c)
+                    })
+            
+            if not records:
+                return pd.DataFrame()
+                
+            df = pd.DataFrame(records).set_index('Date')
+            return df
+    except Exception:
+        return pd.DataFrame()
 
 def is_market_open(ticker):
     now_uk = pd.Timestamp.now(tz='Europe/London')
@@ -28,7 +80,7 @@ def start_unified_background_worker():
         while True:
             try:
                 users_dict = portfolio_store.data.get('users', {}) if isinstance(getattr(portfolio_store, 'data', None), dict) else {}
-                all_tickers = set(['NVDA', 'TQQQ', 'SOXL', 'QQQ', 'AMZN', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SHEL.L', 'BP.L', 'SSLN.L', 'SGLN.L', 'YCA.L', 'RIO.L', 'AZN.L', 'PHYS', 'PSLV', 'CEF'])
+                all_tickers = set(['NVDA', 'TQQQ', 'SOXL', 'QQQ', 'AMZN', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SHEL.L', 'BP.L', 'SSLN.L', 'SGLN.L', 'YCA.L', 'RIO.L', 'AZN.L', 'PHYS', 'PSLV', 'CEF', 'U-UN.TO'])
                 if isinstance(users_dict, dict):
                     for u_data in users_dict.values():
                         if isinstance(u_data, dict):
@@ -38,37 +90,28 @@ def start_unified_background_worker():
                                 if isinstance(tk, str) and tk.strip():
                                     all_tickers.add(tk.strip().upper())
 
-                # Process dynamically requested timeframes/tickers asynchronously
+                # Process dynamically requested timeframes/tickers
                 while FETCH_REQUESTS:
                     req = FETCH_REQUESTS.pop()
                     if isinstance(req, tuple) and len(req) == 3:
                         tk, p, i = req
-                        if yf:
-                            try:
-                                df_req = yf.Ticker(tk).history(period=p, interval=i)
-                                if isinstance(df_req, pd.DataFrame) and not df_req.empty:
-                                    if isinstance(df_req.columns, pd.MultiIndex):
-                                        df_req.columns = [c[0] if isinstance(c, tuple) else c for c in df_req.columns]
-                                    YF_CACHE[f"{tk}_{p}_{i}"] = (time.time(), df_req)
-                            except Exception:
-                                pass
+                        df_req = fetch_yahoo_v8(tk, period=p, interval=i)
+                        if not df_req.empty:
+                            YF_CACHE[f"{tk}_{p}_{i}"] = (time.time(), df_req)
 
                 for tk in list(all_tickers):
                     try:
-                        if yf:
-                            df_5d = yf.Ticker(tk).history(period="5d", interval="5m")
-                            if isinstance(df_5d, pd.DataFrame) and not df_5d.empty:
-                                if isinstance(df_5d.columns, pd.MultiIndex):
-                                    df_5d.columns = [c[0] if isinstance(c, tuple) else c for c in df_5d.columns]
-                                YF_CACHE[f"{tk}_5d_5m"] = (time.time(), df_5d)
-                                YF_CACHE[f"{tk}_1d_5m"] = (time.time(), df_5d.tail(78))
-                                YF_CACHE[f"{tk}_5m"] = (time.time(), df_5d)
+                        df_5d = fetch_yahoo_v8(tk, period="5d", interval="5m")
+                        if not df_5d.empty:
+                            YF_CACHE[f"{tk}_5d_5m"] = (time.time(), df_5d)
+                            YF_CACHE[f"{tk}_1d_5m"] = (time.time(), df_5d.tail(78))
+                            YF_CACHE[f"{tk}_5m"] = (time.time(), df_5d)
                     except Exception:
                         pass
-                    time.sleep(0.1)
+                    time.sleep(0.05)
             except Exception:
                 pass
-            time.sleep(15)
+            time.sleep(10)
 
     t = threading.Thread(target=_worker, daemon=True)
     t.start()

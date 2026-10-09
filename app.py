@@ -1,11 +1,10 @@
 import os, time
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
 from engine import MarketScoringEngine, safe_float, normalize_price
-from worker import YF_CACHE, FETCH_REQUESTS, start_threads
+from worker import YF_CACHE, FETCH_REQUESTS, fetch_yahoo_v8, start_threads
 
 app = Flask(__name__)
 
@@ -56,16 +55,22 @@ def fetch_ticker_fast(tick, period="1d", interval="5m"):
     cache_key = f"{tick}_{period}_{interval}"
     cached = YF_CACHE.get(cache_key)
     if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
-        return tick, cached[1]
+        if time.time() - cached[0] < 300:
+            return tick, cached[1]
 
-    # Queue request for background thread so Flask route NEVER blocks
-    FETCH_REQUESTS.add((tick, period, interval))
-
-    # Check memory fallback instantly (0ms)
+    # Memory fallback check
     std_cached = YF_CACHE.get(f"{tick}_5d_5m") or YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
     if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
         df_mem = std_cached[1].tail(78) if period in ["1d", "1Day"] else std_cached[1]
         return tick, df_mem
+
+    # Direct v8 fetch on cache miss
+    df_v8 = fetch_yahoo_v8(tick, period="5d" if period in ["1d", "1Day"] else period, interval=interval)
+    if not df_v8.empty:
+        YF_CACHE[f"{tick}_5d_{interval}"] = (time.time(), df_v8)
+        YF_CACHE[f"{tick}_5m"] = (time.time(), df_v8)
+        df_res = df_v8.tail(78) if period in ["1d", "1Day"] else df_v8
+        return tick, df_res
 
     return tick, pd.DataFrame()
 
@@ -314,16 +319,7 @@ def get_data():
                         'close': normalize_price(t, extract_val(r, 'Close'))
                     })
 
-        hist_fallback = get_last_traded_price(ud, t, default=30.0)
-        if not data:
-            t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
-            t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
-            data = [
-                {'time': t_fallback, 'open': hist_fallback, 'high': hist_fallback, 'low': hist_fallback, 'close': hist_fallback},
-                {'time': t_curr, 'open': hist_fallback, 'high': hist_fallback, 'low': hist_fallback, 'close': hist_fallback}
-            ]
-
-        last_p = round(safe_float(data[-1]['close'], hist_fallback), 2)
+        last_p = round(safe_float(data[-1]['close'], 10.0), 2) if data else 10.0
         
         t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and str(tr.get('action')).upper() == 'BUY']
         avg_buy_p = normalize_price(t, t_buys[0].get('price', last_p)) if t_buys else 0.0
@@ -372,18 +368,15 @@ def get_data():
             for u_k in portfolio_store.data['users'].keys():
                 lb_fb.append({'user': u_k, 'equity': 5000.0, 'budget': 5000.0, 'daily_pnl': 0.0, 'has_active_holds': False})
         
-        t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
-        t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
-        
         return jsonify({
             'is_multi': False,
             'lines': [],
-            'ohlc': [{'time': t_curr, 'open': 30.0, 'high': 30.0, 'low': 30.0, 'close': 30.0}],
-            'mathLine': [], 'wl_status': {}, 'name': t if t else 'SGLN.L',
-            'portfolio': ud_fb if ud_fb else {'watchlist': ['SGLN.L'], 'history': [], 'holdings': {}},
+            'ohlc': [],
+            'mathLine': [], 'wl_status': {}, 'name': t if t else 'YCA.L',
+            'portfolio': ud_fb if ud_fb else {'watchlist': ['YCA.L'], 'history': [], 'holdings': {}},
             'leaderboard': lb_fb,
             'metrics': {
-                'price': 30.0, 'price_display': '£30.00', 'discount': '--', 'buy_score': '--', 'tranches': 0,
+                'price': 0.0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '--', 'tranches': 0,
                 'status': 'Standby', 'color': '#8a8a9e', 'reason': f'Recovered: {str(err)}', 'action_main': 'HOLD',
                 'action_sub': '', 'action_color': '#8a8a9e', 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '£0.00', 'pnl_color': '#8a8a9e', 'total_pnl_display': '£0.00', 'total_pnl_color': '#8a8a9e',
