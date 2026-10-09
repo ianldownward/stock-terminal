@@ -144,4 +144,18 @@ class MarketScoringEngine:
         nav = self.nav_bases.get(ticker, current_price * 1.10)
         implied_discount = ((nav - current_price) / nav) * 100.0
         buy_score = min(100, max(0, round((implied_discount / 20.0) * 80.0)))
-        return {'type': 'Physical Trust', 'score': buy_score, 'status': 'Deep Value Anomaly' if buy_score >= 60 else 'Fair Value', 'color': '#00c853' if buy_score >= 60 else '#8a8a9e', 'action_main': 'BUY' if buy_score >= 60 else 'HOLD / WAIT', 'action_sub': '', 'action_color': '#00c853' if buy_score >= 60 else '#8a8a9e', 'reason': f'Trading at {implied_discount:.1f}% NAV discount.'}
+        
+        pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0 if avg_buy_price > 0 else 0.0
+        
+        return {
+            'type': 'Physical Trust', 
+            'score': buy_score, 
+            'status': 'Deep Value Anomaly' if buy_score >= 60 else 'Fair Value', 
+            'color': '#00c853' if buy_score >= 60 else '#8a8a9e', 
+            'action_main': 'BUY' if buy_score >= 60 else 'HOLD / WAIT', 
+            'action_sub': '', 
+            'action_color': '#00c853' if buy_score >= 60 else '#8a8a9e', 
+            'reason': f'Trading at {implied_discount:.1f}% NAV discount.',
+            'health_pct': 100 if avg_buy_price > 0 else 0,
+            'health_text': f'Holding Physical Trust ({pnl_pct:+.2f}%)' if avg_buy_price > 0 else 'Scanning NAV Anomaly...'
+        }
