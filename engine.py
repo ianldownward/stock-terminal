@@ -8,11 +8,43 @@ def safe_float(val, default=0.0):
     except (ValueError, TypeError):
         return default
 
+DEFAULT_TICKER_PRICES = {
+    'SGLN.L': 3150.0,  # £31.50
+    'SSLN.L': 2350.0,  # £23.50
+    'YCA.L': 634.0,    # £6.34
+    'SHEL.L': 2580.0,  # £25.80
+    'BP.L': 480.0,     # £4.80
+    'AZN.L': 10500.0,  # £105.00
+    'RIO.L': 5120.0,   # £51.20
+    '3SUS.L': 1250.0,  # £12.50
+    'U-UN.TO': 28.50,  # $28.50
+    'PHYS': 33.00,     # $33.00
+    'PSLV': 21.50,     # $21.50
+    'CEF': 22.00,      # $22.00
+    'NVDA': 130.00,
+    'TQQQ': 75.00,
+    'SOXL': 38.00,
+    'NVDL': 65.00,
+    'TSLA': 240.00,
+    'AMD': 160.00,
+    'AMZN': 185.00,
+    'META': 580.00,
+    'SQQQ': 8.50
+}
+
+def get_default_price(ticker):
+    tk = str(ticker).strip().upper()
+    base = DEFAULT_TICKER_PRICES.get(tk, 2500.0 if tk.endswith('.L') else 50.0)
+    return round(base / 100.0, 4) if tk.endswith('.L') else round(base, 4)
+
 def normalize_price(ticker, price):
     """Guarantees UK pence (.L) are converted to pounds regardless of price level."""
     p = safe_float(price, 0.0)
-    if ticker and str(ticker).upper().endswith('.L'):
-        return round(p / 100.0, 4) if p > 0 else 0.0
+    tk = str(ticker).strip().upper()
+    if p <= 0:
+        return get_default_price(tk)
+    if tk.endswith('.L'):
+        return round(p / 100.0, 4) if p > 50 else round(p, 4)
     return round(p, 4)
 
 class MarketScoringEngine:
@@ -76,6 +108,7 @@ class MarketScoringEngine:
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
 
         pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0 if avg_buy_price > 0 else 0.0
+        peak_pnl_pct = ((highest_price - avg_buy_price) / avg_buy_price) * 100.0 if avg_buy_price > 0 else 0.0
         drop_from_peak = ((highest_price - current_price) / highest_price) * 100.0 if highest_price > 0 else 0.0
 
         prof = str(profile).lower()
@@ -84,13 +117,23 @@ class MarketScoringEngine:
             trail_pct, hard_pct = 0.50, -0.50
         elif 'test e4' in prof or 'test e' in prof:
             trail_pct, hard_pct = 1.00, -1.00
+        elif 'test u' in prof or 'test x' in prof:
+            trail_pct, hard_pct = 0.50, -0.50
 
         if avg_buy_price > 0 and highest_price > 0:
-            if drop_from_peak >= trail_pct or pnl_pct <= hard_pct:
-                return {'type': 'Momentum', 'score': 0, 'status': 'Stop Tripped', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'reason': f'Stop Tripped ({pnl_pct:.2f}%). Peak: £{highest_price:.2f}.', 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': f'Stop Tripped ({pnl_pct:.2f}%)', 'hard_pct': hard_pct, 'stop_price': round(highest_price * (1 - trail_pct/100.0), 2)}
+            effective_stop_price = max(avg_buy_price * (1 + hard_pct/100.0), highest_price * (1 - trail_pct/100.0))
+            
+            if any(x in prof for x in ['test e6', 'test e7', 'test e8', 'test e13', 'test x']) and peak_pnl_pct >= 0.50:
+                breakeven_stop = avg_buy_price * 1.0010
+                effective_stop_price = max(effective_stop_price, breakeven_stop)
+                if current_price <= effective_stop_price:
+                    return {'type': 'Momentum', 'score': 0, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'reason': f'BREAKEVEN LOCK TRIPPED ({pnl_pct:+.2f}%). Peak was +{peak_pnl_pct:.2f}%.', 'health_pct': 0, 'health_color': '#00c853', 'health_text': f'Breakeven Lock (+{pnl_pct:.2f}%)', 'hard_pct': 0.10, 'stop_price': round(effective_stop_price, 2)}
+
+            if current_price <= effective_stop_price or drop_from_peak >= trail_pct or pnl_pct <= hard_pct:
+                return {'type': 'Momentum', 'score': 0, 'status': 'Stop Tripped', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'reason': f'Stop Tripped ({pnl_pct:+.2f}%). Peak: £{highest_price:.2f}.', 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': f'Stop Tripped ({pnl_pct:.2f}%)', 'hard_pct': hard_pct, 'stop_price': round(effective_stop_price, 2)}
 
             health_pct = int(max(0, min(100, 100 - (drop_from_peak / trail_pct * 100))))
-            return {'type': 'Momentum', 'score': 80, 'status': 'Riding Trend', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding)', 'action_color': '#00d2ff', 'reason': f'RIDING TREND. High Water: £{highest_price:.2f}.', 'health_pct': health_pct, 'health_color': '#00c853' if health_pct >= 70 else '#ff9900', 'health_text': f'Tracking ({pnl_pct:+.2f}%)', 'hard_pct': hard_pct, 'stop_price': round(highest_price * (1 - trail_pct/100.0), 2)}
+            return {'type': 'Momentum', 'score': 80, 'status': 'Riding Trend', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding)', 'action_color': '#00d2ff', 'reason': f'RIDING TREND. High Water: £{highest_price:.2f}.', 'health_pct': health_pct, 'health_color': '#00c853' if health_pct >= 70 else '#ff9900', 'health_text': f'Tracking ({pnl_pct:+.2f}%)', 'hard_pct': hard_pct, 'stop_price': round(effective_stop_price, 2)}
 
         if ema9 > ema21 and current_price > ema9 and rsi < 65:
             return {'type': 'Momentum', 'score': 85, 'status': f'Fast {trade_type} Surge', 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f'({trade_type} Surge)', 'action_color': '#00c853', 'reason': f'SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}.', 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...', 'hard_pct': hard_pct, 'stop_price': round(current_price * (1 + hard_pct/100.0), 2)}
