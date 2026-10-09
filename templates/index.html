@@ -1163,6 +1163,7 @@
             } catch(e) { 
                 console.error("fetchData error:", e);
             } finally {
+                // Guaranteed removal of the loader overlay
                 if (loader) loader.style.display = 'none';
             }
         }

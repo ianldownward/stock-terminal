@@ -8,6 +8,7 @@ from portfolio import portfolio_store
 from engine import MarketScoringEngine, normalize_price
 
 YF_CACHE = {}
+FETCH_REQUESTS = set()
 
 def is_market_open(ticker):
     now_uk = pd.Timestamp.now(tz='Europe/London')
@@ -20,7 +21,6 @@ def is_market_open(ticker):
 
 def is_eod_sweep_time():
     now_uk = pd.Timestamp.now(tz='Europe/London')
-    # 20:50 BST EOD Sweep
     return now_uk.hour == 20 and now_uk.minute >= 50
 
 def start_unified_background_worker():
@@ -28,7 +28,7 @@ def start_unified_background_worker():
         while True:
             try:
                 users_dict = portfolio_store.data.get('users', {}) if isinstance(getattr(portfolio_store, 'data', None), dict) else {}
-                all_tickers = set(['NVDA', 'TQQQ', 'SOXL', 'QQQ', 'AMZN', 'AAPL', 'MSFT', 'TSLA', 'AMD'])
+                all_tickers = set(['NVDA', 'TQQQ', 'SOXL', 'QQQ', 'AMZN', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SHEL.L', 'BP.L', 'SSLN.L', 'SGLN.L', 'YCA.L'])
                 if isinstance(users_dict, dict):
                     for u_data in users_dict.values():
                         if isinstance(u_data, dict):
@@ -37,6 +37,21 @@ def start_unified_background_worker():
                             for tk in wl + [tr.get('ticker') for tr in hist if isinstance(tr, dict) and tr.get('ticker')]:
                                 if isinstance(tk, str) and tk.strip():
                                     all_tickers.add(tk.strip().upper())
+
+                # Process dynamically requested timeframes/tickers asynchronously
+                while FETCH_REQUESTS:
+                    req = FETCH_REQUESTS.pop()
+                    if isinstance(req, tuple) and len(req) == 3:
+                        tk, p, i = req
+                        if yf:
+                            try:
+                                df_req = yf.Ticker(tk).history(period=p, interval=i)
+                                if isinstance(df_req, pd.DataFrame) and not df_req.empty:
+                                    if isinstance(df_req.columns, pd.MultiIndex):
+                                        df_req.columns = df_req.columns.get_level_values(0)
+                                    YF_CACHE[f"{tk}_{p}_{i}"] = (time.time(), df_req)
+                            except Exception:
+                                pass
 
                 for tk in list(all_tickers):
                     try:

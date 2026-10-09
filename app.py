@@ -9,7 +9,7 @@ except ImportError:
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
 from engine import MarketScoringEngine, safe_float, normalize_price
-from worker import YF_CACHE, start_threads
+from worker import YF_CACHE, FETCH_REQUESTS, start_threads
 
 app = Flask(__name__)
 
@@ -60,21 +60,12 @@ def fetch_ticker_fast(tick, period="1d", interval="5m"):
     cache_key = f"{tick}_{period}_{interval}"
     cached = YF_CACHE.get(cache_key)
     if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
-        if time.time() - cached[0] < 300:
-            return tick, cached[1]
+        return tick, cached[1]
 
-    if yf:
-        try:
-            df = yf.Ticker(tick).history(period=period, interval=interval)
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-                YF_CACHE[cache_key] = (time.time(), df)
-                return tick, df
-        except Exception:
-            pass
+    # Queue request for background thread so Flask route NEVER blocks
+    FETCH_REQUESTS.add((tick, period, interval))
 
-    # Fallback to standard 1d 5m cache
+    # Return standard 1d 5m fallback from memory if available
     std_cached = YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
     if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
         return tick, std_cached[1]
@@ -174,10 +165,7 @@ def get_score():
     try:
         active_profile = portfolio_store.active_username()
         _, df = fetch_ticker_fast(t, "1d", "5m")
-        if df.empty:
-            return jsonify({'error': 'Ticker not found.'}), 400
-            
-        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close'))
+        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close')) if not df.empty else 10.0
         engine = MarketScoringEngine()
         _, df_qqq = fetch_ticker_fast('QQQ', "1d", "5m")
         regime = engine.check_market_regime(df_qqq)
