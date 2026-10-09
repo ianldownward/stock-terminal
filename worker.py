@@ -1,4 +1,4 @@
-import time, threading, json, urllib.request, random
+import time, threading, json, urllib.request, random, math
 import pandas as pd
 
 from portfolio import portfolio_store
@@ -65,9 +65,8 @@ def generate_fallback_df(ticker, count=78, interval='5m'):
     step_sec = 300 if interval == '5m' else 86400
     
     records = []
-    # Seed intraday random walk off current time epoch so current price drifts continuously
     time_seed = int(now_ts // 10) 
-    random.seed(time_seed + sum(ord(c) for c in ticker))
+    random.seed(time_seed + sum(ord(c) for c in str(ticker)))
     
     current_p = base_pound * (1.0 + (random.random() - 0.48) * 0.02)
     for i in range(count):
@@ -81,13 +80,9 @@ def generate_fallback_df(ticker, count=78, interval='5m'):
         low_p = round(min(open_p, close_p) - abs(drift) * 0.6, 4)
         current_p = close_p
         records.append({
-            'Date': dt,
-            'Open': open_p,
-            'High': high_p,
-            'Low': low_p,
-            'Close': close_p
+            'Date': dt, 'Open': open_p, 'High': high_p, 'Low': low_p, 'Close': close_p
         })
-    random.seed() # Reset seed
+    random.seed()
     return pd.DataFrame(records).set_index('Date')
 
 def get_cached_df(ticker, default_count=78, interval="5m"):
