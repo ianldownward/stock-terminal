@@ -1120,11 +1120,15 @@
             let loader = document.getElementById('loader'); 
             if (!silent && loader) loader.style.display = 'block';
             
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000); // 4-second timeout guarantee
+
             try {
                 let pSelect = document.getElementById('periodSelect').value;
                 let iSelect = document.getElementById('intervalSelect').value;
                 let reqTk = currentTicker ? currentTicker : '';
-                let res = await fetch(`/api/data?t=${reqTk}&p=${pSelect}&i=${iSelect}`); 
+                let res = await fetch(`/api/data?t=${reqTk}&p=${pSelect}&i=${iSelect}`, { signal: controller.signal }); 
+                clearTimeout(timeoutId);
                 let p = await res.json(); 
                 
                 masterData = p.ohlc || [];

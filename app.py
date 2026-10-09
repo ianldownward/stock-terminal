@@ -1,10 +1,6 @@
 import os, time
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
 
 from flask import Flask, jsonify, request, render_template
 from portfolio import portfolio_store, send_push_notification
@@ -60,44 +56,16 @@ def fetch_ticker_fast(tick, period="1d", interval="5m"):
     cache_key = f"{tick}_{period}_{interval}"
     cached = YF_CACHE.get(cache_key)
     if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
-        if time.time() - cached[0] < 300:
-            return tick, cached[1]
+        return tick, cached[1]
 
-    # Memory fallback
+    # Queue request for background thread so Flask route NEVER blocks
+    FETCH_REQUESTS.add((tick, period, interval))
+
+    # Check memory fallback instantly (0ms)
     std_cached = YF_CACHE.get(f"{tick}_5d_5m") or YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
     if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
         df_mem = std_cached[1].tail(78) if period in ["1d", "1Day"] else std_cached[1]
         return tick, df_mem
-
-    # Live robust fetch on cache miss
-    if yf:
-        try:
-            fetch_period = "5d" if period in ["1d", "1Day"] else period
-            ticker_obj = yf.Ticker(tick)
-            df = ticker_obj.history(period=fetch_period, interval=interval)
-            
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-                
-                YF_CACHE[f"{tick}_{fetch_period}_{interval}"] = (time.time(), df)
-                YF_CACHE[f"{tick}_5m"] = (time.time(), df)
-                
-                df_res = df.tail(78) if period in ["1d", "1Day"] else df
-                return tick, df_res
-        except Exception:
-            pass
-
-        try:
-            df_dl = yf.download(tick, period="5d", interval="5m", progress=False)
-            if isinstance(df_dl, pd.DataFrame) and not df_dl.empty:
-                if isinstance(df_dl.columns, pd.MultiIndex):
-                    df_dl.columns = [c[0] if isinstance(c, tuple) else c for c in df_dl.columns]
-                YF_CACHE[f"{tick}_5m"] = (time.time(), df_dl)
-                df_res = df_dl.tail(78) if period in ["1d", "1Day"] else df_dl
-                return tick, df_res
-        except Exception:
-            pass
 
     return tick, pd.DataFrame()
 

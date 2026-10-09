@@ -38,6 +38,21 @@ def start_unified_background_worker():
                                 if isinstance(tk, str) and tk.strip():
                                     all_tickers.add(tk.strip().upper())
 
+                # Process dynamically requested timeframes/tickers asynchronously
+                while FETCH_REQUESTS:
+                    req = FETCH_REQUESTS.pop()
+                    if isinstance(req, tuple) and len(req) == 3:
+                        tk, p, i = req
+                        if yf:
+                            try:
+                                df_req = yf.Ticker(tk).history(period=p, interval=i)
+                                if isinstance(df_req, pd.DataFrame) and not df_req.empty:
+                                    if isinstance(df_req.columns, pd.MultiIndex):
+                                        df_req.columns = [c[0] if isinstance(c, tuple) else c for c in df_req.columns]
+                                    YF_CACHE[f"{tk}_{p}_{i}"] = (time.time(), df_req)
+                            except Exception:
+                                pass
+
                 for tk in list(all_tickers):
                     try:
                         if yf:
@@ -89,7 +104,7 @@ def process_auto_profile():
                                 portfolio_store.save_data(portfolio_store.data)
                             
                             sh = portfolio_store.get_shares(t, u)
-                            # EOD Cash Sweep (Excludes Test A so physical value holdings are kept)
+                            # EOD Cash Sweep (Excludes Test A so value positions can be held long term)
                             if eod_sweep and sh > 0 and 'test a' not in u.lower():
                                 portfolio_store.execute_trade(t, 'SELL', sh, last_p, username=u)
                                 continue
