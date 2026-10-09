@@ -1177,6 +1177,34 @@
                     if (textEl) textEl.innerText = `${p.metrics.regime.score || 50}/100 - ${p.metrics.regime.state || 'Room Temp'}`; 
                 }
                 
+                // DYNAMIC RISK THERMOMETER & BUY SETUP READINESS UPDATE
+                if (p.metrics) {
+                    let healthHeader = document.getElementById('rotatorHealthHeader');
+                    let healthStatus = document.getElementById('rotatorHealthStatus');
+                    let healthMarker = document.getElementById('rotatorHealthMarker');
+                    let healthSubtext = document.getElementById('rotatorHealthSubtext');
+
+                    let sharesOwned = p.metrics.shares_owned || 0;
+                    if (sharesOwned > 0) {
+                        if (healthHeader) healthHeader.innerText = "Risk Thermometer (Trailing Stop)";
+                        if (healthStatus) healthStatus.innerText = `${p.metrics.health_pct || 0}%`;
+                        if (healthSubtext) healthSubtext.innerText = p.metrics.health_text || "Tracking Position";
+                        if (healthMarker) {
+                            healthMarker.style.display = "block";
+                            healthMarker.style.left = `${Math.max(0, Math.min(100, p.metrics.health_pct || 0))}%`;
+                        }
+                    } else {
+                        let buyScore = parseInt(p.metrics.buy_score) || 0;
+                        if (healthHeader) healthHeader.innerText = "Buy Setup Readiness";
+                        if (healthStatus) healthStatus.innerText = `${buyScore}/100`;
+                        if (healthSubtext) healthSubtext.innerText = p.metrics.reason || p.metrics.action_main || "Scanning...";
+                        if (healthMarker) {
+                            healthMarker.style.display = "block";
+                            healthMarker.style.left = `${Math.max(0, Math.min(100, buyScore))}%`;
+                        }
+                    }
+                }
+
                 renderChart();
             } catch(e) { 
                 console.error("fetchData error:", e);
