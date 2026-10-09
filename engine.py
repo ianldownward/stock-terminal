@@ -140,18 +140,20 @@ class MarketScoringEngine:
 
         return {'type': 'Momentum', 'score': 10, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Scanning)', 'action_color': '#8a8a9e', 'reason': 'Awaiting fast EMA crossover surge.', 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...', 'hard_pct': hard_pct, 'stop_price': round(current_price * (1 + hard_pct/100.0), 2)}
 
-   def score_nav_asset(self, ticker, current_price, volume_ratio, avg_buy_price=0.0, highest_price=0.0):
+def score_nav_asset(self, ticker, current_price, volume_ratio, avg_buy_price=0.0, highest_price=0.0):
         nav_raw = self.nav_bases.get(ticker, current_price * 1.10)
         nav_pound = nav_raw / 100.0 if ticker.endswith('.L') else nav_raw
         implied_discount = ((nav_pound - current_price) / nav_pound) * 100.0 if nav_pound > 0 else 0.0
         buy_score = min(100, max(0, round((implied_discount / 20.0) * 80.0))) if implied_discount > 0 else 100
         pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0 if avg_buy_price > 0 else 0.0
         return {
-            'type': 'Physical Trust', 'score': buy_score, 
+            'type': 'Physical Trust', 
+            'score': buy_score, 
             'status': 'Deep Value Anomaly' if buy_score >= 60 else 'Fair Value', 
             'color': '#00c853' if buy_score >= 60 else '#8a8a9e', 
             'action_main': 'BUY' if buy_score >= 60 else 'HOLD / WAIT', 
-            'action_sub': '', 'action_color': '#00c853' if buy_score >= 60 else '#8a8a9e', 
+            'action_sub': '', 
+            'action_color': '#00c853' if buy_score >= 60 else '#8a8a9e', 
             'reason': f'Trading at {implied_discount:.1f}% NAV discount.',
             'health_pct': 100 if avg_buy_price > 0 else 0,
             'health_text': f'Holding Physical Trust ({pnl_pct:+.2f}%)' if avg_buy_price > 0 else 'Scanning NAV Anomaly...'
