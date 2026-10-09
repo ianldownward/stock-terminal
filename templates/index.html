@@ -518,16 +518,18 @@
             justify-content: space-between; 
             align-items: center; 
         }
-        .rec-item { background: #1e222d; border: 1px solid #262b36; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
-        .rec-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-        .rec-title-block h3 { margin: 0; color: #fff; font-size: 16px; }
-        .rec-score { background: rgba(0,210,255,.1); color: #00d2ff; font-weight: bold; padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #00d2ff; }
-        .rec-desc { font-size: 13px; color: #8a8a9e; line-height: 1.4; margin-bottom: 15px; }
-        .btn-load { background: #00c853; border: none; color: #fff; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 13px; }
-        .btn-load:hover { background: #00e676; }
     </style>
 </head>
 <body>
+    <!-- TRADE JOURNEY MODAL -->
+    <div class="modal-overlay" id="journeyModal">
+        <div class="modal">
+            <h2><span>Trade Journey Flow</span><button class="btn-control" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('journeyModal').style.display='none'">Close</button></h2>
+            <div id="journeyContent" style="margin-top:15px;"></div>
+        </div>
+    </div>
+
+    <!-- RECOMMENDATIONS MODAL -->
     <div class="modal-overlay" id="recModal">
         <div class="modal">
             <h2><span>Market Anomaly Screener</span><button class="btn-control" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('recModal').style.display='none'">Close</button></h2>
@@ -618,6 +620,7 @@
                         <button id="btnShowTrades" class="btn-control active" onclick="toggleShowTrades()">Trades</button>
                         <button id="btnShowMath" class="btn-control" onclick="toggleShowMath()">Math Overlay</button>
                         <button id="btnToggleGrid" class="btn-control" onclick="toggleGridView()">Shares Held</button>
+                        <button class="btn-control" onclick="openJourneyModal()">Trade Flow</button>
                         
                         <button id="btnDraw" class="btn-control" onclick="toggleDrawMode()">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
@@ -748,7 +751,7 @@
     </div>
 
     <script>
-        let currentTicker = 'ALL_SHARES';
+        let currentTicker = null;
         let tvChart = null;
         let tvSeries = null;
         let masterData = [];
@@ -772,6 +775,38 @@
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing leader over 60m.',
             'Test X - Dynamic Target Switch (15m ORB)': 'Enters with Test U rules, unlocks endless E6 trailing stop if profit > 0.50%.'
         };
+
+        async function openJourneyModal() {
+            let overlay = document.getElementById('journeyModal');
+            let content = document.getElementById('journeyContent');
+            overlay.style.display = 'flex';
+            content.innerHTML = '<div style="color:#00d2ff; text-align:center;">Loading trade flow timeline...</div>';
+            
+            try {
+                let res = await fetch('/api/trade_journey');
+                let d = await res.json();
+                let trades = d.trades || [];
+                if (trades.length === 0) {
+                    content.innerHTML = '<div style="color:#787e8e; text-align:center; padding:20px;">No trades recorded in active profile timeline.</div>';
+                    return;
+                }
+                let html = trades.map(t => `
+                    <div style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:12px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span style="font-weight:bold; color:${t.action === 'BUY' ? '#00c853' : '#ff3d00'}; font-size:13px;">${t.action} ${t.shares} sh ${t.ticker}</span>
+                            <div style="font-size:11px; color:#787e8e; margin-top:4px;">${t.time} • ${t.trade_type || 'LONG'}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <span style="font-weight:bold; color:#fff; font-size:14px;">£${(t.amount || 0).toFixed(2)}</span>
+                            <div style="font-size:11px; color:#00d2ff;">@ £${(t.price || 0).toFixed(2)}</div>
+                        </div>
+                    </div>
+                `).join('');
+                content.innerHTML = html;
+            } catch(e) {
+                content.innerHTML = '<div style="color:#ff3d00; text-align:center;">Failed to load trade flow data.</div>';
+            }
+        }
 
         function toggleLbDesc(userKey, e) {
             e.stopPropagation();
@@ -893,6 +928,10 @@
             }
         }
 
+        function closeQuickScore() {
+            document.getElementById('qsResult').style.display = 'none';
+        }
+
         async function checkQuickScore() {
             let input = document.getElementById('qsTicker').value.trim().toUpperCase();
             if (!input) return;
@@ -931,7 +970,7 @@
                 headers: {'Content-Type': 'application/json'}, 
                 body: JSON.stringify({username: username})
             }); 
-            currentTicker = 'ALL_SHARES'; 
+            currentTicker = null; 
             fetchData(false); 
         }
 
@@ -970,13 +1009,12 @@
             let ul = document.getElementById('watchlistUI'); 
             ul.innerHTML = '';
             
-            let allLi = document.createElement('li'); 
-            allLi.className = `watchlist-item ${currentTicker === 'ALL_SHARES' ? 'active' : ''}`; 
-            allLi.innerHTML = `<span class="ticker" style="color:#00d2ff; font-weight:bold;">All Shares</span>`; 
-            allLi.onclick = () => selectStock('ALL_SHARES');
-            ul.appendChild(allLi);
-            
-            (watchlist || []).forEach(symbol => {
+            if (!watchlist || watchlist.length === 0) return;
+            if (!currentTicker || !watchlist.includes(currentTicker)) {
+                currentTicker = watchlist[0];
+            }
+
+            watchlist.forEach(symbol => {
                 let li = document.createElement('li'); 
                 li.className = `watchlist-item ${symbol === currentTicker ? 'active' : ''}`; 
                 li.innerHTML = `<span class="ticker">${symbol}</span><button class="btn-delete" onclick="deleteWatchlist('${symbol}', event)">✕</button>`; 
@@ -1063,38 +1101,18 @@
 
             if (!tvChart) return;
 
-            if (currentTicker === 'ALL_SHARES') {
-                if (tvSeries) { try { tvChart.removeSeries(tvSeries); } catch(e){} tvSeries = null; }
-                if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
+            if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
+            
+            let style = document.getElementById('styleSelect') ? document.getElementById('styleSelect').value : 'candlestick';
+            if (tvSeries) { try { tvChart.removeSeries(tvSeries); } catch(e){} tvSeries = null; }
 
-                if (Array.isArray(masterData) && masterData.length > 0) {
-                    masterData.forEach(line => {
-                        if (line && line.data && line.data.length > 0) {
-                            let sr = tvChart.addLineSeries({ color: line.color || '#00d2ff', lineWidth: 2 });
-                            sr.setData(line.data);
-                            multiSeries.push(sr);
-                            if (lg) lg.innerHTML += `<div style="font-size:11px; color:${line.color}; font-weight:bold;">${line.ticker}</div>`;
-                        }
-                    });
-                }
-                if (multiSeries.length > 0) {
-                    try { tvChart.timeScale().fitContent(); } catch(e){}
-                }
-            } else {
-                if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
-                let style = document.getElementById('styleSelect') ? document.getElementById('styleSelect').value : 'candlestick';
-                
-                // Re-initialize series to prevent LightweightCharts price scale misalignment across timeframe changes
-                if (tvSeries) { try { tvChart.removeSeries(tvSeries); } catch(e){} tvSeries = null; }
+            if (style === 'line') tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
+            else if (style === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff' });
+            else tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false });
 
-                if (style === 'line') tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
-                else if (style === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff' });
-                else tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false });
-
-                if (Array.isArray(masterData) && masterData.length > 0) {
-                    tvSeries.setData(masterData);
-                    try { tvChart.timeScale().fitContent(); } catch(e){}
-                }
+            if (Array.isArray(masterData) && masterData.length > 0) {
+                tvSeries.setData(masterData);
+                try { tvChart.timeScale().fitContent(); } catch(e){}
             }
         }
 
@@ -1102,25 +1120,21 @@
             let loader = document.getElementById('loader'); 
             if (!silent && loader) loader.style.display = 'block';
             
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second hard timeout guarantee
-
             try {
                 let pSelect = document.getElementById('periodSelect').value;
                 let iSelect = document.getElementById('intervalSelect').value;
-                let res = await fetch(`/api/data?t=${currentTicker}&p=${pSelect}&i=${iSelect}`, { signal: controller.signal }); 
-                clearTimeout(timeoutId);
+                let reqTk = currentTicker ? currentTicker : '';
+                let res = await fetch(`/api/data?t=${reqTk}&p=${pSelect}&i=${iSelect}`); 
                 let p = await res.json(); 
                 
-                if (p.is_multi) masterData = p.lines || []; 
-                else masterData = p.ohlc || [];
-                
+                masterData = p.ohlc || [];
                 globalPortfolioData = p.portfolio || {};
+                
                 renderWatchlist(globalPortfolioData.watchlist);
                 renderLeaderboard(p.leaderboard);
                 renderHistory(globalPortfolioData.history);
                 
-                document.getElementById('activeTitle').innerText = p.name || currentTicker;
+                document.getElementById('activeTitle').innerText = p.name || currentTicker || 'Loaded Ticker';
                 document.getElementById('mPrice').innerText = p.metrics ? p.metrics.price_display || '--' : '--'; 
                 document.getElementById('mDisc').innerText = p.metrics ? p.metrics.discount || '--' : '--'; 
                 document.getElementById('mBuy').innerText = p.metrics ? p.metrics.buy_score || '--' : '--';
@@ -1131,6 +1145,12 @@
                 document.getElementById('mTotalSharesHeldVal').innerText = `£${(p.metrics ? p.metrics.total_equity || 5000 : 5000).toFixed(2)}`; 
                 document.getElementById('mTotalSharesPnL').innerText = `Cash: £${(p.metrics ? p.metrics.budget_remaining || 5000 : 5000).toFixed(2)} | Shares: £${(p.metrics ? p.metrics.total_portfolio_owned || 0 : 0).toFixed(2)}`;
                 
+                let pnlDisplayEl = document.getElementById('mTotalPnLDisplay');
+                if (pnlDisplayEl && p.metrics && p.metrics.total_pnl_display) {
+                    pnlDisplayEl.innerText = p.metrics.total_pnl_display;
+                    pnlDisplayEl.style.color = p.metrics.pnl_color || '#00c853';
+                }
+
                 if (p.metrics && p.metrics.regime) {
                     let fillEl = document.getElementById('thermoFill');
                     let textEl = document.getElementById('thermoText');
@@ -1143,7 +1163,6 @@
             } catch(e) { 
                 console.error("fetchData error:", e);
             } finally {
-                // Guaranteed removal of the loader overlay
                 if (loader) loader.style.display = 'none';
             }
         }

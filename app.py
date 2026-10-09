@@ -1,5 +1,6 @@
 import os, time
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
 try:
     import yfinance as yf
 except ImportError:
@@ -59,9 +60,21 @@ def fetch_ticker_fast(tick, period="1d", interval="5m"):
     cache_key = f"{tick}_{period}_{interval}"
     cached = YF_CACHE.get(cache_key)
     if cached and isinstance(cached[1], pd.DataFrame) and not cached[1].empty:
-        return tick, cached[1]
+        if time.time() - cached[0] < 300:
+            return tick, cached[1]
 
-    # Non-blocking check against standard cache keys
+    if yf:
+        try:
+            df = yf.Ticker(tick).history(period=period, interval=interval)
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                YF_CACHE[cache_key] = (time.time(), df)
+                return tick, df
+        except Exception:
+            pass
+
+    # Fallback to standard 1d 5m cache
     std_cached = YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
     if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
         return tick, std_cached[1]
@@ -161,7 +174,10 @@ def get_score():
     try:
         active_profile = portfolio_store.active_username()
         _, df = fetch_ticker_fast(t, "1d", "5m")
-        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close')) if not df.empty else 10.0
+        if df.empty:
+            return jsonify({'error': 'Ticker not found.'}), 400
+            
+        cur = normalize_price(t, extract_val(df.iloc[-1], 'Close'))
         engine = MarketScoringEngine()
         _, df_qqq = fetch_ticker_fast('QQQ', "1d", "5m")
         regime = engine.check_market_regime(df_qqq)
@@ -188,23 +204,33 @@ def get_directives():
 def get_recommendations():
     return jsonify({'recommendations': []})
 
+@app.route('/api/trade_journey', methods=['GET'])
+def trade_journey():
+    portfolio_store.reload()
+    ud = portfolio_store.user_data()
+    hist = ud.get('history', [])
+    return jsonify({'trades': hist})
+
 @app.route('/api/data', methods=['GET'])
 def get_data():
-    t = request.args.get('t', '').upper().strip() or 'ALL_SHARES'
+    portfolio_store.reload()
+    users_dict = portfolio_store.data.get('users', {})
+    target_user = request.args.get('user', '').strip() or portfolio_store.active_username()
+    real_key, ud = find_matching_user(users_dict, target_user)
+
+    wl = ud.get('watchlist') if isinstance(ud.get('watchlist'), list) and ud.get('watchlist') else ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META']
+    hist = ud.get('history') if isinstance(ud.get('history'), list) else []
+    mb = safe_float(ud.get('master_budget'), 5000.0)
+
+    t = request.args.get('t', '').upper().strip()
+    if not t or t == 'ALL_SHARES':
+        t = wl[0] if wl else 'TQQQ'
+
     req_period = request.args.get('p', '1d').strip()
     req_interval = request.args.get('i', '5m').strip()
     now_ts = int(time.time())
     
     try:
-        portfolio_store.reload()
-        users_dict = portfolio_store.data.get('users', {})
-        target_user = request.args.get('user', '').strip() or portfolio_store.active_username()
-        real_key, ud = find_matching_user(users_dict, target_user)
-
-        wl = ud.get('watchlist') if isinstance(ud.get('watchlist'), list) and ud.get('watchlist') else ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META']
-        hist = ud.get('history') if isinstance(ud.get('history'), list) else []
-        mb = safe_float(ud.get('master_budget'), 5000.0)
-
         open_positions = {}
         net_history = 0.0
         for tr in hist:
@@ -234,7 +260,9 @@ def get_data():
 
         total_equity = cash_balance + tot_own
         master_pnl_val = total_equity - mb
-        pnl_formatted = f"{'+' if master_pnl_val >= 0 else ''}£{master_pnl_val:.2f}"
+        master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
+        pnl_sign = '+' if master_pnl_val >= 0 else ''
+        pnl_formatted = f"{pnl_sign}£{master_pnl_val:.2f} ({pnl_sign}{master_pnl_pct:.2f}%)"
         pnl_color = '#00c853' if master_pnl_val >= 0 else '#ff3d00'
         master_pnl_data = {'all': {'val': pnl_formatted, 'color': pnl_color}}
 
@@ -282,55 +310,6 @@ def get_data():
                     'user': u_key, 'equity': round(tot_eq_now, 2),
                     'budget': mb_lb, 'daily_pnl': pnl_lb, 'has_active_holds': has_holds
                 })
-
-        # --- ALL SHARES / MULTI-LINE PERFORMANCE ---
-        if t == 'ALL_SHARES':
-            lines = []
-            colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
-            watchlist_sample = wl[:10]
-
-            c_idx = 0
-            for tick in watchlist_sample:
-                _, df_t = fetch_ticker_fast(tick, req_period, req_interval)
-                line_data = []
-                seen_times = set()
-                if isinstance(df_t, pd.DataFrame) and not df_t.empty:
-                    df_sorted = df_t.sort_index()
-                    base_price = normalize_price(tick, extract_val(df_sorted.iloc[0], 'Close'))
-                    if base_price > 0:
-                        for idx, row in df_sorted.iterrows():
-                            cp = normalize_price(tick, extract_val(row, 'Close'))
-                            val = round(((cp - base_price) / base_price) * 100.0, 2)
-                            t_fmt = idx.strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else int(idx.timestamp())
-                            if t_fmt not in seen_times:
-                                seen_times.add(t_fmt)
-                                line_data.append({'time': t_fmt, 'value': val})
-
-                if not line_data:
-                    t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
-                    t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
-                    line_data = [
-                        {'time': t_fallback, 'value': 0.0},
-                        {'time': t_curr, 'value': 0.0}
-                    ]
-
-                lines.append({'ticker': tick, 'color': colors[c_idx % len(colors)], 'data': line_data})
-                c_idx += 1
-
-            return jsonify({
-                'is_multi': True, 'lines': lines, 'wl_status': {}, 'name': 'Relative Performance (Watchlist)', 'portfolio': ud, 'leaderboard': leaderboard,
-                'metrics': {
-                    'price': 0, 'price_display': 'Normalized %', 'discount': '--', 'buy_score': '--', 'tranches': 0,
-                    'status': regime.get('state', 'Room Temp'), 'color': regime.get('color', '#8a8a9e'), 'reason': f"Sentiment Thermometer: {regime.get('score', 50)}/100 ({regime.get('state', 'Room Temp')}).",
-                    'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
-                    'shares_owned': sum(open_positions.values()), 'value_owned': round(tot_own, 2),
-                    'pnl_display': pnl_formatted, 'pnl_color': pnl_color, 'total_pnl_display': pnl_formatted, 'total_pnl_color': pnl_color,
-                    'master_pnl_data': master_pnl_data, 'pnl_data': master_pnl_data, 'master_budget': mb,
-                    'total_portfolio_owned': round(tot_own, 2), 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2),
-                    'regime': regime, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'All Shares View',
-                    'hard_pct': -0.50, 'stop_price': 0.0
-                }
-            })
 
         # --- SINGLE TICKER OHLC ---
         _, cache_df = fetch_ticker_fast(t, req_period, req_interval)
@@ -408,16 +387,14 @@ def get_data():
             for u_k in portfolio_store.data['users'].keys():
                 lb_fb.append({'user': u_k, 'equity': 5000.0, 'budget': 5000.0, 'daily_pnl': 0.0, 'has_active_holds': False})
         
-        is_multi_view = (t == 'ALL_SHARES')
         t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
         t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
-        fallback_lines = [{'ticker': tk, 'color': '#00d2ff', 'data': [{'time': t_fallback, 'value': 0.0}, {'time': t_curr, 'value': 0.0}]} for tk in ['TQQQ', 'SOXL', 'NVDL', 'NVDA']]
         
         return jsonify({
-            'is_multi': is_multi_view,
-            'lines': fallback_lines if is_multi_view else [],
-            'ohlc': [] if is_multi_view else [{'time': t_curr, 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
-            'mathLine': [], 'wl_status': {}, 'name': 'ALL_SHARES' if is_multi_view else 'NVDA',
+            'is_multi': False,
+            'lines': [],
+            'ohlc': [{'time': t_curr, 'open': 100.0, 'high': 100.0, 'low': 100.0, 'close': 100.0}],
+            'mathLine': [], 'wl_status': {}, 'name': t if t else 'NVDA',
             'portfolio': ud_fb if ud_fb else {'watchlist': ['NVDA'], 'history': [], 'holdings': {}},
             'leaderboard': lb_fb,
             'metrics': {
