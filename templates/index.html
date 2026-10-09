@@ -1111,8 +1111,22 @@
             else tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false });
 
             if (Array.isArray(masterData) && masterData.length > 0) {
-                tvSeries.setData(masterData);
-                try { tvChart.timeScale().fitContent(); } catch(e){}
+                // Sanitize OHLC data to guarantee LightweightCharts invariants
+                let cleanData = masterData.map(d => {
+                    let o = parseFloat(d.open) || parseFloat(d.close) || 10.0;
+                    let c = parseFloat(d.close) || o;
+                    let h = Math.max(parseFloat(d.high) || 0, o, c);
+                    let l = Math.min(parseFloat(d.low) || Infinity, o, c);
+                    if (l <= 0) l = Math.min(o, c);
+                    return { time: d.time, open: o, high: h, low: l, close: c };
+                }).filter(d => d.time && !isNaN(d.close));
+
+                try {
+                    tvSeries.setData(cleanData);
+                    tvChart.timeScale().fitContent();
+                } catch(err) {
+                    console.error("LightweightCharts setData error:", err);
+                }
             }
         }
 

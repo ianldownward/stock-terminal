@@ -20,6 +20,30 @@ def extract_val(row, col_name, default=10.0):
     except Exception:
         return default
 
+def clean_ohlc_point(t_fmt, raw_open, raw_high, raw_low, raw_close, ticker):
+    c = normalize_price(ticker, raw_close)
+    o = normalize_price(ticker, raw_open)
+    h = normalize_price(ticker, raw_high)
+    l = normalize_price(ticker, raw_low)
+    
+    if o <= 0: o = c if c > 0 else 10.0
+    if c <= 0: c = o
+    
+    # Enforce LightweightCharts invariants:
+    # 1. High MUST be >= max(open, close)
+    # 2. Low MUST be <= min(open, close) and > 0
+    h = max(h, o, c)
+    l = min(l, o, c)
+    if l <= 0: l = min(o, c)
+    
+    return {
+        'time': t_fmt,
+        'open': round(o, 4),
+        'high': round(h, 4),
+        'low': round(l, 4),
+        'close': round(c, 4)
+    }
+
 def get_last_traded_price(ud, ticker, default=10.0):
     if not isinstance(ud, dict) or not ticker:
         return default
@@ -58,7 +82,7 @@ def fetch_ticker_fast(tick, period="1d", interval="5m"):
         if time.time() - cached[0] < 300:
             return tick, cached[1]
 
-    # Memory fallback check
+    # Check memory fallback
     std_cached = YF_CACHE.get(f"{tick}_5d_5m") or YF_CACHE.get(f"{tick}_1d_5m") or YF_CACHE.get(f"{tick}_5m")
     if std_cached and isinstance(std_cached[1], pd.DataFrame) and not std_cached[1].empty:
         df_mem = std_cached[1].tail(78) if period in ["1d", "1Day"] else std_cached[1]
@@ -311,15 +335,26 @@ def get_data():
                 t_fmt = i.strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else int(i.timestamp())
                 if t_fmt not in seen_times:
                     seen_times.add(t_fmt)
-                    data.append({
-                        'time': t_fmt,
-                        'open': normalize_price(t, extract_val(r, 'Open')),
-                        'high': normalize_price(t, extract_val(r, 'High')),
-                        'low': normalize_price(t, extract_val(r, 'Low')),
-                        'close': normalize_price(t, extract_val(r, 'Close'))
-                    })
+                    cleaned_point = clean_ohlc_point(
+                        t_fmt, 
+                        extract_val(r, 'Open'), 
+                        extract_val(r, 'High'), 
+                        extract_val(r, 'Low'), 
+                        extract_val(r, 'Close'), 
+                        t
+                    )
+                    data.append(cleaned_point)
 
-        last_p = round(safe_float(data[-1]['close'], 10.0), 2) if data else 10.0
+        hist_fallback = get_last_traded_price(ud, t, default=10.0)
+        if not data:
+            t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
+            t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
+            data = [
+                clean_ohlc_point(t_fallback, hist_fallback, hist_fallback, hist_fallback, hist_fallback, t),
+                clean_ohlc_point(t_curr, hist_fallback, hist_fallback, hist_fallback, hist_fallback, t)
+            ]
+
+        last_p = round(safe_float(data[-1]['close'], hist_fallback), 2)
         
         t_buys = [tr for tr in hist if isinstance(tr, dict) and tr.get('ticker') == t and str(tr.get('action')).upper() == 'BUY']
         avg_buy_p = normalize_price(t, t_buys[0].get('price', last_p)) if t_buys else 0.0
@@ -368,15 +403,18 @@ def get_data():
             for u_k in portfolio_store.data['users'].keys():
                 lb_fb.append({'user': u_k, 'equity': 5000.0, 'budget': 5000.0, 'daily_pnl': 0.0, 'has_active_holds': False})
         
+        t_fallback = (pd.Timestamp.now() - pd.Timedelta(days=1)).strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts - 300
+        t_curr = pd.Timestamp.now().strftime('%Y-%m-%d') if req_interval in ['1d', '1wk', '1mo'] else now_ts
+        
         return jsonify({
             'is_multi': False,
             'lines': [],
-            'ohlc': [],
+            'ohlc': [clean_ohlc_point(t_curr, 10.0, 10.0, 10.0, 10.0, t)],
             'mathLine': [], 'wl_status': {}, 'name': t if t else 'YCA.L',
             'portfolio': ud_fb if ud_fb else {'watchlist': ['YCA.L'], 'history': [], 'holdings': {}},
             'leaderboard': lb_fb,
             'metrics': {
-                'price': 0.0, 'price_display': '£0.00', 'discount': '--', 'buy_score': '--', 'tranches': 0,
+                'price': 10.0, 'price_display': '£10.00', 'discount': '--', 'buy_score': '--', 'tranches': 0,
                 'status': 'Standby', 'color': '#8a8a9e', 'reason': f'Recovered: {str(err)}', 'action_main': 'HOLD',
                 'action_sub': '', 'action_color': '#8a8a9e', 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '£0.00', 'pnl_color': '#8a8a9e', 'total_pnl_display': '£0.00', 'total_pnl_color': '#8a8a9e',
