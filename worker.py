@@ -5,7 +5,7 @@ try:
 except ImportError:
     yf = None
 from portfolio import portfolio_store
-from engine import MarketScoringEngine, normalize_price
+from engine import MarketScoringEngine, safe_float, normalize_price
 
 YF_CACHE = {}
 FETCH_REQUESTS = set()
@@ -13,7 +13,7 @@ FETCH_REQUESTS = set()
 def is_market_open(ticker):
     now_uk = pd.Timestamp.now(tz='Europe/London')
     current_mins = now_uk.hour * 60 + now_uk.minute
-    is_us = not ticker.endswith('.L')
+    is_us = not (ticker.endswith('.L') or ticker.endswith('.TO'))
     if is_us:
         return 870 <= current_mins < 1260 # 14:30 - 21:00 BST
     else:
@@ -28,7 +28,7 @@ def start_unified_background_worker():
         while True:
             try:
                 users_dict = portfolio_store.data.get('users', {}) if isinstance(getattr(portfolio_store, 'data', None), dict) else {}
-                all_tickers = set(['NVDA', 'TQQQ', 'SOXL', 'QQQ', 'AMZN', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SHEL.L', 'BP.L', 'SSLN.L', 'SGLN.L', 'YCA.L'])
+                all_tickers = set(['NVDA', 'TQQQ', 'SOXL', 'QQQ', 'AMZN', 'AAPL', 'MSFT', 'TSLA', 'AMD', 'SHEL.L', 'BP.L', 'SSLN.L', 'SGLN.L', 'YCA.L', 'RIO.L', 'AZN.L'])
                 if isinstance(users_dict, dict):
                     for u_data in users_dict.values():
                         if isinstance(u_data, dict):
@@ -38,7 +38,6 @@ def start_unified_background_worker():
                                 if isinstance(tk, str) and tk.strip():
                                     all_tickers.add(tk.strip().upper())
 
-                # Process dynamically requested timeframes/tickers asynchronously
                 while FETCH_REQUESTS:
                     req = FETCH_REQUESTS.pop()
                     if isinstance(req, tuple) and len(req) == 3:
@@ -92,14 +91,11 @@ def process_auto_profile():
             users = portfolio_store.data.get('users', {})
             if isinstance(users, dict):
                 for u in list(users.keys()):
-                    if 'test a' in u.lower(): 
-                        continue
-                        
                     ud = portfolio_store.user_data(u)
                     hist = ud.get('history', []) if isinstance(ud.get('history'), list) else []
                     holds = list(set([tr.get('ticker') for tr in hist if isinstance(tr, dict) and portfolio_store.get_shares(tr.get('ticker'), u) > 0]))
                     
-                    # 1. PROCESS SELLS & EOD SWEEP
+                    # 1. PROCESS SELLS
                     for t in holds:
                         df = YF_CACHE.get(f"{t}_1d_5m", YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame())))[1]
                         if not df.empty:
@@ -114,11 +110,16 @@ def process_auto_profile():
                                 portfolio_store.save_data(portfolio_store.data)
                             
                             sh = portfolio_store.get_shares(t, u)
-                            if eod_sweep and sh > 0:
+                            # EOD Cash Sweep (Skip Test A so value positions can be held long term)
+                            if eod_sweep and sh > 0 and 'test a' not in u.lower():
                                 portfolio_store.execute_trade(t, 'SELL', sh, last_p, username=u)
                                 continue
 
-                            st = engine.score_momentum(df, last_p, avg_buy_p, hw, profile=u, regime=regime)
+                            if t in engine.nav_bases:
+                                st = engine.score_nav_asset(t, last_p, 1.0, avg_buy_p, hw)
+                            else:
+                                st = engine.score_momentum(df, last_p, avg_buy_p, hw, profile=u, regime=regime)
+
                             if st.get('action_main') == 'SELL' and sh > 0:
                                 portfolio_store.execute_trade(t, 'SELL', sh, last_p, username=u)
                                     
@@ -134,9 +135,13 @@ def process_auto_profile():
                                 df = YF_CACHE.get(f"{t}_1d_5m", YF_CACHE.get(f"{t}_5m", (0, pd.DataFrame())))[1]
                                 if not df.empty:
                                     last_p = normalize_price(t, float(df['Close'].iloc[-1]))
-                                    st = engine.score_momentum(df, last_p, 0.0, 0.0, profile=u, regime=regime)
-                                    if st.get('action_main') == 'BUY' and st.get('score', 0) > best_score:
-                                        best_score = st['score']
+                                    if t in engine.nav_bases:
+                                        st = engine.score_nav_asset(t, last_p, 1.0, 0.0, 0.0)
+                                    else:
+                                        st = engine.score_momentum(df, last_p, 0.0, 0.0, profile=u, regime=regime)
+
+                                    if st.get('action_main') == 'BUY' and safe_float(st.get('score', 0)) > best_score:
+                                        best_score = safe_float(st['score'])
                                         best_buy = t
                                         best_price = last_p
                                         
