@@ -73,7 +73,8 @@ def generate_fallback_df(ticker, count=78, interval='5m'):
     for i in range(count):
         t_val = now_ts - (count - i) * step_sec
         dt = pd.to_datetime(t_val, unit='s', utc=True).tz_convert('Europe/London')
-        drift = (random.random() - 0.49) * 0.003 * current_p
+        wave = math.sin(i / 3.0) * 0.006 * current_p
+        drift = ((random.random() - 0.48) * 0.002 * current_p) + wave
         open_p = round(current_p, 4)
         close_p = round(max(0.1, current_p + drift), 4)
         high_p = round(max(open_p, close_p) + abs(drift) * 0.6, 4)
