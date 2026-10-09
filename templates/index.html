@@ -1138,16 +1138,12 @@
             let loader = document.getElementById('loader'); 
             if (!silent && loader) loader.style.display = 'block';
             
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 4000);
-
             try {
                 let pSelect = document.getElementById('periodSelect').value;
                 let iSelect = document.getElementById('intervalSelect').value;
                 let activeUser = document.getElementById('userSelect') ? document.getElementById('userSelect').value : '';
                 let reqTk = currentTicker ? currentTicker : '';
-                let res = await fetch(`/api/data?t=${reqTk}&p=${pSelect}&i=${iSelect}&user=${encodeURIComponent(activeUser)}`, { signal: controller.signal }); 
-                clearTimeout(timeoutId);
+                let res = await fetch(`/api/data?t=${reqTk}&p=${pSelect}&i=${iSelect}&user=${encodeURIComponent(activeUser)}`);
                 let p = await res.json(); 
                 
                 masterData = p.ohlc || [];
@@ -1240,12 +1236,17 @@
             });
         }
 
-        setTimeout(() => { 
+        // AFTER:
+        async function initTerminal() {
             initChart(); 
-            fetchUsers(); 
+            await fetchUsers(); 
             updateMarketClocks();
-            fetchData(false); 
-            setupAutoRefresh(); 
+            await fetchData(false); 
+            setupAutoRefresh();
+        }
+
+        setTimeout(() => { 
+            initTerminal(); 
         }, 100);
     </script>
 </body>
