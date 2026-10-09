@@ -1,4 +1,5 @@
 import os, json, time, threading, urllib.request
+import pandas as pd
 try:
     from pymongo import MongoClient
 except ImportError:
@@ -16,6 +17,19 @@ def send_push_notification(topic, title, message):
     except Exception: 
         pass
 
+REAL_PROFILE_BASELINES = {
+    'Test E6 - Breakeven Rotator': 5434.52,
+    'Test E - Rotator': 5300.19,
+    'Test E8 - Meta-Adaptive Rotator': 5288.70,
+    'Test E4 - Clean EOD Rotator': 5273.04,
+    'Test E7 - Breakeven 0.5% Rotator': 5265.76,
+    'Test E12 - E4 Momentum Hybrid': 5248.63,
+    'Test U - Tight Rotator': 5144.00,
+    'Test E13 - E6 Breakeven 0.5% Hybrid': 5193.22,
+    'Test A - Deep Value': 5016.42,
+    'Test X - Dynamic Target Switch (15m ORB)': 4930.64
+}
+
 class PortfolioManager:
     def __init__(self):
         self.trade_lock = threading.Lock()
@@ -26,24 +40,27 @@ class PortfolioManager:
         mongo_uri = os.environ.get('MONGO_URI')
         if mongo_uri and MongoClient:
             try:
-                self.client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000, connectTimeoutMS=2000, socketTimeoutMS=2000)
+                self.client = MongoClient(mongo_uri, serverSelectionTimeoutMS=1000, connectTimeoutMS=1000, socketTimeoutMS=1000)
                 self.collection = self.client['stock_terminal']['portfolio']
             except Exception: 
                 self.client = None
                 self.collection = None
         
-        self.data = self.load()
+        self.data = self.load_initial()
         self._ensure_default_user()
 
     def default_user_state(self, username=""):
-        prof = str(username).strip().lower()
-        if 'test a' in prof:
+        prof_name = str(username).strip()
+        prof_lower = prof_name.lower()
+        starting_budget = REAL_PROFILE_BASELINES.get(prof_name, 5000.0)
+
+        if 'test a' in prof_lower:
             wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
         else:
             wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
 
         return {
-            'master_budget': 5000.0,
+            'master_budget': starting_budget,
             'watchlist': wl, 
             'initial_positions': {}, 
             'holdings': {}, 
@@ -51,16 +68,7 @@ class PortfolioManager:
             'settings': {'period': '1d', 'interval': '5m', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
         }
 
-    def load(self):
-        if self.client and self.collection is not None:
-            try:
-                doc = self.collection.find_one({"_id": "main_store"})
-                if doc and isinstance(doc.get('users'), dict) and len(doc.get('users')) > 0:
-                    doc.pop('_id', None)
-                    return doc
-            except Exception: 
-                pass
-        
+    def load_initial(self):
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, 'r') as f:
@@ -70,27 +78,26 @@ class PortfolioManager:
             except Exception: 
                 pass
         
+        if self.client and self.collection is not None:
+            try:
+                doc = self.collection.find_one({"_id": "main_store"})
+                if doc and isinstance(doc.get('users'), dict) and len(doc.get('users')) > 0:
+                    doc.pop('_id', None)
+                    return doc
+            except Exception: 
+                pass
+
         initial = {'active_user': 'Test E6 - Breakeven Rotator', 'users': {}}
         return initial
 
     def reload(self):
-        self.data = self.load()
+        if not isinstance(self.data, dict) or 'users' not in self.data:
+            self.data = self.load_initial()
         self._ensure_default_user()
 
     def _ensure_default_user(self):
         try:
-            allowed_profiles = [
-                'Test E6 - Breakeven Rotator',
-                'Test E7 - Breakeven 0.5% Rotator',
-                'Test E4 - Clean EOD Rotator',
-                'Test E12 - E4 Momentum Hybrid',
-                'Test E8 - Meta-Adaptive Rotator',
-                'Test U - Tight Rotator',
-                'Test E13 - E6 Breakeven 0.5% Hybrid',
-                'Test A - Deep Value',
-                'Test E - Rotator',
-                'Test X - Dynamic Target Switch (15m ORB)'
-            ]
+            allowed_profiles = list(REAL_PROFILE_BASELINES.keys())
             needs_save = False
             
             if not isinstance(self.data, dict):
@@ -101,15 +108,13 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Purge non-approved profiles
             existing = list(self.data['users'].keys())
             for u in existing:
                 if u not in allowed_profiles:
                     del self.data['users'][u]
                     needs_save = True
 
-            # Ensure all 10 profiles exist
-            for p in allowed_profiles:
+            for p, target_baseline in REAL_PROFILE_BASELINES.items():
                 if p not in self.data['users'] or not isinstance(self.data['users'][p], dict) or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
@@ -124,16 +129,17 @@ class PortfolioManager:
             pass
 
     def save_data(self, data_to_save):
-        if self.client and self.collection is not None:
-            try: 
-                self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
-            except Exception: 
-                pass
         try:
             with open(self.filename, 'w') as f: 
                 json.dump(data_to_save, f, indent=2)
         except Exception: 
             pass
+            
+        if self.client and self.collection is not None:
+            try: 
+                self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
+            except Exception: 
+                pass
 
     def active_username(self): 
         if isinstance(self.data, dict) and self.data.get('active_user'):
@@ -185,19 +191,7 @@ class PortfolioManager:
 
     def reset_all_profiles_to_5000(self):
         self.reload()
-        allowed_profiles = [
-            'Test E6 - Breakeven Rotator',
-            'Test E7 - Breakeven 0.5% Rotator',
-            'Test E4 - Clean EOD Rotator',
-            'Test E12 - E4 Momentum Hybrid',
-            'Test E8 - Meta-Adaptive Rotator',
-            'Test U - Tight Rotator',
-            'Test E13 - E6 Breakeven 0.5% Hybrid',
-            'Test A - Deep Value',
-            'Test E - Rotator',
-            'Test X - Dynamic Target Switch (15m ORB)'
-        ]
-        for p in allowed_profiles:
+        for p in list(REAL_PROFILE_BASELINES.keys()):
             self.data['users'][p] = self.default_user_state(p)
         self.save_data(self.data)
 
@@ -229,8 +223,8 @@ class PortfolioManager:
     def remove_watchlist(self, ticker):
         if not ticker: return
         self.reload()
-        ud = self.user_data()
         tk = ticker.strip().upper()
+        ud = self.user_data()
         if 'watchlist' in ud and isinstance(ud['watchlist'], list) and tk in ud['watchlist']:
             ud['watchlist'].remove(tk)
             self.save_data(self.data)
