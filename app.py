@@ -276,8 +276,6 @@ def get_data():
     if request.args.get('user', '').strip():
         portfolio_store.switch_user(real_key)
 
-    # RUN EAGER INLINE AUTO-TRADE CHECK FOR REAL_KEY ON EVERY DATA POLL
-    evaluate_profile_auto_trade(real_key)
     ud = portfolio_store.user_data(real_key)
 
     wl = ud.get('watchlist') if isinstance(ud.get('watchlist'), list) and ud.get('watchlist') else ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META']
