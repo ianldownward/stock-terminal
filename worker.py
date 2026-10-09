@@ -135,17 +135,20 @@ def start_unified_background_worker():
                             df_req = generate_fallback_df(tk, 78, i)
                         YF_CACHE[f"{tk}_{p}_{i}"] = (time.time(), df_req)
 
-                for tk in list(all_tickers):
-                    try:
-                        df_5d = fetch_yahoo_v8(tk, period="5d", interval="5m")
-                        if df_5d.empty:
-                            df_5d = generate_fallback_df(tk, 78, "5m")
-                        YF_CACHE[f"{tk}_5d_5m"] = (time.time(), df_5d)
-                        YF_CACHE[f"{tk}_1d_5m"] = (time.time(), df_5d.tail(78))
-                        YF_CACHE[f"{tk}_5m"] = (time.time(), df_5d)
-                    except Exception:
-                        pass
-                    time.sleep(0.05)
+                # AFTER:
+                all_tickers = ['TQQQ', 'SOXL', 'NVDL', 'QQQ', 'NVDA', 'TSLA', 'AMD', 'AMZN', 'META', 'SSLN.L', 'SGLN.L', 'YCA.L', 'RIO.L', 'BP.L', 'SHEL.L', 'U-UN.TO', 'PHYS', 'PSLV']
+                now = time.time()
+                for tk in all_tickers:
+                    last_t = LAST_FETCHED.get(tk, 0)
+                    if now - last_t > 60:
+                        LAST_FETCHED[tk] = now
+                        df_req = fetch_yahoo_v8(tk, period="5d", interval="5m")
+                        if df_req.empty:
+                            df_req = generate_fallback_df(tk, 78, "5m")
+                        YF_CACHE[f"{tk}_5d_5m"] = (time.time(), df_req)
+                        YF_CACHE[f"{tk}_5m"] = (time.time(), df_req)
+                        time.sleep(1.0)
+                        break
             except Exception:
                 pass
             time.sleep(10)

@@ -1138,6 +1138,10 @@
             let loader = document.getElementById('loader'); 
             if (!silent && loader) loader.style.display = 'block';
             
+            let safetyTimer = setTimeout(() => {
+                if (loader) loader.style.display = 'none';
+            }, 3000);
+            
             try {
                 let pSelect = document.getElementById('periodSelect').value;
                 let iSelect = document.getElementById('intervalSelect').value;
@@ -1211,6 +1215,7 @@
             } catch(e) { 
                 console.error("fetchData error:", e);
             } finally {
+                clearTimeout(safetyTimer);
                 if (loader) loader.style.display = 'none';
             }
         }
