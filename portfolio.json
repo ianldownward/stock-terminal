@@ -1,65 +1,88 @@
 {
-  "active_user": "Test E6 - Breakeven Rotator",
-  "users": {
-    "Test E6 - Breakeven Rotator": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
+  "master_budget": 5000.0,
+  "active_user": "Ian",
+  "users": [
+    "Ian",
+    "Test A - Deep Value",
+    "Test E - Rotator",
+    "Test E2 - EOD Rotator",
+    "Test E4 - Clean EOD Rotator",
+    "Test E6 - Breakeven Rotator",
+    "Test E7 - Breakeven 0.5% Rotator",
+    "Test U - Tight Rotator",
+    "Test X - Dynamic Target Switch (15m ORB)",
+    "Test E12 - E4 Momentum Hybrid"
+  ],
+  "users_data": {
+    "Ian": {
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
       "history": [],
-      "holdings": {}
-    },
-    "Test E7 - Breakeven 0.5% Rotator": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
-      "history": [],
-      "holdings": {}
-    },
-    "Test E4 - Clean EOD Rotator": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
-      "history": [],
-      "holdings": {}
-    },
-    "Test E12 - E4 Momentum Hybrid": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
-      "history": [],
-      "holdings": {}
-    },
-    "Test E8 - Meta-Adaptive Rotator": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
-      "history": [],
-      "holdings": {}
-    },
-    "Test U - Tight Rotator": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
-      "history": [],
-      "holdings": {}
-    },
-    "Test E13 - E6 Breakeven 0.5% Hybrid": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
-      "history": [],
-      "holdings": {}
+      "watchlist": ["YCA.L", "U-UN.TO"]
     },
     "Test A - Deep Value": {
-      "master_budget": 5000.0,
-      "watchlist": ["YCA.L", "U-UN.TO", "PHYS", "PSLV", "CEF", "SGLN.L", "SSLN.L", "RIO.L", "BP.L", "SHEL.L", "AZN.L"],
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
       "history": [],
-      "holdings": {}
+      "watchlist": ["YCA.L", "U-UN.TO"]
     },
     "Test E - Rotator": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
       "history": [],
-      "holdings": {}
+      "watchlist": ["YCA.L", "U-UN.TO"]
+    },
+    "Test E2 - EOD Rotator": {
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
+      "history": [],
+      "watchlist": ["YCA.L", "U-UN.TO"]
+    },
+    "Test E4 - Clean EOD Rotator": {
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
+      "history": [],
+      "watchlist": ["YCA.L", "U-UN.TO"]
+    },
+    "Test E6 - Breakeven Rotator": {
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
+      "history": [],
+      "watchlist": ["YCA.L", "U-UN.TO"]
+    },
+    "Test E7 - Breakeven 0.5% Rotator": {
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
+      "history": [],
+      "watchlist": ["YCA.L", "U-UN.TO"]
+    },
+    "Test U - Tight Rotator": {
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
+      "history": [],
+      "watchlist": ["YCA.L", "U-UN.TO"]
     },
     "Test X - Dynamic Target Switch (15m ORB)": {
-      "master_budget": 5000.0,
-      "watchlist": ["TQQQ", "SOXL", "NVDL", "NVDA", "TSLA", "AMD", "AMZN", "META"],
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
       "history": [],
-      "holdings": {}
+      "watchlist": ["YCA.L", "U-UN.TO"]
+    },
+    "Test E12 - E4 Momentum Hybrid": {
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
+      "history": [],
+      "watchlist": ["YCA.L", "U-UN.TO"]
     }
   }
 }
