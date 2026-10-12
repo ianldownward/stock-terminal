@@ -10,6 +10,7 @@
     "Test E6 - Breakeven Rotator",
     "Test E7 - Breakeven 0.5% Rotator",
     "Test U - Tight Rotator",
+    "Test W - Adaptive Volatility Rotator",
     "Test X - Dynamic Target Switch (15m ORB)",
     "Test E12 - E4 Momentum Hybrid"
   ],
@@ -64,6 +65,13 @@
       "watchlist": ["YCA.L", "U-UN.TO"]
     },
     "Test U - Tight Rotator": {
+      "budget": 5000.0,
+      "budget_remaining": 5000.0,
+      "holdings": {},
+      "history": [],
+      "watchlist": ["YCA.L", "U-UN.TO"]
+    },
+    "Test W - Adaptive Volatility Rotator": {
       "budget": 5000.0,
       "budget_remaining": 5000.0,
       "holdings": {},
