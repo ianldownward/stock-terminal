@@ -432,7 +432,14 @@ class MarketScoringEngine:
             drop_from_peak_pct = ((highest_price - current_price) / highest_price) * 100.0
             peak_pnl_pct = ((highest_price - avg_buy_price) / avg_buy_price) * 100.0
             
-            # BREAKEVEN LOCK RULE (TEST E6 AT +0.25%, TEST E7 AT +0.50%)
+            # TEST X: OPTIMAL DYNAMIC TARGET HYBRID (STAGE 1 -> STAGE 2 SWITCH)
+            if 'test x' in prof:
+                if peak_pnl_pct >= 0.50:
+                    breakeven_price = avg_buy_price * 1.0020  # Lock +0.20% minimum profit once +0.50% hit
+                    if current_price <= breakeven_price:
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST X DYNAMIC LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Dynamic Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Dynamic Lock (+{pnl_pct:.2f}%)"}
+
+            # BREAKEVEN LOCK RULE FOR TEST E6 (+0.25%) AND TEST E7 (+0.50%)
             be_threshold = 0.25 if 'test e6' in prof else 0.50
             if any(x in prof for x in ['test e6', 'test e7']) and peak_pnl_pct >= be_threshold:
                 breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
@@ -465,7 +472,7 @@ class MarketScoringEngine:
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD ROTATOR SWEEP: Blocking new entries.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
         # OVERRIDE: QUICK 1.2% TARGET FOR 3x ETFs
-        if any(x in prof for x in ['test e', 'test s', 'test u', 'test w']) and is_3x_etf and avg_buy_price > 0:
+        if any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']) and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             if pnl_pct >= 1.20:
                 return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#00d2ff', 'health_text': 'Target Hit (Selling)'}
@@ -478,12 +485,15 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
-        # ENTRY LOGIC (WITH VOLUME FILTER FOR TEST E6 & E7)
+        # ENTRY LOGIC (WITH VOLUME FILTER FOR TEST E6 & E7 & RE-ENTRY FILTER FOR TEST E12)
         if ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0:
             vol_20ma = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
             cur_vol = df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
             
+            if 'test e12' in prof and rsi < 50:
+                return {'type': 'Intraday Momentum', 'score': 40, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"E12 Momentum Filter: RSI ({rsi:.1f}) below 50. Entry blocked.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low RSI Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI < 50)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
             if any(x in prof for x in ['test e6', 'test e7']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
