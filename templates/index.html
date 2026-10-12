@@ -285,6 +285,7 @@
             border-color: #00d2ff; 
         }
 
+        /* UNIFORM CONTROL BUTTON STYLING MATCHING REFRESH */
         .btn-control { 
             background: #0f1115; 
             border: 1px solid #00d2ff; 
@@ -611,16 +612,15 @@
                     <div style="display:flex; align-items:center; gap:8px;">
                         <h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2>
                     </div>
+                    <!-- UNIFORM REFRESH-STYLE ACTION BUTTONS -->
                     <div class="action-buttons">
                         <button id="btnShowTrades" class="btn-control active" onclick="toggleShowTrades()">Trades</button>
                         <button id="btnShowMath" class="btn-control" onclick="toggleShowMath()">Math Overlay</button>
                         <button class="btn-control" onclick="openJourneyModal()">Setup Alerts</button>
-                        
                         <button id="btnDraw" class="btn-control" onclick="toggleDrawMode()">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
                             <span id="drawBtnText">Draw Line</span>
                         </button>
-                        
                         <button class="btn-control" onclick="clearManualLines()">Clear</button>
                         <button id="btnFullscreen" class="btn-control" onclick="toggleFullScreen()">Full Screen</button>
                         <button class="btn-control" onclick="resetTerminalData()">Reset User</button>
@@ -827,4 +827,446 @@
             
             let el = document.getElementById('marketClocks');
             if (el) {
-                el.innerHTML =
+                el.innerHTML = `
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="font-size:12px; font-weight:bold; color:${colorUK};">UK</span>
+                        <div style="width:60px; height:8px; background:#262b36; border-radius:4px; overflow:hidden;">
+                            <div style="width:${pctUK}%; height:100%; background:${colorUK};"></div>
+                        </div>
+                        <span style="font-size:11px; color:#787e8e;">${timeStringUK}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="font-size:12px; font-weight:bold; color:${colorUS};">US</span>
+                        <div style="width:60px; height:8px; background:#262b36; border-radius:4px; overflow:hidden;">
+                            <div style="width:${pctUS}%; height:100%; background:${colorUS};"></div>
+                        </div>
+                        <span style="font-size:11px; color:#787e8e;">${timeStringUS}</span>
+                    </div>
+                `;
+            }
+        }
+
+        function updateIntervals() {
+            let p = document.getElementById('periodSelect').value;
+            let s = document.getElementById('intervalSelect');
+            let ci = s.value; 
+            s.innerHTML = '';
+            let o = (p === '1d' || p === '5d') ? [['1m','1 Min'],['5m','5 Mins'],['15m','15 Mins'],['1h','1 Hour']] : [['1d','1 Day'],['1wk','1 Week']];
+            o.forEach(x => { 
+                let opt = document.createElement('option'); 
+                opt.value = x[0]; opt.text = x[1]; 
+                s.appendChild(opt); 
+            }); 
+            if (Array.from(s.options).some(x => x.value === ci)) s.value = ci; 
+            else s.value = s.options[0].value;
+        }
+
+        function toggleFullScreen() {
+            let elem = document.documentElement;
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) { 
+                if (elem.requestFullscreen) elem.requestFullscreen(); 
+                else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen(); 
+            } else { 
+                if (document.exitFullscreen) document.exitFullscreen(); 
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); 
+            }
+        }
+
+        function toggleShowTrades() { 
+            showTrades = !showTrades; 
+            let btn = document.getElementById('btnShowTrades'); 
+            if(btn){ showTrades ? btn.classList.add('active') : btn.classList.remove('active'); } 
+        }
+
+        function toggleShowMath() { 
+            showMath = !showMath; 
+            let btn = document.getElementById('btnShowMath'); 
+            if(btn){ showMath ? btn.classList.add('active') : btn.classList.remove('active'); } 
+        }
+
+        function toggleDrawMode() {
+            isDrawing = !isDrawing;
+            let btn = document.getElementById('btnDraw');
+            let text = document.getElementById('drawBtnText');
+            if (isDrawing) { btn.classList.add('active'); text.innerText = 'Drawing...'; }
+            else { btn.classList.remove('active'); text.innerText = 'Draw Line'; }
+        }
+
+        function clearManualLines() {
+            let cv = document.getElementById('chartCanvas');
+            if (cv) {
+                let ctx = cv.getContext('2d');
+                ctx.clearRect(0,0,cv.width,cv.height);
+            }
+        }
+
+        function resetTerminalData() {
+            if (confirm("Reset active profile back to clean £5,000 baseline?")) {
+                fetch('/api/portfolio/reset', { method: 'POST' }).then(() => fetchData(false));
+            }
+        }
+
+        function closeQuickScore() {
+            document.getElementById('qsResult').style.display = 'none';
+        }
+
+        async function checkQuickScore() {
+            let input = document.getElementById('qsTicker').value.trim().toUpperCase();
+            if (!input) return;
+            let res = await fetch(`/api/score?t=${input}`);
+            let d = await res.json();
+            let div = document.getElementById('qsResult');
+            div.style.display = 'block';
+            div.innerHTML = `<b>${d.name || input}</b>: Score ${d.score}/100 - ${d.reason || ''}`;
+        }
+
+        async function openRecommendModal() {
+            document.getElementById('recModal').style.display = 'flex';
+            document.getElementById('recContent').innerHTML = '<div style="color:#00d2ff; text-align:center;">Top anomaly recommendations scanned.</div>';
+        }
+
+        async function fetchUsers() {
+            try {
+                let res = await fetch('/api/users');
+                let data = await res.json();
+                let sel = document.getElementById('userSelect'); 
+                if (sel) {
+                    sel.innerHTML = ''; 
+                    (data.users || []).forEach(u => { 
+                        let opt = document.createElement('option'); 
+                        opt.value = u; 
+                        opt.innerText = u; 
+                        if (u === data.active_user) opt.selected = true; 
+                        sel.appendChild(opt); 
+                    });
+                    if (data.active_user) sel.value = data.active_user;
+                }
+            } catch(e) {}
+        }
+
+        async function onUserChange(username) {
+            if (!username) return; 
+            let sel = document.getElementById('userSelect');
+            if (sel) sel.value = username;
+
+            await fetch('/api/users/select', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({username: username})
+            }); 
+            currentTicker = null; 
+            await fetchData(false); 
+        }
+
+        async function addUserPrompt() {
+            let name = prompt("Enter new profile name:");
+            if (!name || !name.trim()) return;
+            await fetch('/api/users/add', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: name.trim()})});
+            await fetchUsers(); await fetchData(false);
+        }
+
+        async function deleteUserPrompt() {
+            let au = document.getElementById('userSelect').value;
+            if (confirm(`Delete profile ${au}?`)) {
+                await fetch('/api/users/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: au})});
+                await fetchUsers(); await fetchData(false);
+            }
+        }
+
+        function setupAutoRefresh() { 
+            if (autoRefreshTimer) clearInterval(autoRefreshTimer); 
+            let ms = parseInt(document.getElementById('refreshSelect').value) || 15000;
+            autoRefreshTimer = setInterval(() => { 
+                if (!document.hidden) { fetchData(true); } 
+            }, ms); 
+        }
+
+        function onMasterBudgetInput() {
+            let b = parseFloat(document.getElementById('masterBudgetInput').value) || 5000;
+            fetch('/api/portfolio/budget', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({budget: b})}).then(() => fetchData(false));
+        }
+
+        function onValOwnedInput() {
+            let v = parseFloat(document.getElementById('inputHeldVal').value) || 0;
+            fetch('/api/portfolio/holding', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ticker: currentTicker, value_owned: v, price: 10.0})}).then(() => fetchData(false));
+        }
+
+        function renderWatchlist(watchlist, activeHolds = []) {
+            let ul = document.getElementById('watchlistUI'); 
+            ul.innerHTML = '';
+            
+            if (!watchlist || watchlist.length === 0) return;
+            if (!currentTicker || !watchlist.includes(currentTicker)) {
+                currentTicker = watchlist[0];
+            }
+
+            watchlist.forEach(symbol => {
+                let isHeld = Array.isArray(activeHolds) && activeHolds.includes(symbol);
+                let heldBadge = isHeld ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
+                let li = document.createElement('li'); 
+                li.className = `watchlist-item ${symbol === currentTicker ? 'active' : ''}`; 
+                li.innerHTML = `<div><span class="ticker">${symbol}</span>${heldBadge}</div><button class="btn-delete" onclick="deleteWatchlist('${symbol}', event)">✕</button>`; 
+                li.onclick = () => selectStock(symbol);
+                ul.appendChild(li);
+            });
+        }
+
+        async function deleteWatchlist(symbol, e) {
+            e.stopPropagation();
+            await fetch('/api/watchlist/delete', { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ticker: symbol})
+            }); 
+            fetchData(false);
+        }
+
+        function renderLeaderboard(leaderboard) {
+            let activeProf = document.getElementById('userSelect') ? document.getElementById('userSelect').value : '';
+            let sortMode = document.querySelector('input[name="lb_sort"]:checked') ? document.querySelector('input[name="lb_sort"]:checked').value : 'all';
+            let lbData = Array.isArray(leaderboard) ? [...leaderboard] : [];
+
+            if (sortMode === 'all') {
+                lbData.sort((a, b) => b.equity - a.equity);
+            } else {
+                lbData.sort((a, b) => (b.daily_pnl || 0) - (a.daily_pnl || 0));
+            }
+
+            let lbHtml = lbData.map(lb => { 
+                let isProfit = (sortMode === 'all' ? (lb.equity - (lb.budget || 5000)) : (lb.daily_pnl || 0)) >= 0;
+                let color = isProfit ? '#00c853' : '#ff3d00';
+                let activeClass = lb.user === activeProf ? 'active-profile-card' : '';
+                let heldBadge = lb.has_active_holds ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
+                
+                let dailyPnlFormatted = `${(lb.daily_pnl || 0) >= 0 ? '+' : ''}£${(lb.daily_pnl || 0).toFixed(2)}`;
+                let equityFormatted = `£${lb.equity.toFixed(2)}`;
+                let isInfoOpen = openInfoSet.has(lb.user);
+
+                let displayVal = sortMode === 'today' ? dailyPnlFormatted : equityFormatted;
+                let subText = sortMode === 'today' ? `${equityFormatted} Total` : `(${dailyPnlFormatted} Today)`;
+
+                return `
+                    <div class="lb-item ${activeClass}" onclick="onUserChange('${lb.user}')">
+                        <div class="lb-header">
+                            <div>
+                                <span>${lb.user}${heldBadge}</span>
+                                <span class="info-icon" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
+                            </div>
+                            <div style="text-align:right;">
+                                <span style="color:${color}; font-weight:bold; font-size:13px;">${displayVal}</span>
+                                <div style="font-size:10px; color:${color}; margin-top:2px;">${subText}</div>
+                            </div>
+                        </div>
+                        <div class="lb-desc" style="display:${isInfoOpen ? 'block' : 'none'};">${profileDesc[lb.user] || 'Custom Strategy Profile.'}</div>
+                    </div>`; 
+            }).join('');
+            document.getElementById('leaderboardUI').innerHTML = lbHtml;
+        }
+
+        function renderHistory(history) {
+            let ul = document.getElementById('allHistoryUI');
+            if (!ul) return;
+            ul.innerHTML = '';
+            if (!history || history.length === 0) {
+                ul.innerHTML = '<li style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">No trades executed yet.</li>';
+                return;
+            }
+            history.forEach(i => {
+                let li = document.createElement('li');
+                li.className = 'history-item';
+                li.innerHTML = `
+                    <button class="btn-undo" onclick="undoTrade('${i.id}')">✕</button>
+                    <div class="h-action ${i.action === 'BUY' ? 'h-buy' : 'h-sell'}">${i.action} ${i.shares} sh ${i.ticker}</div>
+                    <div class="h-meta">£${i.amount.toFixed(2)} @ ${i.time}</div>
+                `;
+                ul.appendChild(li);
+            });
+        }
+
+        async function undoTrade(id) {
+            await fetch('/api/trade/undo', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: id})});
+            fetchData(false);
+        }
+
+        function renderChart() {
+            let lg = document.getElementById('chartLegend');
+            if (lg) lg.innerHTML = '';
+
+            if (!tvChart) return;
+
+            if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
+            
+            let style = document.getElementById('styleSelect') ? document.getElementById('styleSelect').value : 'candlestick';
+            if (tvSeries) { try { tvChart.removeSeries(tvSeries); } catch(e){} tvSeries = null; }
+
+            if (style === 'line') tvSeries = tvChart.addLineSeries({ color: '#00d2ff', lineWidth: 2 });
+            else if (style === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(0, 210, 255, 0.4)', bottomColor: 'rgba(0, 210, 255, 0.0)', lineColor: '#00d2ff' });
+            else tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false });
+
+            if (Array.isArray(masterData) && masterData.length > 0) {
+                let cleanData = masterData.map(d => {
+                    let o = parseFloat(d.open) || parseFloat(d.close) || 10.0;
+                    let c = parseFloat(d.close) || o;
+                    let h = Math.max(parseFloat(d.high) || 0, o, c);
+                    let l = Math.min(parseFloat(d.low) || Infinity, o, c);
+                    if (l <= 0) l = Math.min(o, c);
+                    return { time: d.time, open: o, high: h, low: l, close: c };
+                }).filter(d => d.time && !isNaN(d.close));
+
+                try {
+                    tvSeries.setData(cleanData);
+                    tvChart.timeScale().fitContent();
+
+                    if (showTrades && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
+                        let t_buys = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker && String(tr.action).toUpperCase() === 'BUY');
+                        if (t_buys.length > 0) {
+                            let entryP = parseFloat(t_buys[0].price) || 0;
+                            if (entryP > 0) {
+                                tvSeries.createPriceLine({
+                                    price: entryP,
+                                    color: '#00c853',
+                                    lineWidth: 2,
+                                    lineStyle: 2,
+                                    axisLabelVisible: true,
+                                    title: `BUY ENTRY £${entryP.toFixed(2)}`
+                                });
+                            }
+                        }
+                    }
+                } catch(err) {
+                    console.error("LightweightCharts setData error:", err);
+                }
+            }
+        }
+
+        async function fetchData(silent = false) {
+            let loader = document.getElementById('loader'); 
+            if (!silent && loader) loader.style.display = 'block';
+
+            let safetyTimer = setTimeout(() => {
+                if (loader) loader.style.display = 'none';
+            }, 3000);
+
+            try {
+                let pSelect = document.getElementById('periodSelect') ? document.getElementById('periodSelect').value : '1d';
+                let iSelect = document.getElementById('intervalSelect') ? document.getElementById('intervalSelect').value : '5m';
+                let activeUser = document.getElementById('userSelect') ? document.getElementById('userSelect').value : '';
+                let reqTk = currentTicker ? currentTicker : '';
+                
+                let url = `/api/data?t=${encodeURIComponent(reqTk)}&p=${pSelect}&i=${iSelect}`;
+                if (activeUser) url += `&user=${encodeURIComponent(activeUser)}`;
+
+                let res = await fetch(url); 
+                let p = await res.json(); 
+                
+                masterData = p.ohlc || [];
+                globalPortfolioData = p.portfolio || {};
+
+                let userSel = document.getElementById('userSelect');
+                if (userSel && p.portfolio && p.portfolio.active_user) {
+                    if (userSel.options.length > 0 && !userSel.value) {
+                        userSel.value = p.portfolio.active_user;
+                    }
+                }
+                
+                let activeHolds = (p.metrics && p.metrics.active_holds) ? p.metrics.active_holds : [];
+                renderWatchlist(globalPortfolioData.watchlist, activeHolds);
+                renderLeaderboard(p.leaderboard);
+                renderHistory(globalPortfolioData.history);
+                
+                document.getElementById('activeTitle').innerText = p.name || currentTicker || 'Loaded Ticker';
+                document.getElementById('mPrice').innerText = p.metrics ? p.metrics.price_display || '--' : '--'; 
+                document.getElementById('mDisc').innerText = p.metrics ? p.metrics.discount || '--' : '--'; 
+                document.getElementById('mBuy').innerText = p.metrics ? p.metrics.buy_score || '--' : '--';
+                
+                document.getElementById('inputHeldVal').value = p.metrics ? p.metrics.value_owned || 0 : 0; 
+                document.getElementById('mSharesOwned').innerText = `${p.metrics ? p.metrics.shares_owned || 0 : 0} sh`;
+                
+                document.getElementById('mTotalSharesHeldVal').innerText = `£${(p.metrics ? p.metrics.total_equity || 5000 : 5000).toFixed(2)}`; 
+                document.getElementById('mTotalSharesPnL').innerText = `Cash: £${(p.metrics ? p.metrics.budget_remaining || 5000 : 5000).toFixed(2)} | Shares: £${(p.metrics ? p.metrics.total_portfolio_owned || 0 : 0).toFixed(2)}`;
+                
+                let pnlDisplayEl = document.getElementById('mTotalPnLDisplay');
+                if (pnlDisplayEl && p.metrics && p.metrics.total_pnl_display) {
+                    pnlDisplayEl.innerText = p.metrics.total_pnl_display;
+                    pnlDisplayEl.style.color = p.metrics.pnl_color || '#00c853';
+                }
+
+                if (p.metrics && p.metrics.regime) {
+                    let fillEl = document.getElementById('thermoFill');
+                    let textEl = document.getElementById('thermoText');
+                    if (fillEl) fillEl.style.width = `${p.metrics.regime.score || 50}%`; 
+                    if (fillEl) fillEl.style.backgroundColor = p.metrics.regime.color || '#8a8a9e'; 
+                    if (textEl) textEl.innerText = `${p.metrics.regime.score || 50}/100 - ${p.metrics.regime.state || 'Room Temp'}`; 
+                }
+
+                if (p.metrics) {
+                    let healthHeader = document.getElementById('rotatorHealthHeader');
+                    let healthStatus = document.getElementById('rotatorHealthStatus');
+                    let healthMarker = document.getElementById('rotatorHealthMarker');
+                    let healthSubtext = document.getElementById('rotatorHealthSubtext');
+
+                    let sharesOwned = p.metrics.shares_owned || 0;
+                    if (sharesOwned > 0) {
+                        if (healthHeader) healthHeader.innerText = "Risk Thermometer (Trailing Stop)";
+                        if (healthStatus) healthStatus.innerText = `${p.metrics.health_pct || 0}%`;
+                        if (healthSubtext) healthSubtext.innerText = p.metrics.health_text || "Tracking Position";
+                        if (healthMarker) {
+                            healthMarker.style.display = "block";
+                            healthMarker.style.left = `${Math.max(0, Math.min(100, p.metrics.health_pct || 0))}%`;
+                        }
+                    } else {
+                        let buyScore = parseInt(p.metrics.buy_score) || 0;
+                        if (healthHeader) healthHeader.innerText = "Buy Setup Readiness";
+                        if (healthStatus) healthStatus.innerText = `${buyScore}/100`;
+                        if (healthSubtext) healthSubtext.innerText = p.metrics.reason || p.metrics.action_main || "Scanning...";
+                        if (healthMarker) {
+                            healthMarker.style.display = "block";
+                            healthMarker.style.left = `${Math.max(0, Math.min(100, buyScore))}%`;
+                        }
+                    }
+                }
+                
+                renderChart();
+            } catch(e) { 
+                console.error("fetchData error:", e);
+            } finally {
+                clearTimeout(safetyTimer);
+                if (loader) loader.style.display = 'none';
+            }
+        }
+
+        function selectStock(ticker) {
+            currentTicker = ticker;
+            fetchData(false);
+        }
+
+        function initChart() {
+            let c = document.getElementById('tvChart');
+            tvChart = LightweightCharts.createChart(c, { 
+                width: c.clientWidth, 
+                height: c.clientHeight || 350, 
+                layout: { backgroundColor: '#171a21', textColor: '#787e8e' }, 
+                grid: { vertLines: { color: '#262b36' }, horzLines: { color: '#262b36' } }, 
+                crosshair: { mode: 0 }, 
+                timeScale: { borderColor: '#262b36', timeVisible: true }
+            });
+            
+            window.addEventListener('resize', () => { 
+                tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); 
+            });
+        }
+
+        async function initTerminal() {
+            initChart(); 
+            await fetchUsers(); 
+            updateMarketClocks();
+            await fetchData(false); 
+            setupAutoRefresh();
+        }
+
+        setTimeout(() => { 
+            initTerminal(); 
+        }, 100);
+    </script>
+</body>
+</html>
