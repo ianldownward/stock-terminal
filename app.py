@@ -902,6 +902,13 @@ def get_data():
         init_pos = ud.get('initial_positions') or {}
         mb = ud.get('master_budget', 5000.0)
         active_holds = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker')) > 0]))
+        if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
+        for tk in active_holds:
+            sh_cnt = portfolio_store.get_shares(tk)
+            if sh_cnt > 0:
+                if tk not in ud['holdings']: ud['holdings'][tk] = {}
+                ud['holdings'][tk]['shares'] = sh_cnt
+        ud['active_holds'] = active_holds
 
         pnl_dfs_5m = {}
         def fetch_pnl_data_5m(tick): return tick, fetch_yf_data(tick, "5d", "5m")
@@ -981,7 +988,24 @@ def get_data():
                 
             tot_eq_now = max(0, cash_now) + equity_now
             tot_eq_start = max(0, cash_start) + equity_start
-            leaderboard.append({'user': u, 'equity': round(tot_eq_now, 2), 'budget': mb_lb, 'daily_pnl': round(tot_eq_now - tot_eq_start, 2)})
+
+            # Calculate active holdings for user u to power HELD icons
+            user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
+            held_sym = user_holds[0] if user_holds else ''
+
+            user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
+            held_sym = user_holds[0] if user_holds else ''
+
+            leaderboard.append({
+                'user': u, 
+                'equity': round(tot_eq_now, 2), 
+                'budget': mb_lb, 
+                'daily_pnl': round(tot_eq_now - tot_eq_start, 2),
+                'holding': held_sym,
+                'held_ticker': held_sym,
+                'active_holds': user_holds,
+                'has_holding': len(user_holds) > 0
+            })
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
 
         settings = ud.get('settings') or {}
