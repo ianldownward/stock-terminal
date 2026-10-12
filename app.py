@@ -439,13 +439,11 @@ class MarketScoringEngine:
                     if current_price <= breakeven_price:
                         return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST X DYNAMIC LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Dynamic Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Dynamic Lock (+{pnl_pct:.2f}%)"}
 
-            # BREAKEVEN LOCK RULE FOR TEST E6 (+0.25%) AND TEST E7 (+0.50%)
-            be_threshold = 0.25 if 'test e6' in prof else 0.50
-            if any(x in prof for x in ['test e6', 'test e7']) and peak_pnl_pct >= be_threshold:
+            # BREAKEVEN LOCK RULE FOR TEST E7 ONLY (+0.50%)
+            if 'test e7' in prof and peak_pnl_pct >= 0.50:
                 breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
-
             health_pct = int(max(0, min(100, 100 - (drop_from_peak_pct / trail_pct * 100))))
             pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
             
