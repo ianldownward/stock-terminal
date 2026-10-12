@@ -462,19 +462,19 @@ class MarketScoringEngine:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell'}
 
-        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS
-        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (INCLUDES E12)
+        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD ROTATOR SWEEP: Blocking new entries.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
-        # OVERRIDE: QUICK 1.2% TARGET FOR 3x ETFs
-        if any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']) and is_3x_etf and avg_buy_price > 0:
+        # OVERRIDE: QUICK 1.2% TARGET FOR TIGHT TARGET PROFILES ONLY (EXCLUDES E6, E4, E12)
+        if any(x in prof for x in ['test u', 'test s']) and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             if pnl_pct >= 1.20:
                 return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#00d2ff', 'health_text': 'Target Hit (Selling)'}
-
+            
         # MAIN HOLDING LOGIC
         if avg_buy_price > 0 and highest_price > 0:
             if drop_from_peak_pct >= trail_pct:
