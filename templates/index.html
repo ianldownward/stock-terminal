@@ -1033,17 +1033,26 @@
             }
 
             let lbHtml = lbData.map(lb => { 
-                let isProfit = (sortMode === 'all' ? (lb.equity - (lb.budget || 5000)) : (lb.daily_pnl || 0)) >= 0;
-                let color = isProfit ? '#00c853' : '#ff3d00';
+                // Separate overall equity color from daily P&L color
+                let equityColor = (lb.equity - (lb.budget || 5000)) >= 0 ? '#00c853' : '#ff3d00';
+                let dayVal = lb.daily_pnl || 0;
+                let dailyColor = dayVal > 0 ? '#00c853' : (dayVal < 0 ? '#ff3d00' : '#8a8a9e');
+
                 let activeClass = lb.user === activeProf ? 'active-profile-card' : '';
-                let heldBadge = lb.has_active_holds ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
                 
-                let dailyPnlFormatted = `${(lb.daily_pnl || 0) >= 0 ? '+' : ''}£${(lb.daily_pnl || 0).toFixed(2)}`;
+                // Show HELD badge if user actively holds stock
+                let isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
+                let heldBadge = isHeld ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
+                
+                let dailyPnlFormatted = `${dayVal >= 0 ? '+' : ''}£${dayVal.toFixed(2)}`;
                 let equityFormatted = `£${lb.equity.toFixed(2)}`;
                 let isInfoOpen = openInfoSet.has(lb.user);
 
                 let displayVal = sortMode === 'today' ? dailyPnlFormatted : equityFormatted;
                 let subText = sortMode === 'today' ? `${equityFormatted} Total` : `(${dailyPnlFormatted} Today)`;
+
+                let mainColor = sortMode === 'today' ? dailyColor : equityColor;
+                let subColor = sortMode === 'today' ? equityColor : dailyColor;
 
                 return `
                     <div class="lb-item ${activeClass}" onclick="onUserChange('${lb.user}')">
@@ -1053,8 +1062,8 @@
                                 <span class="info-icon" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
                             </div>
                             <div style="text-align:right;">
-                                <span style="color:${color}; font-weight:bold; font-size:13px;">${displayVal}</span>
-                                <div style="font-size:10px; color:${color}; margin-top:2px;">${subText}</div>
+                                <span style="color:${mainColor}; font-weight:bold; font-size:13px;">${displayVal}</span>
+                                <div style="font-size:10px; color:${subColor}; margin-top:2px;">${subText}</div>
                             </div>
                         </div>
                         <div class="lb-desc" style="display:${isInfoOpen ? 'block' : 'none'};">${profileDesc[lb.user] || 'Custom Strategy Profile.'}</div>
@@ -1169,7 +1178,7 @@
                     }
                 }
                 
-                let activeHolds = (p.metrics && p.metrics.active_holds) ? p.metrics.active_holds : [];
+                let activeHolds = (p.portfolio && p.portfolio.active_holds) || (p.metrics && p.metrics.active_holds) || [];
                 renderWatchlist(globalPortfolioData.watchlist, activeHolds);
                 renderLeaderboard(p.leaderboard);
                 renderHistory(globalPortfolioData.history);
