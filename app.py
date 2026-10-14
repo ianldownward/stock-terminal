@@ -462,8 +462,8 @@ class MarketScoringEngine:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell'}
 
-        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (INCLUDES E12)
-        if any(x in prof for x in ['test e2', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (INCLUDES E3, E12)
+        if any(x in prof for x in ['test e2', 'test e3', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
@@ -992,15 +992,15 @@ def get_data():
             # Calculate active holdings for user u to power HELD icons
             user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
             held_sym = user_holds[0] if user_holds else ''
-
-            user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
-            held_sym = user_holds[0] if user_holds else ''
+            day_diff = round(tot_eq_now - tot_eq_start, 2)
+            day_col = '#00c853' if day_diff > 0 else ('#ff3d00' if day_diff < 0 else '#8a8a9e')
 
             leaderboard.append({
                 'user': u, 
                 'equity': round(tot_eq_now, 2), 
                 'budget': mb_lb, 
-                'daily_pnl': round(tot_eq_now - tot_eq_start, 2),
+                'daily_pnl': day_diff,
+                'daily_color': day_col,
                 'holding': held_sym,
                 'held_ticker': held_sym,
                 'active_holds': user_holds,
