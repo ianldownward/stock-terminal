@@ -700,8 +700,12 @@
                         <h3 id="rotatorHealthHeader" style="margin:0; font-size:10px; color:#00d2ff; text-transform:uppercase;">Buy Setup Readiness</h3>
                         <span id="rotatorHealthStatus" style="font-size:12px; font-weight:bold; color:#fff;">--</span>
                     </div>
-                    <div style="width: 100%; height: 14px; background: linear-gradient(90deg, #ff3d00 0%, #ff9900 50%, #00c853 100%); border-radius: 7px; position: relative;">
-                        <div id="rotatorHealthMarker" style="position: absolute; top: -3px; left: 0%; width: 4px; height: 20px; background: #ffffff; border-radius: 2px; box-shadow: 0 0 6px #ffffff; transition: left 0.4s ease;"></div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span id="rotatorStopPrice" style="font-size:11px; font-weight:bold; color:#ff3d00; min-width:55px; text-align:left;">--</span>
+                        <div style="flex:1; height: 14px; background: linear-gradient(90deg, #ff3d00 0%, #ff9900 50%, #00c853 100%); border-radius: 7px; position: relative;">
+                            <div id="rotatorHealthMarker" style="position: absolute; top: -3px; left: 0%; width: 4px; height: 20px; background: #ffffff; border-radius: 2px; box-shadow: 0 0 6px #ffffff; transition: left 0.4s ease;"></div>
+                        </div>
+                        <span id="rotatorPeakPrice" style="font-size:11px; font-weight:bold; color:#00c853; min-width:55px; text-align:right;">--</span>
                     </div>
                     <div id="rotatorHealthSubtext" style="font-size:10px; color:#8a8a9e; margin-top:6px; text-align:center;">Scanning...</div>
                 </div>
@@ -1289,6 +1293,8 @@
                     let healthStatus = document.getElementById('rotatorHealthStatus');
                     let healthMarker = document.getElementById('rotatorHealthMarker');
                     let healthSubtext = document.getElementById('rotatorHealthSubtext');
+                    let stopEl = document.getElementById('rotatorStopPrice');
+                    let peakEl = document.getElementById('rotatorPeakPrice');
 
                     let sharesOwned = p.metrics.shares_owned || 0;
                     if (sharesOwned > 0) {
@@ -1299,6 +1305,21 @@
                             healthMarker.style.display = "block";
                             healthMarker.style.left = `${Math.max(0, Math.min(100, p.metrics.health_pct || 0))}%`;
                         }
+
+                        // Determine strategy trail percentage
+                        let prof = (document.getElementById('userSelect')?.value || '').toLowerCase();
+                        let trailPct = 0.50;
+                        if (prof.includes('test e6')) trailPct = 0.75;
+                        else if (prof.includes('test e5')) trailPct = 0.35;
+                        else if (prof.includes('test e') || prof.includes('test s')) trailPct = 1.00;
+
+                        // Calculate Peak (Highest Price) and Stop (Lowest Price before liquidating)
+                        let curPrice = parseFloat(p.metrics.price) || 0;
+                        let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
+                        let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));
+
+                        if (stopEl) stopEl.innerText = `£${stopPrice.toFixed(2)}`;
+                        if (peakEl) peakEl.innerText = `£${peakPrice.toFixed(2)}`;
                     } else {
                         let buyScore = parseInt(p.metrics.buy_score) || 0;
                         if (healthHeader) healthHeader.innerText = "Buy Setup Readiness";
@@ -1308,6 +1329,8 @@
                             healthMarker.style.display = "block";
                             healthMarker.style.left = `${Math.max(0, Math.min(100, buyScore))}%`;
                         }
+                        if (stopEl) stopEl.innerText = '0';
+                        if (peakEl) peakEl.innerText = '100';
                     }
                 }
                 
