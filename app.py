@@ -732,7 +732,131 @@ def get_portfolio():
 @app.route('/api/portfolio/reset', methods=['POST'])
 def reset_portfolio():
     portfolio_store.reload()
-    return jsonify({'status': 'ok', 'portfolio': portfolio_store.reset_all()})
+    req_data = request.get_json(silent=True) or {}
+    prof = req_data.get('username') or portfolio_store.active_username()
+    
+    if not req_data or 'total_equity' not in req_data:
+        ud = portfolio_store.user_data(prof)
+        wl = ud.get('watchlist', [])
+        st = ud.get('settings', {})
+        portfolio_store.data['users'][prof] = portfolio_store.default_user_state(prof)
+        if wl: portfolio_store.data['users'][prof]['watchlist'] = wl
+        if st: portfolio_store.data['users'][prof]['settings'] = st
+        portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'status': 'ok', 'portfolio': portfolio_store.user_data(prof)})
+        
+    try:
+        target_equity = float(req_data.get('total_equity', 5000.0))
+        today_pnl = float(req_data.get('today_pnl', 0.0))
+        pos_type = req_data.get('position_type', 'cash').lower()
+        ticker = req_data.get('ticker', '').strip().upper()
+        shares = int(req_data.get('shares', 0))
+        buy_price = float(req_data.get('buy_price', 0.0))
+        
+        ud = portfolio_store.user_data(prof)
+        wl = ud.get('watchlist', [])
+        st = ud.get('settings', {})
+        portfolio_store.data['users'][prof] = portfolio_store.default_user_state(prof)
+        ud = portfolio_store.data['users'][prof]
+        if wl: ud['watchlist'] = wl
+        if st: ud['settings'] = st
+        
+        mb = float(ud.get('master_budget', 5000.0))
+        now_lon = pd.Timestamp.now(tz='Europe/London')
+        today_str = now_lon.strftime('%Y-%m-%d')
+        yesterday_str = (now_lon - pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        hist = []
+        holdings = {}
+        sod_equity = round(target_equity - today_pnl, 2)
+        prior_pnl = round(sod_equity - mb, 2)
+        
+        # 1. Prior days P&L entry (preserves All-Time balance)
+        if prior_pnl != 0:
+            act = 'SELL' if prior_pnl > 0 else 'BUY'
+            amt = abs(prior_pnl)
+            hist.append({
+                'id': str(int(time.time() * 1000) - 86400000),
+                'ticker': 'CALIBRATION',
+                'trade_type': 'LONG',
+                'action': act,
+                'shares': 0,
+                'price': amt,
+                'amount': amt,
+                'time': 'Prior Session Close',
+                'date_str': yesterday_str,
+                'timestamp': int(now_lon.timestamp()) - 86400
+            })
+            
+        # 2. Position or Cash state for today
+        if pos_type == 'cash' or not ticker or shares <= 0:
+            if today_pnl != 0:
+                act = 'SELL' if today_pnl > 0 else 'BUY'
+                amt = abs(today_pnl)
+                hist.append({
+                    'id': str(int(time.time() * 1000)),
+                    'ticker': 'CALIBRATION',
+                    'trade_type': 'LONG',
+                    'action': act,
+                    'shares': 0,
+                    'price': amt,
+                    'amount': amt,
+                    'time': now_lon.strftime('%d %b %H:%M'),
+                    'date_str': today_str,
+                    'timestamp': int(now_lon.timestamp())
+                })
+        else:
+            cps = buy_price / 100.0 if ticker.endswith('.L') and buy_price > 100 else buy_price
+            buy_amt = round(shares * cps, 2)
+            
+            # Fetch current price to value open position
+            df_cur = fetch_yf_data(ticker, "1d", "1m")
+            cur_p = df_cur['Close'].iloc[-1] if not df_cur.empty else buy_price
+            cur_cps = cur_p / 100.0 if ticker.endswith('.L') and cur_p > 100 else cur_p
+            open_val = round(shares * cur_cps, 2)
+            
+            today_cash_adj = round(today_pnl - (open_val - buy_amt), 2)
+            if today_cash_adj != 0:
+                act = 'SELL' if today_cash_adj > 0 else 'BUY'
+                amt = abs(today_cash_adj)
+                hist.append({
+                    'id': str(int(time.time() * 1000) - 100),
+                    'ticker': 'CALIBRATION',
+                    'trade_type': 'LONG',
+                    'action': act,
+                    'shares': 0,
+                    'price': amt,
+                    'amount': amt,
+                    'time': now_lon.strftime('%d %b %H:%M'),
+                    'date_str': today_str,
+                    'timestamp': int(now_lon.timestamp()) - 1
+                })
+                
+            trade_type = 'SHORT' if ticker in ['SQQQ', '3SUS.L'] else 'LONG'
+            hist.append({
+                'id': str(int(time.time() * 1000)),
+                'ticker': ticker,
+                'trade_type': trade_type,
+                'action': 'BUY',
+                'shares': shares,
+                'price': buy_price,
+                'amount': buy_amt,
+                'time': now_lon.strftime('%d %b %H:%M'),
+                'date_str': today_str,
+                'timestamp': int(now_lon.timestamp())
+            })
+            holdings[ticker] = {
+                'shares': shares,
+                'manual_val': open_val,
+                'high_water': max(buy_price, cur_p)
+            }
+            
+        ud['history'] = hist
+        ud['holdings'] = holdings
+        portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'status': 'ok', 'portfolio': ud})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/portfolio/reset_all_profiles', methods=['POST'])
 def reset_all_profiles():
