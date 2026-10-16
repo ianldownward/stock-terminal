@@ -225,7 +225,7 @@
         .search-box input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; }
         .search-box button { background: #00d2ff; border: none; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
         
-        .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; overflow-y: auto; padding-bottom: 15px; padding-right: 5px; min-height: 0; }
+        .watchlist { flex: 1; list-style: none; padding: 0; margin: 0; overflow-y: auto; padding-bottom: 15px; padding-right: 5px; min-height: 380px; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #363c4a; border-radius: 4px; }
@@ -572,7 +572,7 @@
                         <input type="text" id="addTickerInput" placeholder="Add Symbol...">
                         <button id="addBtn">+</button>
                     </div>
-                    <ul class="watchlist" id="watchlistUI" style="max-height: 200px;"></ul>
+                    <ul class="watchlist" id="watchlistUI" style="max-height: 520px;"></ul>
                 </div>
             </details>
         </div>
@@ -728,7 +728,10 @@
         </div>
     </div>
     
-    <div class="right-drawer">
+    <!-- DRAGGABLE RESIZER HANDLE -->
+    <div id="colResizer" style="width: 6px; cursor: col-resize; background: #161920; transition: background 0.2s; position: relative; z-index: 20;" title="Drag to resize leaderboard"></div>
+
+    <div class="right-drawer" id="leaderboardCol" style="width: 280px; min-width: 200px; max-width: 650px;">
         <details class="drawer-details" open>
             <summary>Active Profiles Leaderboard</summary>
             <div class="segmented-control" style="margin-top:8px;">
@@ -1146,82 +1149,8 @@
                                 });
                             }
                         }
-                        function drawTradeMarkers() {
-            let cv = document.getElementById('chartCanvas');
-            let chartDiv = document.getElementById('tvChart');
-            if (!cv || !tvChart || !tvSeries || !chartDiv) return;
-
-            cv.width = chartDiv.clientWidth;
-            cv.height = chartDiv.clientHeight;
-            let ctx = cv.getContext('2d');
-            ctx.clearRect(0, 0, cv.width, cv.height);
-
-            if (!showTrades || !globalPortfolioData || !Array.isArray(globalPortfolioData.history)) return;
-
-            let t_buys = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker && String(tr.action).toUpperCase() === 'BUY');
-            if (t_buys.length === 0) return;
-
-            let buyTrade = t_buys[0];
-            let buyPrice = parseFloat(buyTrade.price) || 0;
-            let buyTs = buyTrade.timestamp || 0;
-
-            if (!buyPrice || !masterData || masterData.length === 0) return;
-
-            let matchTime = null;
-            let isDaily = typeof masterData[0].time === 'string';
-
-            if (isDaily) {
-                let dStr = new Date(buyTs * 1000).toISOString().split('T')[0];
-                let found = masterData.find(b => b.time === dStr);
-                if (found) matchTime = found.time;
-            } else {
-                for (let i = 0; i < masterData.length; i++) {
-                    if (masterData[i].time <= buyTs) {
-                        matchTime = masterData[i].time;
-                    } else {
-                        break;
                     }
-                }
-                if (!matchTime) matchTime = masterData[0].time;
-            }
-
-            if (!matchTime) return;
-
-            let x = tvChart.timeScale().timeToCoordinate(matchTime);
-            let y = tvSeries.priceToCoordinate(buyPrice);
-
-            if (x !== null && x !== undefined && x >= 0 && x <= cv.width) {
-                ctx.save();
-
-                // Vertical dotted line through the buy candle
-                ctx.setLineDash([4, 4]);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, cv.height);
-                ctx.stroke();
-
-                // White dot at the exact entry price
-                if (y !== null && y !== undefined && y >= 0 && y <= cv.height) {
-                    ctx.setLineDash([]);
-                    
-                    // Green outer ring
-                    ctx.fillStyle = '#00c853';
-                    ctx.beginPath();
-                    ctx.arc(x, y, 6, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    // Solid white center dot
-                    ctx.fillStyle = '#ffffff';
-                    ctx.beginPath();
-                    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                ctx.restore();
-            }
-        }
-                    }
+                    setTimeout(drawTradeMarkers, 60);
                 } catch(err) {
                     console.error("LightweightCharts setData error:", err);
                 }
@@ -1375,6 +1304,143 @@
         setTimeout(() => { 
             initTerminal(); 
         }, 100);
+
+        // 1. DRAGGABLE LEADERBOARD RESIZER
+        (function initLeaderboardResizer() {
+            const resizer = document.getElementById('colResizer');
+            const col = document.getElementById('leaderboardCol');
+            const chartDiv = document.getElementById('tvChart');
+            if (!resizer || !col) return;
+
+            const savedWidth = localStorage.getItem('leaderboardWidth');
+            if (savedWidth) col.style.width = `${savedWidth}px`;
+
+            let isDragging = false;
+
+            resizer.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                resizer.style.background = '#00d2ff';
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                const newWidth = document.body.clientWidth - e.clientX;
+                if (newWidth >= 180 && newWidth <= 650) {
+                    col.style.width = `${newWidth}px`;
+                    localStorage.setItem('leaderboardWidth', newWidth);
+                    if (tvChart && chartDiv) {
+                        tvChart.applyOptions({ width: chartDiv.clientWidth });
+                    }
+                    if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (!isDragging) return;
+                isDragging = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                resizer.style.background = '#161920';
+            });
+        })();
+
+        // 2. BUY MARKER (VERTICAL DOTTED LINE + WHITE DOT)
+        function drawTradeMarkers() {
+            let chartDiv = document.getElementById('tvChart');
+            let cv = document.getElementById('chartCanvas');
+            if (!tvChart || !tvSeries || !chartDiv || !cv) return;
+
+            // Handle Retina / 4K high-DPI displays
+            let dpr = window.devicePixelRatio || 1;
+            cv.width = chartDiv.clientWidth * dpr;
+            cv.height = chartDiv.clientHeight * dpr;
+            cv.style.width = `${chartDiv.clientWidth}px`;
+            cv.style.height = `${chartDiv.clientHeight}px`;
+
+            let ctx = cv.getContext('2d');
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, chartDiv.clientWidth, chartDiv.clientHeight);
+
+            // Keep marker locked to candle during pan and zoom
+            if (!window._tradeMarkersBound && tvChart) {
+                window._tradeMarkersBound = true;
+                tvChart.timeScale().subscribeVisibleTimeRangeChange(() => drawTradeMarkers());
+                tvChart.timeScale().subscribeVisibleLogicalRangeChange(() => drawTradeMarkers());
+            }
+
+            if (!showTrades || !globalPortfolioData || !Array.isArray(globalPortfolioData.history)) return;
+
+            let t_buys = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker && String(tr.action).toUpperCase() === 'BUY');
+            if (t_buys.length === 0) return;
+
+            let buyTrade = t_buys[0];
+            let buyPrice = parseFloat(buyTrade.price) || 0;
+            let buyTs = parseInt(buyTrade.timestamp) || 0;
+
+            if (!buyPrice || !masterData || masterData.length === 0) return;
+
+            let matchTime = null;
+            let isDaily = typeof masterData[0].time === 'string';
+
+            if (isDaily) {
+                let dStr = new Date(buyTs * 1000).toISOString().split('T')[0];
+                let found = masterData.find(b => b.time === dStr);
+                if (found) matchTime = found.time;
+            } else {
+                for (let i = masterData.length - 1; i >= 0; i--) {
+                    let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
+                    if (cTime <= buyTs) {
+                        matchTime = masterData[i].time;
+                        break;
+                    }
+                }
+                if (!matchTime) matchTime = masterData[0].time;
+            }
+
+            if (!matchTime) return;
+
+            let x = tvChart.timeScale().timeToCoordinate(matchTime);
+            let y = tvSeries.priceToCoordinate(buyPrice);
+
+            if (x !== null && x !== undefined && x >= 0 && x <= chartDiv.clientWidth) {
+                ctx.save();
+
+                // 1. Vertical Dotted Line through execution candle
+                ctx.setLineDash([4, 4]);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, chartDiv.clientHeight);
+                ctx.stroke();
+
+                // 2. Buy Execution Dot
+                if (y !== null && y !== undefined && y >= 0 && y <= chartDiv.clientHeight) {
+                    ctx.setLineDash([]);
+                    
+                    // Outer subtle halo
+                    ctx.fillStyle = 'rgba(0, 200, 83, 0.35)';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 9, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Green accent ring
+                    ctx.fillStyle = '#00c853';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 6, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Solid white center dot
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
     </script>
 </body>
 </html>
