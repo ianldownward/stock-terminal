@@ -610,13 +610,27 @@ def process_auto_profile(prof_name):
                 avg_buy_p, highest_p = 0.0, cur
                 if sh > 0:
                     t_buys = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
-                    if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
-                    highest_p = (ud.get('holdings', {}).get(t) or {}).get('high_water', cur)
-                    if cur > highest_p:
-                        highest_p = cur
-                        if 'holdings' not in ud: ud['holdings'] = {}
-                        if t not in ud['holdings']: ud['holdings'][t] = {}
+                    if t_buys:
+                        avg_buy_p = t_buys[0].get('price', 0.0)
+                        buy_ts = t_buys[0].get('timestamp', 0)
+                        if not df.empty and 'High' in df.columns:
+                            try:
+                                post_buy_df = df[df.index.astype('int64') // 10**9 >= (buy_ts - 300)]
+                                candle_high = float(post_buy_df['High'].max()) if not post_buy_df.empty else cur
+                            except Exception:
+                                candle_high = cur
+                        else:
+                            candle_high = cur
+                    else:
+                        candle_high = cur
+
+                    stored_hw = (ud.get('holdings', {}).get(t) or {}).get('high_water', cur)
+                    highest_p = max(stored_hw, candle_high, cur)
+                    if 'holdings' not in ud: ud['holdings'] = {}
+                    if t not in ud['holdings']: ud['holdings'][t] = {}
+                    if highest_p > stored_hw:
                         ud['holdings'][t]['high_water'] = highest_p
+                        portfolio_store.save_data(portfolio_store.data)
 
                 if 'test a' in active_profile:
                     avg_v = df['Volume'].tail(20).mean() if len(df) >= 20 else 1.0
@@ -1169,11 +1183,33 @@ def get_data():
         holds_dict = ud.get('holdings') or {}
         if sh_own > 0:
             t_buys = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
-            if t_buys: avg_buy_p = t_buys[0].get('price', 0.0)
-            highest_p = (holds_dict.get(t) or {}).get('high_water', last_p)
+            if t_buys: 
+                avg_buy_p = t_buys[0].get('price', 0.0)
+                buy_ts = t_buys[0].get('timestamp', 0)
+                df_check = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
+                if df_check is not None and not df_check.empty and 'High' in df_check.columns:
+                    try:
+                        post_buy_df = df_check[df_check.index.astype('int64') // 10**9 >= (buy_ts - 300)]
+                        candle_high = float(post_buy_df['High'].max()) if not post_buy_df.empty else last_p
+                    except Exception:
+                        candle_high = last_p
+                else:
+                    candle_high = last_p
+            else:
+                candle_high = last_p
+
+            stored_hw = (holds_dict.get(t) or {}).get('high_water', last_p)
+            highest_p = max(stored_hw, candle_high, last_p)
+            if highest_p > stored_hw:
+                if 'holdings' not in ud: ud['holdings'] = {}
+                if t not in ud['holdings']: ud['holdings'][t] = {}
+                ud['holdings'][t]['high_water'] = highest_p
+                portfolio_store.save_data(portfolio_store.data)
 
         if is_momentum:
-            st = engine.score_momentum(df, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
+            df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
+            if df_score is None or df_score.empty: df_score = df
+            st = engine.score_momentum(df_score, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
