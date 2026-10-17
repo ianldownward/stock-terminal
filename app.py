@@ -61,7 +61,7 @@ class PortfolioManager:
 
     def default_user_state(self, username=""):
         prof = username.strip().lower()
-        ai_rotator_wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
+        ai_rotator_wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'CEG', 'VST', 'VRT', 'ANET', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
 
         if 'test b' in prof: wl = ['TQQQ']
         elif 'test q' in prof: wl = ['NVDA', 'AMD', 'GLEN.L', 'RIO.L', 'JPM', 'BAC']
@@ -69,7 +69,7 @@ class PortfolioManager:
         elif 'test c' in prof: wl = ['AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L']
         elif any(x in prof for x in ['test p', 'test t']): wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
         elif any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']): wl = ai_rotator_wl
-        elif 'ian' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'PLTR', 'MSTR', 'TSLA', 'AMD']
+        elif 'ian' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'CEG', 'VST', 'VRT', 'ANET', 'AVGO', 'PLTR', 'MSTR', 'TSLA', 'AMD']
         else: wl = ai_rotator_wl
 
         return {
@@ -396,9 +396,9 @@ class MarketScoringEngine:
             'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
             'GLEN.L': 'Glencore plc', 'RIO.L': 'Rio Tinto plc', 'HSBA.L': 'HSBC Holdings', 'GSK.L': 'GSK plc', 'ULVR.L': 'Unilever plc',
             'MU': 'Micron Technology', 'SMCI': 'Super Micro Computer', 'GEV': 'GE Vernova',
-            'RDW': 'Redwire Space', 'STM': 'STMicroelectronics', 'NBIS': 'Nebius Group', 'SNDK': 'SanDisk Corp'
+            'RDW': 'Redwire Space', 'STM': 'STMicroelectronics', 'NBIS': 'Nebius Group', 'SNDK': 'SanDisk Corp',
+            'CEG': 'Constellation Energy', 'VST': 'Vistra Corp', 'VRT': 'Vertiv Holdings', 'ANET': 'Arista Networks'
         }
-
     def check_market_regime(self):
         try:
             df_qqq = fetch_yf_data('QQQ', '5d', '5m')
@@ -762,7 +762,7 @@ def global_background_worker():
     time.sleep(3)
     while True:
         try:
-            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'TQQQ', 'SOXL', 'NVDL', 'QQQ', 'YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'JPM', 'BAC', 'AVGO']
+            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'CEG', 'VST', 'VRT', 'ANET', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'TQQQ', 'SOXL', 'NVDL', 'QQQ', 'YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'JPM', 'BAC', 'AVGO']
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
                 fetch_yf_data(tk, "1d", "1m")
