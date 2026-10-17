@@ -2276,5 +2276,330 @@
     window.refreshChartDrawings = renderAllLines;
 })();
 </script>
+<!-- INTERACTIVE DRAWING & DRAGGABLE ANCHOR ENGINE -->
+    <script>
+    (function() {
+        let manualLines = [];
+        let drawTempStart = null;
+        let hoveredLineIdx = -1;
+        let hoveredAnchor = null;
+        let draggingLineIdx = -1;
+        let draggingAnchor = null;
+        let dragOffset = null;
+        let lastLoadedTicker = '';
+
+        // Override button functions
+        window.toggleDrawMode = function(forceState) {
+            isDrawing = (forceState !== undefined) ? forceState : !isDrawing;
+            drawTempStart = null;
+            const btn = document.getElementById('btnDraw');
+            const text = document.getElementById('drawBtnText');
+            const cv = document.getElementById('chartCanvas');
+
+            if (isDrawing) {
+                if (btn) btn.classList.add('active');
+                if (text) text.innerText = 'Click Chart...';
+                if (cv) { cv.style.pointerEvents = 'auto'; cv.style.cursor = 'crosshair'; }
+            } else {
+                if (btn) btn.classList.remove('active');
+                if (text) text.innerText = 'Draw Line';
+                if (cv) { cv.style.pointerEvents = 'none'; cv.style.cursor = 'default'; }
+            }
+            if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
+        };
+
+        window.clearManualLines = function() {
+            manualLines = [];
+            drawTempStart = null;
+            if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
+            if (currentTicker) {
+                fetch('/api/drawings/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticker: currentTicker })
+                }).catch(() => {});
+            }
+        };
+
+        function saveDrawings() {
+            if (!currentTicker) return;
+            fetch('/api/drawings/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticker: currentTicker, drawings: manualLines })
+            }).catch(() => {});
+        }
+
+        function loadDrawings(ticker) {
+            if (!ticker) return;
+            fetch('/api/drawings?ticker=' + encodeURIComponent(ticker))
+                .then(r => r.json())
+                .then(d => {
+                    if (d && Array.isArray(d.drawings)) {
+                        manualLines = d.drawings;
+                        if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
+                    }
+                }).catch(() => {});
+        }
+
+        function distToSeg(px, py, x1, y1, x2, y2) {
+            const dx = x2 - x1, dy = y2 - y1;
+            if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
+            const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+            return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+        }
+
+        function renderLines(ctx) {
+            if (!Array.isArray(manualLines) || !tvChart || !tvSeries) return;
+
+            manualLines.forEach((l, idx) => {
+                const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
+                const y1 = tvSeries.priceToCoordinate(l.p1.price);
+                const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
+                const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                if (x1 === null || y1 === null || x2 === null || y2 === null) return;
+
+                const isSel = (idx === hoveredLineIdx || idx === draggingLineIdx);
+
+                // Line body
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = l.color || '#00d2ff';
+                ctx.lineWidth = isSel ? 2.5 : 1.8;
+                ctx.stroke();
+
+                // Anchor 1
+                ctx.beginPath();
+                ctx.arc(x1, y1, (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? '#00e5ff' : '#1e1e24';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.8;
+                ctx.stroke();
+
+                // Anchor 2
+                ctx.beginPath();
+                ctx.arc(x2, y2, (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? '#00e5ff' : '#1e1e24';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.8;
+                ctx.stroke();
+            });
+
+            // Preview rubberband during drawing
+            if (drawTempStart && drawTempStart.curX !== undefined) {
+                ctx.beginPath();
+                ctx.moveTo(drawTempStart.px, drawTempStart.py);
+                ctx.lineTo(drawTempStart.curX, drawTempStart.curY);
+                ctx.strokeStyle = '#00d2ff';
+                ctx.lineWidth = 1.8;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        // Hook into chart rendering to draw lines alongside markers
+        const _origDrawTradeMarkers = window.drawTradeMarkers;
+        window.drawTradeMarkers = function() {
+            if (typeof _origDrawTradeMarkers === 'function') _origDrawTradeMarkers();
+            const cv = document.getElementById('chartCanvas');
+            if (cv) {
+                const ctx = cv.getContext('2d');
+                renderLines(ctx);
+            }
+        };
+
+        // Attach mouse events to chart canvas
+        const initTimer = setInterval(() => {
+            const cv = document.getElementById('chartCanvas');
+            const chartDiv = document.getElementById('tvChart');
+            if (!cv || !chartDiv || !tvChart || !tvSeries) return;
+            clearInterval(initTimer);
+
+            chartDiv.addEventListener('mousemove', (e) => {
+                const rect = cv.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                if (isDrawing || draggingLineIdx !== -1) {
+                    cv.style.pointerEvents = 'auto';
+                    return;
+                }
+
+                let hit = false;
+                for (let i = 0; i < manualLines.length; i++) {
+                    const l = manualLines[i];
+                    const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
+                    const y1 = tvSeries.priceToCoordinate(l.p1.price);
+                    const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
+                    const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+
+                    if (Math.hypot(mx - x1, my - y1) <= 9 || Math.hypot(mx - x2, my - y2) <= 9 || distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
+                        hit = true;
+                        break;
+                    }
+                }
+                cv.style.pointerEvents = hit ? 'auto' : 'none';
+            });
+
+            cv.addEventListener('mousedown', (e) => {
+                const rect = cv.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                const clickTime = tvChart.timeScale().coordinateToTime(mx);
+                const clickPrice = tvSeries.coordinateToPrice(my);
+
+                // Right click deletes line
+                if (e.button === 2) {
+                    for (let i = manualLines.length - 1; i >= 0; i--) {
+                        const l = manualLines[i];
+                        const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
+                        const y1 = tvSeries.priceToCoordinate(l.p1.price);
+                        const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
+                        const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                        if (x1 !== null && y1 !== null && x2 !== null && y2 !== null && distToSeg(mx, my, x1, y1, x2, y2) <= 8) {
+                            manualLines.splice(i, 1);
+                            drawTradeMarkers();
+                            saveDrawings();
+                            return;
+                        }
+                    }
+                    return;
+                }
+
+                if (isDrawing) {
+                    if (!clickTime || clickPrice === null) return;
+                    if (!drawTempStart) {
+                        drawTempStart = { time: clickTime, price: clickPrice, px: mx, py: my };
+                    } else {
+                        manualLines.push({
+                            id: Date.now().toString(),
+                            p1: { time: drawTempStart.time, price: drawTempStart.price },
+                            p2: { time: clickTime, price: clickPrice },
+                            color: '#00d2ff'
+                        });
+                        drawTempStart = null;
+                        toggleDrawMode(false);
+                        drawTradeMarkers();
+                        saveDrawings();
+                    }
+                    return;
+                }
+
+                // Check for anchor or line drag
+                for (let i = manualLines.length - 1; i >= 0; i--) {
+                    const l = manualLines[i];
+                    const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
+                    const y1 = tvSeries.priceToCoordinate(l.p1.price);
+                    const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
+                    const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+
+                    if (Math.hypot(mx - x1, my - y1) <= 9) {
+                        draggingLineIdx = i; draggingAnchor = 'p1'; return;
+                    }
+                    if (Math.hypot(mx - x2, my - y2) <= 9) {
+                        draggingLineIdx = i; draggingAnchor = 'p2'; return;
+                    }
+                    if (distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
+                        draggingLineIdx = i; draggingAnchor = 'body';
+                        dragOffset = { dx1: x1 - mx, dy1: y1 - my, dx2: x2 - mx, dy2: y2 - my };
+                        return;
+                    }
+                }
+            });
+
+            cv.addEventListener('mousemove', (e) => {
+                const rect = cv.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                if (drawTempStart) {
+                    drawTempStart.curX = mx;
+                    drawTempStart.curY = my;
+                    drawTradeMarkers();
+                    return;
+                }
+
+                if (draggingLineIdx !== -1) {
+                    const line = manualLines[draggingLineIdx];
+                    const t = tvChart.timeScale().coordinateToTime(mx);
+                    const p = tvSeries.coordinateToPrice(my);
+
+                    if (draggingAnchor === 'p1' && t && p !== null) {
+                        line.p1 = { time: t, price: p };
+                    } else if (draggingAnchor === 'p2' && t && p !== null) {
+                        line.p2 = { time: t, price: p };
+                    } else if (draggingAnchor === 'body' && dragOffset) {
+                        const t1 = tvChart.timeScale().coordinateToTime(mx + dragOffset.dx1);
+                        const p1 = tvSeries.coordinateToPrice(my + dragOffset.dy1);
+                        const t2 = tvChart.timeScale().coordinateToTime(mx + dragOffset.dx2);
+                        const p2 = tvSeries.coordinateToPrice(my + dragOffset.dy2);
+                        if (t1 && p1 !== null && t2 && p2 !== null) {
+                            line.p1 = { time: t1, price: p1 };
+                            line.p2 = { time: t2, price: p2 };
+                        }
+                    }
+                    drawTradeMarkers();
+                    return;
+                }
+
+                // Hover detection
+                let hitIdx = -1, hitAnc = null;
+                cv.style.cursor = isDrawing ? 'crosshair' : 'default';
+
+                for (let i = manualLines.length - 1; i >= 0; i--) {
+                    const l = manualLines[i];
+                    const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
+                    const y1 = tvSeries.priceToCoordinate(l.p1.price);
+                    const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
+                    const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+
+                    if (Math.hypot(mx - x1, my - y1) <= 9) {
+                        hitIdx = i; hitAnc = 'p1'; cv.style.cursor = 'grab'; break;
+                    }
+                    if (Math.hypot(mx - x2, my - y2) <= 9) {
+                        hitIdx = i; hitAnc = 'p2'; cv.style.cursor = 'grab'; break;
+                    }
+                    if (distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
+                        hitIdx = i; hitAnc = 'body'; cv.style.cursor = 'move'; break;
+                    }
+                }
+
+                if (hitIdx !== hoveredLineIdx || hitAnc !== hoveredAnchor) {
+                    hoveredLineIdx = hitIdx;
+                    hoveredAnchor = hitAnc;
+                    drawTradeMarkers();
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (draggingLineIdx !== -1) {
+                    draggingLineIdx = -1;
+                    draggingAnchor = null;
+                    dragOffset = null;
+                    drawTradeMarkers();
+                    saveDrawings();
+                }
+            });
+
+            cv.addEventListener('contextmenu', e => e.preventDefault());
+        }, 400);
+
+        // Sync drawing loads with ticker changes
+        setInterval(() => {
+            if (currentTicker && currentTicker !== lastLoadedTicker) {
+                lastLoadedTicker = currentTicker;
+                loadDrawings(currentTicker);
+            }
+        }, 500);
+    })();
+    </script>
 </body>
 </html>
