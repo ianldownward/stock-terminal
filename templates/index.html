@@ -2288,7 +2288,38 @@
         let dragOffset = null;
         let lastLoadedTicker = '';
 
-        // Override button functions
+        // Coordinate to Time conversion using Lightweight Charts logical index
+        function coordToTime(x) {
+            if (!tvChart || !masterData || masterData.length === 0) return null;
+            try {
+                let logical = tvChart.timeScale().coordinateToLogical(x);
+                if (logical === null || isNaN(logical)) return null;
+                let idx = Math.max(0, Math.min(masterData.length - 1, Math.round(logical)));
+                return masterData[idx] ? masterData[idx].time : null;
+            } catch(e) { return null; }
+        }
+
+        function coordToPrice(y) {
+            if (!tvSeries) return null;
+            try {
+                return tvSeries.coordinateToPrice(y);
+            } catch(e) { return null; }
+        }
+
+        function timeToCoord(time) {
+            if (!tvChart || time === undefined || time === null) return null;
+            try {
+                return tvChart.timeScale().timeToCoordinate(time);
+            } catch(e) { return null; }
+        }
+
+        function priceToCoord(price) {
+            if (!tvSeries || price === undefined || price === null) return null;
+            try {
+                return tvSeries.priceToCoordinate(price);
+            } catch(e) { return null; }
+        }
+
         window.toggleDrawMode = function(forceState) {
             isDrawing = (forceState !== undefined) ? forceState : !isDrawing;
             drawTempStart = null;
@@ -2353,15 +2384,15 @@
             if (!Array.isArray(manualLines) || !tvChart || !tvSeries) return;
 
             manualLines.forEach((l, idx) => {
-                const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                const y1 = tvSeries.priceToCoordinate(l.p1.price);
-                const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                const x1 = timeToCoord(l.p1.time);
+                const y1 = priceToCoord(l.p1.price);
+                const x2 = timeToCoord(l.p2.time);
+                const y2 = priceToCoord(l.p2.price);
                 if (x1 === null || y1 === null || x2 === null || y2 === null) return;
 
                 const isSel = (idx === hoveredLineIdx || idx === draggingLineIdx);
 
-                // Line body
+                // Trendline
                 ctx.beginPath();
                 ctx.moveTo(x1, y1);
                 ctx.lineTo(x2, y2);
@@ -2388,7 +2419,7 @@
                 ctx.stroke();
             });
 
-            // Preview rubberband during drawing
+            // Temporary rubberband line during mouse movement
             if (drawTempStart && drawTempStart.curX !== undefined) {
                 ctx.beginPath();
                 ctx.moveTo(drawTempStart.px, drawTempStart.py);
@@ -2401,7 +2432,7 @@
             }
         }
 
-        // Hook into chart rendering to draw lines alongside markers
+        // Hook into drawTradeMarkers
         const _origDrawTradeMarkers = window.drawTradeMarkers;
         window.drawTradeMarkers = function() {
             if (typeof _origDrawTradeMarkers === 'function') _origDrawTradeMarkers();
@@ -2412,7 +2443,7 @@
             }
         };
 
-        // Attach mouse events to chart canvas
+        // Attach events once chart is ready
         const initTimer = setInterval(() => {
             const cv = document.getElementById('chartCanvas');
             const chartDiv = document.getElementById('tvChart');
@@ -2432,10 +2463,10 @@
                 let hit = false;
                 for (let i = 0; i < manualLines.length; i++) {
                     const l = manualLines[i];
-                    const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                    const y1 = tvSeries.priceToCoordinate(l.p1.price);
-                    const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                    const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                    const x1 = timeToCoord(l.p1.time);
+                    const y1 = priceToCoord(l.p1.price);
+                    const x2 = timeToCoord(l.p2.time);
+                    const y2 = priceToCoord(l.p2.price);
                     if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
 
                     if (Math.hypot(mx - x1, my - y1) <= 9 || Math.hypot(mx - x2, my - y2) <= 9 || distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
@@ -2451,17 +2482,17 @@
                 const mx = e.clientX - rect.left;
                 const my = e.clientY - rect.top;
 
-                const clickTime = tvChart.timeScale().coordinateToTime(mx);
-                const clickPrice = tvSeries.coordinateToPrice(my);
+                const clickTime = coordToTime(mx);
+                const clickPrice = coordToPrice(my);
 
-                // Right click deletes line
+                // Right-click deletes line
                 if (e.button === 2) {
                     for (let i = manualLines.length - 1; i >= 0; i--) {
                         const l = manualLines[i];
-                        const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                        const y1 = tvSeries.priceToCoordinate(l.p1.price);
-                        const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                        const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                        const x1 = timeToCoord(l.p1.time);
+                        const y1 = priceToCoord(l.p1.price);
+                        const x2 = timeToCoord(l.p2.time);
+                        const y2 = priceToCoord(l.p2.price);
                         if (x1 !== null && y1 !== null && x2 !== null && y2 !== null && distToSeg(mx, my, x1, y1, x2, y2) <= 8) {
                             manualLines.splice(i, 1);
                             drawTradeMarkers();
@@ -2472,6 +2503,7 @@
                     return;
                 }
 
+                // Mode 1: Drawing line
                 if (isDrawing) {
                     if (!clickTime || clickPrice === null) return;
                     if (!drawTempStart) {
@@ -2491,13 +2523,13 @@
                     return;
                 }
 
-                // Check for anchor or line drag
+                // Mode 2: Dragging anchors or body
                 for (let i = manualLines.length - 1; i >= 0; i--) {
                     const l = manualLines[i];
-                    const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                    const y1 = tvSeries.priceToCoordinate(l.p1.price);
-                    const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                    const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                    const x1 = timeToCoord(l.p1.time);
+                    const y1 = priceToCoord(l.p1.price);
+                    const x2 = timeToCoord(l.p2.time);
+                    const y2 = priceToCoord(l.p2.price);
                     if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
 
                     if (Math.hypot(mx - x1, my - y1) <= 9) {
@@ -2528,18 +2560,18 @@
 
                 if (draggingLineIdx !== -1) {
                     const line = manualLines[draggingLineIdx];
-                    const t = tvChart.timeScale().coordinateToTime(mx);
-                    const p = tvSeries.coordinateToPrice(my);
+                    const t = coordToTime(mx);
+                    const p = coordToPrice(my);
 
                     if (draggingAnchor === 'p1' && t && p !== null) {
                         line.p1 = { time: t, price: p };
                     } else if (draggingAnchor === 'p2' && t && p !== null) {
                         line.p2 = { time: t, price: p };
                     } else if (draggingAnchor === 'body' && dragOffset) {
-                        const t1 = tvChart.timeScale().coordinateToTime(mx + dragOffset.dx1);
-                        const p1 = tvSeries.coordinateToPrice(my + dragOffset.dy1);
-                        const t2 = tvChart.timeScale().coordinateToTime(mx + dragOffset.dx2);
-                        const p2 = tvSeries.coordinateToPrice(my + dragOffset.dy2);
+                        const t1 = coordToTime(mx + dragOffset.dx1);
+                        const p1 = coordToPrice(my + dragOffset.dy1);
+                        const t2 = coordToTime(mx + dragOffset.dx2);
+                        const p2 = coordToPrice(my + dragOffset.dy2);
                         if (t1 && p1 !== null && t2 && p2 !== null) {
                             line.p1 = { time: t1, price: p1 };
                             line.p2 = { time: t2, price: p2 };
@@ -2549,16 +2581,16 @@
                     return;
                 }
 
-                // Hover detection
+                // Hover states
                 let hitIdx = -1, hitAnc = null;
                 cv.style.cursor = isDrawing ? 'crosshair' : 'default';
 
                 for (let i = manualLines.length - 1; i >= 0; i--) {
                     const l = manualLines[i];
-                    const x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                    const y1 = tvSeries.priceToCoordinate(l.p1.price);
-                    const x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                    const y2 = tvSeries.priceToCoordinate(l.p2.price);
+                    const x1 = timeToCoord(l.p1.time);
+                    const y1 = priceToCoord(l.p1.price);
+                    const x2 = timeToCoord(l.p2.time);
+                    const y2 = priceToCoord(l.p2.price);
                     if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
 
                     if (Math.hypot(mx - x1, my - y1) <= 9) {
@@ -2592,7 +2624,6 @@
             cv.addEventListener('contextmenu', e => e.preventDefault());
         }, 400);
 
-        // Sync drawing loads with ticker changes
         setInterval(() => {
             if (currentTicker && currentTicker !== lastLoadedTicker) {
                 lastLoadedTicker = currentTicker;

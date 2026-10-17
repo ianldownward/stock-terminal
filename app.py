@@ -946,21 +946,30 @@ def reset_all_profiles():
 @app.route('/api/drawings', methods=['GET'])
 def get_drawings_route():
     ticker = request.args.get('ticker', '').strip().upper()
-    return jsonify({'status': 'ok', 'ticker': ticker, 'drawings': portfolio_store.get_drawings(ticker)})
+    ud = portfolio_store.user_data()
+    drawings = ud.get('drawings', {}).get(ticker, []) if isinstance(ud.get('drawings'), dict) else []
+    return jsonify({'status': 'ok', 'ticker': ticker, 'drawings': drawings})
 
 @app.route('/api/drawings/save', methods=['POST'])
 def save_drawings_route():
     b = request.get_json() or {}
     ticker = b.get('ticker', '').strip().upper()
     drawings = b.get('drawings', [])
-    portfolio_store.save_drawings(ticker, drawings)
+    ud = portfolio_store.user_data()
+    if 'drawings' not in ud or not isinstance(ud['drawings'], dict):
+        ud['drawings'] = {}
+    ud['drawings'][ticker] = drawings
+    portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok'})
 
 @app.route('/api/drawings/clear', methods=['POST'])
 def clear_drawings_route():
     b = request.get_json() or {}
     ticker = b.get('ticker', '').strip().upper()
-    portfolio_store.clear_drawings(ticker)
+    ud = portfolio_store.user_data()
+    if 'drawings' in ud and isinstance(ud['drawings'], dict) and ticker in ud['drawings']:
+        ud['drawings'][ticker] = []
+        portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/settings', methods=['POST'])
