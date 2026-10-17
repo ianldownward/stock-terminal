@@ -61,7 +61,6 @@ class PortfolioManager:
 
     def default_user_state(self, username=""):
         prof = username.strip().lower()
-        # Full AI & Momentum Watchlist with the new infrastructure assets
         ai_rotator_wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
 
         if 'test b' in prof: wl = ['TQQQ']
@@ -72,10 +71,21 @@ class PortfolioManager:
         elif any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']): wl = ai_rotator_wl
         elif 'ian' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'PLTR', 'MSTR', 'TSLA', 'AMD']
         else: wl = ai_rotator_wl
+
         return {
             'master_budget': 5000.0,
-            'watchlist': wl, 'initial_positions': {}, 'holdings': {}, 'history': [], 'notified_signals': {},
-            'settings': {'period': '1d', 'interval': '1m' if any(x in prof for x in ['test p', 'test t']) else '5m', 'style': 'candlestick', 'refresh': '10000', 'ntfy_topic': ''}
+            'watchlist': wl, 
+            'initial_positions': {}, 
+            'holdings': {}, 
+            'history': [], 
+            'notified_signals': {},
+            'settings': {
+                'period': '1d', 
+                'interval': '1m' if any(x in prof for x in ['test p', 'test t']) else '5m', 
+                'style': 'candlestick', 
+                'refresh': '10000', 
+                'ntfy_topic': ''
+            }
         }
 
     def load(self):
@@ -196,12 +206,7 @@ class PortfolioManager:
     def reset_all_profiles_to_5000(self):
         self.reload()
         for u in list(self.data.get('users', {}).keys()):
-            wl = self.data['users'][u].get('watchlist', [])
-            st = self.data['users'][u].get('settings', {})
             self.data['users'][u] = self.default_user_state(u)
-            if wl: self.data['users'][u]['watchlist'] = wl
-            if st: self.data['users'][u]['settings'] = st
-            self.data['users'][u]['master_budget'] = 5000.0
         self.save_data(self.data)
         return True
 
