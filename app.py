@@ -78,6 +78,7 @@ class PortfolioManager:
             'initial_positions': {}, 
             'holdings': {}, 
             'history': [], 
+            'drawings': {},
             'notified_signals': {},
             'settings': {
                 'period': '1d', 
@@ -242,6 +243,30 @@ class PortfolioManager:
         if 'notified_signals' in ud: ud['notified_signals'].pop(ticker, None)
         self.save_data(self.data)
 
+    def get_drawings(self, ticker, username=None):
+        self.reload()
+        ud = self.user_data(username)
+        if 'drawings' not in ud:
+            ud['drawings'] = {}
+        return ud['drawings'].get(ticker.upper(), [])
+
+    def save_drawings(self, ticker, drawings_list, username=None):
+        self.reload()
+        ud = self.user_data(username)
+        if 'drawings' not in ud:
+            ud['drawings'] = {}
+        ud['drawings'][ticker.upper()] = drawings_list
+        self.save_data(self.data)
+        return True
+
+    def clear_drawings(self, ticker, username=None):
+        self.reload()
+        ud = self.user_data(username)
+        if 'drawings' in ud and ticker.upper() in ud['drawings']:
+            ud['drawings'][ticker.upper()] = []
+            self.save_data(self.data)
+        return True
+    
     def get_shares(self, ticker, username=None):
         if not ticker: return 0
         ud = self.user_data(username)
