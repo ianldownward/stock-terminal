@@ -369,7 +369,9 @@ class MarketScoringEngine:
             'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'SQQQ': 'ProShares UltraPro Short QQQ (3x Short)',
             '3SUS.L': 'WisdomTree US NASDAQ 3x Short', 'CONL': 'GraniteShares 2x Long COIN', 'MSTX': 'Defiance 2x Daily Long MSTR', 'BITX': '2x Bitcoin Strategy ETF',
             'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
-            'GLEN.L': 'Glencore plc', 'RIO.L': 'Rio Tinto plc', 'HSBA.L': 'HSBC Holdings', 'GSK.L': 'GSK plc', 'ULVR.L': 'Unilever plc'
+            'GLEN.L': 'Glencore plc', 'RIO.L': 'Rio Tinto plc', 'HSBA.L': 'HSBC Holdings', 'GSK.L': 'GSK plc', 'ULVR.L': 'Unilever plc',
+            'MU': 'Micron Technology', 'SMCI': 'Super Micro Computer', 'GEV': 'GE Vernova',
+            'RDW': 'Redwire Space', 'STM': 'STMicroelectronics', 'NBIS': 'Nebius Group', 'SNDK': 'SanDisk Corp'
         }
 
     def check_market_regime(self):
@@ -421,10 +423,15 @@ class MarketScoringEngine:
         rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
 
         # DYNAMIC ASSET-SPECIFIC TRAILING STOPS & HARD STOPS
+        peak_gain_pct = ((highest_price - avg_buy_price) / avg_buy_price * 100.0) if avg_buy_price > 0 and highest_price > 0 else 0.0
+
         if 'test w' in prof:
             if is_3x_etf: trail_pct, hard_pct = 1.25, -1.00
             elif ticker.endswith('.L') or ticker in ['PHYS', 'PSLV', 'CEF', 'GLD']: trail_pct, hard_pct = 0.30, -0.50
             else: trail_pct, hard_pct = 1.00, -1.00
+        elif 'test e14' in prof:
+            # When gain touches +1.00%, trail expands to 1.50% to let runners breathe
+            trail_pct, hard_pct = (1.50, -1.00) if peak_gain_pct >= 1.00 else (1.00, -1.00)
         elif 'test e6' in prof: trail_pct, hard_pct = 0.75, -0.75
         elif 'test e7' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
@@ -447,19 +454,23 @@ class MarketScoringEngine:
                     if current_price <= breakeven_price:
                         return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST X DYNAMIC LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Dynamic Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Dynamic Lock (+{pnl_pct:.2f}%)"}
 
+            # BREAKEVEN LOCK RULE FOR TEST E6 (+0.10% LOCK ONCE +0.25% PEAK HIT)
+            if 'test e6' in prof and peak_pnl_pct >= 0.25:
+                breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
+                if current_price <= breakeven_price:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E6 BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+
             # BREAKEVEN LOCK RULE FOR TEST E7 ONLY (+0.50%)
             if 'test e7' in prof and peak_pnl_pct >= 0.50:
                 breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
-            # TEST E14: SCALED EXIT RUNNER (+1.00% PROFIT LOCK & 1.5% PEAK TRAIL)
+            # TEST E14: SCALED EXIT RUNNER FLOOR LOCK (+0.20% MINIMUM FLOOR)
             if 'test e14' in prof and peak_pnl_pct >= 1.00:
-                trail_stop_e14 = highest_price * (1.0 - 0.015)  # 1.50% trail from high-water mark
-                floor_stop_e14 = avg_buy_price * 1.0020         # Lock +0.20% minimum profit
-                effective_stop_e14 = max(trail_stop_e14, floor_stop_e14)
-                if current_price <= effective_stop_e14:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E14 RUNNER STOP TRIPPED ({pnl_pct:.2f}%). Peak: +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Runner Profit Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Locked (+{pnl_pct:.2f}%)"}
+                floor_stop_e14 = avg_buy_price * 1.0020
+                if current_price <= floor_stop_e14:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E14 FLOOR STOP TRIPPED ({pnl_pct:.2f}%). Peak: +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Runner Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Floor Lock)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Locked (+{pnl_pct:.2f}%)"}
             health_pct = int(max(0, min(100, 100 - (drop_from_peak_pct / trail_pct * 100))))
             pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
             
