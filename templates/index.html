@@ -953,14 +953,39 @@
         let draggingLineIdx = -1;
         let draggingAnchor = null;
         let dragOffset = null;
-        let lastLoadedDrawTicker = '';
+        let lastLoadedTicker = '';
 
-        function toggleDrawMode(forceState) {
+        function coordToTime(x) {
+            if (!tvChart || !masterData || masterData.length === 0) return null;
+            try {
+                let logical = tvChart.timeScale().coordinateToLogical(x);
+                if (logical === null || isNaN(logical)) return null;
+                let idx = Math.max(0, Math.min(masterData.length - 1, Math.round(logical)));
+                return masterData[idx] ? masterData[idx].time : null;
+            } catch(e) { return null; }
+        }
+
+        function coordToPrice(y) {
+            if (!tvSeries) return null;
+            try { return tvSeries.coordinateToPrice(y); } catch(e) { return null; }
+        }
+
+        function timeToCoord(time) {
+            if (!tvChart || time === undefined || time === null) return null;
+            try { return tvChart.timeScale().timeToCoordinate(time); } catch(e) { return null; }
+        }
+
+        function priceToCoord(price) {
+            if (!tvSeries || price === undefined || price === null) return null;
+            try { return tvSeries.priceToCoordinate(price); } catch(e) { return null; }
+        }
+
+        window.toggleDrawMode = function(forceState) {
             isDrawing = (forceState !== undefined) ? forceState : !isDrawing;
             drawTempStart = null;
-            let btn = document.getElementById('btnDraw');
-            let text = document.getElementById('drawBtnText');
-            let cv = document.getElementById('chartCanvas');
+            const btn = document.getElementById('btnDraw');
+            const text = document.getElementById('drawBtnText');
+            const cv = document.getElementById('chartCanvas');
 
             if (isDrawing) {
                 if (btn) btn.classList.add('active');
@@ -972,9 +997,9 @@
                 if (cv) { cv.style.pointerEvents = 'none'; cv.style.cursor = 'default'; }
             }
             if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
-        }
+        };
 
-        function clearManualLines() {
+        window.clearManualLines = function() {
             manualLines = [];
             drawTempStart = null;
             if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
@@ -985,9 +1010,18 @@
                     body: JSON.stringify({ ticker: currentTicker })
                 }).catch(() => {});
             }
+        };
+
+        function saveDrawings() {
+            if (!currentTicker) return;
+            fetch('/api/drawings/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticker: currentTicker, drawings: manualLines })
+            }).catch(() => {});
         }
 
-        function loadSavedDrawings(ticker) {
+        function loadDrawings(ticker) {
             if (!ticker) return;
             fetch('/api/drawings?ticker=' + encodeURIComponent(ticker))
                 .then(r => r.json())
@@ -999,210 +1033,250 @@
                 }).catch(() => {});
         }
 
-        function saveCurrentDrawings() {
-            if (!currentTicker) return;
-            fetch('/api/drawings/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ticker: currentTicker, drawings: manualLines })
-            }).catch(() => {});
-        }
-
         function distToSeg(px, py, x1, y1, x2, y2) {
-            let dx = x2 - x1, dy = y2 - y1;
+            const dx = x2 - x1, dy = y2 - y1;
             if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
-            let t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+            const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
             return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
         }
 
-        // Attach mouse events directly to the chart canvas
-        (function setupCanvasDrawingEvents() {
-            let timer = setInterval(() => {
-                let cv = document.getElementById('chartCanvas');
-                let chartDiv = document.getElementById('tvChart');
-                if (!cv || !chartDiv || !tvChart || !tvSeries) return;
-                clearInterval(timer);
+        function renderLines(ctx) {
+            if (!Array.isArray(manualLines) || !tvChart || !tvSeries) return;
 
-                chartDiv.addEventListener('mousemove', (e) => {
-                    let rect = cv.getBoundingClientRect();
-                    let mx = e.clientX - rect.left;
-                    let my = e.clientY - rect.top;
+            manualLines.forEach((l, idx) => {
+                const x1 = timeToCoord(l.p1.time);
+                const y1 = priceToCoord(l.p1.price);
+                const x2 = timeToCoord(l.p2.time);
+                const y2 = priceToCoord(l.p2.price);
+                if (x1 === null || y1 === null || x2 === null || y2 === null) return;
 
-                    if (isDrawing || draggingLineIdx !== -1) {
-                        cv.style.pointerEvents = 'auto';
-                        return;
+                const isSel = (idx === hoveredLineIdx || idx === draggingLineIdx);
+
+                // Trendline
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = l.color || '#00d2ff';
+                ctx.lineWidth = isSel ? 2.5 : 1.8;
+                ctx.stroke();
+
+                // Anchor 1
+                ctx.beginPath();
+                ctx.arc(x1, y1, (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? '#00e5ff' : '#1e1e24';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.8;
+                ctx.stroke();
+
+                // Anchor 2
+                ctx.beginPath();
+                ctx.arc(x2, y2, (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? 6 : 4, 0, Math.PI * 2);
+                ctx.fillStyle = (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? '#00e5ff' : '#1e1e24';
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.8;
+                ctx.stroke();
+            });
+
+            // Preview line while drawing
+            if (drawTempStart && drawTempStart.curX !== undefined) {
+                ctx.beginPath();
+                ctx.moveTo(drawTempStart.px, drawTempStart.py);
+                ctx.lineTo(drawTempStart.curX, drawTempStart.curY);
+                ctx.strokeStyle = '#00d2ff';
+                ctx.lineWidth = 1.8;
+                ctx.setLineDash([4, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        // Attach mouse events to canvas
+        const canvasTimer = setInterval(() => {
+            const cv = document.getElementById('chartCanvas');
+            const chartDiv = document.getElementById('tvChart');
+            if (!cv || !chartDiv || !tvChart || !tvSeries) return;
+            clearInterval(canvasTimer);
+
+            chartDiv.addEventListener('mousemove', (e) => {
+                const rect = cv.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+
+                if (isDrawing || draggingLineIdx !== -1) {
+                    cv.style.pointerEvents = 'auto';
+                    return;
+                }
+
+                let hit = false;
+                for (let i = 0; i < manualLines.length; i++) {
+                    const l = manualLines[i];
+                    const x1 = timeToCoord(l.p1.time);
+                    const y1 = priceToCoord(l.p1.price);
+                    const x2 = timeToCoord(l.p2.time);
+                    const y2 = priceToCoord(l.p2.price);
+                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+
+                    if (Math.hypot(mx - x1, my - y1) <= 9 || Math.hypot(mx - x2, my - y2) <= 9 || distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
+                        hit = true;
+                        break;
                     }
+                }
+                cv.style.pointerEvents = hit ? 'auto' : 'none';
+            });
 
-                    let hit = false;
-                    for (let i = 0; i < manualLines.length; i++) {
-                        let l = manualLines[i];
-                        let x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                        let y1 = tvSeries.priceToCoordinate(l.p1.price);
-                        let x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                        let y2 = tvSeries.priceToCoordinate(l.p2.price);
-                        if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+            cv.addEventListener('mousedown', (e) => {
+                const rect = cv.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
 
-                        if (Math.hypot(mx - x1, my - y1) <= 9 || Math.hypot(mx - x2, my - y2) <= 9 || distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
-                            hit = true;
-                            break;
-                        }
-                    }
-                    cv.style.pointerEvents = hit ? 'auto' : 'none';
-                });
+                const clickTime = coordToTime(mx);
+                const clickPrice = coordToPrice(my);
 
-                cv.addEventListener('mousedown', (e) => {
-                    let rect = cv.getBoundingClientRect();
-                    let mx = e.clientX - rect.left;
-                    let my = e.clientY - rect.top;
-
-                    let clickTime = tvChart.timeScale().coordinateToTime(mx);
-                    let clickPrice = tvSeries.coordinateToPrice(my);
-
-                    // Right click deletes a line
-                    if (e.button === 2) {
-                        for (let i = manualLines.length - 1; i >= 0; i--) {
-                            let l = manualLines[i];
-                            let x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                            let y1 = tvSeries.priceToCoordinate(l.p1.price);
-                            let x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                            let y2 = tvSeries.priceToCoordinate(l.p2.price);
-                            if (x1 !== null && y1 !== null && x2 !== null && y2 !== null && distToSeg(mx, my, x1, y1, x2, y2) <= 8) {
-                                manualLines.splice(i, 1);
-                                drawTradeMarkers();
-                                saveCurrentDrawings();
-                                return;
-                            }
-                        }
-                        return;
-                    }
-
-                    // Mode 1: Drawing a New Line
-                    if (isDrawing) {
-                        if (!clickTime || clickPrice === null) return;
-                        if (!drawTempStart) {
-                            drawTempStart = { time: clickTime, price: clickPrice, px: mx, py: my };
-                        } else {
-                            manualLines.push({
-                                id: Date.now().toString(),
-                                p1: { time: drawTempStart.time, price: drawTempStart.price },
-                                p2: { time: clickTime, price: clickPrice },
-                                color: '#00d2ff'
-                            });
-                            drawTempStart = null;
-                            toggleDrawMode(false);
-                            drawTradeMarkers();
-                            saveCurrentDrawings();
-                        }
-                        return;
-                    }
-
-                    // Mode 2: Dragging Anchors or Line Body
+                // Right-click deletes line
+                if (e.button === 2) {
                     for (let i = manualLines.length - 1; i >= 0; i--) {
-                        let l = manualLines[i];
-                        let x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                        let y1 = tvSeries.priceToCoordinate(l.p1.price);
-                        let x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                        let y2 = tvSeries.priceToCoordinate(l.p2.price);
-                        if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
-
-                        if (Math.hypot(mx - x1, my - y1) <= 9) {
-                            draggingLineIdx = i; draggingAnchor = 'p1'; return;
-                        }
-                        if (Math.hypot(mx - x2, my - y2) <= 9) {
-                            draggingLineIdx = i; draggingAnchor = 'p2'; return;
-                        }
-                        if (distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
-                            draggingLineIdx = i; draggingAnchor = 'body';
-                            dragOffset = { dx1: x1 - mx, dy1: y1 - my, dx2: x2 - mx, dy2: y2 - my };
+                        const l = manualLines[i];
+                        const x1 = timeToCoord(l.p1.time);
+                        const y1 = priceToCoord(l.p1.price);
+                        const x2 = timeToCoord(l.p2.time);
+                        const y2 = priceToCoord(l.p2.price);
+                        if (x1 !== null && y1 !== null && x2 !== null && y2 !== null && distToSeg(mx, my, x1, y1, x2, y2) <= 8) {
+                            manualLines.splice(i, 1);
+                            drawTradeMarkers();
+                            saveDrawings();
                             return;
                         }
                     }
-                });
+                    return;
+                }
 
-                cv.addEventListener('mousemove', (e) => {
-                    let rect = cv.getBoundingClientRect();
-                    let mx = e.clientX - rect.left;
-                    let my = e.clientY - rect.top;
-
-                    if (drawTempStart) {
-                        drawTempStart.curX = mx;
-                        drawTempStart.curY = my;
+                // Drawing line
+                if (isDrawing) {
+                    if (!clickTime || clickPrice === null) return;
+                    if (!drawTempStart) {
+                        drawTempStart = { time: clickTime, price: clickPrice, px: mx, py: my };
+                    } else {
+                        manualLines.push({
+                            id: Date.now().toString(),
+                            p1: { time: drawTempStart.time, price: drawTempStart.price },
+                            p2: { time: clickTime, price: clickPrice },
+                            color: '#00d2ff'
+                        });
+                        drawTempStart = null;
+                        toggleDrawMode(false);
                         drawTradeMarkers();
+                        saveDrawings();
+                    }
+                    return;
+                }
+
+                // Dragging anchors or line body
+                for (let i = manualLines.length - 1; i >= 0; i--) {
+                    const l = manualLines[i];
+                    const x1 = timeToCoord(l.p1.time);
+                    const y1 = priceToCoord(l.p1.price);
+                    const x2 = timeToCoord(l.p2.time);
+                    const y2 = priceToCoord(l.p2.price);
+                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+
+                    if (Math.hypot(mx - x1, my - y1) <= 9) {
+                        draggingLineIdx = i; draggingAnchor = 'p1'; return;
+                    }
+                    if (Math.hypot(mx - x2, my - y2) <= 9) {
+                        draggingLineIdx = i; draggingAnchor = 'p2'; return;
+                    }
+                    if (distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
+                        draggingLineIdx = i; draggingAnchor = 'body';
+                        dragOffset = { dx1: x1 - mx, dy1: y1 - my, dx2: x2 - mx, dy2: y2 - my };
                         return;
                     }
+                }
+            });
 
-                    if (draggingLineIdx !== -1) {
-                        let line = manualLines[draggingLineIdx];
-                        let t = tvChart.timeScale().coordinateToTime(mx);
-                        let p = tvSeries.coordinateToPrice(my);
+            cv.addEventListener('mousemove', (e) => {
+                const rect = cv.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
 
-                        if (draggingAnchor === 'p1' && t && p !== null) {
-                            line.p1 = { time: t, price: p };
-                        } else if (draggingAnchor === 'p2' && t && p !== null) {
-                            line.p2 = { time: t, price: p };
-                        } else if (draggingAnchor === 'body' && dragOffset) {
-                            let t1 = tvChart.timeScale().coordinateToTime(mx + dragOffset.dx1);
-                            let p1 = tvSeries.coordinateToPrice(my + dragOffset.dy1);
-                            let t2 = tvChart.timeScale().coordinateToTime(mx + dragOffset.dx2);
-                            let p2 = tvSeries.coordinateToPrice(my + dragOffset.dy2);
-                            if (t1 && p1 !== null && t2 && p2 !== null) {
-                                line.p1 = { time: t1, price: p1 };
-                                line.p2 = { time: t2, price: p2 };
-                            }
-                        }
-                        drawTradeMarkers();
-                        return;
-                    }
+                if (drawTempStart) {
+                    drawTempStart.curX = mx;
+                    drawTempStart.curY = my;
+                    drawTradeMarkers();
+                    return;
+                }
 
-                    // Hover styling
-                    let hitIdx = -1, hitAnc = null;
-                    cv.style.cursor = isDrawing ? 'crosshair' : 'default';
+                if (draggingLineIdx !== -1) {
+                    const line = manualLines[draggingLineIdx];
+                    const t = coordToTime(mx);
+                    const p = coordToPrice(my);
 
-                    for (let i = manualLines.length - 1; i >= 0; i--) {
-                        let l = manualLines[i];
-                        let x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                        let y1 = tvSeries.priceToCoordinate(l.p1.price);
-                        let x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                        let y2 = tvSeries.priceToCoordinate(l.p2.price);
-                        if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
-
-                        if (Math.hypot(mx - x1, my - y1) <= 9) {
-                            hitIdx = i; hitAnc = 'p1'; cv.style.cursor = 'grab'; break;
-                        }
-                        if (Math.hypot(mx - x2, my - y2) <= 9) {
-                            hitIdx = i; hitAnc = 'p2'; cv.style.cursor = 'grab'; break;
-                        }
-                        if (distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
-                            hitIdx = i; hitAnc = 'body'; cv.style.cursor = 'move'; break;
+                    if (draggingAnchor === 'p1' && t && p !== null) {
+                        line.p1 = { time: t, price: p };
+                    } else if (draggingAnchor === 'p2' && t && p !== null) {
+                        line.p2 = { time: t, price: p };
+                    } else if (draggingAnchor === 'body' && dragOffset) {
+                        const t1 = coordToTime(mx + dragOffset.dx1);
+                        const p1 = coordToPrice(my + dragOffset.dy1);
+                        const t2 = coordToTime(mx + dragOffset.dx2);
+                        const p2 = coordToPrice(my + dragOffset.dy2);
+                        if (t1 && p1 !== null && t2 && p2 !== null) {
+                            line.p1 = { time: t1, price: p1 };
+                            line.p2 = { time: t2, price: p2 };
                         }
                     }
+                    drawTradeMarkers();
+                    return;
+                }
 
-                    if (hitIdx !== hoveredLineIdx || hitAnc !== hoveredAnchor) {
-                        hoveredLineIdx = hitIdx;
-                        hoveredAnchor = hitAnc;
-                        drawTradeMarkers();
+                // Hover states
+                let hitIdx = -1, hitAnc = null;
+                cv.style.cursor = isDrawing ? 'crosshair' : 'default';
+
+                for (let i = manualLines.length - 1; i >= 0; i--) {
+                    const l = manualLines[i];
+                    const x1 = timeToCoord(l.p1.time);
+                    const y1 = priceToCoord(l.p1.price);
+                    const x2 = timeToCoord(l.p2.time);
+                    const y2 = priceToCoord(l.p2.price);
+                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
+
+                    if (Math.hypot(mx - x1, my - y1) <= 9) {
+                        hitIdx = i; hitAnc = 'p1'; cv.style.cursor = 'grab'; break;
                     }
-                });
-
-                window.addEventListener('mouseup', () => {
-                    if (draggingLineIdx !== -1) {
-                        draggingLineIdx = -1;
-                        draggingAnchor = null;
-                        dragOffset = null;
-                        drawTradeMarkers();
-                        saveCurrentDrawings();
+                    if (Math.hypot(mx - x2, my - y2) <= 9) {
+                        hitIdx = i; hitAnc = 'p2'; cv.style.cursor = 'grab'; break;
                     }
-                });
+                    if (distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
+                        hitIdx = i; hitAnc = 'body'; cv.style.cursor = 'move'; break;
+                    }
+                }
 
-                cv.addEventListener('contextmenu', e => e.preventDefault());
-            }, 300);
-        })();
+                if (hitIdx !== hoveredLineIdx || hitAnc !== hoveredAnchor) {
+                    hoveredLineIdx = hitIdx;
+                    hoveredAnchor = hitAnc;
+                    drawTradeMarkers();
+                }
+            });
 
-        // Auto-load drawings when switching ticker or user
+            window.addEventListener('mouseup', () => {
+                if (draggingLineIdx !== -1) {
+                    draggingLineIdx = -1;
+                    draggingAnchor = null;
+                    dragOffset = null;
+                    drawTradeMarkers();
+                    saveDrawings();
+                }
+            });
+
+            cv.addEventListener('contextmenu', e => e.preventDefault());
+        }, 400);
+
         setInterval(() => {
-            if (currentTicker && currentTicker !== lastLoadedDrawTicker) {
-                lastLoadedDrawTicker = currentTicker;
-                loadSavedDrawings(currentTicker);
+            if (currentTicker && currentTicker !== lastLoadedTicker) {
+                lastLoadedTicker = currentTicker;
+                loadDrawings(currentTicker);
             }
         }, 500);
 
@@ -1389,14 +1463,11 @@
             }
 
             let lbHtml = lbData.map(lb => { 
-                // Separate overall equity color from daily P&L color
                 let equityColor = (lb.equity - (lb.budget || 5000)) >= 0 ? '#00c853' : '#ff3d00';
                 let dayVal = lb.daily_pnl || 0;
                 let dailyColor = dayVal > 0 ? '#00c853' : (dayVal < 0 ? '#ff3d00' : '#8a8a9e');
 
                 let activeClass = lb.user === activeProf ? 'active-profile-card' : '';
-                
-                // Show HELD badge if user actively holds stock
                 let isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
                 let heldBadge = isHeld ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
                 
@@ -1456,7 +1527,6 @@
         function renderChart() {
             let lg = document.getElementById('chartLegend');
             if (lg) lg.innerHTML = '';
-
             if (!tvChart) return;
 
             if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
@@ -1584,14 +1654,12 @@
                             healthMarker.style.left = `${Math.max(0, Math.min(100, p.metrics.health_pct || 0))}%`;
                         }
 
-                        // Determine strategy trail percentage
                         let prof = (document.getElementById('userSelect')?.value || '').toLowerCase();
                         let trailPct = 0.50;
                         if (prof.includes('test e6')) trailPct = 0.75;
                         else if (prof.includes('test e5')) trailPct = 0.35;
                         else if (prof.includes('test e') || prof.includes('test s')) trailPct = 1.00;
 
-                        // Calculate Peak (Highest Price) and Stop (Lowest Price before liquidating)
                         let curPrice = parseFloat(p.metrics.price) || 0;
                         let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
                         let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));
@@ -1654,7 +1722,6 @@
             initTerminal(); 
         }, 100);
 
-        // 1. DRAGGABLE LEADERBOARD RESIZER
         (function initLeaderboardResizer() {
             const resizer = document.getElementById('colResizer');
             const col = document.getElementById('leaderboardCol');
@@ -1695,13 +1762,11 @@
             });
         })();
 
-        // 2. BUY MARKER (VERTICAL DOTTED LINE + WHITE DOT)
         function drawTradeMarkers() {
             let chartDiv = document.getElementById('tvChart');
             let cv = document.getElementById('chartCanvas');
             if (!tvChart || !tvSeries || !chartDiv || !cv) return;
 
-            // Handle Retina / 4K high-DPI displays
             let dpr = window.devicePixelRatio || 1;
             cv.width = chartDiv.clientWidth * dpr;
             cv.height = chartDiv.clientHeight * dpr;
@@ -1712,925 +1777,79 @@
             ctx.scale(dpr, dpr);
             ctx.clearRect(0, 0, chartDiv.clientWidth, chartDiv.clientHeight);
 
-            // Keep marker locked to candle during pan and zoom
             if (!window._tradeMarkersBound && tvChart) {
                 window._tradeMarkersBound = true;
                 tvChart.timeScale().subscribeVisibleTimeRangeChange(() => drawTradeMarkers());
                 tvChart.timeScale().subscribeVisibleLogicalRangeChange(() => drawTradeMarkers());
             }
 
-            if (!showTrades || !globalPortfolioData || !Array.isArray(globalPortfolioData.history)) return;
-
-            let t_buys = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker && String(tr.action).toUpperCase() === 'BUY');
-            if (t_buys.length === 0) return;
-
-            let buyTrade = t_buys[0];
-            let buyPrice = parseFloat(buyTrade.price) || 0;
-            let buyTs = parseInt(buyTrade.timestamp) || 0;
-
-            if (!buyPrice || !masterData || masterData.length === 0) return;
-
-            let matchTime = null;
-            let isDaily = typeof masterData[0].time === 'string';
-
-            if (isDaily) {
-                let dStr = new Date(buyTs * 1000).toISOString().split('T')[0];
-                let found = masterData.find(b => b.time === dStr);
-                if (found) matchTime = found.time;
-            } else {
-                for (let i = masterData.length - 1; i >= 0; i--) {
-                    let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
-                    if (cTime <= buyTs) {
-                        matchTime = masterData[i].time;
-                        break;
-                    }
-                }
-                if (!matchTime) matchTime = masterData[0].time;
-            }
-
-            if (!matchTime) return;
-
-            let x = tvChart.timeScale().timeToCoordinate(matchTime);
-            let y = tvSeries.priceToCoordinate(buyPrice);
-
-            if (x !== null && x !== undefined && x >= 0 && x <= chartDiv.clientWidth) {
-                ctx.save();
-
-                // 1. Vertical Dotted Line through execution candle
-                ctx.setLineDash([4, 4]);
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, chartDiv.clientHeight);
-                ctx.stroke();
-
-                // 2. Buy Execution Dot
-                if (y !== null && y !== undefined && y >= 0 && y <= chartDiv.clientHeight) {
-                    ctx.setLineDash([]);
-                    
-                    // Outer subtle halo
-                    ctx.fillStyle = 'rgba(0, 200, 83, 0.35)';
-                    ctx.beginPath();
-                    ctx.arc(x, y, 9, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    // Green accent ring
-                    ctx.fillStyle = '#00c853';
-                    ctx.beginPath();
-                    ctx.arc(x, y, 6, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    // Solid white center dot
-                    ctx.fillStyle = '#ffffff';
-                    ctx.beginPath();
-                    ctx.arc(x, y, 3, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                ctx.restore();
-            }
-
-            // --- RENDER MANUAL TRENDLINES & ANCHORS ---
-            if (Array.isArray(manualLines) && tvChart && tvSeries) {
-                manualLines.forEach((l, idx) => {
-                    let x1 = tvChart.timeScale().timeToCoordinate(l.p1.time);
-                    let y1 = tvSeries.priceToCoordinate(l.p1.price);
-                    let x2 = tvChart.timeScale().timeToCoordinate(l.p2.time);
-                    let y2 = tvSeries.priceToCoordinate(l.p2.price);
-                    if (x1 === null || y1 === null || x2 === null || y2 === null) return;
-
-                    let isSel = (idx === hoveredLineIdx || idx === draggingLineIdx);
-
-                    // Trendline
-                    ctx.beginPath();
-                    ctx.moveTo(x1, y1);
-                    ctx.lineTo(x2, y2);
-                    ctx.strokeStyle = l.color || '#00d2ff';
-                    ctx.lineWidth = isSel ? 2.5 : 1.8;
-                    ctx.stroke();
-
-                    // Anchor 1
-                    ctx.beginPath();
-                    ctx.arc(x1, y1, (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? 6 : 4, 0, Math.PI * 2);
-                    ctx.fillStyle = (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? '#00e5ff' : '#1e1e24';
-                    ctx.fill();
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 1.8;
-                    ctx.stroke();
-
-                    // Anchor 2
-                    ctx.beginPath();
-                    ctx.arc(x2, y2, (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? 6 : 4, 0, Math.PI * 2);
-                    ctx.fillStyle = (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? '#00e5ff' : '#1e1e24';
-                    ctx.fill();
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 1.8;
-                    ctx.stroke();
-                });
-
-                // Temporary rubberband line while creating
-                if (drawTempStart && drawTempStart.curX !== undefined) {
-                    ctx.beginPath();
-                    ctx.moveTo(drawTempStart.px, drawTempStart.py);
-                    ctx.lineTo(drawTempStart.curX, drawTempStart.curY);
-                    ctx.strokeStyle = '#00d2ff';
-                    ctx.lineWidth = 1.8;
-                    ctx.setLineDash([4, 4]);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-                }
-            }
-        }
-    </script>
-    <!-- INTERACTIVE CHART DRAWING & ANCHOR ADJUSTMENT ENGINE -->
-<style>
-    #drawingCanvasOverlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        z-index: 15;
-        pointer-events: none;
-    }
-    .btn-drawing-active {
-        background: #00d2ff !important;
-        color: #000 !important;
-        font-weight: bold !important;
-        box-shadow: 0 0 10px rgba(0, 210, 255, 0.6) !important;
-    }
-</style>
-
-<script>
-(function() {
-    let drawingState = {
-        isDrawingMode: false,
-        activeTicker: '',
-        activeUser: '',
-        lines: [], // Array of { id, p1: {time, price}, p2: {time, price}, color }
-        tempStart: null,
-        hoveredLineIdx: -1,
-        hoveredAnchor: null, // 'p1' or 'p2'
-        draggingLineIdx: -1,
-        draggingAnchor: null, // 'p1' or 'p2' or 'body'
-        dragOffset: null
-    };
-
-    let overlayCanvas = null;
-    let ctx = null;
-
-    function getChartContainer() {
-        return document.getElementById('chart') || document.querySelector('.chart-container') || document.getElementById('mainChartContainer');
-    }
-
-    function initOverlay() {
-        const container = getChartContainer();
-        if (!container) return;
-
-        if (getComputedStyle(container).position === 'static') {
-            container.style.position = 'relative';
-        }
-
-        if (!overlayCanvas) {
-            overlayCanvas = document.createElement('canvas');
-            overlayCanvas.id = 'drawingCanvasOverlay';
-            container.appendChild(overlayCanvas);
-            ctx = overlayCanvas.getContext('2d');
-
-            attachCanvasEvents(overlayCanvas, container);
-        }
-
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-    }
-
-    function resizeCanvas() {
-        const container = getChartContainer();
-        if (!container || !overlayCanvas) return;
-        const rect = container.getBoundingClientRect();
-        overlayCanvas.width = rect.width;
-        overlayCanvas.height = rect.height;
-        renderAllLines();
-    }
-
-    // Convert Time & Price to Pixel Coordinates
-    function toPixels(p) {
-        if (!window.chart || !window.candleSeries || !p) return null;
-        try {
-            const x = window.chart.timeScale().timeToCoordinate(p.time);
-            const y = window.candleSeries.priceToCoordinate(p.price);
-            if (x === null || y === null || isNaN(x) || isNaN(y)) return null;
-            return { x, y };
-        } catch(e) { return null; }
-    }
-
-    // Convert Pixel Coordinate to Time & Price
-    function toPriceTime(x, y) {
-        if (!window.chart || !window.candleSeries) return null;
-        try {
-            const time = window.chart.timeScale().coordinateToTime(x);
-            const price = window.candleSeries.coordinateToPrice(y);
-            if (!time || price === null || isNaN(price)) return null;
-            return { time, price };
-        } catch(e) { return null; }
-    }
-
-    function dist(x1, y1, x2, y2) {
-        return Math.hypot(x2 - x1, y2 - y1);
-    }
-
-    function distToSegment(px, py, x1, y1, x2, y2) {
-        const dx = x2 - x1;
-        const dy = y2 - y1;
-        if (dx === 0 && dy === 0) return dist(px, py, x1, y1);
-        let t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
-        t = Math.max(0, Math.min(1, t));
-        return dist(px, py, x1 + t * dx, y1 + t * dy);
-    }
-
-    function renderAllLines() {
-        if (!ctx || !overlayCanvas) return;
-        ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-
-        drawingState.lines.forEach((line, idx) => {
-            const pt1 = toPixels(line.p1);
-            const pt2 = toPixels(line.p2);
-            if (!pt1 || !pt2) return;
-
-            const isSelected = (idx === drawingState.hoveredLineIdx || idx === drawingState.draggingLineIdx);
-            
-            // Draw Trendline
-            ctx.beginPath();
-            ctx.moveTo(pt1.x, pt1.y);
-            ctx.lineTo(pt2.x, pt2.y);
-            ctx.strokeStyle = line.color || '#00d2ff';
-            ctx.lineWidth = isSelected ? 2.5 : 1.8;
-            ctx.stroke();
-
-            // Draw Anchor 1 Handle
-            drawAnchor(pt1.x, pt1.y, (isSelected && (drawingState.hoveredAnchor === 'p1' || drawingState.draggingAnchor === 'p1')));
-
-            // Draw Anchor 2 Handle
-            drawAnchor(pt2.x, pt2.y, (isSelected && (drawingState.hoveredAnchor === 'p2' || drawingState.draggingAnchor === 'p2')));
-        });
-
-        // Draw temporary rubberband line while creating
-        if (drawingState.tempStart) {
-            ctx.beginPath();
-            ctx.moveTo(drawingState.tempStart.x, drawingState.tempStart.y);
-            ctx.lineTo(drawingState.currentMouseX, drawingState.currentMouseY);
-            ctx.strokeStyle = '#00d2ff';
-            ctx.lineWidth = 1.8;
-            ctx.setLineDash([4, 4]);
-            ctx.stroke();
-            ctx.setLineDash([]);
-            drawAnchor(drawingState.tempStart.x, drawingState.tempStart.y, true);
-        }
-    }
-
-    function drawAnchor(x, y, isHovered) {
-        ctx.beginPath();
-        ctx.arc(x, y, isHovered ? 6.5 : 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = isHovered ? '#00e5ff' : '#1e1e24';
-        ctx.fill();
-        ctx.lineWidth = 1.8;
-        ctx.strokeStyle = '#ffffff';
-        ctx.stroke();
-    }
-
-    function saveCurrentDrawings() {
-        const curTicker = (typeof activeSymbol !== 'undefined') ? activeSymbol : drawingState.activeTicker;
-        if (!curTicker) return;
-
-        fetch('/api/drawings/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ticker: curTicker, drawings: drawingState.lines })
-        }).catch(() => {});
-    }
-
-    function loadDrawingsForTicker(ticker) {
-        if (!ticker) return;
-        drawingState.activeTicker = ticker;
-        fetch('/api/drawings?ticker=' + encodeURIComponent(ticker))
-            .then(r => r.json())
-            .then(data => {
-                if (data && data.drawings) {
-                    drawingState.lines = data.drawings;
-                    renderAllLines();
-                }
-            })
-            .catch(() => {});
-    }
-
-    function attachCanvasEvents(canvas, container) {
-        // Dynamic pointer-events check so chart zooming/panning isn't blocked when not editing
-        container.addEventListener('mousemove', function(e) {
-            const rect = canvas.getBoundingClientRect();
-            const mx = e.clientX - rect.left;
-            const my = e.clientY - rect.top;
-            drawingState.currentMouseX = mx;
-            drawingState.currentMouseY = my;
-
-            if (drawingState.isDrawingMode || drawingState.draggingLineIdx !== -1) {
-                canvas.style.pointerEvents = 'auto';
-                return;
-            }
-
-            let found = false;
-            for (let i = 0; i < drawingState.lines.length; i++) {
-                const pt1 = toPixels(drawingState.lines[i].p1);
-                const pt2 = toPixels(drawingState.lines[i].p2);
-                if (!pt1 || !pt2) continue;
-
-                if (dist(mx, my, pt1.x, pt1.y) <= 8 || dist(mx, my, pt2.x, pt2.y) <= 8 || distToSegment(mx, my, pt1.x, pt1.y, pt2.x, pt2.y) <= 6) {
-                    found = true;
-                    break;
-                }
-            }
-            canvas.style.pointerEvents = found ? 'auto' : 'none';
-        });
-
-        canvas.addEventListener('mousedown', function(e) {
-            const rect = canvas.getBoundingClientRect();
-            const mx = e.clientX - rect.left;
-            const my = e.clientY - rect.top;
-
-            if (e.button === 2) { // Right click deletes line
-                for (let i = drawingState.lines.length - 1; i >= 0; i--) {
-                    const pt1 = toPixels(drawingState.lines[i].p1);
-                    const pt2 = toPixels(drawingState.lines[i].p2);
-                    if (!pt1 || !pt2) continue;
-                    if (distToSegment(mx, my, pt1.x, pt1.y, pt2.x, pt2.y) <= 8) {
-                        drawingState.lines.splice(i, 1);
-                        renderAllLines();
-                        saveCurrentDrawings();
-                        return;
-                    }
-                }
-                return;
-            }
-
-            // Mode 1: Drawing a New Line
-            if (drawingState.isDrawingMode) {
-                const pt = toPriceTime(mx, my);
-                if (!pt) return;
-
-                if (!drawingState.tempStart) {
-                    drawingState.tempStart = { x: mx, y: my, time: pt.time, price: pt.price };
-                } else {
-                    drawingState.lines.push({
-                        id: Date.now().toString(),
-                        p1: { time: drawingState.tempStart.time, price: drawingState.tempStart.price },
-                        p2: { time: pt.time, price: pt.price },
-                        color: '#00d2ff'
-                    });
-                    drawingState.tempStart = null;
-                    toggleDrawingMode(false);
-                    renderAllLines();
-                    saveCurrentDrawings();
-                }
-                return;
-            }
-
-            // Mode 2: Check for Anchor Drag or Line Move
-            for (let i = drawingState.lines.length - 1; i >= 0; i--) {
-                const line = drawingState.lines[i];
-                const pt1 = toPixels(line.p1);
-                const pt2 = toPixels(line.p2);
-                if (!pt1 || !pt2) continue;
-
-                if (dist(mx, my, pt1.x, pt1.y) <= 9) {
-                    drawingState.draggingLineIdx = i;
-                    drawingState.draggingAnchor = 'p1';
-                    return;
-                }
-                if (dist(mx, my, pt2.x, pt2.y) <= 9) {
-                    drawingState.draggingLineIdx = i;
-                    drawingState.draggingAnchor = 'p2';
-                    return;
-                }
-                if (distToSegment(mx, my, pt1.x, pt1.y, pt2.x, pt2.y) <= 7) {
-                    drawingState.draggingLineIdx = i;
-                    drawingState.draggingAnchor = 'body';
-                    drawingState.dragOffset = { dx1: pt1.x - mx, dy1: pt1.y - my, dx2: pt2.x - mx, dy2: pt2.y - my };
-                    return;
-                }
-            }
-        });
-
-        canvas.addEventListener('mousemove', function(e) {
-            const rect = canvas.getBoundingClientRect();
-            const mx = e.clientX - rect.left;
-            const my = e.clientY - rect.top;
-
-            if (drawingState.tempStart) {
-                renderAllLines();
-                return;
-            }
-
-            // Dragging Anchor or Line Body
-            if (drawingState.draggingLineIdx !== -1) {
-                const line = drawingState.lines[drawingState.draggingLineIdx];
-                if (drawingState.draggingAnchor === 'p1') {
-                    const pt = toPriceTime(mx, my);
-                    if (pt) line.p1 = pt;
-                } else if (drawingState.draggingAnchor === 'p2') {
-                    const pt = toPriceTime(mx, my);
-                    if (pt) line.p2 = pt;
-                } else if (drawingState.draggingAnchor === 'body' && drawingState.dragOffset) {
-                    const pt1 = toPriceTime(mx + drawingState.dragOffset.dx1, my + drawingState.dragOffset.dy1);
-                    const pt2 = toPriceTime(mx + drawingState.dragOffset.dx2, my + drawingState.dragOffset.dy2);
-                    if (pt1 && pt2) {
-                        line.p1 = pt1;
-                        line.p2 = pt2;
-                    }
-                }
-                renderAllLines();
-                return;
-            }
-
-            // Hover Highlights
-            let hoveredIdx = -1;
-            let hoveredAnchor = null;
-            canvas.style.cursor = drawingState.isDrawingMode ? 'crosshair' : 'default';
-
-            for (let i = drawingState.lines.length - 1; i >= 0; i--) {
-                const pt1 = toPixels(drawingState.lines[i].p1);
-                const pt2 = toPixels(drawingState.lines[i].p2);
-                if (!pt1 || !pt2) continue;
-
-                if (dist(mx, my, pt1.x, pt1.y) <= 8) {
-                    hoveredIdx = i; hoveredAnchor = 'p1';
-                    canvas.style.cursor = 'grab';
-                    break;
-                }
-                if (dist(mx, my, pt2.x, pt2.y) <= 8) {
-                    hoveredIdx = i; hoveredAnchor = 'p2';
-                    canvas.style.cursor = 'grab';
-                    break;
-                }
-                if (distToSegment(mx, my, pt1.x, pt1.y, pt2.x, pt2.y) <= 6) {
-                    hoveredIdx = i; hoveredAnchor = 'body';
-                    canvas.style.cursor = 'move';
-                    break;
-                }
-            }
-
-            if (hoveredIdx !== drawingState.hoveredLineIdx || hoveredAnchor !== drawingState.hoveredAnchor) {
-                drawingState.hoveredLineIdx = hoveredIdx;
-                drawingState.hoveredAnchor = hoveredAnchor;
-                renderAllLines();
-            }
-        });
-
-        window.addEventListener('mouseup', function() {
-            if (drawingState.draggingLineIdx !== -1) {
-                drawingState.draggingLineIdx = -1;
-                drawingState.draggingAnchor = null;
-                drawingState.dragOffset = null;
-                renderAllLines();
-                saveCurrentDrawings();
-            }
-        });
-
-        canvas.addEventListener('contextmenu', e => e.preventDefault());
-    }
-
-    function toggleDrawingMode(forceState) {
-        drawingState.isDrawingMode = (forceState !== undefined) ? forceState : !drawingState.isDrawingMode;
-        drawingState.tempStart = null;
-        
-        const btn = document.getElementById('drawLineBtn') || Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Draw Line'));
-        if (btn) {
-            if (drawingState.isDrawingMode) btn.classList.add('btn-drawing-active');
-            else btn.classList.remove('btn-drawing-active');
-        }
-        if (overlayCanvas) {
-            overlayCanvas.style.pointerEvents = drawingState.isDrawingMode ? 'auto' : 'none';
-        }
-        renderAllLines();
-    }
-
-    function clearAllLines() {
-        const curTicker = (typeof activeSymbol !== 'undefined') ? activeSymbol : drawingState.activeTicker;
-        drawingState.lines = [];
-        drawingState.tempStart = null;
-        renderAllLines();
-
-        if (curTicker) {
-            fetch('/api/drawings/clear', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ticker: curTicker })
-            }).catch(() => {});
-        }
-    }
-
-    // Bind Button Click Handlers
-    function wireButtons() {
-        const drawBtn = document.getElementById('drawLineBtn') || Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Draw Line'));
-        const clearBtn = document.getElementById('clearLineBtn') || Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Clear'));
-
-        if (drawBtn && !drawBtn.__wired) {
-            drawBtn.__wired = true;
-            drawBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                toggleDrawingMode();
-            });
-        }
-
-        if (clearBtn && !clearBtn.__wired) {
-            clearBtn.__wired = true;
-            clearBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                clearAllLines();
-            });
-        }
-    }
-
-    // Sync on chart zoom & pan
-    function hookChartSync() {
-        if (window.chart && !window.__chartSyncAttached) {
-            window.__chartSyncAttached = true;
-            try {
-                window.chart.timeScale().subscribeVisibleLogicalRangeChange(() => renderAllLines());
-            } catch(e) {}
-        }
-    }
-
-    // Auto-detect ticker or profile switches
-    let lastKnownTicker = '';
-    setInterval(function() {
-        initOverlay();
-        wireButtons();
-        hookChartSync();
-
-        const cur = (typeof activeSymbol !== 'undefined') ? activeSymbol : '';
-        if (cur && cur !== lastKnownTicker) {
-            lastKnownTicker = cur;
-            loadDrawingsForTicker(cur);
-        }
-    }, 500);
-
-    window.refreshChartDrawings = renderAllLines;
-})();
-</script>
-<!-- INTERACTIVE DRAWING & DRAGGABLE ANCHOR ENGINE -->
-    <script>
-    (function() {
-        let manualLines = [];
-        let drawTempStart = null;
-        let hoveredLineIdx = -1;
-        let hoveredAnchor = null;
-        let draggingLineIdx = -1;
-        let draggingAnchor = null;
-        let dragOffset = null;
-        let lastLoadedTicker = '';
-
-        // Coordinate to Time conversion using Lightweight Charts logical index
-        function coordToTime(x) {
-            if (!tvChart || !masterData || masterData.length === 0) return null;
-            try {
-                let logical = tvChart.timeScale().coordinateToLogical(x);
-                if (logical === null || isNaN(logical)) return null;
-                let idx = Math.max(0, Math.min(masterData.length - 1, Math.round(logical)));
-                return masterData[idx] ? masterData[idx].time : null;
-            } catch(e) { return null; }
-        }
-
-        function coordToPrice(y) {
-            if (!tvSeries) return null;
-            try {
-                return tvSeries.coordinateToPrice(y);
-            } catch(e) { return null; }
-        }
-
-        function timeToCoord(time) {
-            if (!tvChart || time === undefined || time === null) return null;
-            try {
-                return tvChart.timeScale().timeToCoordinate(time);
-            } catch(e) { return null; }
-        }
-
-        function priceToCoord(price) {
-            if (!tvSeries || price === undefined || price === null) return null;
-            try {
-                return tvSeries.priceToCoordinate(price);
-            } catch(e) { return null; }
-        }
-
-        window.toggleDrawMode = function(forceState) {
-            isDrawing = (forceState !== undefined) ? forceState : !isDrawing;
-            drawTempStart = null;
-            const btn = document.getElementById('btnDraw');
-            const text = document.getElementById('drawBtnText');
-            const cv = document.getElementById('chartCanvas');
-
-            if (isDrawing) {
-                if (btn) btn.classList.add('active');
-                if (text) text.innerText = 'Click Chart...';
-                if (cv) { cv.style.pointerEvents = 'auto'; cv.style.cursor = 'crosshair'; }
-            } else {
-                if (btn) btn.classList.remove('active');
-                if (text) text.innerText = 'Draw Line';
-                if (cv) { cv.style.pointerEvents = 'none'; cv.style.cursor = 'default'; }
-            }
-            if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
-        };
-
-        window.clearManualLines = function() {
-            manualLines = [];
-            drawTempStart = null;
-            if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
-            if (currentTicker) {
-                fetch('/api/drawings/clear', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticker: currentTicker })
-                }).catch(() => {});
-            }
-        };
-
-        function saveDrawings() {
-            if (!currentTicker) return;
-            fetch('/api/drawings/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ticker: currentTicker, drawings: manualLines })
-            }).catch(() => {});
-        }
-
-        function loadDrawings(ticker) {
-            if (!ticker) return;
-            fetch('/api/drawings?ticker=' + encodeURIComponent(ticker))
-                .then(r => r.json())
-                .then(d => {
-                    if (d && Array.isArray(d.drawings)) {
-                        manualLines = d.drawings;
-                        if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
-                    }
-                }).catch(() => {});
-        }
-
-        function distToSeg(px, py, x1, y1, x2, y2) {
-            const dx = x2 - x1, dy = y2 - y1;
-            if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1);
-            const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
-            return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
-        }
-
-        function renderLines(ctx) {
-            if (!Array.isArray(manualLines) || !tvChart || !tvSeries) return;
-
-            manualLines.forEach((l, idx) => {
-                const x1 = timeToCoord(l.p1.time);
-                const y1 = priceToCoord(l.p1.price);
-                const x2 = timeToCoord(l.p2.time);
-                const y2 = priceToCoord(l.p2.price);
-                if (x1 === null || y1 === null || x2 === null || y2 === null) return;
-
-                const isSel = (idx === hoveredLineIdx || idx === draggingLineIdx);
-
-                // Trendline
-                ctx.beginPath();
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x2, y2);
-                ctx.strokeStyle = l.color || '#00d2ff';
-                ctx.lineWidth = isSel ? 2.5 : 1.8;
-                ctx.stroke();
-
-                // Anchor 1
-                ctx.beginPath();
-                ctx.arc(x1, y1, (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? 6 : 4, 0, Math.PI * 2);
-                ctx.fillStyle = (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? '#00e5ff' : '#1e1e24';
-                ctx.fill();
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 1.8;
-                ctx.stroke();
-
-                // Anchor 2
-                ctx.beginPath();
-                ctx.arc(x2, y2, (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? 6 : 4, 0, Math.PI * 2);
-                ctx.fillStyle = (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? '#00e5ff' : '#1e1e24';
-                ctx.fill();
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 1.8;
-                ctx.stroke();
-            });
-
-            // Temporary rubberband line during mouse movement
-            if (drawTempStart && drawTempStart.curX !== undefined) {
-                ctx.beginPath();
-                ctx.moveTo(drawTempStart.px, drawTempStart.py);
-                ctx.lineTo(drawTempStart.curX, drawTempStart.curY);
-                ctx.strokeStyle = '#00d2ff';
-                ctx.lineWidth = 1.8;
-                ctx.setLineDash([4, 4]);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
-        }
-
-        // Hook into drawTradeMarkers
-        const _origDrawTradeMarkers = window.drawTradeMarkers;
-        window.drawTradeMarkers = function() {
-            if (typeof _origDrawTradeMarkers === 'function') _origDrawTradeMarkers();
-            const cv = document.getElementById('chartCanvas');
-            if (cv) {
-                const ctx = cv.getContext('2d');
-                renderLines(ctx);
-            }
-        };
-
-        // Attach events once chart is ready
-        const initTimer = setInterval(() => {
-            const cv = document.getElementById('chartCanvas');
-            const chartDiv = document.getElementById('tvChart');
-            if (!cv || !chartDiv || !tvChart || !tvSeries) return;
-            clearInterval(initTimer);
-
-            chartDiv.addEventListener('mousemove', (e) => {
-                const rect = cv.getBoundingClientRect();
-                const mx = e.clientX - rect.left;
-                const my = e.clientY - rect.top;
-
-                if (isDrawing || draggingLineIdx !== -1) {
-                    cv.style.pointerEvents = 'auto';
-                    return;
-                }
-
-                let hit = false;
-                for (let i = 0; i < manualLines.length; i++) {
-                    const l = manualLines[i];
-                    const x1 = timeToCoord(l.p1.time);
-                    const y1 = priceToCoord(l.p1.price);
-                    const x2 = timeToCoord(l.p2.time);
-                    const y2 = priceToCoord(l.p2.price);
-                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
-
-                    if (Math.hypot(mx - x1, my - y1) <= 9 || Math.hypot(mx - x2, my - y2) <= 9 || distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
-                        hit = true;
-                        break;
-                    }
-                }
-                cv.style.pointerEvents = hit ? 'auto' : 'none';
-            });
-
-            cv.addEventListener('mousedown', (e) => {
-                const rect = cv.getBoundingClientRect();
-                const mx = e.clientX - rect.left;
-                const my = e.clientY - rect.top;
-
-                const clickTime = coordToTime(mx);
-                const clickPrice = coordToPrice(my);
-
-                // Right-click deletes line
-                if (e.button === 2) {
-                    for (let i = manualLines.length - 1; i >= 0; i--) {
-                        const l = manualLines[i];
-                        const x1 = timeToCoord(l.p1.time);
-                        const y1 = priceToCoord(l.p1.price);
-                        const x2 = timeToCoord(l.p2.time);
-                        const y2 = priceToCoord(l.p2.price);
-                        if (x1 !== null && y1 !== null && x2 !== null && y2 !== null && distToSeg(mx, my, x1, y1, x2, y2) <= 8) {
-                            manualLines.splice(i, 1);
-                            drawTradeMarkers();
-                            saveDrawings();
-                            return;
+            if (showTrades && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
+                let t_buys = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker && String(tr.action).toUpperCase() === 'BUY');
+                if (t_buys.length > 0) {
+                    let buyTrade = t_buys[0];
+                    let buyPrice = parseFloat(buyTrade.price) || 0;
+                    let buyTs = parseInt(buyTrade.timestamp) || 0;
+
+                    if (buyPrice && masterData && masterData.length > 0) {
+                        let matchTime = null;
+                        let isDaily = typeof masterData[0].time === 'string';
+
+                        if (isDaily) {
+                            let dStr = new Date(buyTs * 1000).toISOString().split('T')[0];
+                            let found = masterData.find(b => b.time === dStr);
+                            if (found) matchTime = found.time;
+                        } else {
+                            for (let i = masterData.length - 1; i >= 0; i--) {
+                                let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
+                                if (cTime <= buyTs) {
+                                    matchTime = masterData[i].time;
+                                    break;
+                                }
+                            }
+                            if (!matchTime) matchTime = masterData[0].time;
+                        }
+
+                        if (matchTime) {
+                            let x = tvChart.timeScale().timeToCoordinate(matchTime);
+                            let y = tvSeries.priceToCoordinate(buyPrice);
+
+                            if (x !== null && x !== undefined && x >= 0 && x <= chartDiv.clientWidth) {
+                                ctx.save();
+                                ctx.setLineDash([4, 4]);
+                                ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+                                ctx.lineWidth = 1.5;
+                                ctx.beginPath();
+                                ctx.moveTo(x, 0);
+                                ctx.lineTo(x, chartDiv.clientHeight);
+                                ctx.stroke();
+
+                                if (y !== null && y !== undefined && y >= 0 && y <= chartDiv.clientHeight) {
+                                    ctx.setLineDash([]);
+                                    ctx.fillStyle = 'rgba(0, 200, 83, 0.35)';
+                                    ctx.beginPath();
+                                    ctx.arc(x, y, 9, 0, Math.PI * 2);
+                                    ctx.fill();
+
+                                    ctx.fillStyle = '#00c853';
+                                    ctx.beginPath();
+                                    ctx.arc(x, y, 6, 0, Math.PI * 2);
+                                    ctx.fill();
+
+                                    ctx.fillStyle = '#ffffff';
+                                    ctx.beginPath();
+                                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                                    ctx.fill();
+                                }
+                                ctx.restore();
+                            }
                         }
                     }
-                    return;
                 }
-
-                // Mode 1: Drawing line
-                if (isDrawing) {
-                    if (!clickTime || clickPrice === null) return;
-                    if (!drawTempStart) {
-                        drawTempStart = { time: clickTime, price: clickPrice, px: mx, py: my };
-                    } else {
-                        manualLines.push({
-                            id: Date.now().toString(),
-                            p1: { time: drawTempStart.time, price: drawTempStart.price },
-                            p2: { time: clickTime, price: clickPrice },
-                            color: '#00d2ff'
-                        });
-                        drawTempStart = null;
-                        toggleDrawMode(false);
-                        drawTradeMarkers();
-                        saveDrawings();
-                    }
-                    return;
-                }
-
-                // Mode 2: Dragging anchors or body
-                for (let i = manualLines.length - 1; i >= 0; i--) {
-                    const l = manualLines[i];
-                    const x1 = timeToCoord(l.p1.time);
-                    const y1 = priceToCoord(l.p1.price);
-                    const x2 = timeToCoord(l.p2.time);
-                    const y2 = priceToCoord(l.p2.price);
-                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
-
-                    if (Math.hypot(mx - x1, my - y1) <= 9) {
-                        draggingLineIdx = i; draggingAnchor = 'p1'; return;
-                    }
-                    if (Math.hypot(mx - x2, my - y2) <= 9) {
-                        draggingLineIdx = i; draggingAnchor = 'p2'; return;
-                    }
-                    if (distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
-                        draggingLineIdx = i; draggingAnchor = 'body';
-                        dragOffset = { dx1: x1 - mx, dy1: y1 - my, dx2: x2 - mx, dy2: y2 - my };
-                        return;
-                    }
-                }
-            });
-
-            cv.addEventListener('mousemove', (e) => {
-                const rect = cv.getBoundingClientRect();
-                const mx = e.clientX - rect.left;
-                const my = e.clientY - rect.top;
-
-                if (drawTempStart) {
-                    drawTempStart.curX = mx;
-                    drawTempStart.curY = my;
-                    drawTradeMarkers();
-                    return;
-                }
-
-                if (draggingLineIdx !== -1) {
-                    const line = manualLines[draggingLineIdx];
-                    const t = coordToTime(mx);
-                    const p = coordToPrice(my);
-
-                    if (draggingAnchor === 'p1' && t && p !== null) {
-                        line.p1 = { time: t, price: p };
-                    } else if (draggingAnchor === 'p2' && t && p !== null) {
-                        line.p2 = { time: t, price: p };
-                    } else if (draggingAnchor === 'body' && dragOffset) {
-                        const t1 = coordToTime(mx + dragOffset.dx1);
-                        const p1 = coordToPrice(my + dragOffset.dy1);
-                        const t2 = coordToTime(mx + dragOffset.dx2);
-                        const p2 = coordToPrice(my + dragOffset.dy2);
-                        if (t1 && p1 !== null && t2 && p2 !== null) {
-                            line.p1 = { time: t1, price: p1 };
-                            line.p2 = { time: t2, price: p2 };
-                        }
-                    }
-                    drawTradeMarkers();
-                    return;
-                }
-
-                // Hover states
-                let hitIdx = -1, hitAnc = null;
-                cv.style.cursor = isDrawing ? 'crosshair' : 'default';
-
-                for (let i = manualLines.length - 1; i >= 0; i--) {
-                    const l = manualLines[i];
-                    const x1 = timeToCoord(l.p1.time);
-                    const y1 = priceToCoord(l.p1.price);
-                    const x2 = timeToCoord(l.p2.time);
-                    const y2 = priceToCoord(l.p2.price);
-                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
-
-                    if (Math.hypot(mx - x1, my - y1) <= 9) {
-                        hitIdx = i; hitAnc = 'p1'; cv.style.cursor = 'grab'; break;
-                    }
-                    if (Math.hypot(mx - x2, my - y2) <= 9) {
-                        hitIdx = i; hitAnc = 'p2'; cv.style.cursor = 'grab'; break;
-                    }
-                    if (distToSeg(mx, my, x1, y1, x2, y2) <= 7) {
-                        hitIdx = i; hitAnc = 'body'; cv.style.cursor = 'move'; break;
-                    }
-                }
-
-                if (hitIdx !== hoveredLineIdx || hitAnc !== hoveredAnchor) {
-                    hoveredLineIdx = hitIdx;
-                    hoveredAnchor = hitAnc;
-                    drawTradeMarkers();
-                }
-            });
-
-            window.addEventListener('mouseup', () => {
-                if (draggingLineIdx !== -1) {
-                    draggingLineIdx = -1;
-                    draggingAnchor = null;
-                    dragOffset = null;
-                    drawTradeMarkers();
-                    saveDrawings();
-                }
-            });
-
-            cv.addEventListener('contextmenu', e => e.preventDefault());
-        }, 400);
-
-        setInterval(() => {
-            if (currentTicker && currentTicker !== lastLoadedTicker) {
-                lastLoadedTicker = currentTicker;
-                loadDrawings(currentTicker);
             }
-        }, 500);
-    })();
+
+            // Render trendlines and anchors
+            renderLines(ctx);
+        }
     </script>
 </body>
 </html>
