@@ -1271,18 +1271,21 @@
 
                 if (draggingLineIdx !== -1) {
                     const line = manualLines[draggingLineIdx];
-                    const pt = coordToPoint(mx, my);
+                    const t = coordToTime(mx);
+                    const p = coordToPrice(my);
 
-                    if (draggingAnchor === 'p1' && pt) {
-                        line.p1 = pt;
-                    } else if (draggingAnchor === 'p2' && pt) {
-                        line.p2 = pt;
+                    if (draggingAnchor === 'p1' && t && p !== null) {
+                        line.p1 = { time: t, price: p };
+                    } else if (draggingAnchor === 'p2' && t && p !== null) {
+                        line.p2 = { time: t, price: p };
                     } else if (draggingAnchor === 'body' && dragOffset) {
-                        const pt1 = coordToPoint(mx + dragOffset.dx1, my + dragOffset.dy1);
-                        const pt2 = coordToPoint(mx + dragOffset.dx2, my + dragOffset.dy2);
-                        if (pt1 && pt2) {
-                            line.p1 = pt1;
-                            line.p2 = pt2;
+                        const t1 = coordToTime(mx + dragOffset.dx1);
+                        const p1 = coordToPrice(my + dragOffset.dy1);
+                        const t2 = coordToTime(mx + dragOffset.dx2);
+                        const p2 = coordToPrice(my + dragOffset.dy2);
+                        if (t1 && p1 !== null && t2 && p2 !== null) {
+                            line.p1 = { time: t1, price: p1 };
+                            line.p2 = { time: t2, price: p2 };
                         }
                     }
                     drawTradeMarkers();
@@ -1295,20 +1298,11 @@
 
                 for (let i = manualLines.length - 1; i >= 0; i--) {
                     const l = manualLines[i];
-                    const pt1 = pointToScreen(l.p1);
-                    const pt2 = pointToScreen(l.p2);
-                    if (!pt1 || !pt2) continue;
-
-                    if (Math.hypot(mx - pt1.x, my - pt1.y) <= 9) {
-                        hitIdx = i; hitAnc = 'p1'; cv.style.cursor = 'grab'; break;
-                    }
-                    if (Math.hypot(mx - pt2.x, my - pt2.y) <= 9) {
-                        hitIdx = i; hitAnc = 'p2'; cv.style.cursor = 'grab'; break;
-                    }
-                    if (distToSeg(mx, my, pt1.x, pt1.y, pt2.x, pt2.y) <= 7) {
-                        hitIdx = i; hitAnc = 'body'; cv.style.cursor = 'move'; break;
-                    }
-                }
+                    const x1 = timeToCoord(l.p1.time);
+                    const y1 = priceToCoord(l.p1.price);
+                    const x2 = timeToCoord(l.p2.time);
+                    const y2 = priceToCoord(l.p2.price);
+                    if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
 
                     if (Math.hypot(mx - x1, my - y1) <= 9) {
                         hitIdx = i; hitAnc = 'p1'; cv.style.cursor = 'grab'; break;
