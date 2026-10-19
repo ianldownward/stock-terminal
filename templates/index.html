@@ -1618,7 +1618,8 @@
                     }
                     setTimeout(drawTradeMarkers, 50);
 
-                    if (showTrades && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
+                    let currentShares = (globalPortfolioData && globalPortfolioData.holdings && globalPortfolioData.holdings[currentTicker]) ? (globalPortfolioData.holdings[currentTicker].shares || 0) : 0;
+                    if (showTrades && currentShares > 0 && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
                         let t_buys = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker && String(tr.action).toUpperCase() === 'BUY');
                         if (t_buys.length > 0) {
                             let entryP = parseFloat(t_buys[0].price) || 0;
@@ -1855,7 +1856,8 @@
                 tvChart.timeScale().subscribeVisibleLogicalRangeChange(() => drawTradeMarkers());
             }
 
-            if (showTrades && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
+            let currentShares = (globalPortfolioData && globalPortfolioData.holdings && globalPortfolioData.holdings[currentTicker]) ? (globalPortfolioData.holdings[currentTicker].shares || 0) : 0;
+            if (showTrades && currentShares > 0 && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
                 let t_buys = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker && String(tr.action).toUpperCase() === 'BUY');
                 if (t_buys.length > 0) {
                     let buyTrade = t_buys[0];

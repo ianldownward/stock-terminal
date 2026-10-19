@@ -516,6 +516,10 @@ class MarketScoringEngine:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'LSE Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "LSE CROSS-MARKET SWEEP.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'LSE Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(LSE Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced LSE Sell'}
 
+        # OVERRIDE: LATE-DAY ENTRY CURFEW (NO NEW ENTRIES AFTER 20:00 BST)
+        if any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']) and now_uk.hour >= 20 and avg_buy_price == 0:
+            return {'type': 'EOD Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "LATE-DAY CURFEW: No new entries permitted after 20:00 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
+
         # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (INCLUDES E3, E12, E14, U)
         if any(x in prof for x in ['test e2', 'test e3', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test e14', 'test u', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
@@ -647,6 +651,25 @@ def process_auto_profile(prof_name):
         tot_own = portfolio_store.get_total_portfolio_value(prof_name)
         total_equity = cash_balance + tot_own
 
+        # DYNAMIC PERCENTAGE CIRCUIT BREAKER (SCALABLE TO ANY CAPITAL SIZE)
+        now_uk = pd.Timestamp.now(tz='Europe/London')
+        today_str = now_uk.strftime('%Y-%m-%d')
+        trades_today = [tr for tr in hist if tr.get('date_str') == today_str]
+        net_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
+        cash_start = cash_balance - net_cash_today
+
+        # Calculate Start-Of-Day (SOD) equity
+        sod_equity = max(50.0, cash_start)
+        daily_pnl = total_equity - sod_equity
+        daily_pnl_pct = (daily_pnl / sod_equity) * 100.0 if sod_equity > 0 else 0.0
+
+        # Maximum allowable daily drawdown: -2.5% of starting daily equity
+        CIRCUIT_BREAKER_PCT = -2.50
+        circuit_breaker_tripped = (daily_pnl_pct <= CIRCUIT_BREAKER_PCT)
+
+        # LATE-DAY ENTRY CURFEW (NO NEW BUYS AFTER 20:00 BST / 3:00 PM EST)
+        is_curfew_active = (now_uk.hour >= 20) and any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x'])
+
         dirs, buys, held_scores = [], [], []
         MIN_BUY_VALUE = 20.0
         regime = engine.check_market_regime()
@@ -735,6 +758,16 @@ def process_auto_profile(prof_name):
 
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
+
+        # Emergency Shutdown: If circuit breaker tripped or curfew active, block ALL buys
+        if circuit_breaker_tripped or is_curfew_active:
+            buys = []
+
+        # If circuit breaker tripped while holding, liquidate to preserve cash
+        if circuit_breaker_tripped and held_scores:
+            for h in held_scores:
+                if not any(d['ticker'] == h['ticker'] and d['action'] == 'SELL' for d in dirs):
+                    dirs.append({'ticker': h['ticker'], 'action': 'SELL', 'shares': h['shares'], 'price': h['price'], 'amount': round(h['value'], 2)})
 
         if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
