@@ -6,7 +6,7 @@
     <title>Pro Stock Terminal</title>
     <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        * { box-sizing: border-box; }
+       * { box-sizing: border-box; }
         body { 
             font-family: -apple-system, sans-serif; 
             background: #0f1115; 
@@ -15,6 +15,63 @@
             display: flex; 
             height: 100vh; 
             overflow: hidden; 
+        }
+
+        /* MOBILE VIEW RESTORATION */
+        @media (max-width: 900px) {
+            body { 
+                flex-direction: column !important; 
+                height: auto !important; 
+                min-height: 100vh !important; 
+                overflow-x: hidden !important; 
+                overflow-y: auto !important; 
+            }
+            .sidebar { 
+                width: 100% !important; 
+                height: auto !important; 
+                border-right: none !important; 
+                border-bottom: 1px solid #262b36 !important; 
+                flex-shrink: 0 !important; 
+            }
+            .sidebar-top { 
+                overflow: visible !important; 
+            }
+            .watchlist { 
+                max-height: 260px !important; 
+                min-height: auto !important; 
+            }
+            .main-content { 
+                width: 100% !important; 
+                padding: 10px !important; 
+                overflow: visible !important; 
+            }
+            #colResizer { 
+                display: none !important; 
+            }
+            .right-drawer, #leaderboardCol { 
+                width: 100% !important; 
+                min-width: 100% !important; 
+                max-width: 100% !important; 
+                border-left: none !important; 
+                border-top: 1px solid #262b36 !important; 
+                overflow: visible !important; 
+            }
+            .chart-container { 
+                min-height: 380px !important; 
+                height: 420px !important; 
+            }
+            .action-buttons { 
+                width: 100% !important; 
+                overflow-x: auto !important; 
+                flex-wrap: nowrap !important; 
+                padding-bottom: 6px !important; 
+            }
+            .metrics-grid { 
+                flex-wrap: wrap !important; 
+            }
+            .fused-card, .card { 
+                min-width: 100% !important; 
+            }
         }
         .sidebar { 
             width: 300px; 
