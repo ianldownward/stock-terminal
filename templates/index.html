@@ -645,6 +645,72 @@
         </div>
     </div>
 
+    <!-- BATCH RESET ALL MODAL -->
+    <div class="modal-overlay" id="resetAllModal">
+        <div class="modal" style="width: 480px; max-height: 85vh; display: flex; flex-direction: column;">
+            <h2>
+                <span>Reset Profiles (Batch)</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px" onclick="closeResetAllModal()">✕</button>
+            </h2>
+            <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:4px;">
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1;">
+                        <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Total Equity (£)</label>
+                        <input type="number" step="0.01" id="resetAllTotalEquity" value="5000.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:14px; font-weight:bold;">
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Today's P&L (£)</label>
+                        <input type="number" step="0.01" id="resetAllTodayPnl" value="0.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:14px; font-weight:bold;">
+                    </div>
+                </div>
+
+                <div>
+                    <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Position State</label>
+                    <div style="display:flex; gap:15px; margin-top:4px; font-size:12px;">
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
+                            <input type="radio" name="resetAllPosType" value="cash" checked onchange="toggleResetAllPosFields()"> 100% Cash (0 Shares)
+                        </label>
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:6px;">
+                            <input type="radio" name="resetAllPosType" value="pos" onchange="toggleResetAllPosFields()"> Open Position
+                        </label>
+                    </div>
+                </div>
+
+                <div id="resetAllPosFields" style="display:none; background:#1a1d24; border:1px solid #262b36; border-radius:6px; padding:10px; gap:8px; flex-direction:column;">
+                    <div style="display:flex; gap:8px;">
+                        <div style="flex:1;">
+                            <label style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:2px;">Ticker</label>
+                            <input type="text" id="resetAllPosTicker" placeholder="e.g. SQQQ" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:12px; font-weight:bold; text-transform:uppercase;">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:2px;">Shares</label>
+                            <input type="number" id="resetAllPosShares" placeholder="e.g. 136" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:2px;">Buy Price (£)</label>
+                            <input type="number" step="0.01" id="resetAllPosPrice" placeholder="e.g. 36.91" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                        <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold;">Select Profiles to Reset:</label>
+                        <button type="button" class="btn-control" style="padding:2px 8px; font-size:10px;" onclick="toggleSelectAllResetProfiles()">Toggle All</button>
+                    </div>
+                    <div id="resetAllProfilesList" style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:10px; max-height:190px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
+                        <!-- Checkboxes populated dynamically, all ticked by default -->
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+                    <button class="btn-control" onclick="closeResetAllModal()">Cancel</button>
+                    <button id="btnSubmitResetAll" class="btn-control" style="background:#ff3d00; color:#fff; border-color:#ff3d00;" onclick="submitResetAll()">Apply Reset to Selected</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="sidebar">
         <div class="sidebar-top">
             <div class="user-profile-box">
@@ -735,6 +801,7 @@
                         <button class="btn-control" onclick="clearManualLines()">Clear</button>
                         <button id="btnFullscreen" class="btn-control" onclick="toggleFullScreen()">Full Screen</button>
                         <button class="btn-control" onclick="openResetModal()">Reset User</button>
+                        <button class="btn-control" style="border-color: #ff3d00; color: #ff3d00;" onclick="openResetAllModal()">Reset All</button>
                     </div>
                 </div>
                 <div class="top-nav-row2">
@@ -1396,6 +1463,122 @@
                 body: JSON.stringify(payload)
             });
             await fetchData(false);
+        }
+
+        // --- BATCH RESET ALL ENGINE ---
+        function openResetAllModal() {
+            let listContainer = document.getElementById('resetAllProfilesList');
+            if (!listContainer) return;
+            listContainer.innerHTML = '';
+
+            let sel = document.getElementById('userSelect');
+            let users = [];
+            if (sel && sel.options) {
+                for (let i = 0; i < sel.options.length; i++) {
+                    users.push(sel.options[i].value);
+                }
+            }
+
+            if (users.length === 0) {
+                listContainer.innerHTML = '<div style="color:#787e8e; font-size:11px;">No profiles found.</div>';
+            } else {
+                users.forEach(u => {
+                    let row = document.createElement('label');
+                    row.style.display = 'flex';
+                    row.style.alignItems = 'center';
+                    row.style.gap = '8px';
+                    row.style.fontSize = '12px';
+                    row.style.cursor = 'pointer';
+                    row.style.color = '#fff';
+
+                    let chk = document.createElement('input');
+                    chk.type = 'checkbox';
+                    chk.className = 'reset-profile-chk';
+                    chk.value = u;
+                    chk.checked = true; // All ticked by default
+
+                    let nameSpan = document.createElement('span');
+                    nameSpan.innerText = u;
+
+                    row.appendChild(chk);
+                    row.appendChild(nameSpan);
+                    listContainer.appendChild(row);
+                });
+            }
+
+            document.getElementById('resetAllTotalEquity').value = "5000.00";
+            document.getElementById('resetAllTodayPnl').value = "0.00";
+            document.querySelector('input[name="resetAllPosType"][value="cash"]').checked = true;
+            toggleResetAllPosFields();
+
+            document.getElementById('resetAllModal').style.display = 'flex';
+        }
+
+        function closeResetAllModal() {
+            let m = document.getElementById('resetAllModal');
+            if (m) m.style.display = 'none';
+        }
+
+        function toggleResetAllPosFields() {
+            let isPos = document.querySelector('input[name="resetAllPosType"]:checked')?.value === 'pos';
+            let el = document.getElementById('resetAllPosFields');
+            if (el) el.style.display = isPos ? 'flex' : 'none';
+        }
+
+        function toggleSelectAllResetProfiles() {
+            let chks = document.querySelectorAll('.reset-profile-chk');
+            if (!chks || chks.length === 0) return;
+            let anyUnchecked = Array.from(chks).some(c => !c.checked);
+            chks.forEach(c => { c.checked = anyUnchecked; });
+        }
+
+        async function submitResetAll() {
+            let chks = Array.from(document.querySelectorAll('.reset-profile-chk:checked'));
+            if (chks.length === 0) {
+                alert('Please select at least one profile to reset.');
+                return;
+            }
+
+            let totalEq = parseFloat(document.getElementById('resetAllTotalEquity').value) || 5000.00;
+            let todayPnL = parseFloat(document.getElementById('resetAllTodayPnl').value) || 0.00;
+            let posType = document.querySelector('input[name="resetAllPosType"]:checked')?.value || 'cash';
+            let ticker = document.getElementById('resetAllPosTicker').value.trim().toUpperCase();
+            let shares = parseInt(document.getElementById('resetAllPosShares').value) || 0;
+            let buyPrice = parseFloat(document.getElementById('resetAllPosPrice').value) || 0.0;
+
+            let btn = document.getElementById('btnSubmitResetAll');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = 'Resetting...';
+            }
+
+            try {
+                for (let chk of chks) {
+                    let u = chk.value;
+                    await fetch('/api/portfolio/reset', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: u,
+                            total_equity: totalEq,
+                            today_pnl: todayPnL,
+                            position_type: posType,
+                            ticker: ticker,
+                            shares: shares,
+                            buy_price: buyPrice
+                        })
+                    });
+                }
+            } catch(e) {
+                console.error("Batch reset error:", e);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = 'Apply Reset to Selected';
+                }
+                closeResetAllModal();
+                await fetchData(false);
+            }
         }
 
         function closeQuickScore() {
