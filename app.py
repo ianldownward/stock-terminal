@@ -775,7 +775,10 @@ def process_auto_profile(prof_name):
             valid_buys = [b for b in buys if time.time() >= ud.get('cooldowns', {}).get(b['t'], 0)]
             top_buys = valid_buys[:slots_available]
             if top_buys:
-                per_stock_budget = min(rem_cash / len(top_buys), total_equity * (0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x']) else 0.33))
+                # Compound dynamically: Allocate based on actual current equity (rolling capital)
+                live_allocation_pct = 0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x']) else 0.33
+                compound_capital = min(rem_cash, total_equity * live_allocation_pct)
+                per_stock_budget = compound_capital / len(top_buys)
                 for b in top_buys:
                     bs = int(per_stock_budget // b['cps'])
                     amt = round(bs * b['cps'], 2)
