@@ -568,8 +568,8 @@ class MarketScoringEngine:
                 if dollar_vol_est < 20000000:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Illiquid asset: Estimated daily dollar volume < $20M.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Liquidity', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Low Liquidity)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Low Liquidity'}
 
-            # E15 & E16: 14:30 - 14:45 BST Morning Opening Moratorium
-            if any(x in prof for x in ['test e15', 'test e16']):
+            # E6, E15 & E16: 14:30 - 14:45 BST Morning Opening Moratorium
+            if any(x in prof for x in ['test e6', 'test e15', 'test e16']):
                 if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 45:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:45 BST for ORB base.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
 
