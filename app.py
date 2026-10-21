@@ -576,9 +576,9 @@ class MarketScoringEngine:
                 if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:50 BST for opening range confirmation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
 
-            # TEST E17: 18:30 BST HARD CURFEW (NO NEW BUYS IN FINAL 2.5 HOURS)
-            if 'test e17' in prof and (now_uk.hour > 18 or (now_uk.hour == 18 and now_uk.minute >= 30)):
-                return {'type': 'Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'E17 Session Curfew: No new entries permitted after 18:30 BST.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
+            # TEST E17: 19:45 BST LATE-SESSION CURFEW (LEAVES 65M BEFORE EOD SWEEP)
+            if 'test e17' in prof and (now_uk.hour > 19 or (now_uk.hour == 19 and now_uk.minute >= 45)):
+                return {'type': 'Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'E17 Session Curfew: No new entries permitted after 19:45 BST.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
             # E16 ONLY: Broader Market Tide Check (NASDAQ Sentiment >= 40)
             if 'test e16' in prof:
@@ -700,6 +700,16 @@ def process_auto_profile(prof_name):
 
         # LATE-DAY ENTRY CURFEW (NO NEW BUYS AFTER 20:00 BST / 3:00 PM EST)
         is_curfew_active = (now_uk.hour >= 20) and any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x'])
+
+        # TEST E17: BANKED PROFIT GUARD (+1.50% AFTER 18:00 BST) & 19:45 HARD CURFEW
+        if 'test e17' in active_profile:
+            cur_mins = now_uk.hour * 60 + now_uk.minute
+            # 1. Banked Profit Guard: Up >= +1.50% after 18:00 BST -> Lock gains and stop buying
+            if cur_mins >= (18 * 60) and daily_pnl_pct >= 1.50:
+                is_curfew_active = True
+            # 2. Core Curfew: Only stop at 19:45 BST (leaving 65 mins before 20:50 sweep)
+            elif cur_mins >= (19 * 60 + 45):
+                is_curfew_active = True
 
         # E17 PROFIT-GUARD: IF ALREADY UP >= 1.20% TODAY AFTER 17:30 BST, LOCK GAINS AND BLOCK BUYS
         if 'test e17' in active_profile:
