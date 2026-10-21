@@ -1303,6 +1303,7 @@ def get_data():
             user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
             held_sym = user_holds[0] if user_holds else ''
             day_diff = round(tot_eq_now - tot_eq_start, 2)
+            day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
             day_col = '#00c853' if day_diff > 0 else ('#ff3d00' if day_diff < 0 else '#8a8a9e')
 
             leaderboard.append({
@@ -1310,6 +1311,7 @@ def get_data():
                 'equity': round(tot_eq_now, 2), 
                 'budget': mb_lb, 
                 'daily_pnl': day_diff,
+                'daily_pct': day_pct,
                 'daily_color': day_col,
                 'holding': held_sym,
                 'held_ticker': held_sym,

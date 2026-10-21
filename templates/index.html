@@ -1718,12 +1718,19 @@
                 let isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
                 let heldBadge = isHeld ? `<span style="background:#00d2ff; color:#000; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:6px;">HELD</span>` : '';
                 
-                let dailyPnlFormatted = `${dayVal >= 0 ? '+' : ''}£${dayVal.toFixed(2)}`;
+                let startEq = (lb.equity - dayVal);
+                let dayPct = lb.daily_pct !== undefined ? lb.daily_pct : (startEq > 0 ? ((dayVal / startEq) * 100.0) : 0.0);
+                let absPct = Math.abs(dayPct);
+                let pctStr = (absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1)) + '%';
+                let arrow = dayVal > 0 ? '▲' : (dayVal < 0 ? '▼' : '');
+                let arrowHtml = arrow ? `<span style="color:${dailyColor}; font-size:10px; margin-left:4px;">${arrow}</span> <span style="color:#ffffff;">${pctStr}</span>` : `<span style="color:#8a8a9e; font-size:11px; margin-left:4px;">0.0%</span>`;
+
+                let dailyPnlFormatted = `${dayVal >= 0 ? '+' : '-'}£${Math.abs(dayVal).toFixed(2)}`;
                 let equityFormatted = `£${lb.equity.toFixed(2)}`;
                 let isInfoOpen = openInfoSet.has(lb.user);
 
-                let displayVal = sortMode === 'today' ? dailyPnlFormatted : equityFormatted;
-                let subText = sortMode === 'today' ? `${equityFormatted} Total` : `(${dailyPnlFormatted} Today)`;
+                let displayVal = sortMode === 'today' ? `${dailyPnlFormatted} ${arrowHtml}` : equityFormatted;
+                let subText = sortMode === 'today' ? `${equityFormatted} Total` : `(${dailyPnlFormatted} ${arrow ? arrow + ' ' : ''}${pctStr} Today)`;
 
                 let mainColor = sortMode === 'today' ? dailyColor : equityColor;
                 let subColor = sortMode === 'today' ? equityColor : dailyColor;
