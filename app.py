@@ -123,7 +123,8 @@ class PortfolioManager:
                 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator',
                 'Test X - Dynamic Target Switch (15m ORB)', 'Test E12 - E4 Momentum Hybrid',
-                'Test B - Passive Benchmark', 'Test E14 - Scaled-Exit Rotator'
+                'Test B - Passive Benchmark', 'Test E14 - Scaled-Exit Rotator',
+                'Test E15 - Fortress Rotator', 'Test E16 - Apex Pro Rotator'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -459,7 +460,7 @@ class MarketScoringEngine:
         elif 'test e14' in prof:
             # When gain touches +1.00%, trail expands to 1.50% to let runners breathe
             trail_pct, hard_pct = (1.50, -1.00) if peak_gain_pct >= 1.00 else (1.00, -1.00)
-        elif 'test e6' in prof: trail_pct, hard_pct = 0.75, -0.75
+        elif any(x in prof for x in ['test e6', 'test e15', 'test e16']): trail_pct, hard_pct = 0.75, -0.75
         elif 'test e7' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
         elif 'test u' in prof or 'test x' in prof: trail_pct, hard_pct = 0.50, -0.50
@@ -481,11 +482,17 @@ class MarketScoringEngine:
                     if current_price <= breakeven_price:
                         return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST X DYNAMIC LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Dynamic Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Dynamic Lock (+{pnl_pct:.2f}%)"}
 
-            # BREAKEVEN LOCK RULE FOR TEST E6 (+0.10% LOCK ONCE +0.25% PEAK HIT)
-            if 'test e6' in prof and peak_pnl_pct >= 0.25:
+            # BREAKEVEN LOCK RULE FOR TEST E6 & TEST E15 (+0.10% LOCK ONCE +0.25% PEAK HIT)
+            if any(x in prof for x in ['test e6', 'test e15']) and peak_pnl_pct >= 0.25:
                 breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
                 if current_price <= breakeven_price:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E6 BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+
+            # TEST E16: CALIBRATED SPREAD-AWARE BREAKEVEN (+0.18% LOCK ONCE +0.35% PEAK HIT)
+            if 'test e16' in prof and peak_pnl_pct >= 0.35:
+                breakeven_price = avg_buy_price * 1.0018  # Lock +0.18% profit to absorb bid/ask spread
+                if current_price <= breakeven_price:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E16 SPREAD LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Spread Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Spread Lock (+{pnl_pct:.2f}%)"}
 
             # BREAKEVEN LOCK RULE FOR TEST E7 ONLY (+0.50%)
             if 'test e7' in prof and peak_pnl_pct >= 0.50:
@@ -520,8 +527,8 @@ class MarketScoringEngine:
         if any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']) and now_uk.hour >= 20 and avg_buy_price == 0:
             return {'type': 'EOD Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "LATE-DAY CURFEW: No new entries permitted after 20:00 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
-        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (INCLUDES E3, E12, E14, U)
-        if any(x in prof for x in ['test e2', 'test e3', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test e14', 'test u', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (INCLUDES E3, E12, E14, E15, E16, U)
+        if any(x in prof for x in ['test e2', 'test e3', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test e14', 'test e15', 'test e16', 'test u', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
@@ -551,8 +558,25 @@ class MarketScoringEngine:
             if 'test e12' in prof and rsi < 50:
                 return {'type': 'Intraday Momentum', 'score': 40, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"E12 Momentum Filter: RSI ({rsi:.1f}) below 50. Entry blocked.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low RSI Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI < 50)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            if any(x in prof for x in ['test e6', 'test e7']) and vol_ratio < 1.20:
+            # Relative volume threshold check
+            if any(x in prof for x in ['test e6', 'test e7', 'test e15', 'test e16']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
+            # E15 & E16: $20M Absolute Dollar-Volume Liquidity Gate
+            if any(x in prof for x in ['test e15', 'test e16']):
+                dollar_vol_est = (df_5m['Volume'].tail(78).sum() if len(df_5m) >= 78 else df_5m['Volume'].sum()) * current_price
+                if dollar_vol_est < 20000000:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Illiquid asset: Estimated daily dollar volume < $20M.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Liquidity', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Low Liquidity)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Low Liquidity'}
+
+            # E15 & E16: 14:30 - 14:45 BST Morning Opening Moratorium
+            if any(x in prof for x in ['test e15', 'test e16']):
+                if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 45:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:45 BST for ORB base.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
+
+            # E16 ONLY: Broader Market Tide Check (NASDAQ Sentiment >= 40)
+            if 'test e16' in prof:
+                if regime and isinstance(regime, dict) and regime.get('score', 50) < 40:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Market Tide Filter: Broader market sentiment is bearish (< 40/100).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Bearish Market', 'color': '#ff3d00', 'action_main': 'HOLD / WAIT', 'action_sub': '(Bearish Tide)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': 'Bearish Tide'}
             
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi))))
             return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}, Vol {vol_ratio:.1f}x.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Fast {trade_type} Surge", 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f"({trade_type} Surge)", 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
@@ -807,7 +831,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test B - Passive Benchmark', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E12 - E4 Momentum Hybrid', 'Test E14 - Scaled-Exit Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test X - Dynamic Target Switch (15m ORB)']
+            auto_profiles = ['Test A - Deep Value', 'Test B - Passive Benchmark', 'Test C - 24/5 Global', 'Test E - Rotator', 'Test E2 - EOD Rotator', 'Test E3 - Hair-Trigger Rotator', 'Test E4 - Clean EOD Rotator', 'Test E5 - Micro-Stop EOD Rotator', 'Test E6 - Breakeven Rotator', 'Test E7 - Breakeven 0.5% Rotator', 'Test E12 - E4 Momentum Hybrid', 'Test E14 - Scaled-Exit Rotator', 'Test E15 - Fortress Rotator', 'Test E16 - Apex Pro Rotator', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper', 'Test U - Tight Rotator', 'Test X - Dynamic Target Switch (15m ORB)']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
