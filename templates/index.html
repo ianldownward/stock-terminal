@@ -17,60 +17,87 @@
             overflow: hidden; 
         }
 
-        /* MOBILE VIEW RESTORATION */
+        /* MOBILE VIEW REORDERING */
         @media (max-width: 900px) {
             body { 
                 flex-direction: column !important; 
-                height: auto !important; 
-                min-height: 100vh !important; 
-                overflow-x: hidden !important; 
-                overflow-y: auto !important; 
+                height: 100vh !important; 
+                height: 100dvh !important;
+                overflow: hidden !important; 
+                padding: 6px !important;
+                background: #0f1115 !important;
             }
-            .sidebar { 
-                width: 100% !important; 
-                height: auto !important; 
-                border-right: none !important; 
-                border-bottom: 1px solid #262b36 !important; 
-                flex-shrink: 0 !important; 
-            }
-            .sidebar-top { 
-                overflow: visible !important; 
-            }
-            .watchlist { 
-                max-height: 260px !important; 
-                min-height: auto !important; 
+            .sidebar, .right-drawer, #colResizer { 
+                display: none !important; 
             }
             .main-content { 
                 width: 100% !important; 
-                padding: 10px !important; 
-                overflow: visible !important; 
+                height: 100% !important;
+                padding: 0 !important; 
+                overflow: hidden !important; 
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 6px !important;
             }
-            #colResizer { 
+            #chartControlsDrawer, #metricsDrawer { 
                 display: none !important; 
             }
-            .right-drawer, #leaderboardCol { 
-                width: 100% !important; 
-                min-width: 100% !important; 
-                max-width: 100% !important; 
-                border-left: none !important; 
-                border-top: 1px solid #262b36 !important; 
-                overflow: visible !important; 
+            #mobileDashboardStack {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 6px !important;
+                flex-shrink: 0 !important;
             }
             .chart-container { 
-                min-height: 380px !important; 
-                height: 420px !important; 
+                flex: 1 !important;
+                min-height: 160px !important; 
+                height: auto !important; 
+                margin: 0 !important;
+                border-radius: 8px !important;
+                border: 1.5px solid #262b36 !important;
+                position: relative !important;
             }
-            .action-buttons { 
-                width: 100% !important; 
-                overflow-x: auto !important; 
-                flex-wrap: nowrap !important; 
-                padding-bottom: 6px !important; 
+            .user-profile-box {
+                margin-bottom: 0 !important;
+                padding: 6px 10px !important;
             }
-            .metrics-grid { 
-                flex-wrap: wrap !important; 
+            .total-shares-box {
+                margin-bottom: 0 !important;
+                padding: 6px 10px !important;
             }
-            .fused-card, .card { 
-                min-width: 100% !important; 
+            .total-shares-box label {
+                font-size: 9px !important;
+                margin-bottom: 2px !important;
+            }
+            .total-shares-box div.total-val {
+                font-size: 16px !important;
+            }
+            .total-shares-box div.total-pnl {
+                font-size: 11px !important;
+                margin-top: 2px !important;
+            }
+            #rotatorHealthCard {
+                margin-bottom: 0 !important;
+                padding: 6px 10px !important;
+                min-width: 0 !important;
+            }
+            #mobLeaderboardCard {
+                margin-bottom: 0 !important;
+            }
+            #mobHeldShareCard {
+                margin-bottom: 0 !important;
+                background: #171a21;
+                border: 1.5px solid #00d2ff;
+                border-radius: 8px;
+                padding: 7px 12px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+        }
+        @media (min-width: 901px) {
+            #mobileDashboardStack {
+                display: none !important;
             }
         }
         .sidebar { 
@@ -782,6 +809,12 @@
     </div>
     
     <div class="main-content">
+        <!-- MOBILE DASHBOARD CONTAINER -->
+        <div id="mobileDashboardStack">
+            <div id="mobLeaderboardCard" class="lb-item active-profile-card"></div>
+            <div id="mobHeldShareCard"></div>
+        </div>
+
         <details id="chartControlsDrawer" open>
             <summary>Chart Controls & Timeframes</summary>
             <div class="top-nav" style="margin-top:10px; border:none; padding:0; background:transparent;">
@@ -1735,19 +1768,27 @@
                 let mainColor = sortMode === 'today' ? dailyColor : equityColor;
                 let subColor = sortMode === 'today' ? equityColor : dailyColor;
 
+                let cardInner = `
+                    <div class="lb-header">
+                        <div>
+                            <span>${lb.user}${heldBadge}</span>
+                            <span class="info-icon" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
+                        </div>
+                        <div style="text-align:right;">
+                            <span style="color:${mainColor}; font-weight:bold; font-size:13px;">${displayVal}</span>
+                            <div style="font-size:10px; color:${subColor}; margin-top:2px;">${subText}</div>
+                        </div>
+                    </div>
+                    <div class="lb-desc" style="display:${isInfoOpen ? 'block' : 'none'};">${profileDesc[lb.user] || 'Custom Strategy Profile.'}</div>`;
+
+                if (lb.user === activeProf) {
+                    let mobLb = document.getElementById('mobLeaderboardCard');
+                    if (mobLb) mobLb.innerHTML = cardInner;
+                }
+
                 return `
                     <div class="lb-item ${activeClass}" onclick="onUserChange('${lb.user}')">
-                        <div class="lb-header">
-                            <div>
-                                <span>${lb.user}${heldBadge}</span>
-                                <span class="info-icon" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
-                            </div>
-                            <div style="text-align:right;">
-                                <span style="color:${mainColor}; font-weight:bold; font-size:13px;">${displayVal}</span>
-                                <div style="font-size:10px; color:${subColor}; margin-top:2px;">${subText}</div>
-                            </div>
-                        </div>
-                        <div class="lb-desc" style="display:${isInfoOpen ? 'block' : 'none'};">${profileDesc[lb.user] || 'Custom Strategy Profile.'}</div>
+                        ${cardInner}
                     </div>`; 
             }).join('');
             document.getElementById('leaderboardUI').innerHTML = lbHtml;
@@ -1866,6 +1907,32 @@
                 
                 let activeHolds = (p.portfolio && p.portfolio.active_holds) || (p.metrics && p.metrics.active_holds) || [];
                 renderWatchlist(globalPortfolioData.watchlist, activeHolds);
+
+                // Update Mobile Current Held Share Card
+                let mobHeldEl = document.getElementById('mobHeldShareCard');
+                if (mobHeldEl) {
+                    if (activeHolds && activeHolds.length > 0) {
+                        let sym = activeHolds[0];
+                        mobHeldEl.innerHTML = `
+                            <div>
+                                <span style="font-weight:bold; font-size:15px; color:#fff;">${sym}</span>
+                                <span style="background:#00d2ff; color:#000; padding:1px 5px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:8px;">HELD</span>
+                            </div>
+                            <button class="btn-delete" style="font-size:14px;" onclick="deleteWatchlist('${sym}', event)">✕</button>
+                        `;
+                        mobHeldEl.onclick = () => selectStock(sym);
+                    } else {
+                        mobHeldEl.innerHTML = `
+                            <div>
+                                <span style="font-weight:bold; font-size:13px; color:#787e8e;">100% CASH</span>
+                                <span style="color:#00c853; font-size:10px; margin-left:6px; font-weight:bold;">(Scanning...)</span>
+                            </div>
+                            <span style="font-size:11px; color:#787e8e;">No Active Holds</span>
+                        `;
+                        mobHeldEl.onclick = null;
+                    }
+                }
+                if (typeof checkMobileLayout === 'function') checkMobileLayout();
                 renderLeaderboard(p.leaderboard);
                 renderHistory(globalPortfolioData.history);
                 
@@ -1953,6 +2020,40 @@
             fetchData(false);
         }
 
+        function checkMobileLayout() {
+            let isMobile = window.innerWidth <= 900;
+            let stack = document.getElementById('mobileDashboardStack');
+            let sidebarTop = document.querySelector('.sidebar-top');
+            let metricsGrid = document.querySelector('.metrics-grid');
+            let profileBox = document.querySelector('.user-profile-box');
+            let equityBox = document.querySelector('.total-shares-box');
+            let riskCard = document.getElementById('rotatorHealthCard');
+            let mobLb = document.getElementById('mobLeaderboardCard');
+            let mobHeld = document.getElementById('mobHeldShareCard');
+
+            if (!stack) return;
+
+            if (isMobile) {
+                if (profileBox && profileBox.parentElement !== stack) {
+                    stack.appendChild(profileBox);
+                    stack.appendChild(equityBox);
+                    stack.appendChild(riskCard);
+                    stack.appendChild(mobLb);
+                    stack.appendChild(mobHeld);
+                }
+            } else {
+                if (sidebarTop && profileBox && profileBox.parentElement !== sidebarTop) {
+                    sidebarTop.prepend(equityBox);
+                    sidebarTop.prepend(profileBox);
+                    if (metricsGrid && riskCard) metricsGrid.appendChild(riskCard);
+                }
+            }
+            if (tvChart) {
+                let chartDiv = document.getElementById('tvChart');
+                if (chartDiv) tvChart.applyOptions({ width: chartDiv.clientWidth, height: chartDiv.clientHeight });
+            }
+        }
+
         function initChart() {
             let c = document.getElementById('tvChart');
             tvChart = LightweightCharts.createChart(c, { 
@@ -1964,14 +2065,14 @@
                 timeScale: { 
                     borderColor: '#262b36', 
                     timeVisible: true,
-                    rightOffset: 35,          // Gives 35 empty bars of space into the future
-                    fixRightEdge: false,      // Allows dragging as far into the future as you want
+                    rightOffset: 35,
+                    fixRightEdge: false,
                     fixLeftEdge: false
                 }
             });
             
             window.addEventListener('resize', () => { 
-                tvChart.applyOptions({ width: c.clientWidth, height: c.clientHeight }); 
+                checkMobileLayout();
             });
         }
 
@@ -1981,6 +2082,7 @@
             updateMarketClocks();
             await fetchData(false); 
             setupAutoRefresh();
+            checkMobileLayout();
         }
 
         setTimeout(() => { 
