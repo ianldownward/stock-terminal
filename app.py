@@ -120,7 +120,7 @@ class PortfolioManager:
                 'Ian', 'Test A - Deep Value', 'Test B - Passive Benchmark', 
                 'Test C - 24/5 Global', 'Test E6 - Breakeven Rotator', 
                 'Test E15 - Fortress Rotator', 'Test E16 - Apex Pro Rotator', 
-                'Test E17 - Apex Guardian',
+                'Test E17 - Apex Guardian', 'Test E18 - Breakout Sniper',
                 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper'
             ]
@@ -458,7 +458,7 @@ class MarketScoringEngine:
         elif 'test e14' in prof:
             # When gain touches +1.00%, trail expands to 1.50% to let runners breathe
             trail_pct, hard_pct = (1.50, -1.00) if peak_gain_pct >= 1.00 else (1.00, -1.00)
-        elif any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17']): trail_pct, hard_pct = 0.75, -0.75
+        elif any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18']): trail_pct, hard_pct = 0.75, -0.75
         elif 'test e7' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
         elif 'test u' in prof or 'test x' in prof: trail_pct, hard_pct = 0.50, -0.50
@@ -480,8 +480,8 @@ class MarketScoringEngine:
                     if current_price <= breakeven_price:
                         return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST X DYNAMIC LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Dynamic Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Dynamic Lock (+{pnl_pct:.2f}%)"}
 
-            # BREAKEVEN LOCK RULE FOR TEST E6, TEST E15 & TEST E17 (+0.10% LOCK ONCE +0.25% PEAK HIT)
-            if any(x in prof for x in ['test e6', 'test e15', 'test e17']) and peak_pnl_pct >= 0.25:
+            # BREAKEVEN LOCK RULE FOR TEST E6, E15, E17 & E18 (+0.10% LOCK ONCE +0.25% PEAK HIT)
+            if any(x in prof for x in ['test e6', 'test e15', 'test e17', 'test e18']) and peak_pnl_pct >= 0.25:
                 breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
@@ -555,14 +555,18 @@ class MarketScoringEngine:
 
             # ANTI-CHASE PROXIMITY GATE: Do not buy if price has stretched > 0.35% above the 9-EMA
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
-            if any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17']) and ema_extension_pct > 0.35:
+            
+            # E18 BREAKOUT EXCEPTION: If vol_ratio >= 2.5x, ignore Anti-Chase rule and buy the vertical surge
+            is_e18_breakout = ('test e18' in prof) and (vol_ratio >= 2.5) and (ema_extension_pct > 0.35)
+
+            if not is_e18_breakout and any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18']) and ema_extension_pct > 0.35:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max 0.35%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
             
             if 'test e12' in prof and rsi < 50:
                 return {'type': 'Intraday Momentum', 'score': 40, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"E12 Momentum Filter: RSI ({rsi:.1f}) below 50. Entry blocked.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low RSI Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI < 50)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # Relative volume threshold check
-            if any(x in prof for x in ['test e6', 'test e7', 'test e15', 'test e16', 'test e17']) and vol_ratio < 1.20:
+            if any(x in prof for x in ['test e6', 'test e7', 'test e15', 'test e16', 'test e17', 'test e18']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # E15 & E16: $20M Absolute Dollar-Volume Liquidity Gate
@@ -571,8 +575,8 @@ class MarketScoringEngine:
                 if dollar_vol_est < 20000000:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Illiquid asset: Estimated daily dollar volume < $20M.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Liquidity', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Low Liquidity)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Low Liquidity'}
 
-            # E6, E15, E16 & E17: 14:30 - 14:50 BST Morning Opening Moratorium
-            if any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17']):
+            # E6, E15, E16, E17 & E18: 14:30 - 14:50 BST Morning Opening Moratorium
+            if any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18']):
                 if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:50 BST for opening range confirmation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
 
