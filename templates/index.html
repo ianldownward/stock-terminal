@@ -983,38 +983,52 @@
             'Test E13 - E6 Breakeven 0.5% Hybrid': 'E6 volume filter and breakeven lock with tighter 0.50% stop.',
             'Test A - Deep Value': 'Manual value accumulation using physical trusts and deep-value blue chips.',
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing leader over 60m.',
-            'Test X - Dynamic Target Switch (15m ORB)': 'Enters with Test U rules, unlocks endless E6 trailing stop if profit > 0.50%.'
+            'Test X - Dynamic Target Switch (15m ORB)': 'Enters with Test U rules, unlocks endless E6 trailing stop if profit > 0.50%.',
+            'Test E19 - Disciplined Rotator': 'E6 with 15m post-loss cool-off, 60m ticker wash rule, 2-strike daily limit, and 19:45 curfew.',
+            'Test E20 - Dynamic Swap Rotator': 'E6 with active relative-strength swapping. Sells current holding if an unowned ticker scores 25+ points higher.',
+            'Test E21 - Apex Dynamic Swapper': 'Full hybrid: E19 disciplined cooldowns + E20 relative-strength dynamic swapping.'
         };
 
         async function openJourneyModal() {
             let overlay = document.getElementById('journeyModal');
             let content = document.getElementById('journeyContent');
             overlay.style.display = 'flex';
-            content.innerHTML = '<div style="color:#00d2ff; text-align:center;">Loading trade flow timeline...</div>';
+            content.innerHTML = '<div style="color:#00d2ff; text-align:center;">Loading trade timeline...</div>';
             
             try {
-                let res = await fetch('/api/trade_journey');
-                let d = await res.json();
-                let trades = d.trades || [];
-                if (trades.length === 0) {
-                    content.innerHTML = '<div style="color:#787e8e; text-align:center; padding:20px;">No trades recorded in active profile timeline.</div>';
+                let activeUser = document.getElementById('userSelect')?.value || '';
+                let trades = [];
+                try {
+                    let res = await fetch(`/api/trade_journey?user=${encodeURIComponent(activeUser)}`);
+                    let d = await res.json();
+                    trades = d.trades || [];
+                } catch(err) {}
+
+                // Fallback to local portfolio history if API doesn't return list
+                if ((!trades || trades.length === 0) && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
+                    trades = globalPortfolioData.history;
+                }
+
+                if (!trades || trades.length === 0) {
+                    content.innerHTML = `<div style="color:#787e8e; text-align:center; padding:20px;">No trades recorded yet for <b>${activeUser}</b>.</div>`;
                     return;
                 }
-                let html = trades.map(t => `
-                    <div style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:12px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+
+                let html = trades.slice().reverse().map(t => `
+                    <div style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <span style="font-weight:bold; color:${t.action === 'BUY' ? '#00c853' : '#ff3d00'}; font-size:13px;">${t.action} ${t.shares} sh ${t.ticker}</span>
-                            <div style="font-size:11px; color:#787e8e; margin-top:4px;">${t.time} • ${t.trade_type || 'LONG'}</div>
+                            <div style="font-size:11px; color:#787e8e; margin-top:3px;">${t.time || '--'} • ${t.trade_type || 'LONG'}</div>
                         </div>
                         <div style="text-align:right;">
-                            <span style="font-weight:bold; color:#fff; font-size:14px;">£${(t.amount || 0).toFixed(2)}</span>
-                            <div style="font-size:11px; color:#00d2ff;">@ £${(t.price || 0).toFixed(2)}</div>
+                            <span style="font-weight:bold; color:#fff; font-size:13px;">£${(parseFloat(t.amount) || 0).toFixed(2)}</span>
+                            <div style="font-size:11px; color:#00d2ff;">@ £${(parseFloat(t.price) || 0).toFixed(2)}</div>
                         </div>
                     </div>
                 `).join('');
                 content.innerHTML = html;
             } catch(e) {
-                content.innerHTML = '<div style="color:#ff3d00; text-align:center;">Failed to load trade flow data.</div>';
+                content.innerHTML = '<div style="color:#ff3d00; text-align:center;">Failed to render trade journey.</div>';
             }
         }
 
@@ -1103,6 +1117,7 @@
             showMath = !showMath; 
             let btn = document.getElementById('btnShowMath'); 
             if(btn){ showMath ? btn.classList.add('active') : btn.classList.remove('active'); } 
+            renderChart(); 
         }
 
         // --- INTERACTIVE DRAWING & DRAGGABLE ANCHOR ENGINE ---
@@ -1846,6 +1861,28 @@
 
                 try {
                     tvSeries.setData(cleanData);
+
+                    // MATH OVERLAY: Plot 9-EMA (Orange) and 21-EMA (Purple)
+                    if (showMath && cleanData.length >= 21) {
+                        function calcEMA(data, span) {
+                            let k = 2 / (span + 1);
+                            let emaData = [];
+                            let prevEMA = data[0].close;
+                            for (let i = 0; i < data.length; i++) {
+                                let c = data[i].close;
+                                let curEMA = i === 0 ? c : (c * k + prevEMA * (1 - k));
+                                prevEMA = curEMA;
+                                emaData.push({ time: data[i].time, value: curEMA });
+                            }
+                            return emaData;
+                        }
+
+                        let sEma9 = tvChart.addLineSeries({ color: '#ff9900', lineWidth: 1.5, title: '9 EMA' });
+                        let sEma21 = tvChart.addLineSeries({ color: '#b388ff', lineWidth: 1.5, title: '21 EMA' });
+                        sEma9.setData(calcEMA(cleanData, 9));
+                        sEma21.setData(calcEMA(cleanData, 21));
+                        multiSeries.push(sEma9, sEma21);
+                    }
                     if (!window._userHasPannedChart) {
                         tvChart.timeScale().applyOptions({ rightOffset: 35 });
                         tvChart.timeScale().fitContent();
