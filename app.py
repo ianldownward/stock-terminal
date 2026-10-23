@@ -488,20 +488,32 @@ class MarketScoringEngine:
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
-            # TEST E22: TIERED CHOKE-TRAIL & RATCHET PROFIT FLOORS
+            # TEST E22: TIERED CHOKE-TRAIL, RATCHET PROFIT FLOORS & 18:30 BANK-AND-WALK
             if 'test e22' in prof:
-                # TIER 2 (WINDFALL): Peak touched >= +2.50%
-                if peak_pnl_pct >= 2.50:
-                    trail_pct = 0.30  # Choke trailing distance from 0.75% to 0.30%
+                # 1. EVENING BANK-AND-WALK: Past 18:30 BST with >= +2.80% profit -> Exit & shut down
+                if (now_uk.hour > 18 or (now_uk.hour == 18 and now_uk.minute >= 30)) and pnl_pct >= 2.80:
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 BANK-AND-WALK: Banked +{pnl_pct:.2f}% after 18:30 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Bank & Walk', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Bank Win)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#00c853', 'health_text': f"Banked (+{pnl_pct:.2f}%)"}
+
+                # 2. TIER 3 (3.0% WINDFALL): Peak touched >= +3.00%
+                if peak_pnl_pct >= 3.00:
+                    trail_pct = 0.30  # Choke trailing stop to 0.30%
+                    tier3_floor = avg_buy_price * 1.0280  # Hard floor at +2.80% net profit
+                    if current_price <= tier3_floor:
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 3 FLOOR HIT (+{pnl_pct:.2f}%). Protected +2.80% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 3 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +2.80%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 3 Floor (+{pnl_pct:.2f}%)"}
+
+                # 3. TIER 2: Peak touched >= +2.50%
+                elif peak_pnl_pct >= 2.50:
+                    trail_pct = 0.30  # Choke trailing stop to 0.30%
                     tier2_floor = avg_buy_price * 1.0200  # Hard floor at +2.00% net profit
                     if current_price <= tier2_floor:
-                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 2 FLOOR HIT (+{pnl_pct:.2f}%). Protected +2.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 2 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +2.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 2 Floor (+{pnl_pct:.2f}%)"}
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 2 FLOOR HIT (+{pnl_pct:.2f}%). Protected +2.00% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 2 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +2.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 2 Floor (+{pnl_pct:.2f}%)"}
                 
-                # TIER 1 (DAILY GOAL REACHED): Peak touched >= +1.50%
+                # 4. TIER 1 (DAILY TARGET REACHED): Peak touched >= +1.50%
                 elif peak_pnl_pct >= 1.50:
                     tier1_floor = avg_buy_price * 1.0100  # Hard floor at +1.00% net profit
                     if current_price <= tier1_floor:
-                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 1 FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 1 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 1 Floor (+{pnl_pct:.2f}%)"}
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 1 FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 1 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 1 Floor (+{pnl_pct:.2f}%)"}
+                    
             # TEST E16: CALIBRATED SPREAD-AWARE BREAKEVEN (+0.18% LOCK ONCE +0.35% PEAK HIT)
             if 'test e16' in prof and peak_pnl_pct >= 0.35:
                 breakeven_price = avg_buy_price * 1.0018  # Lock +0.18% profit to absorb bid/ask spread
@@ -729,6 +741,12 @@ def process_auto_profile(prof_name):
                 is_curfew_active = True
             # 2. Core Curfew: Only stop at 19:45 BST (leaving 65 mins before 20:50 sweep)
             elif cur_mins >= (19 * 60 + 45):
+                is_curfew_active = True
+
+                # TEST E22: BANK-AND-WALK (STOP BUYING IF UP >= 2.50% AFTER 18:30 BST)
+        if 'test e22' in active_profile:
+            cur_mins = now_uk.hour * 60 + now_uk.minute
+            if cur_mins >= (18 * 60 + 30) and daily_pnl_pct >= 2.50:
                 is_curfew_active = True
 
         # E17 PROFIT-GUARD: IF ALREADY UP >= 1.20% TODAY AFTER 17:30 BST, LOCK GAINS AND BLOCK BUYS
