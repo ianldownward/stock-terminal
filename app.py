@@ -121,6 +121,8 @@ class PortfolioManager:
                 'Test C - 24/5 Global', 'Test E6 - Breakeven Rotator', 
                 'Test E15 - Fortress Rotator', 'Test E16 - Apex Pro Rotator', 
                 'Test E17 - Apex Guardian', 'Test E18 - Breakout Sniper',
+                'Test E19 - Disciplined Rotator', 'Test E20 - Dynamic Swap Rotator',
+                'Test E21 - Apex Dynamic Swapper', 'Test E22 - Tiered Choke Rotator',
                 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
                 'Test S - Apex Rotator', 'Test T - Elasticity Sniper'
             ]
@@ -458,7 +460,7 @@ class MarketScoringEngine:
         elif 'test e14' in prof:
             # When gain touches +1.00%, trail expands to 1.50% to let runners breathe
             trail_pct, hard_pct = (1.50, -1.00) if peak_gain_pct >= 1.00 else (1.00, -1.00)
-        elif any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18']): trail_pct, hard_pct = 0.75, -0.75
+        elif any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18', 'test e19', 'test e20', 'test e21', 'test e22']): trail_pct, hard_pct = 0.75, -0.75
         elif 'test e7' in prof: trail_pct, hard_pct = 0.50, -0.50
         elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
         elif 'test u' in prof or 'test x' in prof: trail_pct, hard_pct = 0.50, -0.50
@@ -480,12 +482,26 @@ class MarketScoringEngine:
                     if current_price <= breakeven_price:
                         return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST X DYNAMIC LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Dynamic Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Dynamic Lock (+{pnl_pct:.2f}%)"}
 
-            # BREAKEVEN LOCK RULE FOR TEST E6, E15, E17 & E18 (+0.10% LOCK ONCE +0.25% PEAK HIT)
-            if any(x in prof for x in ['test e6', 'test e15', 'test e17', 'test e18']) and peak_pnl_pct >= 0.25:
+            # BREAKEVEN LOCK RULE FOR E6, E15, E17, E18, E19, E20, E21 & E22 (+0.10% LOCK ONCE +0.25% PEAK HIT)
+            if any(x in prof for x in ['test e6', 'test e15', 'test e17', 'test e18', 'test e19', 'test e20', 'test e21', 'test e22']) and peak_pnl_pct >= 0.25:
                 breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
+            # TEST E22: TIERED CHOKE-TRAIL & RATCHET PROFIT FLOORS
+            if 'test e22' in prof:
+                # TIER 2 (WINDFALL): Peak touched >= +2.50%
+                if peak_pnl_pct >= 2.50:
+                    trail_pct = 0.30  # Choke trailing distance from 0.75% to 0.30%
+                    tier2_floor = avg_buy_price * 1.0200  # Hard floor at +2.00% net profit
+                    if current_price <= tier2_floor:
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 2 FLOOR HIT (+{pnl_pct:.2f}%). Protected +2.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 2 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +2.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 2 Floor (+{pnl_pct:.2f}%)"}
+                
+                # TIER 1 (DAILY GOAL REACHED): Peak touched >= +1.50%
+                elif peak_pnl_pct >= 1.50:
+                    tier1_floor = avg_buy_price * 1.0100  # Hard floor at +1.00% net profit
+                    if current_price <= tier1_floor:
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 1 FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 1 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 1 Floor (+{pnl_pct:.2f}%)"}
             # TEST E16: CALIBRATED SPREAD-AWARE BREAKEVEN (+0.18% LOCK ONCE +0.35% PEAK HIT)
             if 'test e16' in prof and peak_pnl_pct >= 0.35:
                 breakeven_price = avg_buy_price * 1.0018  # Lock +0.18% profit to absorb bid/ask spread
@@ -526,7 +542,7 @@ class MarketScoringEngine:
             return {'type': 'EOD Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "LATE-DAY CURFEW: No new entries permitted after 20:00 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
         # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (INCLUDES E3, E12, E14, E15, E16, U)
-        if any(x in prof for x in ['test e2', 'test e3', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test e14', 'test e15', 'test e16', 'test u', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        if any(x in prof for x in ['test e2', 'test e3', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test e14', 'test e15', 'test e16', 'test e17', 'test e18', 'test e19', 'test e20', 'test e21', 'test e22', 'test u', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
@@ -559,14 +575,14 @@ class MarketScoringEngine:
             # E18 BREAKOUT EXCEPTION: If vol_ratio >= 2.5x, ignore Anti-Chase rule and buy the vertical surge
             is_e18_breakout = ('test e18' in prof) and (vol_ratio >= 2.5) and (ema_extension_pct > 0.35)
 
-            if not is_e18_breakout and any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18']) and ema_extension_pct > 0.35:
+            if not is_e18_breakout and any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18', 'test e19', 'test e20', 'test e21', 'test e22']) and ema_extension_pct > 0.35:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max 0.35%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
             
             if 'test e12' in prof and rsi < 50:
                 return {'type': 'Intraday Momentum', 'score': 40, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"E12 Momentum Filter: RSI ({rsi:.1f}) below 50. Entry blocked.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low RSI Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI < 50)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # Relative volume threshold check
-            if any(x in prof for x in ['test e6', 'test e7', 'test e15', 'test e16', 'test e17', 'test e18']) and vol_ratio < 1.20:
+            if any(x in prof for x in ['test e6', 'test e7', 'test e15', 'test e16', 'test e17', 'test e18', 'test e19', 'test e20', 'test e21', 'test e22']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # E15 & E16: $20M Absolute Dollar-Volume Liquidity Gate
@@ -575,8 +591,8 @@ class MarketScoringEngine:
                 if dollar_vol_est < 20000000:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Illiquid asset: Estimated daily dollar volume < $20M.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Liquidity', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Low Liquidity)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Low Liquidity'}
 
-            # E6, E15, E16, E17 & E18: 14:30 - 14:50 BST Morning Opening Moratorium
-            if any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18']):
+            # E6, E15, E16, E17, E18, E19, E20 & E21: 14:30 - 14:50 BST Morning Opening Moratorium
+            if any(x in prof for x in ['test e6', 'test e15', 'test e16', 'test e17', 'test e18', 'test e19', 'test e20', 'test e21', 'test e22']):
                 if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:50 BST for opening range confirmation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
 
@@ -809,6 +825,66 @@ def process_auto_profile(prof_name):
 
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
+
+        # -------------------------------------------------------------------------
+        # TEST E19 & TEST E21: DISCIPLINED COOLDOWNS & TWO-STRIKE LOCKOUT
+        # -------------------------------------------------------------------------
+        if any(x in active_profile for x in ['test e19', 'test e21']):
+            cur_mins = now_uk.hour * 60 + now_uk.minute
+            
+            # 1. 19:45 BST Late Curfew
+            if cur_mins >= (19 * 60 + 45):
+                is_curfew_active = True
+
+            # 2. Two-Strike Daily Lockout (Count today's stopped out trades)
+            today_str = now_uk.strftime('%Y-%m-%d')
+            today_stops = [
+                h for h in profile_data.get('history', [])
+                if h.get('action') == 'SELL' and str(h.get('time', '')).startswith(today_str) and (h.get('pnl', 0) < 0 or 'Stop' in h.get('reason', ''))
+            ]
+            if len(today_stops) >= 2:
+                is_curfew_active = True  # Locked out for the day to preserve capital
+
+            # 3. 15-Minute Post-Loss Cooldown
+            if profile_data.get('history'):
+                last_trade = profile_data['history'][-1]
+                if last_trade.get('action') == 'SELL' and (last_trade.get('pnl', 0) < 0 or 'Stop' in last_trade.get('reason', '')):
+                    last_time = last_trade.get('timestamp', 0)
+                    if (time.time() - last_time) < 900:  # 900s = 15 mins
+                        buys = []
+
+            # 4. 60-Minute Ticker Wash Rule (Don't rebuy a ticker stopped out within 60 mins)
+            recent_stopped_tickers = set()
+            for h in profile_data.get('history', []):
+                if h.get('action') == 'SELL' and (h.get('pnl', 0) < 0 or 'Stop' in h.get('reason', '')):
+                    if (time.time() - h.get('timestamp', 0)) < 3600:  # 3600s = 60 mins
+                        recent_stopped_tickers.add(h.get('ticker'))
+            buys = [b for b in buys if b.get('ticker') not in recent_stopped_tickers]
+
+        # -------------------------------------------------------------------------
+        # TEST E20 & TEST E21: RELATIVE-STRENGTH DYNAMIC SWAP ENGINE
+        # -------------------------------------------------------------------------
+        if any(x in active_profile for x in ['test e20', 'test e21']) and held_scores and buys and slots_available == 0 and not is_curfew_active:
+            best_buy = max(buys, key=lambda b: b.get('score', 0))
+            current_held = held_scores[0]
+            held_score = current_held.get('score', 50)
+            candidate_score = best_buy.get('score', 0)
+
+            # SWAP TRIGGER: Candidate is high conviction (>=80) and either:
+            # a) Is >= 25 points stronger than current holding, OR
+            # b) Current holding has lost momentum (< 55 score in pullback)
+            if candidate_score >= 80 and (candidate_score - held_score >= 25 or held_score < 55):
+                if not any(d['ticker'] == current_held['ticker'] and d['action'] == 'SELL' for d in dirs):
+                    dirs.append({
+                        'ticker': current_held['ticker'],
+                        'action': 'SELL',
+                        'shares': current_held['shares'],
+                        'price': current_held['price'],
+                        'amount': round(current_held['value'], 2),
+                        'reason': f"Dynamic Swap: Rotating into higher conviction {best_buy['ticker']} (Score {candidate_score} vs {held_score})"
+                    })
+                    slots_available = 1
+                    rem_cash += current_held['value']
 
         # Emergency Shutdown: If circuit breaker tripped or curfew active, block ALL buys
         if circuit_breaker_tripped or is_curfew_active:

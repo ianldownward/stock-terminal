@@ -986,7 +986,8 @@
             'Test X - Dynamic Target Switch (15m ORB)': 'Enters with Test U rules, unlocks endless E6 trailing stop if profit > 0.50%.',
             'Test E19 - Disciplined Rotator': 'E6 with 15m post-loss cool-off, 60m ticker wash rule, 2-strike daily limit, and 19:45 curfew.',
             'Test E20 - Dynamic Swap Rotator': 'E6 with active relative-strength swapping. Sells current holding if an unowned ticker scores 25+ points higher.',
-            'Test E21 - Apex Dynamic Swapper': 'Full hybrid: E19 disciplined cooldowns + E20 relative-strength dynamic swapping.'
+            'Test E21 - Apex Dynamic Swapper': 'Full hybrid: E19 disciplined cooldowns + E20 relative-strength dynamic swapping.',
+            'Test E22 - Tiered Choke Rotator': 'E6 base + Tiered Ratchet: Sets +1.00% floor at +1.50% peak, and chokes trail to 0.30% with +2.00% floor at +2.50% peak.'
         };
 
         async function openJourneyModal() {
