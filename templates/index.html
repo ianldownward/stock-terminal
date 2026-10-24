@@ -981,13 +981,14 @@
             'Test E8 - Meta-Adaptive Rotator': 'Dynamic Meta-Engine switching strategies based on Market Heat.',
             'Test U - Tight Rotator': '0.50% standard stop rotator with 1.2% hard target and EOD liquidation.',
             'Test E13 - E6 Breakeven 0.5% Hybrid': 'E6 volume filter and breakeven lock with tighter 0.50% stop.',
-            'Test A - Deep Value': 'Manual value accumulation using physical trusts and deep-value blue chips.',
+            'Test E17 - Apex Guardian': 'E6 base + Banked Profit Guard (+1.50% lock after 18:00 BST) and 19:45 BST curfew.',
             'Test E - Rotator': '100% portfolio concentration into the single highest-performing leader over 60m.',
             'Test X - Dynamic Target Switch (15m ORB)': 'Enters with Test U rules, unlocks endless E6 trailing stop if profit > 0.50%.',
             'Test E19 - Disciplined Rotator': 'E6 with 15m post-loss cool-off, 60m ticker wash rule, 2-strike daily limit, and 19:45 curfew.',
             'Test E20 - Dynamic Swap Rotator': 'E6 with active relative-strength swapping. Sells current holding if an unowned ticker scores 25+ points higher.',
             'Test E21 - Apex Dynamic Swapper': 'Full hybrid: E19 disciplined cooldowns + E20 relative-strength dynamic swapping.',
-            'Test E22 - Tiered Choke Rotator': 'E6 base + Tiered Ratchet: Sets +1.00% floor at +1.50% peak, and chokes trail to 0.30% with +2.00% floor at +2.50% peak.'
+            'Test E22 - Tiered Choke Rotator': 'E6 base + Tiered Ratchet: Sets +1.00% floor at +1.50% peak, and chokes trail to 0.30% with +2.00% floor at +2.50% peak.',
+            'Test E23 - Fortress Choke Rotator': 'E22 profit ratchet + E19 chop defense (2-strike lockout, 60m wash rule, 15m cooldown, 19:45 curfew).'
         };
 
         async function openJourneyModal() {
@@ -2020,7 +2021,7 @@
 
                         let prof = (document.getElementById('userSelect')?.value || '').toLowerCase();
                         let trailPct = 0.50;
-                        if (prof.includes('test e6') || prof.includes('test e15') || prof.includes('test e16')) trailPct = 0.75;
+                        if (prof.includes('test e6') || prof.includes('test e15') || prof.includes('test e16') || prof.includes('test e17') || prof.includes('test e18') || prof.includes('test e19') || prof.includes('test e20') || prof.includes('test e21') || prof.includes('test e22') || prof.includes('test e23')) trailPct = 0.75;
                         else if (prof.includes('test e5')) trailPct = 0.35;
                         else if (prof.includes('test e') || prof.includes('test s')) trailPct = 1.00;
 
