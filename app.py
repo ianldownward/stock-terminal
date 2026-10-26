@@ -952,7 +952,7 @@ def global_background_worker():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 ex.map(prefetch, set(bot_tickers))
 
-            auto_profiles = ['Test A - Deep Value', 'Test B - Passive Benchmark', 'Test C - 24/5 Global', 'Test E6 - Breakeven Rotator', 'Test E15 - Fortress Rotator', 'Test E16 - Apex Pro Rotator', 'Test E17 - Apex Guardian', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper']
+            auto_profiles = ['Test A - Deep Value', 'Test B - Passive Benchmark', 'Test C - 24/5 Global', 'Test E6 - Breakeven Rotator', 'Test E15 - Fortress Rotator', 'Test E16 - Apex Pro Rotator', 'Test E17 - Apex Guardian', 'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 'Test T - Elasticity Sniper','Test E22 - Tiered Choke Rotator','Test E23 - Fortress Choke Rotator']
             for prof in auto_profiles:
                 process_auto_profile(prof)
         except Exception as e: 
