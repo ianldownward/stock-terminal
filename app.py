@@ -844,7 +844,7 @@ def process_auto_profile(prof_name):
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
-        # -------------------------------------------------------------------------
+       # -------------------------------------------------------------------------
         # TEST E19, E21 & E23: DISCIPLINED COOLDOWNS & TWO-STRIKE LOCKOUT
         # -------------------------------------------------------------------------
         if any(x in active_profile for x in ['test e19', 'test e21', 'test e23']):
@@ -857,27 +857,23 @@ def process_auto_profile(prof_name):
             # 2. Two-Strike Daily Lockout (Count today's stopped out trades)
             today_str = now_uk.strftime('%Y-%m-%d')
             today_stops = [
-                h for h in profile_data.get('history', [])
-                if h.get('action') == 'SELL' and str(h.get('time', '')).startswith(today_str) and (h.get('pnl', 0) < 0 or 'Stop' in h.get('reason', ''))
+                h for h in hist
+                if h.get('action') == 'SELL' and h.get('date_str') == today_str
             ]
             if len(today_stops) >= 2:
                 is_curfew_active = True  # Locked out for the day to preserve capital
 
             # 3. 15-Minute Post-Loss Cooldown
-            if profile_data.get('history'):
-                last_trade = profile_data['history'][-1]
-                if last_trade.get('action') == 'SELL' and (last_trade.get('pnl', 0) < 0 or 'Stop' in last_trade.get('reason', '')):
-                    last_time = last_trade.get('timestamp', 0)
-                    if (time.time() - last_time) < 900:  # 900s = 15 mins
-                        buys = []
+            if hist and hist[0].get('action') == 'SELL':
+                if (time.time() - hist[0].get('timestamp', 0)) < 900:  # 900s = 15 mins
+                    buys = []
 
-            # 4. 60-Minute Ticker Wash Rule (Don't rebuy a ticker stopped out within 60 mins)
-            recent_stopped_tickers = set()
-            for h in profile_data.get('history', []):
-                if h.get('action') == 'SELL' and (h.get('pnl', 0) < 0 or 'Stop' in h.get('reason', '')):
-                    if (time.time() - h.get('timestamp', 0)) < 3600:  # 3600s = 60 mins
-                        recent_stopped_tickers.add(h.get('ticker'))
-            buys = [b for b in buys if b.get('ticker') not in recent_stopped_tickers]
+            # 4. 60-Minute Ticker Wash Rule
+            recent_stopped_tickers = {
+                h.get('ticker') for h in hist
+                if h.get('action') == 'SELL' and (time.time() - h.get('timestamp', 0)) < 3600
+            }
+            buys = [b for b in buys if b.get('t') not in recent_stopped_tickers]
 
         # -------------------------------------------------------------------------
         # TEST E20 & TEST E21: RELATIVE-STRENGTH DYNAMIC SWAP ENGINE
@@ -960,6 +956,10 @@ def global_background_worker():
         time.sleep(120)
 
 threading.Thread(target=global_background_worker, daemon=True).start()
+
+@app.route('/health')
+def health_check():
+    return "OK", 200
 
 @app.route('/')
 def index(): return render_template('index.html')
