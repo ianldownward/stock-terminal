@@ -974,23 +974,15 @@
 
         const profileDesc = {
             'Test E6 - Breakeven Rotator': '100% Rotator with Volume Filter, 0.75% Trailing Stop, and Breakeven Stop Lock at +0.10%.',
-            'Test E18 - Breakout Sniper': 'E6 logic + High-Volume Exception. Bypasses Anti-Chase gate on explosive 2.5x volume breakouts.',
-            'Test E15 - Fortress Rotator': 'E6 with $20M Absolute Liquidity Gate and 14:45 BST Morning Opening Moratorium.',
-            'Test E16 - Apex Pro Rotator': 'Full Composite: E15 + NASDAQ Market Tide Filter + Calibrated Breakeven (+0.35% / +0.18%).',
-            'Test E7 - Breakeven 0.5% Rotator': '100% Rotator with 0.50% Trailing Stop and Breakeven Stop Lock at +0.10%.',
-            'Test E4 - Clean EOD Rotator': 'Benchmark rotator profile with 1.00% trailing stop and 20:50 BST cash sweep.',
-            'Test E12 - E4 Momentum Hybrid': 'E4 logic requiring RSI > 50 to buy only in established uptrends.',
-            'Test E8 - Meta-Adaptive Rotator': 'Dynamic Meta-Engine switching strategies based on Market Heat.',
-            'Test U - Tight Rotator': '0.50% standard stop rotator with 1.2% hard target and EOD liquidation.',
-            'Test E13 - E6 Breakeven 0.5% Hybrid': 'E6 volume filter and breakeven lock with tighter 0.50% stop.',
             'Test E17 - Apex Guardian': 'E6 base + Banked Profit Guard (+1.50% lock after 18:00 BST) and 19:45 BST curfew.',
-            'Test E - Rotator': '100% portfolio concentration into the single highest-performing leader over 60m.',
-            'Test X - Dynamic Target Switch (15m ORB)': 'Enters with Test U rules, unlocks endless E6 trailing stop if profit > 0.50%.',
-            'Test E19 - Disciplined Rotator': 'E6 with 15m post-loss cool-off, 60m ticker wash rule, 2-strike daily limit, and 19:45 curfew.',
-            'Test E20 - Dynamic Swap Rotator': 'E6 with active relative-strength swapping. Sells current holding if an unowned ticker scores 25+ points higher.',
-            'Test E21 - Apex Dynamic Swapper': 'Full hybrid: E19 disciplined cooldowns + E20 relative-strength dynamic swapping.',
             'Test E22 - Tiered Choke Rotator': 'E6 base + Tiered Ratchet: Sets +1.00% floor at +1.50% peak, and chokes trail to 0.30% with +2.00% floor at +2.50% peak.',
-            'Test E23 - Fortress Choke Rotator': 'E22 profit ratchet + E19 chop defense (2-strike lockout, 60m wash rule, 15m cooldown, 19:45 curfew).'
+            'Test E23 - Fortress Choke Rotator': 'E22 profit ratchet + E19 chop defense (2-strike lockout, 60m wash rule, 15m cooldown, 19:45 curfew).',
+            'Test E24 - One-Way Pivot Rotator': 'Starts in E23 momentum. If 2 stops occur, permanently pivots to Test P 1-min mean-reversion scalping.',
+            'Test E25 - Dynamic Chameleon': 'Bi-directional adaptive: pivots to Test P reversion after 2 stops, but re-engages E23 momentum on volume expansion.',
+            'Test E26 - Regime-Adaptive Filter': 'Pre-trade filter: Trades E23 breakout momentum when regime score >= 60; trades Test P 1-min reversion when choppy (< 60).',
+            'Test E27 - Dual-Core Barbell': 'Simultaneous barbell allocation: Holds 2 positions (60% E23 momentum runner + 40% Test P reversion scalp).',
+            'Test P - 1-Minute BB Reversion': 'Fast 1-minute Mean Reversion and elasticity scalper on 3x leveraged ETFs.',
+            'Test T - Elasticity Sniper': 'High-frequency 1-minute elasticity sniper seeking intraday oversold snapbacks.'
         };
 
         async function openJourneyModal() {
@@ -2077,7 +2069,7 @@
 
                         let prof = (document.getElementById('userSelect')?.value || '').toLowerCase();
                         let trailPct = 0.50;
-                        if (prof.includes('test e6') || prof.includes('test e15') || prof.includes('test e16') || prof.includes('test e17') || prof.includes('test e18') || prof.includes('test e19') || prof.includes('test e20') || prof.includes('test e21') || prof.includes('test e22') || prof.includes('test e23')) trailPct = 0.75;
+                        if (prof.includes('test e6') || prof.includes('test e17') || prof.includes('test e22') || prof.includes('test e23') || prof.includes('test e24') || prof.includes('test e25') || prof.includes('test e26') || prof.includes('test e27')) trailPct = 0.75;
                         else if (prof.includes('test e5')) trailPct = 0.35;
                         else if (prof.includes('test e') || prof.includes('test s')) trailPct = 1.00;
 
