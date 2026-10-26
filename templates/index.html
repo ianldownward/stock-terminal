@@ -1820,13 +1820,67 @@
                 ul.innerHTML = '<li style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">No trades executed yet.</li>';
                 return;
             }
+
+            // Match SELLs with preceding BUYs in chronological order to calculate realized P&L
+            let buyQueues = {};
+            let tradePnl = {};
+            let chronological = history.slice().reverse();
+
+            chronological.forEach(t => {
+                let tk = t.ticker;
+                if (!tk || tk === 'CALIBRATION') return;
+                if (!buyQueues[tk]) buyQueues[tk] = [];
+
+                if (t.action === 'BUY') {
+                    buyQueues[tk].push({ shares: t.shares, amount: t.amount });
+                } else if (t.action === 'SELL') {
+                    let remShares = t.shares;
+                    let costBasis = 0;
+                    let matchedShares = 0;
+
+                    while (buyQueues[tk].length > 0 && remShares > 0) {
+                        let buy = buyQueues[tk][0];
+                        let match = Math.min(buy.shares, remShares);
+                        let unitCost = buy.amount / buy.shares;
+                        costBasis += match * unitCost;
+                        matchedShares += match;
+                        remShares -= match;
+                        buy.shares -= match;
+                        buy.amount -= match * unitCost;
+                        if (buy.shares <= 0) buyQueues[tk].shift();
+                    }
+
+                    if (matchedShares > 0 && costBasis > 0) {
+                        let diffVal = t.amount - costBasis;
+                        let diffPct = (diffVal / costBasis) * 100.0;
+                        tradePnl[t.id] = { val: diffVal, pct: diffPct };
+                    }
+                }
+            });
+
             history.forEach(i => {
                 let li = document.createElement('li');
                 li.className = 'history-item';
+
+                let pnlTag = '';
+                if (i.action === 'SELL' && tradePnl[i.id]) {
+                    let p = tradePnl[i.id];
+                    let sign = p.val >= 0 ? '+' : '-';
+                    let col = p.val >= 0 ? '#00c853' : '#ff3d00';
+                    let valStr = `${sign}£${Math.abs(p.val).toFixed(2)}`;
+                    let pctStr = `(${sign}${Math.abs(p.pct).toFixed(2)}%)`;
+                    pnlTag = `<span style="color:${col}; font-weight:bold; margin-left:6px; font-size:12px;">${valStr} <span style="font-size:10px;">${pctStr}</span></span>`;
+                }
+
+                let perShare = (parseFloat(i.price) || 0).toFixed(2);
+                let totalAmt = (parseFloat(i.amount) || 0).toFixed(2);
+
                 li.innerHTML = `
                     <button class="btn-undo" onclick="undoTrade('${i.id}')">✕</button>
-                    <div class="h-action ${i.action === 'BUY' ? 'h-buy' : 'h-sell'}">${i.action} ${i.shares} sh ${i.ticker}</div>
-                    <div class="h-meta">£${i.amount.toFixed(2)} @ ${i.time}</div>
+                    <div class="h-action ${i.action === 'BUY' ? 'h-buy' : 'h-sell'}">
+                        ${i.action} ${i.shares} sh ${i.ticker} ${pnlTag}
+                    </div>
+                    <div class="h-meta">@ £${perShare} (Total £${totalAmt}) • ${i.time}</div>
                 `;
                 ul.appendChild(li);
             });
