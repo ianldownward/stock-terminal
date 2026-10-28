@@ -301,7 +301,7 @@ class PortfolioManager:
         self.save_data(self.data)
         return curr_tot
 
-    def execute_trade(self, ticker, action_type, shares, price, username=None):
+    def execute_trade(self, ticker, action_type, shares, price, username=None, metadata=None):
         with self.trade_lock:
             self.reload()
             if not ticker or shares <= 0: return None
@@ -328,6 +328,7 @@ class PortfolioManager:
             trade_type = 'SHORT' if ticker in ['SQQQ', '3SUS.L'] else 'LONG'
             now = pd.Timestamp.now(tz='Europe/London')
             entry = {'id': str(int(time.time() * 1000)), 'ticker': ticker, 'trade_type': trade_type, 'action': action, 'shares': shares, 'price': price, 'amount': tot_amt, 'time': now.strftime('%d %b %H:%M'), 'date_str': now.strftime('%Y-%m-%d'), 'timestamp': int(now.timestamp())}
+            if metadata: entry.update(metadata)
             
             if 'history' not in ud: ud['history'] = []
             ud['history'].insert(0, entry)
@@ -863,7 +864,7 @@ def process_auto_profile(prof_name):
 
                 if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
                     if is_open or 'test a' in active_profile:
-                        dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2)})
+                        dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2), 'status': st.get('status', ''), 'reason': st.get('reason', ''), 'highest_price': highest_p})
                 elif st['action_main'] == 'BUY':
                     if is_open or 'test a' in active_profile:
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
@@ -948,7 +949,7 @@ def process_auto_profile(prof_name):
 
         for d in dirs:
             if d['shares'] > 0:
-                portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'], prof_name)
+                portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'], prof_name, metadata={'status': d.get('status', 'Manual/EOD'), 'reason': d.get('reason', ''), 'highest_price': d.get('highest_price', 0.0)})
                 # Stamp 15-minute cooldown on stop-outs to avoid whipsaw chop
                 if d['action'] == 'SELL':
                     if 'cooldowns' not in ud or not isinstance(ud['cooldowns'], dict):
@@ -1764,6 +1765,77 @@ def get_data():
         }})
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/report/forensic', methods=['GET'])
+def export_forensic_report():
+    import io, csv
+    from flask import Response
+    portfolio_store.reload()
+    now_lon = pd.Timestamp.now(tz='Europe/London')
+    
+    rows = []
+    users_data = portfolio_store.data.get('users', {})
+    
+    for u, u_data in users_data.items():
+        if not isinstance(u_data, dict): continue
+        hist = u_data.get('history') or []
+        
+        # Chronological matching to calculate round-trip metrics (ALL TIME)
+        buy_records = {}
+        for t in reversed(hist):
+            tk = t.get('ticker')
+            if not tk or tk == 'CALIBRATION': continue
+            
+            if t.get('action') == 'BUY':
+                if tk not in buy_records: buy_records[tk] = []
+                buy_records[tk].append(t)
+            elif t.get('action') == 'SELL' and tk in buy_records and buy_records[tk]:
+                buy = buy_records[tk].pop(0)
+                buy_price = float(buy.get('price', 1))
+                sell_price = float(t.get('price', 1))
+                shares = int(t.get('shares', 1))
+                
+                diff_val = (sell_price - buy_price) * shares
+                diff_pct = ((sell_price - buy_price) / buy_price) * 100.0
+                
+                # Peak logic
+                peak_p = float(t.get('highest_price', sell_price))
+                peak_p = max(peak_p, sell_price, buy_price)
+                peak_pct = ((peak_p - buy_price) / buy_price) * 100.0
+                capture_eff = (diff_pct / peak_pct * 100.0) if peak_pct > 0 else 0.0
+                
+                duration_mins = max(1, int((t.get('timestamp', 0) - buy.get('timestamp', 0)) / 60))
+                
+                rows.append({
+                    'Trade_Date': t.get('date_str', ''),
+                    'Profile': u,
+                    'Ticker': tk,
+                    'Shares': shares,
+                    'Entry_Time': buy.get('time', ''),
+                    'Exit_Time': t.get('time', ''),
+                    'Hold_Mins': duration_mins,
+                    'Entry_Price': round(buy_price, 2),
+                    'Exit_Price': round(sell_price, 2),
+                    'Peak_Price': round(peak_p, 2),
+                    'Peak_PnL_%': round(peak_pct, 2),
+                    'Realized_PnL_£': round(diff_val, 2),
+                    'Realized_PnL_%': round(diff_pct, 2),
+                    'Capture_Efficiency_%': round(capture_eff, 2),
+                    'Exit_Trigger': t.get('status', 'Manual/EOD'),
+                    'Exit_Reason': t.get('reason', '')
+                })
+                
+    output = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+        
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-disposition": f"attachment; filename=Forensic_Trade_Audit_All_Time_{now_lon.strftime('%Y%m%d')}.csv"}
+    )
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8095))
