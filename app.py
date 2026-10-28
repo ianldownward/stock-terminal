@@ -564,15 +564,15 @@ class MarketScoringEngine:
         if any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']) and now_uk.hour >= 20 and avg_buy_price == 0:
             return {'type': 'EOD Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "LATE-DAY CURFEW: No new entries permitted after 20:00 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
-        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (INCLUDES E3, E12, E14, E15, E16, U)
-        if any(x in prof for x in ['test e2', 'test e3', 'test e4', 'test e5', 'test e6', 'test e7', 'test e12', 'test e14', 'test e15', 'test e16', 'test e17', 'test e18', 'test e19', 'test e20', 'test e21', 'test e22', 'test e23', 'test u', 'test x']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (SWEEPS ALL ROTATORS TO 100% CASH AT 20:50 BST)
+        if any(x in prof for x in ['test e', 'test s', 'test u', 'test x', 'test tq', 'test m']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD ROTATOR SWEEP: Blocking new entries.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
-        # OVERRIDE: QUICK 1.2% TARGET FOR TIGHT TARGET PROFILES ONLY (EXCLUDES E6, E4, E12)
-        if any(x in prof for x in ['test u', 'test s']) and is_3x_etf and avg_buy_price > 0:
+        # OVERRIDE: QUICK 1.2% TARGET FOR TIGHT TARGET PROFILES ONLY (EXCLUDES S2 WHICH USES VELOCITY RATCHET)
+        if any(x in prof for x in ['test u', 'test s']) and 'test s2' not in prof and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             if pnl_pct >= 1.20:
                 return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#00d2ff', 'health_text': 'Target Hit (Selling)'}
@@ -679,7 +679,7 @@ def process_auto_profile(prof_name):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['test a', 'test b', 'test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x'])
+        is_auto_profile = any(x in active_profile for x in ['test a', 'test b', 'test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
         if not is_auto_profile: return
 
         # TEST B: PASSIVE BUY-AND-HOLD BENCHMARK
@@ -975,9 +975,9 @@ def global_background_worker():
                 'Test E24 - One-Way Pivot Rotator', 'Test E25 - Dynamic Chameleon',
                 'Test E26 - Regime-Adaptive Filter', 'Test E27 - Dual-Core Barbell',
                 'Test E28 - Conviction Split Rotator', 'Test TQ - Pure Index Specialist',
-                'Test S2 - Velocity Ratchet', 'Test M - Session Shifter',
-                'Test P - 1-Minute BB Reversion', 'Test Q - Market-Neutral StatArb', 
-                'Test S - Apex Rotator', 'Test T - Elasticity Sniper'
+                'Test S - Apex Rotator', 'Test S2 - Velocity Ratchet',
+                'Test M - Session Shifter', 'Test P - 1-Minute BB Reversion',
+                'Test T - Elasticity Sniper', 'Test Q - Market-Neutral StatArb'
             ]
             for prof in auto_profiles:
                 process_auto_profile(prof)
@@ -1232,7 +1232,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
         interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
         period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
@@ -1277,7 +1277,7 @@ def get_directives():
     dirs = []
     if scan_list:
         regime = engine.check_market_regime()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
         
         dfs = {}
         def fetch_t(tick): 
@@ -1354,8 +1354,8 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x'])
-        is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x'])
+        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
+        is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x', 'test m', 'test tq'])
         
         if not t: t = 'ALL_SHARES'
 
