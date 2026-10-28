@@ -1747,7 +1747,10 @@
             const activeProf = document.getElementById('userSelect')?.value || '';
 
             const lbMap = {};
-            latestLeaderboardData.forEach(lb => { lbMap[lb.user] = lb; });
+            latestLeaderboardData.forEach(lb => { 
+                lbMap[lb.user] = lb; 
+                lbMap[getShortProfileName(lb.user)] = lb;
+            });
 
             const sel = document.getElementById('userSelect');
             let userList = [];
