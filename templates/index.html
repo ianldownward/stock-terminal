@@ -2056,7 +2056,10 @@
 
         function renderChart() {
             let lg = document.getElementById('chartLegend');
-            if (lg) lg.innerHTML = '';
+            if (lg) {
+                let curTk = currentTicker || 'TQQQ';
+                lg.innerHTML = `<span style="background:rgba(23,26,33,0.85); border:1px solid #262b36; color:#00d2ff; padding:3px 8px; border-radius:4px; font-weight:bold; font-size:11px;">${curTk} • 5m</span>`;
+            }
             if (!tvChart) return;
 
             if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
@@ -2154,6 +2157,12 @@
                 
                 masterData = p.ohlc || [];
                 globalPortfolioData = p.portfolio || {};
+
+                if (p.ticker) currentTicker = p.ticker;
+                else if (!currentTicker && globalPortfolioData.watchlist && globalPortfolioData.watchlist.length > 0) {
+                    let ah = globalPortfolioData.active_holds || [];
+                    currentTicker = ah.length > 0 ? ah[0] : globalPortfolioData.watchlist[0];
+                }
 
                 let userSel = document.getElementById('userSelect');
                 if (userSel && p.portfolio && p.portfolio.active_user) {

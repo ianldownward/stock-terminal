@@ -1356,13 +1356,15 @@ def get_data():
         active_profile = portfolio_store.active_username().strip().lower()
         is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
         is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x', 'test m', 'test tq'])
-        
-        if not t: t = 'ALL_SHARES'
 
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
         mb = ud.get('master_budget', 5000.0)
         active_holds = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker')) > 0]))
+
+        # Never enter empty ALL_SHARES mode: default to active hold if present, or top watchlist stock (TQQQ)
+        if not t or t == 'ALL_SHARES':
+            t = active_holds[0] if active_holds else (wl[0] if wl else 'TQQQ')
         if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
         for tk in active_holds:
             sh_cnt = portfolio_store.get_shares(tk)
@@ -1750,7 +1752,7 @@ def get_data():
                         mathLine.append({'time': d['time'], 'value': round(((val - d['close']) / val) * 100.0 if val > 0 else 0, 2)})
         except Exception: mathLine = []
 
-        return jsonify({'ohlc': data, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
+        return jsonify({'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
             'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
             'status': st['status'], 'color': st['color'], 'reason': st['reason'],
