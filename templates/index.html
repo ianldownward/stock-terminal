@@ -252,6 +252,51 @@
         }
         .user-btn.new { background: #00d2ff; color: #000; }
         .user-btn.del { background: #ff3d00; color: #fff; }
+
+        /* WIDE CUSTOM PROFILE DROPDOWN */
+        .custom-select-wrapper { position: relative; width: 100%; user-select: none; }
+        .custom-select-trigger { 
+            background: #0f1115; 
+            border: 1px solid #262b36; 
+            color: #fff; 
+            padding: 8px 12px; 
+            border-radius: 6px; 
+            font-size: 13px; 
+            cursor: pointer; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            transition: border-color .2s, background .2s; 
+        }
+        .custom-select-trigger:hover, .custom-select-trigger.open { 
+            border-color: #00d2ff; 
+            background: #14171f; 
+        }
+        .custom-select-menu { 
+            position: absolute; 
+            top: calc(100% + 4px); 
+            left: 0; 
+            right: 0; 
+            background: #171a21; 
+            border: 1.5px solid #00d2ff; 
+            border-radius: 8px; 
+            max-height: 55vh; 
+            overflow-y: auto; 
+            z-index: 1000; 
+            box-shadow: 0 10px 30px rgba(0,0,0,.8); 
+        }
+        .custom-select-item { 
+            padding: 10px 12px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            cursor: pointer; 
+            border-bottom: 1px solid #202531; 
+            transition: background .15s; 
+        }
+        .custom-select-item:last-child { border-bottom: none; }
+        .custom-select-item:hover { background: #1e222d; }
+        .custom-select-item.selected { background: #1a2332; border-left: 3px solid #00d2ff; }
         
         .master-budget-box { 
             background: #171a21; 
@@ -750,7 +795,16 @@
                         <button onclick="deleteUserPrompt()" class="user-btn del">Delete</button>
                     </div>
                 </div>
-                <select id="userSelect" onchange="onUserChange(this.value)" style="width:100%; font-weight:bold;"></select>
+                <!-- Native select hidden to preserve compatibility with all existing modal scripts -->
+                <select id="userSelect" onchange="onUserChange(this.value)" style="display:none;"></select>
+                <!-- Wide Custom Dropdown -->
+                <div class="custom-select-wrapper">
+                    <div id="customSelectTrigger" class="custom-select-trigger" onclick="toggleCustomProfileDropdown(event)">
+                        <div id="customSelectLabel" style="width:100%;"><span>Select Profile</span></div>
+                        <span style="font-size:10px; color:#787e8e; margin-left:8px;">▼</span>
+                    </div>
+                    <div id="customSelectDropdown" class="custom-select-menu" style="display:none;"></div>
+                </div>
             </div>
             
             <div class="total-shares-box">
@@ -1651,6 +1705,114 @@
             document.getElementById('recContent').innerHTML = '<div style="color:#00d2ff; text-align:center;">Top anomaly recommendations scanned.</div>';
         }
 
+        let latestLeaderboardData = [];
+
+        function getShortProfileName(name) {
+            if (!name) return '';
+            if (name.includes(' - ')) {
+                return name.split(' - ')[0].trim();
+            }
+            return name.trim();
+        }
+
+        function toggleCustomProfileDropdown(e) {
+            if (e) e.stopPropagation();
+            const menu = document.getElementById('customSelectDropdown');
+            const trigger = document.getElementById('customSelectTrigger');
+            if (!menu) return;
+            const isOpen = menu.style.display === 'block';
+            menu.style.display = isOpen ? 'none' : 'block';
+            if (trigger) {
+                isOpen ? trigger.classList.remove('open') : trigger.classList.add('open');
+            }
+        }
+
+        function selectCustomProfile(userName) {
+            let sel = document.getElementById('userSelect');
+            if (sel) sel.value = userName;
+            const menu = document.getElementById('customSelectDropdown');
+            const trigger = document.getElementById('customSelectTrigger');
+            if (menu) menu.style.display = 'none';
+            if (trigger) trigger.classList.remove('open');
+            onUserChange(userName);
+        }
+
+        function renderCustomProfileDropdown(leaderboard) {
+            if (Array.isArray(leaderboard) && leaderboard.length > 0) {
+                latestLeaderboardData = leaderboard;
+            }
+            const menu = document.getElementById('customSelectDropdown');
+            const triggerLabel = document.getElementById('customSelectLabel');
+            const activeProf = document.getElementById('userSelect')?.value || '';
+
+            const lbMap = {};
+            latestLeaderboardData.forEach(lb => { lbMap[lb.user] = lb; });
+
+            const sel = document.getElementById('userSelect');
+            let userList = [];
+            if (sel && sel.options && sel.options.length > 0) {
+                for (let i = 0; i < sel.options.length; i++) {
+                    userList.push(sel.options[i].value);
+                }
+            } else if (latestLeaderboardData.length > 0) {
+                userList = latestLeaderboardData.map(l => l.user);
+            }
+
+            // Update trigger label for active profile
+            if (triggerLabel) {
+                const activeLb = lbMap[activeProf] || { user: activeProf, equity: 5000, daily_pnl: 0 };
+                const shortName = getShortProfileName(activeProf || 'Select Profile');
+                const eqVal = (parseFloat(activeLb.equity) || 5000).toFixed(2);
+                const dVal = parseFloat(activeLb.daily_pnl) || 0;
+                const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
+                const col = dVal > 0 ? '#00c853' : (dVal < 0 ? '#ff3d00' : '#8a8a9e');
+
+                triggerLabel.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:8px;">
+                        <span style="font-weight:bold; color:#00d2ff; font-size:13px;">${shortName}</span>
+                        <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+                            <span style="color:#ffffff; font-weight:bold;">£${eqVal}</span>
+                            <span style="color:${col}; font-weight:bold;">${arrow} £${Math.abs(dVal).toFixed(2)}</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Render list items
+            if (menu) {
+                menu.innerHTML = userList.map(u => {
+                    const lb = lbMap[u] || { equity: 5000, daily_pnl: 0 };
+                    const shortName = getShortProfileName(u);
+                    const isSel = (u === activeProf);
+                    const eqVal = (parseFloat(lb.equity) || 5000).toFixed(2);
+                    const dVal = parseFloat(lb.daily_pnl) || 0;
+                    const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
+                    const col = dVal > 0 ? '#00c853' : (dVal < 0 ? '#ff3d00' : '#8a8a9e');
+
+                    return `
+                        <div class="custom-select-item ${isSel ? 'selected' : ''}" onclick="selectCustomProfile('${u}')">
+                            <span style="font-weight:bold; color:${isSel ? '#00d2ff' : '#fff'}; font-size:13px;">${shortName}</span>
+                            <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
+                                <span style="color:#ffffff; font-weight:bold;">£${eqVal}</span>
+                                <span style="color:${col}; font-weight:bold; min-width:70px; text-align:right;">${arrow} £${Math.abs(dVal).toFixed(2)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        }
+
+        // Close dropdown when tapping anywhere outside
+        document.addEventListener('click', function(e) {
+            const wrapper = document.querySelector('.custom-select-wrapper');
+            const menu = document.getElementById('customSelectDropdown');
+            const trigger = document.getElementById('customSelectTrigger');
+            if (menu && wrapper && !wrapper.contains(e.target)) {
+                menu.style.display = 'none';
+                if (trigger) trigger.classList.remove('open');
+            }
+        });
+
         async function fetchUsers() {
             try {
                 let res = await fetch('/api/users');
@@ -1667,6 +1829,7 @@
                     });
                     if (data.active_user) sel.value = data.active_user;
                 }
+                renderCustomProfileDropdown(latestLeaderboardData);
             } catch(e) {}
         }
 
@@ -1674,6 +1837,7 @@
             if (!username) return; 
             let sel = document.getElementById('userSelect');
             if (sel) sel.value = username;
+            renderCustomProfileDropdown(latestLeaderboardData);
 
             await fetch('/api/users/select', { 
                 method: 'POST', 
@@ -1808,6 +1972,7 @@
                     </div>`; 
             }).join('');
             document.getElementById('leaderboardUI').innerHTML = lbHtml;
+            renderCustomProfileDropdown(leaderboard);
         }
 
         function renderHistory(history) {
