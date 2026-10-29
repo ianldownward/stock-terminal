@@ -2220,7 +2220,7 @@
                 let pnlDisplayEl = document.getElementById('mTotalPnLDisplay');
                 if (pnlDisplayEl && p.metrics && p.metrics.total_pnl_display) {
                     pnlDisplayEl.innerText = p.metrics.total_pnl_display;
-                    pnlDisplayEl.style.color = p.metrics.pnl_color || '#00c853';
+                    pnlDisplayEl.style.color = p.metrics.total_pnl_color || '#8a8a9e';
                 }
 
                 if (p.metrics && p.metrics.regime) {
