@@ -1022,7 +1022,7 @@
         let multiSeries = [];
         let showTrades = true;
         let showMath = false;
-        let globalPortfolioData = { master_budget: 5000, history: [], holdings: {}, watchlist: [] };
+        let globalPortfolioData = { master_budget: 500, history: [], holdings: {}, watchlist: [] };
         let autoRefreshTimer = null;
         let isDrawing = false;
         let openInfoSet = new Set();
@@ -1755,9 +1755,9 @@
 
             // Update trigger label for active profile
             if (triggerLabel) {
-                const activeLb = lbMap[activeProf] || { user: activeProf, equity: 5000, daily_pnl: 0 };
+                const activeLb = lbMap[activeProf] || { user: activeProf, equity: 500, daily_pnl: 0 };
                 const shortName = getShortProfileName(activeProf || 'Select Profile');
-                const eqVal = (parseFloat(activeLb.equity) || 5000).toFixed(2);
+                const eqVal = (parseFloat(activeLb.equity) || 500).toFixed(2);
                 const dVal = parseFloat(activeLb.daily_pnl) || 0;
                 const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
                 const col = dVal > 0 ? '#00c853' : (dVal < 0 ? '#ff3d00' : '#8a8a9e');
@@ -1918,7 +1918,7 @@
             }
 
             let lbHtml = lbData.map(lb => { 
-                let equityColor = (lb.equity - (lb.budget || 5000)) >= 0 ? '#00c853' : '#ff3d00';
+                let equityColor = (lb.equity - (lb.budget || 500)) >= 0 ? '#00c853' : '#ff3d00';
                 let dayVal = lb.daily_pnl || 0;
                 let dailyColor = dayVal > 0 ? '#00c853' : (dayVal < 0 ? '#ff3d00' : '#8a8a9e');
 
@@ -2205,8 +2205,8 @@
                 document.getElementById('inputHeldVal').value = p.metrics ? p.metrics.value_owned || 0 : 0; 
                 document.getElementById('mSharesOwned').innerText = `${p.metrics ? p.metrics.shares_owned || 0 : 0} sh`;
                 
-                document.getElementById('mTotalSharesHeldVal').innerText = `£${(p.metrics ? p.metrics.total_equity || 5000 : 5000).toFixed(2)}`; 
-                document.getElementById('mTotalSharesPnL').innerText = `Cash: £${(p.metrics ? p.metrics.budget_remaining || 5000 : 5000).toFixed(2)} | Shares: £${(p.metrics ? p.metrics.total_portfolio_owned || 0 : 0).toFixed(2)}`;
+                document.getElementById('mTotalSharesHeldVal').innerText = `£${(p.metrics ? (p.metrics.total_equity !== undefined ? p.metrics.total_equity : 500) : 500).toFixed(2)}`; 
+                document.getElementById('mTotalSharesPnL').innerText = `Cash: £${(p.metrics ? (p.metrics.budget_remaining !== undefined ? p.metrics.budget_remaining : 500) : 500).toFixed(2)} | Shares: £${(p.metrics ? p.metrics.total_portfolio_owned || 0 : 0).toFixed(2)}`;
                 
                 let pnlDisplayEl = document.getElementById('mTotalPnLDisplay');
                 if (pnlDisplayEl && p.metrics && p.metrics.total_pnl_display) {

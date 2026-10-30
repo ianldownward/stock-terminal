@@ -128,6 +128,7 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
+            # Cleanly enforce allowed profiles and calibrate budgets to 500.0
             existing_users = list(self.data['users'].keys())
             for u in existing_users:
                 if u not in allowed_profiles:
@@ -138,12 +139,10 @@ class PortfolioManager:
                 if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
-                    
-            if 'Ian' in self.data['users']:
-                ian_ref = self.data['users']['Ian']
-                if ian_ref.get('master_budget', 0) != 500.0:
-                    ian_ref['master_budget'] = 500.0
-                    needs_save = True
+                else:
+                    if self.data['users'][p].get('master_budget') != 500.0:
+                        self.data['users'][p]['master_budget'] = 500.0
+                        needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = 'Ian'
@@ -154,7 +153,9 @@ class PortfolioManager:
 
     def save_data(self, data_to_save):
         if self.client:
-            try: self.collection.update_one({"_id": "main_store"}, {"$set": data_to_save}, upsert=True)
+            try: 
+                # Use replace_one so obsolete profiles are completely wiped from MongoDB
+                self.collection.replace_one({"_id": "main_store"}, data_to_save, upsert=True)
             except Exception: pass
         else:
             try:
@@ -309,7 +310,7 @@ class PortfolioManager:
                 if shares <= 0: return None
                 
             if action == 'BUY':
-                mb = ud.get('master_budget', 5000.0)
+                mb = ud.get('master_budget', 500.0)
                 hist = ud.get('history') or []
                 init_pos = ud.get('initial_positions') or {}
                 net_hist = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist)
@@ -1028,7 +1029,7 @@ def reset_portfolio():
         return jsonify({'status': 'ok', 'portfolio': portfolio_store.user_data(prof)})
         
     try:
-        target_equity = float(req_data.get('total_equity', 5000.0))
+        target_equity = float(req_data.get('total_equity', 500.0))
         today_pnl = float(req_data.get('today_pnl', 0.0))
         pos_type = req_data.get('position_type', 'cash').lower()
         ticker = req_data.get('ticker', '').strip().upper()
@@ -1409,7 +1410,7 @@ def get_data():
         leaderboard = []
         for u, u_data in portfolio_store.data.get('users', {}).items():
             if not isinstance(u_data, dict): continue
-            mb_lb = u_data.get('master_budget', 5000.0)
+            mb_lb = u_data.get('master_budget', 500.0)
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
             
