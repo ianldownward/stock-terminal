@@ -818,9 +818,9 @@
                 <summary>Capital Settings</summary>
                 <div class="master-budget-box" style="margin-top:10px; margin-bottom:0;">
                     <label>Starting Capital (£)</label>
-                    <input type="number" id="masterBudgetInput" value="5000" onchange="onMasterBudgetInput()">
+                    <input type="number" id="masterBudgetInput" value="500" onchange="onMasterBudgetInput()">
                     <div class="budget-sub-stats">
-                        <div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£5,000.00</b></div>
+                        <div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£500.00</b></div>
                     </div>
                 </div>
             </details>
@@ -1028,20 +1028,11 @@
         let openInfoSet = new Set();
 
         const profileDesc = {
-            'Test E6 - Breakeven Rotator': '100% Rotator with Volume Filter, 0.75% Trailing Stop, and Breakeven Stop Lock at +0.10%.',
-            'Test E17 - Apex Guardian': 'E6 base + Banked Profit Guard (+1.50% lock after 18:00 BST) and 19:45 BST curfew.',
-            'Test E22 - Tiered Choke Rotator': 'E6 base + Tiered Ratchet: Sets +1.00% floor at +1.50% peak, and chokes trail to 0.30% with +2.00% floor at +2.50% peak.',
-            'Test E23 - Fortress Choke Rotator': 'E22 profit ratchet + E19 chop defense (3-loss lockout, 60m wash rule, 15m cooldown, 19:45 curfew).',
-            'Test E24 - One-Way Pivot Rotator': 'Starts in E23 momentum. If 3 loss stops occur, permanently pivots to Test P 1-min mean-reversion scalping.',
-            'Test E25 - Dynamic Chameleon': 'Bi-directional adaptive: pivots to Test P reversion after 2 stops, but re-engages E23 momentum on volume expansion.',
-            'Test E26 - Regime-Adaptive Filter': 'Pre-trade filter: Trades E23 breakout momentum when regime score >= 60; trades Test P 1-min reversion when choppy (< 60).',
-            'Test E27 - Dual-Core Barbell': 'Simultaneous barbell allocation: Holds 2 positions (60% E23 momentum runner + 40% Test P reversion scalp).',
-            'Test E28 - Conviction Split Rotator': '2-slot dynamic sizing: 50% split on normal stocks (£2,500 each), but unlocks 100% all-in allocation on high-conviction TQQQ/SOXL trends.',
-            'Test TQ - Pure Index Specialist': 'Zero single-stock distractions: Trades exclusively TQQQ & SOXL with E22 tiered ratchets and widened +0.80% breakeven.',
-            'Test S2 - Velocity Ratchet': 'Apex rapid-fire momentum combined with Velocity Ratchet: locks +1.00% floor at +1.20% peak and chokes trail to 0.40%.',
-            'Test M - Session Shifter': 'Intraday clock shifter: 14:30–15:15 BST runs 1-min Test P mean-reversion; 15:15–20:00 BST switches to E23 5-min trend momentum.',
-            'Test P - 1-Minute BB Reversion': 'Fast 1-minute Mean Reversion and elasticity scalper on 3x leveraged ETFs.',
-            'Test T - Elasticity Sniper': 'High-frequency 1-minute elasticity sniper seeking intraday oversold snapbacks.'
+            'Test TQM - Pure Index Hybrid': 'Production Desk #1: Pure 3x Index ETFs (TQQQ/SOXL/SQQQ). Shifts from 1-min opening elasticity (14:30–15:15) to 5-min trend momentum (15:15–20:00). Hard Bank-and-Walk at +2.20% daily profit.',
+            'Test TQ - BiDirectional Specialist': 'Production Desk #2: Institutional 5-min EMA momentum on TQQQ/SOXL with Capitulation Downside Switch (trades SQQQ when Sentiment ≤ 35). Hard Bank-and-Walk at +2.50% profit.',
+            'Test E25 - Chameleon Pro': 'Production Desk #3: Full-market rotator with regime filter. Switches between breakout momentum (Sentiment ≥ 60) and defensive reversion (< 60). Enforces 3-strike lockout and 60-min wash rule.',
+            'Test S - Index Scalper': 'R&D Skunkworks #1: Pure 3x ETF speed engine (TQQQ/SOXL/SQQQ only, zero single stocks). Rapid 2-min execution with +1.20% take-profit target for zero-commission broker benchmark.',
+            'Test R - Reversion Lab': 'R&D Skunkworks #2: Mean-reversion elasticity sniper with 200-SMA trend filter and mandatory 20:50 BST cash sweep to eliminate overnight gap risk.'
         };
 
         async function openJourneyModal() {
@@ -1612,7 +1603,7 @@
                 });
             }
 
-            document.getElementById('resetAllTotalEquity').value = "5000.00";
+            document.getElementById('resetAllTotalEquity').value = "500.00";
             document.getElementById('resetAllTodayPnl').value = "0.00";
             document.querySelector('input[name="resetAllPosType"][value="cash"]').checked = true;
             toggleResetAllPosFields();

@@ -63,19 +63,16 @@ class PortfolioManager:
         prof = username.strip().lower()
         ai_rotator_wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'CEG', 'VST', 'VRT', 'ANET', 'RKLB', 'ASTS', 'LUNR', 'FLY', 'YSS', 'TSAT', 'MDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
 
-        if 'test b' in prof: wl = ['TQQQ']
-        elif 'test tq' in prof: wl = ['TQQQ', 'SOXL']
-        elif 'test m' in prof: wl = ['TQQQ', 'SOXL', 'CONL', 'MSTX', 'BITX', 'NVDA', 'TSLA', 'PLTR', 'FLY', 'YSS', 'LUNR', 'SQQQ', '3SUS.L']
-        elif 'test q' in prof: wl = ['NVDA', 'AMD', 'GLEN.L', 'RIO.L', 'JPM', 'BAC']
-        elif 'test a' in prof: wl = ['YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'SGLN.L', 'SSLN.L', 'RIO.L', 'BP.L', 'SHEL.L', 'AZN.L']
-        elif 'test c' in prof: wl = ['AZN.L', 'RR.L', 'SHEL.L', 'BP.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L']
-        elif any(x in prof for x in ['test p', 'test t']): wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'MSTR', 'SQQQ', '3SUS.L', 'CONL', 'MSTX', 'BITX']
-        elif any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']): wl = ai_rotator_wl
-        elif 'ian' in prof: wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'CEG', 'VST', 'VRT', 'ANET', 'RKLB', 'ASTS', 'LUNR', 'FLY', 'YSS', 'TSAT', 'MDA', 'AVGO', 'PLTR', 'MSTR', 'TSLA', 'AMD']
-        else: wl = ai_rotator_wl
+        if 'test tqm' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ']
+        elif 'test tq' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ']
+        elif 'test s' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ']
+        elif 'test r' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ']
+        elif 'test e25' in prof or 'test e' in prof: wl = ai_rotator_wl
+        elif 'ian' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ', 'NVDA', 'TSLA', 'PLTR', 'MSTR', 'AMD', 'AMZN']
+        else: wl = ['TQQQ', 'SOXL', 'SQQQ']
 
         return {
-            'master_budget': 5000.0,
+            'master_budget': 500.0,
             'watchlist': wl, 
             'initial_positions': {}, 
             'holdings': {}, 
@@ -84,7 +81,7 @@ class PortfolioManager:
             'notified_signals': {},
             'settings': {
                 'period': '1d', 
-                'interval': '1m' if any(x in prof for x in ['test p', 'test t', 'test m']) else '5m', 
+                'interval': '1m' if any(x in prof for x in ['test s', 'test r', 'test tqm']) else '5m', 
                 'style': 'candlestick', 
                 'refresh': '10000', 
                 'ntfy_topic': ''
@@ -119,15 +116,12 @@ class PortfolioManager:
     def _ensure_default_user(self):
         try:
             allowed_profiles = [
-                'Ian', 'Test C - 24/5 Global', 'Test E6 - Breakeven Rotator', 
-                'Test E17 - Apex Guardian', 'Test E22 - Tiered Choke Rotator',
-                'Test E23 - Fortress Choke Rotator', 'Test E24 - One-Way Pivot Rotator',
-                'Test E25 - Dynamic Chameleon', 'Test E26 - Regime-Adaptive Filter',
-                'Test E27 - Dual-Core Barbell', 'Test E28 - Conviction Split Rotator',
-                'Test TQ - Pure Index Specialist', 'Test S2 - Velocity Ratchet',
-                'Test M - Session Shifter', 'Test P - 1-Minute BB Reversion', 
-                'Test Q - Market-Neutral StatArb', 'Test S - Apex Rotator', 
-                'Test T - Elasticity Sniper'
+                'Ian', 
+                'Test TQM - Pure Index Hybrid', 
+                'Test TQ - BiDirectional Specialist',
+                'Test E25 - Chameleon Pro', 
+                'Test S - Index Scalper', 
+                'Test R - Reversion Lab'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -136,7 +130,7 @@ class PortfolioManager:
 
             existing_users = list(self.data['users'].keys())
             for u in existing_users:
-                if u not in allowed_profiles and not u.startswith('Test S -'):
+                if u not in allowed_profiles:
                     del self.data['users'][u]
                     needs_save = True
 
@@ -147,8 +141,8 @@ class PortfolioManager:
                     
             if 'Ian' in self.data['users']:
                 ian_ref = self.data['users']['Ian']
-                if ian_ref.get('master_budget', 0) != 5000.0:
-                    ian_ref['master_budget'] = 5000.0
+                if ian_ref.get('master_budget', 0) != 500.0:
+                    ian_ref['master_budget'] = 500.0
                     needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
@@ -566,7 +560,7 @@ class MarketScoringEngine:
             return {'type': 'EOD Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "LATE-DAY CURFEW: No new entries permitted after 20:00 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
         # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (SWEEPS ALL ROTATORS TO 100% CASH AT 20:50 BST)
-        if any(x in prof for x in ['test e', 'test s', 'test u', 'test x', 'test tq', 'test m']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        if any(x in prof for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm']) and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
@@ -616,8 +610,13 @@ class MarketScoringEngine:
             if 'test e17' in prof and (now_uk.hour > 19 or (now_uk.hour == 19 and now_uk.minute >= 45)):
                 return {'type': 'Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'E17 Session Curfew: No new entries permitted after 19:45 BST.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
+            # CAPITULATION DOWNSIDE SWITCH: Only allow SQQQ buys when sentiment <= 35
+            reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
+            if is_inverse and reg_score > 35:
+                return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in capitulation freeze (≤35 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
             # INDEX RUNNER BOOST: If market sentiment >= 60, grant broad index 3x ETFs a +25 priority bonus
-            etf_priority_bonus = 25 if (is_3x_etf and ticker in ['TQQQ', 'SOXL'] and regime and regime.get('score', 50) >= 60) else 0
+            etf_priority_bonus = 25 if (is_3x_etf and ticker in ['TQQQ', 'SOXL'] and reg_score >= 60) else (25 if is_inverse and reg_score <= 25 else 0)
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi) + etf_priority_bonus)))
             return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}, Vol {vol_ratio:.1f}x{' [ETF PRIORITY]' if etf_priority_bonus else ''}.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Fast {trade_type} Surge", 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f"({trade_type} Surge)", 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
@@ -744,17 +743,20 @@ def process_auto_profile(prof_name):
             elif cur_mins >= (19 * 60 + 45):
                 is_curfew_active = True
 
-                # BANK-AND-WALK (STOP BUYING IF UP >= 2.50% AFTER 18:30 BST)
-        if any(x in active_profile for x in ['test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
-            cur_mins = now_uk.hour * 60 + now_uk.minute
-            if cur_mins >= (18 * 60 + 30) and daily_pnl_pct >= 2.50:
-                is_curfew_active = True
-
-        # E17 PROFIT-GUARD: IF ALREADY UP >= 1.20% TODAY AFTER 17:30 BST, LOCK GAINS AND BLOCK BUYS
-        if 'test e17' in active_profile:
-            cur_mins = now_uk.hour * 60 + now_uk.minute
-            if cur_mins >= (17 * 60 + 30) and daily_pnl_pct >= 1.20:
-                is_curfew_active = True
+                # PHASE 2 BANK-AND-WALK HARVEST CURFEWS
+        cur_mins = now_uk.hour * 60 + now_uk.minute
+        # TQM locks gains at +2.20% (+£11 on £500)
+        if 'test tqm' in active_profile and daily_pnl_pct >= 2.20:
+            is_curfew_active = True
+        # TQ BiDirectional locks gains at +2.50% (+£12.50 on £500)
+        elif 'test tq' in active_profile and daily_pnl_pct >= 2.50:
+            is_curfew_active = True
+        # E25 locks gains if >= +2.00% after 18:00 BST
+        elif 'test e25' in active_profile and cur_mins >= (18 * 60) and daily_pnl_pct >= 2.00:
+            is_curfew_active = True
+        # Test S locks at +3.00%
+        elif 'test s' in active_profile and daily_pnl_pct >= 3.00:
+            is_curfew_active = True
 
         # ADAPTIVE MODE RESOLUTION (MOMENTUM VS REVERSION SWITCHBOARD)
         current_mode = 'momentum'
@@ -770,22 +772,13 @@ def process_auto_profile(prof_name):
                     today_loss_stops += 1
         today_stops_cnt = today_loss_stops
 
-        if 'test e24' in active_profile:
-            if today_stops_cnt >= 3:
-                current_mode = 'reversion'
-        elif 'test e25' in active_profile:
-            recent_sells = [h for h in hist[:4] if h.get('action') == 'SELL']
-            in_reversion = len(recent_sells) >= 2
-            if in_reversion:
-                reg_check = engine.check_market_regime()
-                current_mode = 'momentum' if reg_check.get('score', 50) >= 70 else 'reversion'
-        elif 'test e26' in active_profile:
+        if 'test e25' in active_profile:
             reg_check = engine.check_market_regime()
             current_mode = 'momentum' if reg_check.get('score', 50) >= 60 else 'reversion'
-        elif 'test m' in active_profile:
-            # SESSION SHIFTER (TEST M): 14:30 - 15:15 BST = Reversion Scalping; 15:15 - 20:00 BST = Momentum Breakout
+        elif 'test tqm' in active_profile:
+            # TQM SESSION SHIFTER: 14:30–15:15 BST = 1m Reversion Scalp; 15:15–20:00 BST = 5m Index Momentum
             current_mode = 'reversion' if (now_uk.hour == 14 or (now_uk.hour == 15 and now_uk.minute < 15)) else 'momentum'
-        elif any(x in active_profile for x in ['test p', 'test t']):
+        elif 'test r' in active_profile:
             current_mode = 'reversion'
 
         dirs, buys, held_scores = [], [], []
@@ -970,15 +963,11 @@ def global_background_worker():
                 ex.map(prefetch, set(bot_tickers))
 
             auto_profiles = [
-                'Test A - Deep Value', 'Test B - Passive Benchmark', 'Test C - 24/5 Global',
-                'Test E6 - Breakeven Rotator', 'Test E17 - Apex Guardian',
-                'Test E22 - Tiered Choke Rotator', 'Test E23 - Fortress Choke Rotator',
-                'Test E24 - One-Way Pivot Rotator', 'Test E25 - Dynamic Chameleon',
-                'Test E26 - Regime-Adaptive Filter', 'Test E27 - Dual-Core Barbell',
-                'Test E28 - Conviction Split Rotator', 'Test TQ - Pure Index Specialist',
-                'Test S - Apex Rotator', 'Test S2 - Velocity Ratchet',
-                'Test M - Session Shifter', 'Test P - 1-Minute BB Reversion',
-                'Test T - Elasticity Sniper', 'Test Q - Market-Neutral StatArb'
+                'Test TQM - Pure Index Hybrid', 
+                'Test TQ - BiDirectional Specialist',
+                'Test E25 - Chameleon Pro', 
+                'Test S - Index Scalper', 
+                'Test R - Reversion Lab'
             ]
             for prof in auto_profiles:
                 process_auto_profile(prof)
@@ -1835,7 +1824,7 @@ def export_forensic_report():
     for r in rows:
         day_val = daily_pnl_map.get((r['Profile'], r['Trade_Date']), 0.0)
         r['Profile_Daily_PnL_£'] = round(day_val, 2)
-        r['Profile_Daily_PnL_%'] = round((day_val / 5000.0) * 100.0, 2)
+        r['Profile_Daily_PnL_%'] = round((day_val / 500.0) * 100.0, 2)
                 
     output = io.StringIO()
     if rows:
