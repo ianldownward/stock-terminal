@@ -581,8 +581,9 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
-        # ENTRY LOGIC (FIXED VOLUME CHECK ON COMPLETED 5M BAR)
-        if ema9 > ema21 and current_price > ema9 and rsi < 65 and pct_change_5d > 0:
+        # ENTRY LOGIC: Intraday EMA alignment (ignores obsolete 5-day drag)
+        intraday_pct = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0.5
+        if ema9 > ema21 and current_price > ema9 and rsi < 68 and intraday_pct >= -1.50:
             vol_20ma = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
             # Use iloc[-2] (completed candle) or max of last 2 to prevent incomplete-bar delay
             cur_vol = max(df_5m['Volume'].iloc[-1], df_5m['Volume'].iloc[-2]) if len(df_5m) >= 2 else df_5m['Volume'].iloc[-1]
@@ -680,7 +681,7 @@ def process_auto_profile(prof_name):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['test a', 'test b', 'test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
+        is_auto_profile = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
         if not is_auto_profile: return
 
         # TEST B: PASSIVE BUY-AND-HOLD BENCHMARK
