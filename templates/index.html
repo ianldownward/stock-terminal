@@ -665,6 +665,62 @@
         </div>
     </div>
 
+    <!-- ACCOUNT & BROKER SETTINGS MODAL -->
+    <div class="modal-overlay" id="settingsModal" style="display:none;">
+        <div class="modal" style="width: 500px; max-height: 90vh;">
+            <h2>
+                <span>Account & Broker Settings</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeSettingsModal()">✕</button>
+            </h2>
+            
+            <div style="margin-top:15px; display:flex; flex-direction:column; gap:16px;">
+                <!-- 1. INITIAL CAPITAL -->
+                <div>
+                    <label style="font-size:11px; color:#00d2ff; text-transform:uppercase; font-weight:bold;">1. Account Starting Capital (£)</label>
+                    <p style="font-size:11px; color:#787e8e; margin:3px 0 8px 0;">Cash allocated to the algorithm (e.g. £500.00). Compounds daily.</p>
+                    <input type="number" step="0.01" id="settingCapital" placeholder="500.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-weight:bold; font-size:14px;">
+                </div>
+
+                <!-- 2. STRATEGY SELECTION -->
+                <div>
+                    <label style="font-size:11px; color:#00d2ff; text-transform:uppercase; font-weight:bold;">2. Trading Engine Model</label>
+                    <p style="font-size:11px; color:#787e8e; margin:3px 0 8px 0;">Select your quantitative execution strategy.</p>
+                    <select id="settingStrategy" style="width:100%; padding:8px; background:#0f1115; border:1px solid #262b36; color:#fff; border-radius:6px;">
+                        <option value="test s" selected>Apex Speed Scalper (Test S: +1.20% fast profit targets on 3x index ETFs)</option>
+                        <option value="test tqm">Session Shift Hybrid (Test TQM: Morning scalp + Afternoon 5m trend follower)</option>
+                        <option value="test tq">BiDirectional Macro (Test TQ: Trend follower with Capitulation SQQQ hedge)</option>
+                    </select>
+                </div>
+
+                <!-- 3. BROKER INTEGRATION -->
+                <div style="border-top:1px solid #262b36; padding-top:12px;">
+                    <label style="font-size:11px; color:#00d2ff; text-transform:uppercase; font-weight:bold;">3. Broker Linking (Alpaca Markets)</label>
+                    <p style="font-size:11px; color:#787e8e; margin:3px 0 8px 0;">Connect your zero-commission Alpaca API keys. Leave blank to run in simulated mode.</p>
+                    
+                    <div style="display:flex; gap:15px; margin-bottom:10px;">
+                        <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                            <input type="radio" name="settingBrokerMode" value="paper" checked> Paper Simulation (Free Sandbox)
+                        </label>
+                        <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                            <input type="radio" name="settingBrokerMode" value="live"> Real Money (Live Broker)
+                        </label>
+                    </div>
+
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <input type="text" id="settingApiKey" placeholder="Alpaca API Key ID (e.g. PK...)" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:12px;">
+                        <input type="password" id="settingApiSecret" placeholder="Alpaca Secret Key" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:12px;">
+                    </div>
+                </div>
+
+                <!-- ACTIONS -->
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; border-top:1px solid #262b36; padding-top:12px;">
+                    <button class="btn-control" onclick="closeSettingsModal()">Cancel</button>
+                    <button class="btn-control" style="background:#00d2ff; color:#000; border:none; padding:8px 16px;" onclick="saveUserSettings()">Save & Launch Engine</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- CALIBRATED RESET MODAL -->
     <div class="modal-overlay" id="resetModal">
         <div class="modal" style="width: 440px;">
@@ -892,6 +948,8 @@
                         <button class="btn-control" onclick="openResetModal()">Reset User</button>
                         <button class="btn-control" style="border-color: #ff3d00; color: #ff3d00;" onclick="openResetAllModal()">Reset All</button>
                         <a href="/api/report/forensic" class="btn-control" style="border-color:#00c853; color:#00c853; text-decoration:none;">Export Data</a>
+                        <button class="btn-control" style="border-color:#00d2ff; color:#00d2ff;" onclick="openSettingsModal()">⚙ Settings</button>
+                        <a href="/logout" class="btn-control" style="border-color:#ff3d00; color:#ff3d00; text-decoration:none;">Sign Out</a>
                     </div>
                 </div>
                 <div class="top-nav-row2">
@@ -2153,6 +2211,12 @@
                 masterData = p.ohlc || [];
                 globalPortfolioData = p.portfolio || {};
 
+                // Auto-prompt Settings on blank-slate accounts
+                if (p.portfolio && (!p.portfolio.is_configured || p.portfolio.master_budget === 0) && (!window._settingsPrompted)) {
+                    window._settingsPrompted = true;
+                    openSettingsModal();
+                }
+
                 if (p.ticker) currentTicker = p.ticker;
                 else if (!currentTicker && globalPortfolioData.watchlist && globalPortfolioData.watchlist.length > 0) {
                     let ah = globalPortfolioData.active_holds || [];
@@ -2478,6 +2542,63 @@
 
             // Render trendlines and anchors
             renderLines(ctx);
+        }
+
+        function openSettingsModal() {
+            let capInput = document.getElementById('settingCapital');
+            let stratSelect = document.getElementById('settingStrategy');
+            let keyInput = document.getElementById('settingApiKey');
+            let secretInput = document.getElementById('settingApiSecret');
+            
+            if (globalPortfolioData) {
+                if (capInput) capInput.value = (globalPortfolioData.master_budget > 0) ? globalPortfolioData.master_budget : (globalPortfolioData.starting_capital || 500);
+                let b = globalPortfolioData.broker || {};
+                if (stratSelect && b.strategy) stratSelect.value = b.strategy;
+                if (keyInput && b.api_key) keyInput.value = b.api_key;
+                if (secretInput && b.secret_key) secretInput.value = b.secret_key;
+                if (b.mode) {
+                    let r = document.querySelector(`input[name="settingBrokerMode"][value="${b.mode}"]`);
+                    if (r) r.checked = true;
+                }
+            }
+            document.getElementById('settingsModal').style.display = 'flex';
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').style.display = 'none';
+        }
+
+        async function saveUserSettings() {
+            let cap = parseFloat(document.getElementById('settingCapital').value) || 500.0;
+            let strat = document.getElementById('settingStrategy').value;
+            let bMode = document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
+            let apiKey = document.getElementById('settingApiKey').value.trim();
+            let apiSecret = document.getElementById('settingApiSecret').value.trim();
+
+            let payload = {
+                starting_capital: cap,
+                strategy: strat,
+                broker_mode: bMode,
+                api_key: apiKey,
+                secret_key: apiSecret
+            };
+
+            try {
+                let res = await fetch('/api/client/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    closeSettingsModal();
+                    fetchData(false);
+                } else {
+                    alert(d.message || 'Failed to save settings.');
+                }
+            } catch(e) {
+                alert('Network error saving settings.');
+            }
         }
     </script>
 </body>

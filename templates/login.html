@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In | IDC HUB</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0f1115;
+            color: #e1e3e6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .auth-card {
+            background: #171a21;
+            border: 1px solid #262b36;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+            padding: 32px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+        }
+        .auth-header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .auth-header h1 {
+            font-size: 20px;
+            color: #00d2ff;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+        .auth-header p {
+            font-size: 12px;
+            color: #787e8e;
+        }
+        .tabs {
+            display: flex;
+            background: #0f1115;
+            border-radius: 6px;
+            padding: 3px;
+            margin-bottom: 20px;
+            border: 1px solid #262b36;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 8px;
+            background: transparent;
+            border: none;
+            color: #787e8e;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: 0.2s;
+        }
+        .tab-btn.active {
+            background: #1e222d;
+            color: #00d2ff;
+        }
+        .input-group {
+            margin-bottom: 16px;
+        }
+        .input-group label {
+            display: block;
+            font-size: 11px;
+            color: #787e8e;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-bottom: 6px;
+        }
+        .input-group input {
+            width: 100%;
+            background: #0f1115;
+            border: 1px solid #262b36;
+            color: #fff;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            outline: none;
+        }
+        .input-group input:focus {
+            border-color: #00d2ff;
+        }
+        .btn-submit {
+            width: 100%;
+            background: #00d2ff;
+            color: #000;
+            font-weight: bold;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: opacity 0.2s;
+        }
+        .btn-submit:hover { opacity: 0.9; }
+        .error-msg {
+            display: none;
+            background: rgba(255, 61, 0, 0.15);
+            border: 1px solid #ff3d00;
+            color: #ff3d00;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-card">
+        <div class="auth-header">
+            <h1>IDC HUB</h1>
+            <p>Quantitative Trading & Execution Platform</p>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" id="loginTab" onclick="setMode('login')">Sign In</button>
+            <button class="tab-btn" id="regTab" onclick="setMode('register')">Create Account</button>
+        </div>
+
+        <div class="error-msg" id="errMsg"></div>
+
+        <form onsubmit="handleAuth(event)">
+            <div class="input-group">
+                <label>Email or Username</label>
+                <input type="text" id="username" placeholder="Enter username or email" required>
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="password" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn-submit" id="submitBtn">Sign In</button>
+        </form>
+    </div>
+
+    <script>
+        let mode = 'login';
+        function setMode(m) {
+            mode = m;
+            document.getElementById('loginTab').classList.toggle('active', m === 'login');
+            document.getElementById('regTab').classList.toggle('active', m === 'register');
+            document.getElementById('submitBtn').innerText = (m === 'login') ? 'Sign In' : 'Create Account';
+            document.getElementById('errMsg').style.display = 'none';
+        }
+
+        async function handleAuth(e) {
+            e.preventDefault();
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value;
+            const errDiv = document.getElementById('errMsg');
+            errDiv.style.display = 'none';
+
+            const endpoint = (mode === 'login') ? '/api/auth/login' : '/api/auth/register';
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+                const d = await res.json();
+                if (d.status === 'ok') {
+                    window.location.href = '/';
+                } else {
+                    errDiv.innerText = d.message || 'Authentication failed.';
+                    errDiv.style.display = 'block';
+                }
+            } catch(err) {
+                errDiv.innerText = 'Network error. Please try again.';
+                errDiv.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

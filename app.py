@@ -2,11 +2,29 @@ import os, json, time, urllib.request, threading, re
 import xml.etree.ElementTree as ET
 import pandas as pd
 import yfinance as yf
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 from pymongo import MongoClient
 from concurrent.futures import ThreadPoolExecutor
 
-app = Flask(__name__)
+template_dir = 'templates' if os.path.isdir('templates') else '.'
+app = Flask(__name__, template_folder=template_dir)
+app.secret_key = os.environ.get('SECRET_KEY', 'idc-hub-production-master-secret-2026')
+
+# MASTER ADMIN CREDENTIALS (Pre-seeded & Protected)
+ADMIN_USER = "ianldownward@gmail.com"
+ADMIN_ALIAS = "ian"
+ADMIN_PW = "ild81!MKH"
+ADMIN_HASH = generate_password_hash(ADMIN_PW)
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login_page'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 YF_CACHE = {}
 FETCH_LOCKS = {}
@@ -87,6 +105,58 @@ class PortfolioManager:
                 'ntfy_topic': ''
             }
         }
+
+    def blank_client_state(self, username=""):
+        return {
+            'username': username,
+            'master_budget': 0.0,
+            'starting_capital': 0.0,
+            'is_configured': False,
+            'watchlist': ['TQQQ', 'SOXL', 'SQQQ'],
+            'broker': {
+                'connected': False,
+                'provider': 'alpaca',
+                'mode': 'paper',
+                'api_key': '',
+                'secret_key': '',
+                'strategy': 'test s'
+            },
+            'initial_positions': {},
+            'holdings': {},
+            'history': [],
+            'drawings': {},
+            'notified_signals': {},
+            'settings': {
+                'period': '1d',
+                'interval': '5m',
+                'style': 'candlestick',
+                'refresh': '15000'
+            }
+        }
+
+    def get_client_store(self, username):
+        if not username or username.strip().lower() in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
+            return None
+        doc_id = f"client_{username.strip().lower()}"
+        if self.client:
+            try:
+                doc = self.client['stock_terminal']['accounts'].find_one({"_id": doc_id})
+                if doc and 'portfolio' in doc: return doc['portfolio']
+            except Exception: pass
+        return self.blank_client_state(username)
+
+    def save_client_store(self, username, client_portfolio):
+        if not username or username.strip().lower() in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
+            return
+        doc_id = f"client_{username.strip().lower()}"
+        if self.client:
+            try:
+                self.client['stock_terminal']['accounts'].update_one(
+                    {"_id": doc_id},
+                    {"$set": {"portfolio": client_portfolio}},
+                    upsert=True
+                )
+            except Exception: pass
 
     def load(self):
         if self.client:
@@ -983,35 +1053,157 @@ threading.Thread(target=global_background_worker, daemon=True).start()
 def health_check():
     return "OK", 200
 
+@app.route('/login')
+def login_page():
+    if 'user' in session:
+        return redirect('/')
+    return render_template('login.html')
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    data = request.get_json() or {}
+    identifier = data.get('username', '').strip().lower()
+    password = data.get('password', '').strip()
+
+    # 1. Master Administrator Check (Ian)
+    if identifier in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
+        if check_password_hash(ADMIN_HASH, password) or password == ADMIN_PW:
+            session['user'] = 'Ian'
+            session['email'] = ADMIN_USER
+            session['role'] = 'admin'
+            return jsonify({'status': 'ok', 'role': 'admin'})
+        return jsonify({'status': 'error', 'message': 'Invalid administrator password.'}), 401
+
+    # 2. Client / Family Account Check
+    if portfolio_store.client:
+        accounts_col = portfolio_store.client['stock_terminal']['accounts']
+        doc = accounts_col.find_one({"username": identifier})
+        if doc and check_password_hash(doc.get('password_hash', ''), password):
+            session['user'] = doc['username']
+            session['email'] = doc['username']
+            session['role'] = 'client'
+            return jsonify({'status': 'ok', 'role': 'client'})
+
+    return jsonify({'status': 'error', 'message': 'Invalid username or password.'}), 401
+
+@app.route('/api/auth/register', methods=['POST'])
+def api_register():
+    data = request.get_json() or {}
+    username = data.get('username', '').strip().lower()
+    password = data.get('password', '').strip()
+
+    if not username or not password:
+        return jsonify({'status': 'error', 'message': 'Username and password required.'}), 400
+
+    if username in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
+        return jsonify({'status': 'error', 'message': 'Username reserved.'}), 400
+
+    if not portfolio_store.client:
+        return jsonify({'status': 'error', 'message': 'Database offline.'}), 500
+
+    accounts_col = portfolio_store.client['stock_terminal']['accounts']
+    if accounts_col.find_one({"username": username}):
+        return jsonify({'status': 'error', 'message': 'Username already taken.'}), 400
+
+    blank_state = portfolio_store.blank_client_state(username)
+    accounts_col.insert_one({
+        "_id": f"client_{username}",
+        "username": username,
+        "password_hash": generate_password_hash(password),
+        "role": "client",
+        "portfolio": blank_state,
+        "created_at": time.time()
+    })
+
+    session['user'] = username
+    session['email'] = username
+    session['role'] = 'client'
+    return jsonify({'status': 'ok', 'role': 'client'})
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect('/login')
+
 @app.route('/')
-def index(): return render_template('index.html')
+@login_required
+def index():
+    return render_template('index.html', user_role=session.get('role', 'client'), current_user=session.get('user', 'Ian'))
+
+@app.route('/api/client/settings', methods=['POST'])
+@login_required
+def api_client_settings():
+    is_admin = (session.get('role') == 'admin')
+    u = session.get('user', 'Ian')
+    b = request.get_json() or {}
+    
+    cap = float(b.get('starting_capital', 500.0))
+    strat = b.get('strategy', 'test s')
+    b_mode = b.get('broker_mode', 'paper')
+    api_k = b.get('api_key', '').strip()
+    sec_k = b.get('secret_key', '').strip()
+
+    if is_admin:
+        portfolio_store.reload()
+        ud = portfolio_store.user_data(u)
+        ud['master_budget'] = cap
+        ud['starting_capital'] = cap
+        ud['is_configured'] = True
+        if 'broker' not in ud: ud['broker'] = {}
+        ud['broker'].update({'strategy': strat, 'mode': b_mode, 'api_key': api_k, 'secret_key': sec_k, 'connected': bool(api_k and sec_k)})
+        portfolio_store.save_data(portfolio_store.data)
+    else:
+        ud = portfolio_store.get_client_store(u)
+        ud['master_budget'] = cap
+        ud['starting_capital'] = cap
+        ud['is_configured'] = True
+        if 'broker' not in ud: ud['broker'] = {}
+        ud['broker'].update({'strategy': strat, 'mode': b_mode, 'api_key': api_k, 'secret_key': sec_k, 'connected': bool(api_k and sec_k)})
+        portfolio_store.save_client_store(u, ud)
+    return jsonify({'status': 'ok'})
 
 @app.route('/api/users', methods=['GET'])
+@login_required
 def get_users(): 
-    portfolio_store.reload()
-    return jsonify({'users': list(portfolio_store.data.get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
+    if session.get('role') == 'admin':
+        portfolio_store.reload()
+        return jsonify({'users': list(portfolio_store.data.get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
+    u = session.get('user', 'Client')
+    return jsonify({'users': [u], 'active_user': u})
 
 @app.route('/api/users/select', methods=['POST'])
+@login_required
 def select_user():
-    portfolio_store.reload()
-    portfolio_store.switch_user((request.get_json() or {}).get('username', ''))
+    if session.get('role') == 'admin':
+        portfolio_store.reload()
+        portfolio_store.switch_user((request.get_json() or {}).get('username', ''))
+        return jsonify({'status': 'ok'})
     return jsonify({'status': 'ok'})
 
 @app.route('/api/users/add', methods=['POST'])
+@login_required
 def add_user():
-    portfolio_store.reload()
-    portfolio_store.add_user((request.get_json() or {}).get('username', ''))
-    return jsonify({'status': 'ok'})
+    if session.get('role') == 'admin':
+        portfolio_store.reload()
+        portfolio_store.add_user((request.get_json() or {}).get('username', ''))
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error'})
 
 @app.route('/api/users/delete', methods=['POST'])
+@login_required
 def delete_user():
-    portfolio_store.reload()
-    return jsonify({'status': 'ok' if portfolio_store.delete_user((request.get_json() or {}).get('username', '')) else 'error'})
+    if session.get('role') == 'admin':
+        portfolio_store.reload()
+        return jsonify({'status': 'ok' if portfolio_store.delete_user((request.get_json() or {}).get('username', '')) else 'error'})
+    return jsonify({'status': 'error'})
 
 @app.route('/api/portfolio', methods=['GET'])
+@login_required
 def get_portfolio():
-    portfolio_store.reload()
-    return jsonify(portfolio_store.user_data())
+    if session.get('role') == 'admin':
+        portfolio_store.reload()
+        return jsonify(portfolio_store.user_data())
+    return jsonify(portfolio_store.get_client_store(session.get('user')))
 
 @app.route('/api/portfolio/reset', methods=['POST'])
 def reset_portfolio():
@@ -1339,13 +1531,21 @@ def get_recommendations():
     return jsonify({'recommendations': sorted(res, key=lambda x: x['score'], reverse=True)})
 
 @app.route('/api/data', methods=['GET'])
+@login_required
 def get_data():
     try:
-        portfolio_store.reload()
-        ud = portfolio_store.user_data()
+        is_client = (session.get('role') != 'admin')
+        client_name = session.get('user', 'Client')
+
+        if is_client:
+            ud = portfolio_store.get_client_store(client_name)
+        else:
+            portfolio_store.reload()
+            ud = portfolio_store.user_data()
+
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
-        active_profile = portfolio_store.active_username().strip().lower()
+        active_profile = portfolio_store.active_username().strip().lower() if not is_client else client_name.lower()
         is_momentum = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
         is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
 
