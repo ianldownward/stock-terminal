@@ -932,7 +932,7 @@ def process_auto_profile(prof_name):
                         # Standard 2-Slot sizing: 49% allocation per stock
                         per_stock_budget = min(rem_cash, (total_equity * 0.49))
                 else:
-                    live_allocation_pct = 0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x', 'test tq', 'test s2', 'test m']) else 0.33
+                    live_allocation_pct = 0.98 if any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm']) else 0.33
                     compound_capital = min(rem_cash, total_equity * live_allocation_pct)
                     per_stock_budget = compound_capital / len(top_buys)
 
@@ -1224,7 +1224,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
+        is_momentum = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
         interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
         period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
@@ -1269,7 +1269,7 @@ def get_directives():
     dirs = []
     if scan_list:
         regime = engine.check_market_regime()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
+        is_momentum = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
         
         dfs = {}
         def fetch_t(tick): 
@@ -1346,8 +1346,8 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test c', 'test e', 'test p', 'test q', 'test s', 'test t', 'test u', 'test w', 'test x', 'test m', 'test tq'])
-        is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x', 'test m', 'test tq'])
+        is_momentum = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
 
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
