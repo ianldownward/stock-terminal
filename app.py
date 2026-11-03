@@ -63,11 +63,11 @@ def send_push_notification(topic, title, message):
     except Exception: pass
 
 def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares):
-    """Sends live market orders directly to Alpaca."""
+    """Sends live market orders directly to Alpaca and records in memory."""
     if not api_key or not secret_key or not ticker or shares <= 0:
-        return
+        return None
     if ticker.endswith('.L'):
-        return  # Alpaca handles US tickers (SOXL, TQQQ, SQQQ)
+        return None  # Alpaca handles US tickers (TQQQ, SOXL, SQQQ)
     
     base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
     url = f"{base_url}/v2/orders"
@@ -92,11 +92,40 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares):
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             res_data = json.loads(resp.read().decode('utf-8'))
-            print(f"[ALPACA SUCCESS] Order Placed: {action} {shares} {ticker} -> Order ID: {res_data.get('id')}")
+            print(f"[ALPACA SUCCESS] {action} {shares} {ticker} -> Order ID: {res_data.get('id')}")
             return res_data
     except Exception as e:
-        print(f"[ALPACA ERROR] Could not execute {action} {shares} {ticker}: {e}")
+        print(f"[ALPACA ERROR] Execution failed for {action} {shares} {ticker}: {e}")
         return None
+
+def alpaca_cancel_and_liquidate(api_key, secret_key, mode):
+    """Emergency Panic Switch: Cancels all open orders and liquidates all open positions."""
+    if not api_key or not secret_key:
+        return {'status': 'error', 'message': 'Missing API credentials.'}
+    base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
+    
+    # 1. Cancel all open orders
+    try:
+        req_cancel = urllib.request.Request(
+            f"{base_url}/v2/orders",
+            headers={"APCA-API-KEY-ID": api_key.strip(), "APCA-API-SECRET-KEY": secret_key.strip()},
+            method="DELETE"
+        )
+        urllib.request.urlopen(req_cancel, timeout=5)
+    except Exception: pass
+
+    # 2. Close all open positions at market
+    try:
+        req_close = urllib.request.Request(
+            f"{base_url}/v2/positions",
+            headers={"APCA-API-KEY-ID": api_key.strip(), "APCA-API-SECRET-KEY": secret_key.strip()},
+            method="DELETE"
+        )
+        with urllib.request.urlopen(req_close, timeout=8) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            return {'status': 'ok', 'data': data}
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
     
 class PortfolioManager:
     def __init__(self):
@@ -442,13 +471,20 @@ class PortfolioManager:
             else: ud['holdings'].pop(ticker, None)
             
             self.save_data(self.data)
-            # Automatic Broker Dispatch: Relays trades executed by the selected strategy
-            global_broker = self.data.get('broker') or ud.get('broker') or {}
-            active_strat = str(global_broker.get('strategy', 'test s')).lower()
+            # Multi-Bot Broker Dispatch Engine
+            global_broker = self.data.get('broker') or {}
+            is_paused = global_broker.get('paused', False)
+            allocations = global_broker.get('allocations') or {}
             current_profile = str(username or self.active_username()).lower()
 
-            # If this trade belongs to the strategy you selected in settings (e.g. Test S)
-            if active_strat in current_profile and global_broker.get('api_key') and global_broker.get('secret_key'):
+            # Check if this profile has live Alpaca routing enabled
+            matched_alloc = None
+            for s_key, s_data in allocations.items():
+                if s_key in current_profile and s_data.get('enabled'):
+                    matched_alloc = s_data
+                    break
+
+            if matched_alloc and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key'):
                 threading.Thread(
                     target=send_alpaca_order,
                     args=(
@@ -2104,54 +2140,85 @@ def export_forensic_report():
         headers={"Content-disposition": f"attachment; filename=Forensic_Trade_Audit_All_Time_{now_lon.strftime('%Y%m%d')}.csv"}
     )
 
+@app.route('/api/broker/status', methods=['GET'])
+def get_broker_status():
+    portfolio_store.reload()
+    broker = portfolio_store.data.get('broker') or {}
+    api_key = broker.get('api_key')
+    secret_key = broker.get('secret_key')
+    mode = broker.get('mode', 'paper')
+    
+    if not api_key or not secret_key:
+        return jsonify({'connected': False, 'status': 'OFFLINE', 'buying_power': 0, 'paused': False, 'allocations': broker.get('allocations', {})})
+
+    base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
+    req = urllib.request.Request(
+        f"{base_url}/v2/account",
+        headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": secret_key}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            acc = json.loads(resp.read().decode('utf-8'))
+            return jsonify({
+                'connected': True,
+                'status': acc.get('status', 'ACTIVE'),
+                'buying_power': float(acc.get('buying_power', 0.0)),
+                'cash': float(acc.get('cash', 0.0)),
+                'portfolio_value': float(acc.get('portfolio_value', 0.0)),
+                'paused': broker.get('paused', False),
+                'mode': mode,
+                'allocations': broker.get('allocations', {})
+            })
+    except Exception as e:
+        return jsonify({'connected': False, 'status': 'AUTH_ERROR', 'error': str(e), 'paused': broker.get('paused', False), 'allocations': broker.get('allocations', {})})
+
 @app.route('/api/client/settings', methods=['POST'])
 def save_client_settings():
     portfolio_store.reload()
     data = request.get_json() or {}
     
-    cap = float(data.get('starting_capital', 500.0))
-    strat = str(data.get('strategy', 'test s')).strip().lower()
     b_mode = data.get('broker_mode', 'paper')
     api_key = data.get('api_key', '').strip()
     secret_key = data.get('secret_key', '').strip()
-
-    broker_config = {
-        'starting_capital': cap,
-        'strategy': strat,
-        'mode': b_mode,
-        'api_key': api_key,
-        'secret_key': secret_key
-    }
-
-    # Store globally so Test S or any other background worker profile can access it
-    portfolio_store.data['broker'] = broker_config
-
-    # Also bind to the specific test strategy profile
-    for u in portfolio_store.data.get('users', {}):
-        if strat in u.lower():
-            portfolio_store.data['users'][u]['broker'] = broker_config
-
-    # Test the connection live against Alpaca API
-    test_msg = "Settings saved in simulated sandbox mode."
-    if api_key and secret_key:
-        base_url = "https://paper-api.alpaca.markets" if b_mode == 'paper' else "https://api.alpaca.markets"
-        req = urllib.request.Request(
-            f"{base_url}/v2/account",
-            headers={
-                "APCA-API-KEY-ID": api_key,
-                "APCA-API-SECRET-KEY": secret_key
-            }
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                account_info = json.loads(resp.read().decode('utf-8'))
-                buying_power = float(account_info.get('buying_power', 0.0))
-                test_msg = f"Connected to Alpaca! Buying power: ${buying_power:,.2f}"
-        except Exception as e:
-            return jsonify({'status': 'error', 'message': f"Alpaca verification failed: {e}"}), 400
+    allocations = data.get('allocations') or {}
+    
+    broker = portfolio_store.data.setdefault('broker', {})
+    broker['mode'] = b_mode
+    broker['api_key'] = api_key
+    broker['secret_key'] = secret_key
+    broker['allocations'] = allocations
+    
+    # Update individual strategy budgets so share calculations scale directly
+    for prof, pdata in portfolio_store.data.get('users', {}).items():
+        for s_key, s_cfg in allocations.items():
+            if s_key in prof.lower():
+                new_budget = float(s_cfg.get('budget', 500.0))
+                pdata['master_budget'] = new_budget
 
     portfolio_store.save_data(portfolio_store.data)
-    return jsonify({'status': 'ok', 'message': test_msg})
+    return jsonify({'status': 'ok', 'message': 'Broker configuration and bot allocations updated.'})
+
+@app.route('/api/broker/pause', methods=['POST'])
+def toggle_broker_pause():
+    portfolio_store.reload()
+    broker = portfolio_store.data.setdefault('broker', {})
+    broker['paused'] = not broker.get('paused', False)
+    portfolio_store.save_data(portfolio_store.data)
+    return jsonify({'status': 'ok', 'paused': broker['paused']})
+
+@app.route('/api/broker/liquidate', methods=['POST'])
+def handle_broker_liquidate():
+    portfolio_store.reload()
+    broker = portfolio_store.data.get('broker') or {}
+    res = alpaca_cancel_and_liquidate(broker.get('api_key'), broker.get('secret_key'), broker.get('mode', 'paper'))
+    return jsonify(res)
+
+@app.route('/api/broker/disconnect', methods=['POST'])
+def handle_broker_disconnect():
+    portfolio_store.reload()
+    portfolio_store.data['broker'] = {'paused': False, 'allocations': {}}
+    portfolio_store.save_data(portfolio_store.data)
+    return jsonify({'status': 'ok'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8095))

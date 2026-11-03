@@ -60,6 +60,48 @@
             align-items: center;
             gap: 6px;
         }
+        /* FLAT STATUS INDICATOR & LIVE TAGS */
+        .header-broker-pill {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            background: #171a21;
+            border: 1px solid #262b36;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 700;
+            color: #8a8a9e;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+        .header-broker-pill:hover {
+            border-color: #ffd400;
+        }
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #8a8a9e;
+            display: inline-block;
+        }
+        .status-dot.online { background: #0ecb81; box-shadow: 0 0 6px rgba(14, 203, 129, 0.5); }
+        .status-dot.paused { background: #ffd400; box-shadow: 0 0 6px rgba(255, 212, 0, 0.5); }
+        .status-dot.offline { background: #8a8a9e; }
+
+        .alpaca-live-tag {
+            background: rgba(255, 212, 0, 0.12);
+            border: 1px solid #ffd400;
+            color: #ffd400;
+            font-size: 9px;
+            font-weight: 800;
+            padding: 1px 5px;
+            border-radius: 3px;
+            margin-left: 6px;
+            letter-spacing: 0.3px;
+            display: inline-block;
+        }
         .header-icon-btn {
             background: #1b202c;
             border: 1px solid #262b36;
@@ -799,62 +841,128 @@
 
     <!-- ACCOUNT & BROKER SETTINGS MODAL -->
     <div class="modal-overlay" id="settingsModal" style="display:none;">
-        <div class="modal" style="width: 500px; max-height: 90vh;">
+        <div class="modal" style="width: 530px; max-height: 90vh;">
             <h2>
-                <span>Account & Broker Settings</span>
-                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeSettingsModal()">✕</button>
+                <span>Broker Settings & Bot Allocations</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeSettingsModal()">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
             </h2>
             
-            <div style="margin-top:15px; display:flex; flex-direction:column; gap:16px;">
-                <!-- 1. INITIAL CAPITAL -->
-                <div>
-                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold;">1. Account Starting Capital (£)</label>
-                    <p style="font-size:11px; color:#787e8e; margin:3px 0 8px 0;">Cash allocated to the algorithm (e.g. £500.00). Compounds daily.</p>
-                    <input type="number" step="0.01" id="settingCapital" placeholder="500.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-weight:bold; font-size:14px;">
+            <div style="margin-top:14px; display:flex; flex-direction:column; gap:16px;">
+                <!-- 1. LIVE CONNECTION STATUS & OVERRIDES -->
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <span style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; letter-spacing:0.5px;">Alpaca Connection Status</span>
+                            <div id="modalBrokerStatusText" style="font-size:13px; font-weight:700; color:#8a8a9e; margin-top:3px;">Checking connection...</div>
+                        </div>
+                        <div style="display:flex; gap:6px;">
+                            <button type="button" id="btnPauseRelay" onclick="togglePauseBroker()" class="btn-control" style="padding:5px 10px; font-size:11px;">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                                <span id="pauseBtnLabel">Pause Relay</span>
+                            </button>
+                            <button type="button" onclick="triggerEmergencyLiquidate()" class="btn-control" style="padding:5px 10px; font-size:11px; border-color:#ff5364; background:rgba(255,83,100,0.12); color:#ff5364;">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                                <span>Liquidate All</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- 2. STRATEGY SELECTION -->
+                <!-- 2. MULTI-BOT ALLOCATION MATRIX -->
                 <div>
-                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold;">2. Trading Engine Model</label>
-                    <p style="font-size:11px; color:#787e8e; margin:3px 0 8px 0;">Select your quantitative execution strategy.</p>
-                    <select id="settingStrategy" style="width:100%; padding:8px; background:#0f1115; border:1px solid #262b36; color:#fff; border-radius:6px;">
-                        <option value="test s" selected>Apex Speed Scalper (Test S: +1.20% fast profit targets on 3x index ETFs)</option>
-                        <option value="test tqm">Session Shift Hybrid (Test TQM: Morning scalp + Afternoon 5m trend follower)</option>
-                        <option value="test tq">BiDirectional Macro (Test TQ: Trend follower with Capitulation SQQQ hedge)</option>
-                    </select>
-                </div>
-
-                <!-- 3. BROKER INTEGRATION -->
-                <div style="border-top:1px solid #262b36; padding-top:12px;">
-                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold;">3. Broker Linking (Alpaca Markets)</label>
-                    <p style="font-size:11px; color:#787e8e; margin:3px 0 8px 0;">Connect your zero-commission Alpaca API keys. Leave blank to run in simulated mode.</p>
+                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Active Bot Execution & Sizing</label>
+                    <p style="font-size:11px; color:#787e8e; margin:3px 0 10px 0;">Enable which algorithms route trades to Alpaca and assign their cash budget (£).</p>
                     
-                    <div style="display:flex; gap:15px; margin-bottom:10px;">
-                        <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="radio" name="settingBrokerMode" value="paper" checked> Paper Simulation (Free Sandbox)
-                        </label>
-                        <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="radio" name="settingBrokerMode" value="live"> Real Money (Live Broker)
-                        </label>
-                    </div>
+                    <div style="display:flex; flex-direction:column; gap:8px; background:#13161c; padding:10px; border-radius:8px; border:1px solid #262b36;">
+                        <!-- Test TQM -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0;">
+                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="alloc_tqm_active" checked> 
+                                <span style="font-weight:700;">Test TQM</span> <span style="color:#787e8e; font-size:11px;">(Pure Index Hybrid)</span>
+                            </label>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
+                                <input type="number" id="alloc_tqm_val" value="1000" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                            </div>
+                        </div>
 
-                    <div style="display:flex; flex-direction:column; gap:8px;">
-                        <input type="text" id="settingApiKey" placeholder="Alpaca API Key ID (e.g. PK...)" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:12px;">
-                        <input type="password" id="settingApiSecret" placeholder="Alpaca Secret Key" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:12px;">
+                        <!-- Test S -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0;">
+                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="alloc_s_active" checked> 
+                                <span style="font-weight:700;">Test S</span> <span style="color:#787e8e; font-size:11px;">(Index Scalper)</span>
+                            </label>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
+                                <input type="number" id="alloc_s_val" value="1000" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                            </div>
+                        </div>
+
+                        <!-- Test TQ -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0;">
+                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="alloc_tq_active" checked> 
+                                <span style="font-weight:700;">Test TQ</span> <span style="color:#787e8e; font-size:11px;">(BiDirectional Macro)</span>
+                            </label>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
+                                <input type="number" id="alloc_tq_val" value="1000" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                            </div>
+                        </div>
+
+                        <!-- Test E25 -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0; opacity:0.85;">
+                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="alloc_e25_active"> 
+                                <span style="font-weight:700;">Test E25</span> <span style="color:#787e8e; font-size:11px;">(Chameleon Pro)</span>
+                            </label>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
+                                <input type="number" id="alloc_e25_val" value="500" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                            </div>
+                        </div>
+
+                        <!-- Test R -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0; opacity:0.85;">
+                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                <input type="checkbox" id="alloc_r_active"> 
+                                <span style="font-weight:700;">Test R</span> <span style="color:#787e8e; font-size:11px;">(Reversion Lab)</span>
+                            </label>
+                            <div style="display:flex; align-items:center; gap:4px;">
+                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
+                                <input type="number" id="alloc_r_val" value="500" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- 4. BROKER WEB PORTAL LINK -->
+                <!-- 3. BROKER KEYS -->
                 <div style="border-top:1px solid #262b36; padding-top:12px;">
-                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold;">4. Broker Portal Web Address</label>
-                    <p style="font-size:11px; color:#787e8e; margin:3px 0 8px 0;">External website to launch when clicking the Broker icon.</p>
-                    <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:12px;">
+                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Alpaca API Keys</label>
+                    <div style="display:flex; gap:16px; margin:8px 0 10px 0;">
+                        <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                            <input type="radio" name="settingBrokerMode" value="paper" checked> Paper Simulation
+                        </label>
+                        <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                            <input type="radio" name="settingBrokerMode" value="live"> Real Money (Live)
+                        </label>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <input type="text" id="settingApiKey" placeholder="Alpaca API Key ID (e.g. PK...)" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                        <input type="password" id="settingApiSecret" placeholder="Alpaca Secret Key" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                        <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                    </div>
                 </div>
 
                 <!-- ACTIONS -->
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; border-top:1px solid #262b36; padding-top:12px;">
-                    <button class="btn-control" onclick="closeSettingsModal()">Cancel</button>
-                    <button class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 16px;" onclick="saveUserSettings()">Save & Launch Engine</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; border-top:1px solid #262b36; padding-top:12px;">
+                    <button type="button" class="btn-control" style="border-color:#ff5364; color:#ff5364;" onclick="disconnectBroker()">Disconnect</button>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" class="btn-control" onclick="closeSettingsModal()">Cancel</button>
+                        <button type="button" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 16px;" onclick="saveUserSettings()">Save & Launch Engine</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -990,6 +1098,11 @@
             </div>
         </div>
         <div class="header-right" style="position:relative;">
+            <!-- Flat Live Broker Status Pill -->
+            <div class="header-broker-pill" id="headerBrokerPill" onclick="openSettingsModal()" title="Broker Status & Settings">
+                <span class="status-dot offline" id="headerBrokerDot"></span>
+                <span id="headerBrokerText">Broker Offline</span>
+            </div>
             <span class="header-user-badge" id="topHeaderUser">{{ current_user or 'Ian' }}</span>
             <div class="header-icons">
                 <!-- Broker Link -->
@@ -2210,10 +2323,20 @@
                 let mainColor = sortMode === 'today' ? dailyColor : equityColor;
                 let subColor = sortMode === 'today' ? equityColor : dailyColor;
 
+                let liveTag = '';
+                if (window._activeAllocations) {
+                    for (let [k, v] of Object.entries(window._activeAllocations)) {
+                        if (lb.user.toLowerCase().includes(k) && v.enabled) {
+                            liveTag = `<span class="alpaca-live-tag">LIVE £${v.budget}</span>`;
+                            break;
+                        }
+                    }
+                }
+
                 let cardInner = `
                     <div class="lb-header">
                         <div>
-                            <span>${lb.user}${heldBadge}</span>
+                            <span>${lb.user}${heldBadge}${liveTag}</span>
                             <span class="info-icon" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
                         </div>
                         <div style="text-align:right;">
@@ -2795,25 +2918,70 @@
             window.open(url, '_blank');
         }
 
+        window._activeAllocations = {};
+
+        async function fetchBrokerStatus() {
+            try {
+                let res = await fetch('/api/broker/status');
+                let d = await res.json();
+                
+                let dot = document.getElementById('headerBrokerDot');
+                let txt = document.getElementById('headerBrokerText');
+                let modalTxt = document.getElementById('modalBrokerStatusText');
+                let pauseBtn = document.getElementById('pauseBtnLabel');
+
+                window._activeAllocations = d.allocations || {};
+
+                if (d.connected) {
+                    let bpStr = `$${(d.buying_power || 0).toLocaleString()}`;
+                    if (d.paused) {
+                        if (dot) { dot.className = 'status-dot paused'; }
+                        if (txt) { txt.style.color = '#ffd400'; txt.innerText = 'Alpaca: Paused'; }
+                        if (modalTxt) { modalTxt.innerHTML = `<span style="color:#ffd400;">Relay Paused</span> &bull; Buying Power: ${bpStr}`; }
+                        if (pauseBtn) { pauseBtn.innerText = 'Resume Relay'; }
+                    } else {
+                        if (dot) { dot.className = 'status-dot online'; }
+                        if (txt) { txt.style.color = '#0ecb81'; txt.innerText = `Alpaca: Active (${bpStr})`; }
+                        if (modalTxt) { modalTxt.innerHTML = `<span style="color:#0ecb81;">Connected (${d.status})</span> &bull; Buying Power: ${bpStr}`; }
+                        if (pauseBtn) { pauseBtn.innerText = 'Pause Relay'; }
+                    }
+                } else {
+                    if (dot) { dot.className = 'status-dot offline'; }
+                    if (txt) { txt.style.color = '#8a8a9e'; txt.innerText = 'Broker Offline'; }
+                    if (modalTxt) { modalTxt.innerHTML = `<span style="color:#8a8a9e;">Disconnected</span>`; }
+                }
+            } catch(e) {}
+        }
+
         function openSettingsModal() {
-            let capInput = document.getElementById('settingCapital');
-            let stratSelect = document.getElementById('settingStrategy');
+            fetchBrokerStatus();
             let keyInput = document.getElementById('settingApiKey');
             let secretInput = document.getElementById('settingApiSecret');
             let urlInput = document.getElementById('settingBrokerUrl');
             if (urlInput) urlInput.value = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
-            
-            if (globalPortfolioData) {
-                if (capInput) capInput.value = (globalPortfolioData.master_budget > 0) ? globalPortfolioData.master_budget : (globalPortfolioData.starting_capital || 500);
-                let b = globalPortfolioData.broker || {};
-                if (stratSelect && b.strategy) stratSelect.value = b.strategy;
-                if (keyInput && b.api_key) keyInput.value = b.api_key;
-                if (secretInput && b.secret_key) secretInput.value = b.secret_key;
-                if (b.mode) {
-                    let r = document.querySelector(`input[name="settingBrokerMode"][value="${b.mode}"]`);
-                    if (r) r.checked = true;
-                }
+
+            let allocs = window._activeAllocations || {};
+            if (allocs['test tqm']) {
+                document.getElementById('alloc_tqm_active').checked = !!allocs['test tqm'].enabled;
+                document.getElementById('alloc_tqm_val').value = allocs['test tqm'].budget || 1000;
             }
+            if (allocs['test s']) {
+                document.getElementById('alloc_s_active').checked = !!allocs['test s'].enabled;
+                document.getElementById('alloc_s_val').value = allocs['test s'].budget || 1000;
+            }
+            if (allocs['test tq']) {
+                document.getElementById('alloc_tq_active').checked = !!allocs['test tq'].enabled;
+                document.getElementById('alloc_tq_val').value = allocs['test tq'].budget || 1000;
+            }
+            if (allocs['test e25']) {
+                document.getElementById('alloc_e25_active').checked = !!allocs['test e25'].enabled;
+                document.getElementById('alloc_e25_val').value = allocs['test e25'].budget || 500;
+            }
+            if (allocs['test r']) {
+                document.getElementById('alloc_r_active').checked = !!allocs['test r'].enabled;
+                document.getElementById('alloc_r_val').value = allocs['test r'].budget || 500;
+            }
+
             document.getElementById('settingsModal').style.display = 'flex';
         }
 
@@ -2822,20 +2990,25 @@
         }
 
         async function saveUserSettings() {
-            let cap = parseFloat(document.getElementById('settingCapital').value) || 500.0;
-            let strat = document.getElementById('settingStrategy').value;
             let bMode = document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
             let apiKey = document.getElementById('settingApiKey').value.trim();
             let apiSecret = document.getElementById('settingApiSecret').value.trim();
             let brokerUrl = document.getElementById('settingBrokerUrl')?.value.trim() || 'https://app.alpaca.markets';
             localStorage.setItem('user_broker_url', brokerUrl);
 
+            let allocations = {
+                'test tqm': { enabled: document.getElementById('alloc_tqm_active').checked, budget: parseFloat(document.getElementById('alloc_tqm_val').value) || 1000 },
+                'test s': { enabled: document.getElementById('alloc_s_active').checked, budget: parseFloat(document.getElementById('alloc_s_val').value) || 1000 },
+                'test tq': { enabled: document.getElementById('alloc_tq_active').checked, budget: parseFloat(document.getElementById('alloc_tq_val').value) || 1000 },
+                'test e25': { enabled: document.getElementById('alloc_e25_active').checked, budget: parseFloat(document.getElementById('alloc_e25_val').value) || 500 },
+                'test r': { enabled: document.getElementById('alloc_r_active').checked, budget: parseFloat(document.getElementById('alloc_r_val').value) || 500 }
+            };
+
             let payload = {
-                starting_capital: cap,
-                strategy: strat,
                 broker_mode: bMode,
                 api_key: apiKey,
-                secret_key: apiSecret
+                secret_key: apiSecret,
+                allocations: allocations
             };
 
             try {
@@ -2845,16 +3018,45 @@
                     body: JSON.stringify(payload)
                 });
                 let d = await res.json();
-                if (d.status === 'ok') {
-                    closeSettingsModal();
-                    fetchData(false);
-                } else {
-                    alert(d.message || 'Failed to save settings.');
-                }
+                closeSettingsModal();
+                fetchBrokerStatus();
+                fetchData(false);
             } catch(e) {
                 alert('Network error saving settings.');
             }
         }
+
+        async function togglePauseBroker() {
+            try {
+                let res = await fetch('/api/broker/pause', { method: 'POST' });
+                await fetchBrokerStatus();
+            } catch(e) { alert('Could not toggle pause.'); }
+        }
+
+        async function triggerEmergencyLiquidate() {
+            if (!confirm('PANIC OVERRIDE: Cancel all pending orders and SELL ALL open positions in Alpaca immediately?')) return;
+            try {
+                let res = await fetch('/api/broker/liquidate', { method: 'POST' });
+                let d = await res.json();
+                alert(d.status === 'ok' ? 'All Alpaca positions liquidated at market.' : ('Error: ' + d.message));
+                await fetchBrokerStatus();
+                fetchData(true);
+            } catch(e) { alert('Liquidation request failed.'); }
+        }
+
+        async function disconnectBroker() {
+            if (!confirm('Disconnect Alpaca and revert all bots to simulated execution?')) return;
+            try {
+                await fetch('/api/broker/disconnect', { method: 'POST' });
+                closeSettingsModal();
+                await fetchBrokerStatus();
+                fetchData(true);
+            } catch(e) {}
+        }
+
+        // Poll broker status every 15 seconds
+        setInterval(fetchBrokerStatus, 15000);
+        setTimeout(fetchBrokerStatus, 1000);
     </script>
 </body>
 </html>
