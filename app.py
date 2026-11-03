@@ -1739,6 +1739,16 @@ def get_data():
             day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
             day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
 
+            # Calculate True Daily Average since strategy start date
+            trade_dates = sorted(list(set(tr.get('date_str') for tr in hist_lb if tr.get('date_str'))))
+            start_date = trade_dates[0] if trade_dates else today_str
+            active_days = max(1, len(pd.bdate_range(start_date, today_str)))
+
+            cum_gain_val = tot_eq_now - mb_lb
+            cum_gain_pct = (cum_gain_val / mb_lb * 100.0) if mb_lb > 0 else 0.0
+            daily_avg_pct = round(cum_gain_pct / active_days, 2)
+            daily_avg_val = round(cum_gain_val / active_days, 2)
+
             leaderboard.append({
                 'user': u, 
                 'equity': round(tot_eq_now, 2), 
@@ -1746,6 +1756,9 @@ def get_data():
                 'daily_pnl': day_diff,
                 'daily_pct': day_pct,
                 'daily_color': day_col,
+                'daily_avg_pct': daily_avg_pct,
+                'daily_avg_pnl': daily_avg_val,
+                'days_active': active_days,
                 'holding': held_sym,
                 'held_ticker': held_sym,
                 'active_holds': user_holds,
@@ -2072,6 +2085,7 @@ def get_broker_status():
             'buying_power': 0, 
             'paused': paused, 
             'api_key': api_key,
+            'secret_key': secret_key,
             'allocations': allocations
         })
 
@@ -2092,6 +2106,7 @@ def get_broker_status():
                 'paused': paused,
                 'mode': mode,
                 'api_key': api_key,
+                'secret_key': secret_key,
                 'allocations': allocations
             })
     except Exception as e:
@@ -2101,6 +2116,7 @@ def get_broker_status():
             'error': str(e), 
             'paused': paused, 
             'api_key': api_key,
+            'secret_key': secret_key,
             'allocations': allocations
         })
 

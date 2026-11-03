@@ -1095,8 +1095,8 @@
                         </label>
                     </div>
                     <div style="display:flex; flex-direction:column; gap:8px;">
-                        <input type="text" id="settingApiKey" placeholder="Alpaca API Key ID (e.g. PK...)" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
-                        <input type="password" id="settingApiSecret" placeholder="Alpaca Secret Key" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                        <input type="text" id="settingApiKey" placeholder="Alpaca API Key ID (e.g. PK...)" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
+                        <input type="text" id="settingApiSecret" placeholder="Alpaca Secret Key" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
                         <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
                     </div>
                 </div>
@@ -3248,6 +3248,7 @@
 
         window._activeAllocations = {};
         window._savedApiKey = '';
+        window._savedSecretKey = '';
 
         async function fetchBrokerStatus() {
             try {
@@ -3260,6 +3261,14 @@
                 let pauseBtn = document.getElementById('pauseBtnLabel');
 
                 window._activeAllocations = d.allocations || {};
+                if (d.api_key) window._savedApiKey = d.api_key;
+                if (d.secret_key) window._savedSecretKey = d.secret_key;
+
+                // Make keys visible inside modal inputs immediately
+                let keyInput = document.getElementById('settingApiKey');
+                let secretInput = document.getElementById('settingApiSecret');
+                if (keyInput && d.api_key && !keyInput.value) keyInput.value = d.api_key;
+                if (secretInput && d.secret_key && !secretInput.value) secretInput.value = d.secret_key;
 
                 if (d.connected) {
                     let bpStr = `$${(d.buying_power || 0).toLocaleString()}`;
@@ -3297,11 +3306,12 @@
             let urlInput = document.getElementById('settingBrokerUrl');
             if (urlInput) urlInput.value = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
 
-            if (keyInput && localStorage.getItem('alpaca_api_key')) {
-                keyInput.value = localStorage.getItem('alpaca_api_key');
+            // Visibly populate both inputs with saved keys
+            if (keyInput) {
+                keyInput.value = window._savedApiKey || localStorage.getItem('alpaca_api_key') || '';
             }
-            if (secretInput && localStorage.getItem('alpaca_api_secret')) {
-                secretInput.value = localStorage.getItem('alpaca_api_secret');
+            if (secretInput) {
+                secretInput.value = window._savedSecretKey || localStorage.getItem('alpaca_api_secret') || '';
             }
 
             let allocs = window._activeAllocations || {};
