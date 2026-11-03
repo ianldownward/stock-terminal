@@ -9,7 +9,7 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             background-color: #0b0c10;
-            background-image: url('/static/BG_Login.jpg?v=2');
+            background-image: url('/static/BG_Login.jpg?v=3');
             background-repeat: no-repeat;
             background-position: center center;
             background-size: cover;
@@ -17,31 +17,33 @@
             min-height: 100vh;
             min-height: 100dvh;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 20px;
-}
+            padding: 24px 16px;
+        }
         .login-wrapper {
             display: flex;
             flex-direction: column;
             align-items: center;
             width: 100%;
-            max-width: 380px;
+            max-width: 320px;
+            margin: auto;
         }
         .login-logo {
-            width: 175px;
+            width: 125px;
+            max-width: 45%;
             height: auto;
-            max-height: 145px;
             object-fit: contain;
-            margin-bottom: 58px;
-            filter: drop-shadow(0 12px 30px rgba(0, 0, 0, 0.75));
+            margin-bottom: 24px;
+            filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.7));
         }
         .auth-card {
             background: rgba(22, 25, 33, 0.95);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 12px;
             width: 100%;
-            padding: 26px 22px;
+            padding: 24px 20px;
             box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
             backdrop-filter: blur(10px);
             -webkit-backdrop-filter: blur(10px);
@@ -51,7 +53,7 @@
             background: #101217;
             border-radius: 6px;
             padding: 3px;
-            margin-bottom: 20px;
+            margin-bottom: 18px;
             border: 1px solid #262b36;
         }
         .tab-btn {
@@ -95,7 +97,7 @@
             color: #0f1115;
             padding: 10px 12px;
             border-radius: 6px;
-            font-size: 13px;
+            font-size: 16px; /* 16px prevents iOS auto-zoom */
             font-weight: 500;
             outline: none;
             transition: border-color 0.2s;
@@ -112,7 +114,7 @@
             border: none;
             padding: 12px;
             border-radius: 6px;
-            font-size: 13px;
+            font-size: 14px;
             cursor: pointer;
             margin-top: 6px;
             transition: opacity 0.2s;
@@ -120,7 +122,7 @@
         .btn-submit:hover { opacity: 0.9; }
         .error-msg {
             display: none;
-            background: rgba(255, 61, 0, 0.15);
+            background: rgba(255, 83, 100, 0.15);
             border: 1px solid #ff5364;
             color: #ff5364;
             padding: 8px 12px;
@@ -133,7 +135,7 @@
 </head>
 <body>
     <div class="login-wrapper">
-        <img src="/static/idc-trading-logo-stacked.svg?v=15" alt="IDC Trading" class="login-logo">
+        <img src="/static/idc-trading-logo-stacked.svg?v=18" alt="IDC Trading" class="login-logo">
 
         <div class="auth-card">
             <div class="tabs">

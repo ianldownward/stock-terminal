@@ -93,7 +93,53 @@
             position: relative;
         }
 
-        /* MOBILE VIEW REORDERING */
+        /* MOBILE VIEW REORDERING & BURGER MENU */
+        #mobileBurgerBtn {
+            display: none;
+        }
+        #mobileMenuDropdown {
+            display: none;
+            position: absolute;
+            top: 60px;
+            right: 14px;
+            background: #171a21;
+            border: 1px solid #262b36;
+            border-radius: 8px;
+            padding: 8px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.85);
+            z-index: 1000;
+            min-width: 170px;
+        }
+        #mobileMenuDropdown.open {
+            display: flex;
+            flex-direction: column;
+        }
+        .mobile-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            color: #e1e3e6;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            text-align: left;
+        }
+        .mobile-menu-item:hover {
+            background: #1e222d;
+            color: #ffd400;
+        }
+        .mobile-menu-item.signout {
+            color: #ff5364;
+            border-top: 1px solid #262b36;
+            margin-top: 4px;
+            padding-top: 10px;
+        }
+
         @media (max-width: 900px) {
             body { 
                 flex-direction: column !important; 
@@ -102,6 +148,15 @@
                 overflow: hidden !important; 
                 padding: 6px !important;
                 background: #0f1115 !important;
+            }
+            .header-user-badge {
+                display: none !important;
+            }
+            .header-icons {
+                display: none !important;
+            }
+            #mobileBurgerBtn {
+                display: inline-flex !important;
             }
             .sidebar, .right-drawer, #colResizer { 
                 display: none !important; 
@@ -159,11 +214,12 @@
             }
             #mobLeaderboardCard {
                 margin-bottom: 0 !important;
+                border: 1px solid #262b36 !important;
             }
             #mobHeldShareCard {
                 margin-bottom: 0 !important;
                 background: #171a21;
-                border: 1.5px solid #ffd400;
+                border: 1px solid #262b36 !important;
                 border-radius: 8px;
                 padding: 7px 12px;
                 display: flex;
@@ -788,6 +844,13 @@
                     </div>
                 </div>
 
+                <!-- 4. BROKER WEB PORTAL LINK -->
+                <div style="border-top:1px solid #262b36; padding-top:12px;">
+                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold;">4. Broker Portal Web Address</label>
+                    <p style="font-size:11px; color:#787e8e; margin:3px 0 8px 0;">External website to launch when clicking the Broker icon.</p>
+                    <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:12px;">
+                </div>
+
                 <!-- ACTIONS -->
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; border-top:1px solid #262b36; padding-top:12px;">
                     <button class="btn-control" onclick="closeSettingsModal()">Cancel</button>
@@ -926,19 +989,26 @@
                 <span>IDC TRADING</span>
             </div>
         </div>
-        <div class="header-right">
+        <div class="header-right" style="position:relative;">
             <span class="header-user-badge" id="topHeaderUser">{{ current_user or 'Ian' }}</span>
             <div class="header-icons">
+                <!-- Broker Link -->
+                <button class="header-icon-btn" onclick="launchBrokerPortal()" title="Open Broker Portal">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                    </svg>
+                </button>
                 <!-- Settings -->
                 <button class="header-icon-btn" onclick="openSettingsModal()" title="Settings">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
                 <!-- Export Data -->
                 <a href="/api/report/forensic" class="header-icon-btn" title="Export Audit Data">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="7 10 12 15 17 10"></polyline>
                         <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -946,17 +1016,50 @@
                 </a>
                 <!-- Full Screen -->
                 <button class="header-icon-btn" onclick="toggleFullScreen()" title="Full Screen">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
                     </svg>
                 </button>
                 <!-- Sign Out -->
                 <a href="/logout" class="header-icon-btn signout" title="Sign Out">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                         <polyline points="16 17 21 12 16 7"></polyline>
                         <line x1="21" y1="12" x2="9" y2="12"></line>
                     </svg>
+                </a>
+            </div>
+
+            <!-- Mobile Burger Menu Button -->
+            <button id="mobileBurgerBtn" class="header-icon-btn" onclick="toggleMobileBurgerMenu(event)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+
+            <!-- Mobile Burger Dropdown Menu -->
+            <div id="mobileMenuDropdown">
+                <button class="mobile-menu-item" onclick="launchBrokerPortal(); toggleMobileBurgerMenu();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                    <span>Broker Portal</span>
+                </button>
+                <button class="mobile-menu-item" onclick="openSettingsModal(); toggleMobileBurgerMenu();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    <span>Settings</span>
+                </button>
+                <a href="/api/report/forensic" class="mobile-menu-item" onclick="toggleMobileBurgerMenu();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    <span>Export Data</span>
+                </a>
+                <button class="mobile-menu-item" onclick="toggleFullScreen(); toggleMobileBurgerMenu();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+                    <span>Full Screen</span>
+                </button>
+                <a href="/logout" class="mobile-menu-item signout">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    <span>Sign Out</span>
                 </a>
             </div>
         </div>
@@ -1914,12 +2017,18 @@
                 const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
                 const col = dVal > 0 ? '#0ecb81' : (dVal < 0 ? '#ff5364' : '#8a8a9e');
 
+                const startEq = (parseFloat(activeLb.equity) || 500) - dVal;
+                const dayPct = activeLb.daily_pct !== undefined ? activeLb.daily_pct : (startEq > 0 ? ((dVal / startEq) * 100.0) : 0.0);
+                const absPct = Math.abs(dayPct);
+                const pctStr = (absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1)) + '%';
+                const signStr = dVal > 0 ? '+' : (dVal < 0 ? '-' : '');
+
                 triggerLabel.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:8px;">
                         <span style="font-weight:bold; color:#ffd400; font-size:13px;">${shortName}</span>
                         <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
                             <span style="color:#ffffff; font-weight:bold;">£${eqVal}</span>
-                            <span style="color:${col}; font-weight:bold;">${arrow} £${Math.abs(dVal).toFixed(2)}</span>
+                            <span style="color:${col}; font-weight:bold; white-space:nowrap;">${arrow} £${Math.abs(dVal).toFixed(2)} <span style="font-size:10px; opacity:0.9;">(${signStr}${pctStr})</span></span>
                         </div>
                     </div>
                 `;
@@ -1928,20 +2037,26 @@
             // Render list items
             if (menu) {
                 menu.innerHTML = userList.map(u => {
-                    const lb = lbMap[u] || { equity: 5000, daily_pnl: 0 };
+                    const lb = lbMap[u] || { equity: 500, daily_pnl: 0 };
                     const shortName = getShortProfileName(u);
                     const isSel = (u === activeProf);
-                    const eqVal = (parseFloat(lb.equity) || 5000).toFixed(2);
+                    const eqVal = (parseFloat(lb.equity) || 500).toFixed(2);
                     const dVal = parseFloat(lb.daily_pnl) || 0;
                     const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
                     const col = dVal > 0 ? '#0ecb81' : (dVal < 0 ? '#ff5364' : '#8a8a9e');
+
+                    const startEq = (parseFloat(lb.equity) || 500) - dVal;
+                    const dayPct = lb.daily_pct !== undefined ? lb.daily_pct : (startEq > 0 ? ((dVal / startEq) * 100.0) : 0.0);
+                    const absPct = Math.abs(dayPct);
+                    const pctStr = (absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1)) + '%';
+                    const signStr = dVal > 0 ? '+' : (dVal < 0 ? '-' : '');
 
                     return `
                         <div class="custom-select-item ${isSel ? 'selected' : ''}" onclick="selectCustomProfile('${u}')">
                             <span style="font-weight:bold; color:${isSel ? '#ffd400' : '#fff'}; font-size:13px;">${shortName}</span>
                             <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
                                 <span style="color:#ffffff; font-weight:bold;">£${eqVal}</span>
-                                <span style="color:${col}; font-weight:bold; min-width:70px; text-align:right;">${arrow} £${Math.abs(dVal).toFixed(2)}</span>
+                                <span style="color:${col}; font-weight:bold; min-width:90px; text-align:right; white-space:nowrap;">${arrow} £${Math.abs(dVal).toFixed(2)} <span style="font-size:10px; opacity:0.9;">(${signStr}${pctStr})</span></span>
                             </div>
                         </div>
                     `;
@@ -2638,11 +2753,32 @@
             renderLines(ctx);
         }
 
+        function toggleMobileBurgerMenu(e) {
+            if (e) e.stopPropagation();
+            const dd = document.getElementById('mobileMenuDropdown');
+            if (dd) dd.classList.toggle('open');
+        }
+
+        document.addEventListener('click', function(e) {
+            const dd = document.getElementById('mobileMenuDropdown');
+            const btn = document.getElementById('mobileBurgerBtn');
+            if (dd && dd.classList.contains('open') && !dd.contains(e.target) && !btn.contains(e.target)) {
+                dd.classList.remove('open');
+            }
+        });
+
+        function launchBrokerPortal() {
+            const url = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
+            window.open(url, '_blank');
+        }
+
         function openSettingsModal() {
             let capInput = document.getElementById('settingCapital');
             let stratSelect = document.getElementById('settingStrategy');
             let keyInput = document.getElementById('settingApiKey');
             let secretInput = document.getElementById('settingApiSecret');
+            let urlInput = document.getElementById('settingBrokerUrl');
+            if (urlInput) urlInput.value = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
             
             if (globalPortfolioData) {
                 if (capInput) capInput.value = (globalPortfolioData.master_budget > 0) ? globalPortfolioData.master_budget : (globalPortfolioData.starting_capital || 500);
@@ -2668,6 +2804,8 @@
             let bMode = document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
             let apiKey = document.getElementById('settingApiKey').value.trim();
             let apiSecret = document.getElementById('settingApiSecret').value.trim();
+            let brokerUrl = document.getElementById('settingBrokerUrl')?.value.trim() || 'https://app.alpaca.markets';
+            localStorage.setItem('user_broker_url', brokerUrl);
 
             let payload = {
                 starting_capital: cap,
