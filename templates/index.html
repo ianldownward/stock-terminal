@@ -81,8 +81,8 @@
             background: #222938;
         }
         .header-icon-btn.signout:hover {
-            color: #ff3d00;
-            border-color: #ff3d00;
+            color: #ff5364;
+            border-color: #ff5364;
         }
         .app-body-container {
             display: flex;
@@ -281,7 +281,7 @@
             background: #1e222d; 
             padding: 12px; 
             border-radius: 8px; 
-            border: 1px solid #ffd400; 
+            border: 1px solid #262b36; 
             margin-bottom: 10px; 
             text-align: center; 
         }
@@ -327,7 +327,7 @@
             cursor: pointer; 
         }
         .user-btn.new { background: #ffd400; color: #000; }
-        .user-btn.del { background: #ff3d00; color: #fff; }
+        .user-btn.del { background: #ff5364; color: #fff; }
 
         /* WIDE CUSTOM PROFILE DROPDOWN */
         .custom-select-wrapper { position: relative; width: 100%; user-select: none; }
@@ -420,7 +420,7 @@
         }
         .directives-box h3 { 
             font-size: 11px; 
-            color: #00c853; 
+            color: #0ecb81; 
             margin: 0 0 8px 0; 
             text-transform: uppercase; 
             text-align: center; 
@@ -447,7 +447,7 @@
             border: 1px solid transparent; 
         }
         .watchlist-item:hover, .watchlist-item.active { border-color: #ffd400; background: #252a37; }
-        .btn-delete { background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; padding: 0 5px; }
+        .btn-delete { background: none; border: none; color: #ff5364; font-weight: bold; cursor: pointer; padding: 0 5px; }
         
         .main-content { flex: 1; display: flex; flex-direction: column; padding: 15px; overflow-y: auto; position: relative; }
         
@@ -677,10 +677,10 @@
         #tradeHistoryDrawer[open] .history-list { flex: 1; max-height: none; }
         .history-item { background: #1e222d; border: 1px solid #262b36; border-radius: 6px; padding: 10px; margin-bottom: 8px; position: relative; }
         .history-item .h-action { font-weight: bold; font-size: 12px; }
-        .history-item .h-buy { color: #00c853; }
-        .history-item .h-sell { color: #ff3d00; }
+        .history-item .h-buy { color: #0ecb81; }
+        .history-item .h-sell { color: #ff5364; }
         .history-item .h-meta { font-size: 11px; color: #787e8e; margin-top: 4px; }
-        .history-item .btn-undo { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; }
+        .history-item .btn-undo { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #ff5364; font-weight: bold; cursor: pointer; }
         
         .quick-check-box { background: #1e222d; padding: 12px; border-radius: 8px; border: 1px solid #262b36; margin-bottom: 10px; }
         .qc-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -911,7 +911,7 @@
 
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
                     <button class="btn-control" onclick="closeResetAllModal()">Cancel</button>
-                    <button id="btnSubmitResetAll" class="btn-control" style="background:#ff3d00; color:#fff; border-color:#ff3d00;" onclick="submitResetAll()">Apply Reset to Selected</button>
+                    <button id="btnSubmitResetAll" class="btn-control" style="background:#ff5364; color:#fff; border-color:#ff5364;" onclick="submitResetAll()">Apply Reset to Selected</button>
                 </div>
             </div>
         </div>
@@ -998,7 +998,7 @@
                     <label>Starting Capital (£)</label>
                     <input type="number" id="masterBudgetInput" value="500" onchange="onMasterBudgetInput()">
                     <div class="budget-sub-stats">
-                        <div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#00c853;">£500.00</b></div>
+                        <div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#0ecb81;">£500.00</b></div>
                     </div>
                 </div>
             </details>
@@ -1042,7 +1042,7 @@
                         </button>
                         <button class="btn-control" onclick="clearManualLines()">Clear</button>
                         <button class="btn-control" onclick="openResetModal()">Reset User</button>
-                        <button class="btn-control" style="border-color: #ff3d00; color: #ff3d00;" onclick="openResetAllModal()">Reset All</button>
+                        <button class="btn-control" style="border-color: #ff5364; color: #ff5364;" onclick="openResetAllModal()">Reset All</button>
                     </div>
                 </div>
                 <div class="top-nav-row2">
@@ -1114,17 +1114,17 @@
                     </div>
                 </div>
                 
-                <div class="card" id="rotatorHealthCard" style="flex: 1.2; border: 1px solid #ffd400; background: #1a1d24;">
+                <div class="card" id="rotatorHealthCard" style="flex: 1.2; border: 1px solid #262b36; background: #1a1d24;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="rotatorHealthHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase;">Buy Setup Readiness</h3>
                         <span id="rotatorHealthStatus" style="font-size:12px; font-weight:bold; color:#fff;">--</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:8px;">
-                        <span id="rotatorStopPrice" style="font-size:11px; font-weight:bold; color:#ff3d00; min-width:55px; text-align:left;">--</span>
-                        <div style="flex:1; height: 14px; background: linear-gradient(90deg, #ff3d00 0%, #ff9900 50%, #00c853 100%); border-radius: 7px; position: relative;">
+                        <span id="rotatorStopPrice" style="font-size:11px; font-weight:bold; color:#ff5364; min-width:55px; text-align:left;">--</span>
+                        <div style="flex:1; height: 14px; background: linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius: 7px; position: relative;">
                             <div id="rotatorHealthMarker" style="position: absolute; top: -3px; left: 0%; width: 4px; height: 20px; background: #ffffff; border-radius: 2px; box-shadow: 0 0 6px #ffffff; transition: left 0.4s ease;"></div>
                         </div>
-                        <span id="rotatorPeakPrice" style="font-size:11px; font-weight:bold; color:#00c853; min-width:55px; text-align:right;">--</span>
+                        <span id="rotatorPeakPrice" style="font-size:11px; font-weight:bold; color:#0ecb81; min-width:55px; text-align:right;">--</span>
                     </div>
                     <div id="rotatorHealthSubtext" style="font-size:10px; color:#8a8a9e; margin-top:6px; text-align:center;">Scanning...</div>
                 </div>
@@ -1215,7 +1215,7 @@
                 let html = trades.slice().reverse().map(t => `
                     <div style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <span style="font-weight:bold; color:${t.action === 'BUY' ? '#00c853' : '#ff3d00'}; font-size:13px;">${t.action} ${t.shares} sh ${t.ticker}</span>
+                            <span style="font-weight:bold; color:${t.action === 'BUY' ? '#0ecb81' : '#ff5364'}; font-size:13px;">${t.action} ${t.shares} sh ${t.ticker}</span>
                             <div style="font-size:11px; color:#787e8e; margin-top:3px;">${t.time || '--'} • ${t.trade_type || 'LONG'}</div>
                         </div>
                         <div style="text-align:right;">
@@ -1226,7 +1226,7 @@
                 `).join('');
                 content.innerHTML = html;
             } catch(e) {
-                content.innerHTML = '<div style="color:#ff3d00; text-align:center;">Failed to render trade journey.</div>';
+                content.innerHTML = '<div style="color:#ff5364; text-align:center;">Failed to render trade journey.</div>';
             }
         }
 
@@ -1252,11 +1252,11 @@
             
             let openUK = 480, closeUK = 990;
             let pctUK = Math.max(0, Math.min(100, ((minsUK - openUK) / (closeUK - openUK)) * 100));
-            let colorUK = (minsUK >= openUK && minsUK < closeUK) ? '#00c853' : '#8a8a9e';
+            let colorUK = (minsUK >= openUK && minsUK < closeUK) ? '#0ecb81' : '#8a8a9e';
             
             let openUS = 570, closeUS = 960;
             let pctUS = Math.max(0, Math.min(100, ((minsUS - openUS) / (closeUS - openUS)) * 100));
-            let colorUS = (minsUS >= openUS && minsUS < closeUS) ? '#00c853' : '#8a8a9e';
+            let colorUS = (minsUS >= openUS && minsUS < closeUS) ? '#0ecb81' : '#8a8a9e';
             
             let el = document.getElementById('marketClocks');
             if (el) {
@@ -1442,7 +1442,7 @@
                 // Anchor 1
                 ctx.beginPath();
                 ctx.arc(x1, y1, (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? 6 : 4, 0, Math.PI * 2);
-                ctx.fillStyle = (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? '#00e5ff' : '#1e1e24';
+                ctx.fillStyle = (isSel && (hoveredAnchor === 'p1' || draggingAnchor === 'p1')) ? '#ffd400' : '#1e1e24';
                 ctx.fill();
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 1.8;
@@ -1451,7 +1451,7 @@
                 // Anchor 2
                 ctx.beginPath();
                 ctx.arc(x2, y2, (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? 6 : 4, 0, Math.PI * 2);
-                ctx.fillStyle = (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? '#00e5ff' : '#1e1e24';
+                ctx.fillStyle = (isSel && (hoveredAnchor === 'p2' || draggingAnchor === 'p2')) ? '#ffd400' : '#1e1e24';
                 ctx.fill();
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 1.8;
@@ -1912,7 +1912,7 @@
                 const eqVal = (parseFloat(activeLb.equity) || 500).toFixed(2);
                 const dVal = parseFloat(activeLb.daily_pnl) || 0;
                 const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
-                const col = dVal > 0 ? '#00c853' : (dVal < 0 ? '#ff3d00' : '#8a8a9e');
+                const col = dVal > 0 ? '#0ecb81' : (dVal < 0 ? '#ff5364' : '#8a8a9e');
 
                 triggerLabel.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:8px;">
@@ -1934,7 +1934,7 @@
                     const eqVal = (parseFloat(lb.equity) || 5000).toFixed(2);
                     const dVal = parseFloat(lb.daily_pnl) || 0;
                     const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
-                    const col = dVal > 0 ? '#00c853' : (dVal < 0 ? '#ff3d00' : '#8a8a9e');
+                    const col = dVal > 0 ? '#0ecb81' : (dVal < 0 ? '#ff5364' : '#8a8a9e');
 
                     return `
                         <div class="custom-select-item ${isSel ? 'selected' : ''}" onclick="selectCustomProfile('${u}')">
@@ -2070,9 +2070,9 @@
             }
 
             let lbHtml = lbData.map(lb => { 
-                let equityColor = (lb.equity - (lb.budget || 500)) >= 0 ? '#00c853' : '#ff3d00';
+                let equityColor = (lb.equity - (lb.budget || 500)) >= 0 ? '#0ecb81' : '#ff5364';
                 let dayVal = lb.daily_pnl || 0;
-                let dailyColor = dayVal > 0 ? '#00c853' : (dayVal < 0 ? '#ff3d00' : '#8a8a9e');
+                let dailyColor = dayVal > 0 ? '#0ecb81' : (dayVal < 0 ? '#ff5364' : '#8a8a9e');
 
                 let activeClass = lb.user === activeProf ? 'active-profile-card' : '';
                 let isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
@@ -2176,7 +2176,7 @@
                 if (i.action === 'SELL' && tradePnl[i.id]) {
                     let p = tradePnl[i.id];
                     let sign = p.val >= 0 ? '+' : '-';
-                    let col = p.val >= 0 ? '#00c853' : '#ff3d00';
+                    let col = p.val >= 0 ? '#0ecb81' : '#ff5364';
                     let valStr = `${sign}£${Math.abs(p.val).toFixed(2)}`;
                     let pctStr = `(${sign}${Math.abs(p.pct).toFixed(2)}%)`;
                     pnlTag = `<span style="color:${col}; font-weight:bold; margin-left:6px; font-size:12px;">${valStr} <span style="font-size:10px;">${pctStr}</span></span>`;
@@ -2216,7 +2216,7 @@
 
             if (style === 'line') tvSeries = tvChart.addLineSeries({ color: '#ffd400', lineWidth: 2 });
             else if (style === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(255, 212, 0, 0.4)', bottomColor: 'rgba(255, 212, 0, 0.0)', lineColor: '#ffd400' });
-            else tvSeries = tvChart.addCandlestickSeries({ upColor: '#00c853', downColor: '#ff3d00', borderVisible: false });
+            else tvSeries = tvChart.addCandlestickSeries({ upColor: '#0ecb81', downColor: '#ff5364', borderVisible: false });
 
             if (Array.isArray(masterData) && masterData.length > 0) {
                 let cleanData = masterData.map(d => {
@@ -2266,7 +2266,7 @@
                             if (entryP > 0) {
                                 tvSeries.createPriceLine({
                                     price: entryP,
-                                    color: '#00c853',
+                                    color: '#0ecb81',
                                     lineWidth: 2,
                                     lineStyle: 2,
                                     axisLabelVisible: true,
@@ -2344,7 +2344,7 @@
                         mobHeldEl.innerHTML = `
                             <div>
                                 <span style="font-weight:bold; font-size:13px; color:#787e8e;">100% CASH</span>
-                                <span style="color:#00c853; font-size:10px; margin-left:6px; font-weight:bold;">(Scanning...)</span>
+                                <span style="color:#0ecb81; font-size:10px; margin-left:6px; font-weight:bold;">(Scanning...)</span>
                             </div>
                             <span style="font-size:11px; color:#787e8e;">No Active Holds</span>
                         `;
@@ -2617,7 +2617,7 @@
                                     ctx.arc(x, y, 9, 0, Math.PI * 2);
                                     ctx.fill();
 
-                                    ctx.fillStyle = '#00c853';
+                                    ctx.fillStyle = '#0ecb81';
                                     ctx.beginPath();
                                     ctx.arc(x, y, 6, 0, Math.PI * 2);
                                     ctx.fill();

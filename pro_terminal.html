@@ -12,12 +12,12 @@
         .sidebar h2 { font-size: 13px; text-transform: uppercase; color: #787e8e; margin-bottom: 12px; letter-spacing: 0.5px; }
         .search-box { display: flex; gap: 8px; margin-bottom: 15px; }
         .search-box input { flex: 1; background: #0f1115; border: 1px solid #262b36; color: #fff; padding: 8px; border-radius: 6px; }
-        .search-box button { background: #00d2ff; border: none; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+        .search-box button { background: #ffd400; border: none; color: #000; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
         .watchlist { flex: 1; overflow-y: auto; list-style: none; padding: 0; margin: 0; }
         .watchlist-item { padding: 10px 12px; border-radius: 6px; background: #1e222d; margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid transparent; }
-        .watchlist-item:hover, .watchlist-item.active { border-color: #00d2ff; background: #252a37; }
+        .watchlist-item:hover, .watchlist-item.active { border-color: #ffd400; background: #252a37; }
         .watchlist-item .ticker { font-weight: bold; }
-        .btn-delete { background: none; border: none; color: #ff4a4a; font-weight: bold; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+        .btn-delete { background: none; border: none; color: #ff5364; font-weight: bold; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
         .btn-delete:hover { background: rgba(255, 74, 74, 0.2); }
         
         /* Main View */
@@ -31,7 +31,7 @@
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; margin-bottom: 20px; }
         .card { background: #171a21; padding: 15px; border-radius: 10px; border: 1px solid #262b36; text-align: center; }
         .card h3 { font-size: 11px; color: #787e8e; margin: 0 0 6px 0; text-transform: uppercase; }
-        .card p { font-size: 18px; font-weight: bold; margin: 0; color: #00d2ff; }
+        .card p { font-size: 18px; font-weight: bold; margin: 0; color: #ffd400; }
         
         /* Chart Canvas Container */
         .chart-container { flex: 1; background: #171a21; padding: 20px; border-radius: 10px; border: 1px solid #262b36; min-height: 420px; position: relative; }
@@ -169,8 +169,8 @@
                     datasets: [{
                         label: `${currentTicker} (${style.toUpperCase()})`,
                         data: prices,
-                        borderColor: '#00d2ff',
-                        backgroundColor: isArea ? 'rgba(0, 210, 255, 0.15)' : (isBar ? '#00d2ff' : 'transparent'),
+                        borderColor: '#ffd400',
+                        backgroundColor: isArea ? 'rgba(255, 212, 0, 0.15)' : (isBar ? '#ffd400' : 'transparent'),
                         borderWidth: 2,
                         fill: isArea,
                         pointRadius: 0

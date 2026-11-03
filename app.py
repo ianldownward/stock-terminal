@@ -487,10 +487,10 @@ class MarketScoringEngine:
                 score = int(scores.iloc[-1])
                 sparkline = [round(x, 1) for x in scores.tail(78).tolist()]
                 
-                if score <= 20: state, color, code = "Deep Freeze (Capitulation)", "#00d2ff", "BEAR_FREEZE"
+                if score <= 20: state, color, code = "Deep Freeze (Capitulation)", "#ffd400", "BEAR_FREEZE"
                 elif score <= 40: state, color, code = "Cooling (Pullback)", "#ff9900", "BEAR"
                 elif score <= 60: state, color, code = "Room Temp (Neutral)", "#8a8a9e", "NEUTRAL"
-                elif score <= 80: state, color, code = "Heating Up (Expansion)", "#00c853", "BULL"
+                elif score <= 80: state, color, code = "Heating Up (Expansion)", "#0ecb81", "BULL"
                 else: state, color, code = "Overheating (Euphoria)", "#b388ff", "BULL_OVERHEAT"
                 
                 trend_diff = score - sparkline[0] if sparkline else 0
@@ -549,76 +549,76 @@ class MarketScoringEngine:
                 if peak_pnl_pct >= 0.50:
                     breakeven_price = avg_buy_price * 1.0020  # Lock +0.20% minimum profit once +0.50% hit
                     if current_price <= breakeven_price:
-                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST X DYNAMIC LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Dynamic Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Dynamic Lock (+{pnl_pct:.2f}%)"}
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST X DYNAMIC LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Dynamic Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Dynamic Lock (+{pnl_pct:.2f}%)"}
 
             # TEST S2: VELOCITY RATCHET (ONCE PEAK HITS +1.20%, LOCK +1.00% FLOOR & CHOKE TRAIL TO 0.40%)
             if 'test s2' in prof and peak_pnl_pct >= 1.20:
                 trail_pct = 0.40
                 s2_floor = avg_buy_price * 1.0100
                 if current_price <= s2_floor:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"S2 VELOCITY FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Velocity Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Velocity Lock (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"S2 VELOCITY FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Velocity Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Velocity Lock (+{pnl_pct:.2f}%)"}
 
             # WIDENED BREAKEVEN LOCK RULE (+0.20% LOCK ONCE +0.80% PEAK HIT)
             # Gives runners 0.60% cushion to absorb standard intraday pullbacks
             if any(x in prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and peak_pnl_pct >= 0.80:
                 breakeven_price = avg_buy_price * 1.0020  # Lock +0.20% profit minimum
                 if current_price <= breakeven_price:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
             # TIERED CHOKE-TRAIL, RATCHET PROFIT FLOORS & 18:30 BANK-AND-WALK
             if any(x in prof for x in ['test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
                 # 1. EVENING BANK-AND-WALK: Past 18:30 BST with >= +2.80% profit -> Exit & shut down
                 if (now_uk.hour > 18 or (now_uk.hour == 18 and now_uk.minute >= 30)) and pnl_pct >= 2.80:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 BANK-AND-WALK: Banked +{pnl_pct:.2f}% after 18:30 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Bank & Walk', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Bank Win)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#00c853', 'health_text': f"Banked (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 BANK-AND-WALK: Banked +{pnl_pct:.2f}% after 18:30 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Bank & Walk', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Bank Win)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"Banked (+{pnl_pct:.2f}%)"}
 
                 # 2. TIER 3 (3.0% WINDFALL): Peak touched >= +3.00%
                 if peak_pnl_pct >= 3.00:
                     trail_pct = 0.30  # Choke trailing stop to 0.30%
                     tier3_floor = avg_buy_price * 1.0280  # Hard floor at +2.80% net profit
                     if current_price <= tier3_floor:
-                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 3 FLOOR HIT (+{pnl_pct:.2f}%). Protected +2.80% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 3 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +2.80%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 3 Floor (+{pnl_pct:.2f}%)"}
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 3 FLOOR HIT (+{pnl_pct:.2f}%). Protected +2.80% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 3 Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +2.80%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Tier 3 Floor (+{pnl_pct:.2f}%)"}
 
                 # 3. TIER 2: Peak touched >= +2.50%
                 elif peak_pnl_pct >= 2.50:
                     trail_pct = 0.30  # Choke trailing stop to 0.30%
                     tier2_floor = avg_buy_price * 1.0200  # Hard floor at +2.00% net profit
                     if current_price <= tier2_floor:
-                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 2 FLOOR HIT (+{pnl_pct:.2f}%). Protected +2.00% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 2 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +2.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 2 Floor (+{pnl_pct:.2f}%)"}
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 2 FLOOR HIT (+{pnl_pct:.2f}%). Protected +2.00% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 2 Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +2.00%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Tier 2 Floor (+{pnl_pct:.2f}%)"}
                 
                 # 4. TIER 1 (DAILY TARGET REACHED): Peak touched >= +1.50%
                 elif peak_pnl_pct >= 1.50:
                     tier1_floor = avg_buy_price * 1.0100  # Hard floor at +1.00% net profit
                     if current_price <= tier1_floor:
-                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 1 FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 1 Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Tier 1 Floor (+{pnl_pct:.2f}%)"}
+                        return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 TIER 1 FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Tier 1 Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Tier 1 Floor (+{pnl_pct:.2f}%)"}
                     
             # TEST E16: CALIBRATED SPREAD-AWARE BREAKEVEN (+0.18% LOCK ONCE +0.35% PEAK HIT)
             if 'test e16' in prof and peak_pnl_pct >= 0.35:
                 breakeven_price = avg_buy_price * 1.0018  # Lock +0.18% profit to absorb bid/ask spread
                 if current_price <= breakeven_price:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E16 SPREAD LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Spread Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Spread Lock (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E16 SPREAD LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Spread Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Spread Lock (+{pnl_pct:.2f}%)"}
 
             # BREAKEVEN LOCK RULE FOR TEST E7 ONLY (+0.50%)
             if 'test e7' in prof and peak_pnl_pct >= 0.50:
                 breakeven_price = avg_buy_price * 1.0010  # Lock +0.10% profit minimum
                 if current_price <= breakeven_price:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock Breakeven)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
             # TEST E14: SCALED EXIT RUNNER FLOOR LOCK (+0.20% MINIMUM FLOOR)
             if 'test e14' in prof and peak_pnl_pct >= 1.00:
                 floor_stop_e14 = avg_buy_price * 1.0020
                 if current_price <= floor_stop_e14:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E14 FLOOR STOP TRIPPED ({pnl_pct:.2f}%). Peak: +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Runner Floor Lock', 'color': '#00c853', 'action_main': 'SELL', 'action_sub': '(Floor Lock)', 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#00c853', 'health_text': f"Locked (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TEST E14 FLOOR STOP TRIPPED ({pnl_pct:.2f}%). Peak: +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Runner Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Floor Lock)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Locked (+{pnl_pct:.2f}%)"}
             health_pct = int(max(0, min(100, 100 - (drop_from_peak_pct / trail_pct * 100))))
             pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
             
             if drop_from_peak_pct >= trail_pct or pnl_pct <= hard_pct:
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"STOP TRIPPED {pnl_str}. Peak: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Tripped', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff3d00', 'health_text': f"Stop Tripped {pnl_str}"}
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"STOP TRIPPED {pnl_str}. Peak: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Tripped', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"Stop Tripped {pnl_str}"}
             elif health_pct >= 70:
-                health_color, health_text = "#00c853", f"Strong Trend {pnl_str}"
+                health_color, health_text = "#0ecb81", f"Strong Trend {pnl_str}"
             elif health_pct >= 40:
                 health_color, health_text = "#ff9900", f"Pullback {pnl_str}"
             else:
-                health_color, health_text = "#ff4a4a", f"Danger Zone {pnl_str}"
+                health_color, health_text = "#ff5364", f"Danger Zone {pnl_str}"
 
         # OVERRIDE: LSE CROSS-MARKET SWEEP FOR TEST W
         if 'test w' in prof and ticker.endswith('.L') and now_uk.hour == 16 and now_uk.minute >= 20 and now_uk.minute < 30:
@@ -641,15 +641,15 @@ class MarketScoringEngine:
         if any(x in prof for x in ['test u', 'test s']) and 'test s2' not in prof and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             if pnl_pct >= 1.20:
-                return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#00d2ff', 'health_text': 'Target Hit (Selling)'}
+                return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#ffd400', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#ffd400', 'health_text': 'Target Hit (Selling)'}
             
         # MAIN HOLDING LOGIC
         if avg_buy_price > 0 and highest_price > 0:
             if drop_from_peak_pct >= trail_pct:
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop', 'color': '#00d2ff', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop', 'color': '#ffd400', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             if pnl_pct <= hard_pct: 
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff3d00', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff3d00', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
-            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#00d2ff', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#00d2ff', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
+            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
         # ENTRY LOGIC: Intraday EMA alignment (ignores obsolete 5-day drag)
         intraday_pct = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0.5
@@ -690,7 +690,7 @@ class MarketScoringEngine:
             # INDEX RUNNER BOOST: If market sentiment >= 60, grant broad index 3x ETFs a +25 priority bonus
             etf_priority_bonus = 25 if (is_3x_etf and ticker in ['TQQQ', 'SOXL'] and reg_score >= 60) else (25 if is_inverse and reg_score <= 25 else 0)
             buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi) + etf_priority_bonus)))
-            return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}, Vol {vol_ratio:.1f}x{' [ETF PRIORITY]' if etf_priority_bonus else ''}.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Fast {trade_type} Surge", 'color': '#00c853', 'action_main': 'BUY', 'action_sub': f"({trade_type} Surge)", 'action_color': '#00c853', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+            return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}, Vol {vol_ratio:.1f}x{' [ETF PRIORITY]' if etf_priority_bonus else ''}.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Fast {trade_type} Surge", 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': f"({trade_type} Surge)", 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
         return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Awaiting fast EMA crossover surge.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
@@ -701,15 +701,15 @@ class MarketScoringEngine:
         tranches = 0 if implied_discount <= 0 else min(5, int(buy_score // 20) + 1)
 
         if implied_discount <= 5.0 and implied_discount > -50.0:
-            action_main, action_sub, status, color = "SELL", "(Take Profit)", "Target Reached", "#ff3d00"
-            reason, action_color, tranches = f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%.", "#ff3d00", 0
+            action_main, action_sub, status, color = "SELL", "(Take Profit)", "Target Reached", "#ff5364"
+            reason, action_color, tranches = f"Profit Target Triggered. NAV discount shrunk to {implied_discount:.1f}%.", "#ff5364", 0
         elif buy_score >= 40:
             action_main, action_sub = "BUY", f"(Tranche {tranches})"
-            status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
-            reason, action_color = f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav}).", "#00c853"
+            status, color = ('Deep Value Anomaly', '#0ecb81') if buy_score >= 60 else ('Moderate Value', '#ff9900')
+            reason, action_color = f"Physical NAV Anomaly. Trading at {implied_discount:.1f}% discount to NAV ({nav}).", "#0ecb81"
         else:
             action_main, action_sub = "HOLD / WAIT", f"(Tranche {tranches})"
-            status, color = ('Trading at Premium', '#ff4a4a') if implied_discount < 0 else ('Low Value', '#8a8a9e')
+            status, color = ('Trading at Premium', '#ff5364') if implied_discount < 0 else ('Low Value', '#8a8a9e')
             reason, action_color = f"Trading at {implied_discount:.1f}% NAV discount. Active Tranches: {tranches}.", "#8a8a9e"
 
         return {'type': 'Physical Trust', 'score': buy_score, 'tranches': tranches, 'discount': f"{implied_discount:.2f}%" if implied_discount>0 else f"+{abs(implied_discount):.2f}%", 'reason': reason, 'is_smart': True, 'rec_buy': round(current_price*0.98, 2), 'rec_sell': round(nav*0.95, 2), 'status': status, 'color': color, 'action_main': action_main, 'action_sub': action_sub, 'action_color': action_color, 'regime': {'score': 50, 'state': 'Room Temp', 'color': '#8a8a9e', 'sparkline': [], 'trend': '► Stable'}, 'trade_type': 'LONG', 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'N/A'}
@@ -732,11 +732,11 @@ class MarketScoringEngine:
         
         if buy_score >= 40:
             action_main, action_sub = "BUY", f"(Tranche {tranches})"
-            status, color = ('Deep Value Anomaly', '#00c853') if buy_score >= 60 else ('Moderate Value', '#ff9900')
-            reason, action_color = f"Value Anomaly. Trading at {implied_discount:.1f}% discount to 200d-DMA.", "#00c853"
+            status, color = ('Deep Value Anomaly', '#0ecb81') if buy_score >= 60 else ('Moderate Value', '#ff9900')
+            reason, action_color = f"Value Anomaly. Trading at {implied_discount:.1f}% discount to 200d-DMA.", "#0ecb81"
         elif implied_discount <= -10.0:
-            action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", 'Overextended (High)', '#ff3d00', 0
-            reason, action_color = f"Overextended ({abs(implied_discount):.1f}% above 200d-DMA). Take profits.", "#ff3d00"
+            action_main, action_sub, status, color, tranches = "SELL", "(Take Profit)", 'Overextended (High)', '#ff5364', 0
+            reason, action_color = f"Overextended ({abs(implied_discount):.1f}% above 200d-DMA). Take profits.", "#ff5364"
         else:
             action_main, action_sub, status, color = "HOLD / WAIT", f"(Tranche {tranches})", 'Fair Value', '#8a8a9e'
             reason, action_color = f"No Value Anomaly. Near 200d-DMA.", "#8a8a9e"
@@ -1649,7 +1649,7 @@ def get_data():
             held_sym = user_holds[0] if user_holds else ''
             day_diff = round(tot_eq_now - tot_eq_start, 2)
             day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
-            day_col = '#00c853' if day_diff > 0 else ('#ff3d00' if day_diff < 0 else '#8a8a9e')
+            day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
 
             leaderboard.append({
                 'user': u, 
@@ -1723,9 +1723,9 @@ def get_data():
         master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
 
         master_pnl_data = {
-            'all': {'val': f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#00c853' if master_pnl_val > 0 else ('#ff3d00' if master_pnl_val < 0 else '#8a8a9e')},
-            'today': {'val': f"{'+' if tot_today_diff>0 else ''}£{tot_today_diff:.2f} ({'+' if master_today_pct>0 else ''}{master_today_pct:.2f}%)", 'color': '#00c853' if tot_today_diff > 0 else ('#ff3d00' if tot_today_diff < 0 else '#8a8a9e')},
-            '1h': {'val': f"{'+' if tot_1h_diff>0 else ''}£{tot_1h_diff:.2f} ({'+' if master_1h_pct>0 else ''}{master_1h_pct:.2f}%)", 'color': '#00c853' if tot_1h_diff > 0 else ('#ff3d00' if tot_1h_diff < 0 else '#8a8a9e')}
+            'all': {'val': f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#0ecb81' if master_pnl_val > 0 else ('#ff5364' if master_pnl_val < 0 else '#8a8a9e')},
+            'today': {'val': f"{'+' if tot_today_diff>0 else ''}£{tot_today_diff:.2f} ({'+' if master_today_pct>0 else ''}{master_today_pct:.2f}%)", 'color': '#0ecb81' if tot_today_diff > 0 else ('#ff5364' if tot_today_diff < 0 else '#8a8a9e')},
+            '1h': {'val': f"{'+' if tot_1h_diff>0 else ''}£{tot_1h_diff:.2f} ({'+' if master_1h_pct>0 else ''}{master_1h_pct:.2f}%)", 'color': '#0ecb81' if tot_1h_diff > 0 else ('#ff5364' if tot_1h_diff < 0 else '#8a8a9e')}
         }
 
         engine = MarketScoringEngine()
@@ -1759,7 +1759,7 @@ def get_data():
                                 top_stock = tick
                     if top_stock:
                         health_pct = top_score
-                        health_color = '#00c853' if top_score >= 65 else ('#ff9900' if top_score >= 40 else '#00d2ff')
+                        health_color = '#0ecb81' if top_score >= 65 else ('#ff9900' if top_score >= 40 else '#ffd400')
                         health_text = f"Hunting: {top_stock} ({top_score}/100)"
 
             lines = []
@@ -1769,7 +1769,7 @@ def get_data():
                 with ThreadPoolExecutor(max_workers=4) as ex:
                     for tick, df_t in ex.map(fetch_t, wl[:15]): dfs[tick] = df_t
                 
-                colors = ['#00d2ff', '#00c853', '#ff3d00', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
+                colors = ['#ffd400', '#0ecb81', '#ff5364', '#ff9900', '#b388ff', '#ffff00', '#ff4081', '#18ffff']
                 c_idx = 0
                 for tick in wl[:15]: 
                     df_t = dfs.get(tick)
@@ -1860,7 +1860,7 @@ def get_data():
         ticker_pnl_data = {}
         if sh_own > 0 and cb_t > 0:
             pv, pp = round(val_own - cb_t, 2), round((val_own - cb_t) / cb_t * 100, 2)
-            c = '#00c853' if pv > 0 else ('#ff3d00' if pv < 0 else '#8a8a9e')
+            c = '#0ecb81' if pv > 0 else ('#ff5364' if pv < 0 else '#8a8a9e')
             pnl_d = f"{'+' if pv>0 else ''}£{pv:.2f} ({'+' if pp>0 else ''}{pp:.2f}%)"
 
             df_5m = pnl_dfs_5m.get(t)
@@ -1903,8 +1903,8 @@ def get_data():
                 
                 ticker_pnl_data = {
                     'all': {'val': pnl_d, 'color': c},
-                    'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#00c853' if pv_today > 0 else ('#ff3d00' if pv_today < 0 else '#8a8a9e')},
-                    '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#00c853' if pv_1h > 0 else ('#ff3d00' if pv_1h < 0 else '#8a8a9e')}
+                    'today': {'val': f"{'+' if pv_today>0 else ''}£{pv_today:.2f} ({'+' if pp_today>0 else ''}{pp_today:.2f}%)", 'color': '#0ecb81' if pv_today > 0 else ('#ff5364' if pv_today < 0 else '#8a8a9e')},
+                    '1h': {'val': f"{'+' if pv_1h>0 else ''}£{pv_1h:.2f} ({'+' if pp_1h>0 else ''}{pp_1h:.2f}%)", 'color': '#0ecb81' if pv_1h > 0 else ('#ff5364' if pv_1h < 0 else '#8a8a9e')}
                 }
             else:
                 ticker_pnl_data = {'all': {'val': pnl_d, 'color': c}, 'today': {'val': pnl_d, 'color': c}, '1h': {'val': pnl_d, 'color': c}}
