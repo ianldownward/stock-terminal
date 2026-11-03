@@ -2045,113 +2045,32 @@ def get_data():
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/report/forensic', methods=['GET'])
-def export_forensic_report():
-    import io, csv
-    from flask import Response
-    portfolio_store.reload()
-    now_lon = pd.Timestamp.now(tz='Europe/London')
-    
-    rows = []
-    users_data = portfolio_store.data.get('users', {})
-    daily_pnl_map = {} 
-    
-    # PASS 1: Calculate trade data and accumulate daily totals per profile
-    for u, u_data in users_data.items():
-        if not isinstance(u_data, dict): continue
-        hist = u_data.get('history') or []
-        
-        buy_records = {}
-        for t in reversed(hist):
-            tk = t.get('ticker')
-            if not tk or tk == 'CALIBRATION': continue
-            
-            if t.get('action') == 'BUY':
-                if tk not in buy_records: buy_records[tk] = []
-                buy_records[tk].append(t)
-            elif t.get('action') == 'SELL' and tk in buy_records and buy_records[tk]:
-                buy = buy_records[tk].pop(0)
-                buy_price = float(buy.get('price', 1))
-                sell_price = float(t.get('price', 1))
-                shares = int(t.get('shares', 1))
-                
-                diff_val = (sell_price - buy_price) * shares
-                diff_pct = ((sell_price - buy_price) / buy_price) * 100.0
-                
-                peak_p = float(t.get('highest_price', sell_price))
-                peak_p = max(peak_p, sell_price, buy_price)
-                peak_pct = ((peak_p - buy_price) / buy_price) * 100.0
-                capture_eff = (diff_pct / peak_pct * 100.0) if peak_pct > 0 else 0.0
-                
-                duration_mins = max(1, int((t.get('timestamp', 0) - buy.get('timestamp', 0)) / 60))
-                date_key = t.get('date_str', '')
-                
-                # Accumulate daily P&L for this specific profile
-                if (u, date_key) not in daily_pnl_map: 
-                    daily_pnl_map[(u, date_key)] = 0.0
-                daily_pnl_map[(u, date_key)] += diff_val
-                
-                rows.append({
-                    'Trade_Date': date_key,
-                    'Profile': u,
-                    'Ticker': tk,
-                    'Shares': shares,
-                    'Entry_Time': buy.get('time', ''),
-                    'Exit_Time': t.get('time', ''),
-                    'Hold_Mins': duration_mins,
-                    'Entry_Price': round(buy_price, 2),
-                    'Exit_Price': round(sell_price, 2),
-                    'Peak_Price': round(peak_p, 2),
-                    'Peak_PnL_%': round(peak_pct, 2),
-                    'Realized_PnL_£': round(diff_val, 2),
-                    'Realized_PnL_%': round(diff_pct, 2),
-                    'Capture_Efficiency_%': round(capture_eff, 2),
-                    'Exit_Trigger': t.get('status', 'Manual/EOD'),
-                    'Exit_Reason': t.get('reason', '')
-                })
-                
-    # PASS 2: Stamp the aggregate daily totals onto each row
-    for r in rows:
-        day_val = daily_pnl_map.get((r['Profile'], r['Trade_Date']), 0.0)
-        r['Profile_Daily_PnL_£'] = round(day_val, 2)
-        r['Profile_Daily_PnL_%'] = round((day_val / 500.0) * 100.0, 2)
-                
-    output = io.StringIO()
-    if rows:
-        # Define exact column order
-        fieldnames = [
-            'Trade_Date', 'Profile', 'Profile_Daily_PnL_£', 'Profile_Daily_PnL_%',
-            'Ticker', 'Shares', 'Entry_Time', 'Exit_Time', 'Hold_Mins',
-            'Entry_Price', 'Exit_Price', 'Peak_Price', 'Peak_PnL_%',
-            'Realized_PnL_£', 'Realized_PnL_%', 'Capture_Efficiency_%',
-            'Exit_Trigger', 'Exit_Reason'
-        ]
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-        
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-disposition": f"attachment; filename=Forensic_Trade_Audit_All_Time_{now_lon.strftime('%Y%m%d')}.csv"}
-    )
-
 @app.route('/api/broker/status', methods=['GET'])
 def get_broker_status():
     portfolio_store.reload()
     broker = portfolio_store.data.get('broker') or {}
-    api_key = broker.get('api_key', '').strip()
-    secret_key = broker.get('secret_key', '').strip()
+    
+    # Fallback to user-level broker keys if top-level dictionary is empty
+    if not broker.get('api_key') or not broker.get('secret_key'):
+        for u in portfolio_store.data.get('users', {}).values():
+            if isinstance(u, dict) and u.get('broker', {}).get('api_key') and u.get('broker', {}).get('secret_key'):
+                broker.update(u['broker'])
+                portfolio_store.data['broker'] = broker
+                portfolio_store.save_data(portfolio_store.data)
+                break
+
+    api_key = str(broker.get('api_key', '')).strip()
+    secret_key = str(broker.get('secret_key', '')).strip()
     mode = broker.get('mode', 'paper')
     paused = broker.get('paused', False)
     allocations = broker.get('allocations') or {}
     
     if not api_key or not secret_key:
         return jsonify({
-            'connected': False,
-            'status': 'OFFLINE',
-            'buying_power': 0,
-            'paused': paused,
+            'connected': False, 
+            'status': 'OFFLINE', 
+            'buying_power': 0, 
+            'paused': paused, 
             'api_key': api_key,
             'allocations': allocations
         })
@@ -2177,39 +2096,66 @@ def get_broker_status():
             })
     except Exception as e:
         return jsonify({
-            'connected': False,
-            'status': 'AUTH_ERROR',
-            'error': str(e),
-            'paused': paused,
+            'connected': False, 
+            'status': 'AUTH_ERROR', 
+            'error': str(e), 
+            'paused': paused, 
             'api_key': api_key,
             'allocations': allocations
         })
 
-@app.route('/api/client/settings', methods=['POST'])
-def save_client_settings():
+@app.route('/api/watchlist/scan_all', methods=['GET'])
+def get_watchlist_scanner():
     portfolio_store.reload()
-    data = request.get_json() or {}
+    ud = portfolio_store.user_data()
+    active_profile = portfolio_store.active_username().strip().lower()
+    wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
+    holds = ud.get('holdings') or {}
+    hist = ud.get('history') or []
     
-    b_mode = data.get('broker_mode', 'paper')
-    api_key = data.get('api_key', '').strip()
-    secret_key = data.get('secret_key', '').strip()
-    allocations = data.get('allocations') or {}
-    
-    broker = portfolio_store.data.setdefault('broker', {})
-    broker['mode'] = b_mode
-    broker['api_key'] = api_key
-    broker['secret_key'] = secret_key
-    broker['allocations'] = allocations
-    
-    # Update individual strategy budgets so share calculations scale directly
-    for prof, pdata in portfolio_store.data.get('users', {}).items():
-        for s_key, s_cfg in allocations.items():
-            if s_key in prof.lower():
-                new_budget = float(s_cfg.get('budget', 500.0))
-                pdata['master_budget'] = new_budget
+    engine = MarketScoringEngine()
+    regime = engine.check_market_regime()
+    results = []
 
-    portfolio_store.save_data(portfolio_store.data)
-    return jsonify({'status': 'ok', 'message': 'Broker configuration and bot allocations updated.'})
+    def scan_item(tick):
+        try:
+            df = fetch_yf_data(tick, "5d", "5m")
+            if df.empty: return None
+            cur = df['Close'].iloc[-1]
+            sh = portfolio_store.get_shares(tick)
+            
+            avg_p, high_p = 0.0, cur
+            if sh > 0:
+                buys = [tr for tr in hist if tr.get('ticker') == tick and tr.get('action') == 'BUY']
+                if buys: avg_p = buys[0].get('price', 0.0)
+                high_p = (holds.get(tick) or {}).get('high_water', cur)
+
+            st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile, regime=regime)
+            
+            trail_pct = 0.75 if any(x in active_profile for x in ['test e', 'test tq', 'test s2']) else 1.0
+            stop_price = high_p * (1.0 - (trail_pct / 100.0))
+
+            return {
+                'ticker': tick,
+                'price': round(cur, 2),
+                'shares': sh,
+                'is_held': (sh > 0),
+                'score': st.get('score', 0),
+                'health_pct': st.get('health_pct', 0),
+                'health_text': st.get('health_text', ''),
+                'reason': st.get('reason', ''),
+                'action_main': st.get('action_main', 'HOLD'),
+                'stop_price': round(stop_price, 2),
+                'peak_price': round(high_p, 2)
+            }
+        except Exception:
+            return None
+
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for r in ex.map(scan_item, wl):
+            if r: results.append(r)
+
+    return jsonify({'items': results})
 
 @app.route('/api/broker/pause', methods=['POST'])
 def toggle_broker_pause():
