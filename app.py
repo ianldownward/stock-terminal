@@ -1225,34 +1225,30 @@ def index():
 @app.route('/api/client/settings', methods=['POST'])
 @login_required
 def api_client_settings():
-    is_admin = (session.get('role') == 'admin')
-    u = session.get('user', 'Ian')
-    b = request.get_json() or {}
+    portfolio_store.reload()
+    data = request.get_json() or {}
     
-    cap = float(b.get('starting_capital', 500.0))
-    strat = b.get('strategy', 'test s')
-    b_mode = b.get('broker_mode', 'paper')
-    api_k = b.get('api_key', '').strip()
-    sec_k = b.get('secret_key', '').strip()
+    b_mode = data.get('broker_mode', 'paper')
+    api_key = data.get('api_key', '').strip()
+    secret_key = data.get('secret_key', '').strip()
+    allocations = data.get('allocations') or {}
+    
+    # Save into the global broker store so Test TQM, Test S, etc. can all execute
+    broker = portfolio_store.data.setdefault('broker', {})
+    broker['mode'] = b_mode
+    if api_key: broker['api_key'] = api_key
+    if secret_key: broker['secret_key'] = secret_key
+    broker['allocations'] = allocations
+    
+    # Dynamically update the capital for each enabled bot
+    for prof, pdata in portfolio_store.data.get('users', {}).items():
+        for s_key, s_cfg in allocations.items():
+            if s_key in prof.lower():
+                new_budget = float(s_cfg.get('budget', 500.0))
+                pdata['master_budget'] = new_budget
 
-    if is_admin:
-        portfolio_store.reload()
-        ud = portfolio_store.user_data(u)
-        ud['master_budget'] = cap
-        ud['starting_capital'] = cap
-        ud['is_configured'] = True
-        if 'broker' not in ud: ud['broker'] = {}
-        ud['broker'].update({'strategy': strat, 'mode': b_mode, 'api_key': api_k, 'secret_key': sec_k, 'connected': bool(api_k and sec_k)})
-        portfolio_store.save_data(portfolio_store.data)
-    else:
-        ud = portfolio_store.get_client_store(u)
-        ud['master_budget'] = cap
-        ud['starting_capital'] = cap
-        ud['is_configured'] = True
-        if 'broker' not in ud: ud['broker'] = {}
-        ud['broker'].update({'strategy': strat, 'mode': b_mode, 'api_key': api_k, 'secret_key': sec_k, 'connected': bool(api_k and sec_k)})
-        portfolio_store.save_client_store(u, ud)
-    return jsonify({'status': 'ok'})
+    portfolio_store.save_data(portfolio_store.data)
+    return jsonify({'status': 'ok', 'message': 'Broker configuration and bot allocations updated.'})
 
 @app.route('/api/users', methods=['GET'])
 @login_required
@@ -2144,12 +2140,21 @@ def export_forensic_report():
 def get_broker_status():
     portfolio_store.reload()
     broker = portfolio_store.data.get('broker') or {}
-    api_key = broker.get('api_key')
-    secret_key = broker.get('secret_key')
+    api_key = broker.get('api_key', '').strip()
+    secret_key = broker.get('secret_key', '').strip()
     mode = broker.get('mode', 'paper')
+    paused = broker.get('paused', False)
+    allocations = broker.get('allocations') or {}
     
     if not api_key or not secret_key:
-        return jsonify({'connected': False, 'status': 'OFFLINE', 'buying_power': 0, 'paused': False, 'allocations': broker.get('allocations', {})})
+        return jsonify({
+            'connected': False,
+            'status': 'OFFLINE',
+            'buying_power': 0,
+            'paused': paused,
+            'api_key': api_key,
+            'allocations': allocations
+        })
 
     base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
     req = urllib.request.Request(
@@ -2165,12 +2170,20 @@ def get_broker_status():
                 'buying_power': float(acc.get('buying_power', 0.0)),
                 'cash': float(acc.get('cash', 0.0)),
                 'portfolio_value': float(acc.get('portfolio_value', 0.0)),
-                'paused': broker.get('paused', False),
+                'paused': paused,
                 'mode': mode,
-                'allocations': broker.get('allocations', {})
+                'api_key': api_key,
+                'allocations': allocations
             })
     except Exception as e:
-        return jsonify({'connected': False, 'status': 'AUTH_ERROR', 'error': str(e), 'paused': broker.get('paused', False), 'allocations': broker.get('allocations', {})})
+        return jsonify({
+            'connected': False,
+            'status': 'AUTH_ERROR',
+            'error': str(e),
+            'paused': paused,
+            'api_key': api_key,
+            'allocations': allocations
+        })
 
 @app.route('/api/client/settings', methods=['POST'])
 def save_client_settings():

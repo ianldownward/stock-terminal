@@ -2960,6 +2960,14 @@
             let urlInput = document.getElementById('settingBrokerUrl');
             if (urlInput) urlInput.value = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
 
+            // Auto-fill keys from local memory so the secret never opens blank
+            if (keyInput && localStorage.getItem('alpaca_api_key')) {
+                keyInput.value = localStorage.getItem('alpaca_api_key');
+            }
+            if (secretInput && localStorage.getItem('alpaca_api_secret')) {
+                secretInput.value = localStorage.getItem('alpaca_api_secret');
+            }
+
             let allocs = window._activeAllocations || {};
             if (allocs['test tqm']) {
                 document.getElementById('alloc_tqm_active').checked = !!allocs['test tqm'].enabled;
@@ -2995,6 +3003,8 @@
             let apiSecret = document.getElementById('settingApiSecret').value.trim();
             let brokerUrl = document.getElementById('settingBrokerUrl')?.value.trim() || 'https://app.alpaca.markets';
             localStorage.setItem('user_broker_url', brokerUrl);
+            if (apiKey) localStorage.setItem('alpaca_api_key', apiKey);
+            if (apiSecret) localStorage.setItem('alpaca_api_secret', apiSecret);
 
             let allocations = {
                 'test tqm': { enabled: document.getElementById('alloc_tqm_active').checked, budget: parseFloat(document.getElementById('alloc_tqm_val').value) || 1000 },
