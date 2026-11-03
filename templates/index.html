@@ -456,32 +456,103 @@
             margin-left: 4px;
         }
         
-        .total-shares-box { 
-            background: #1e222d; 
-            padding: 12px; 
+        .user-profile-box { 
+            background: #1a1d24; 
+            padding: 10px 12px; 
             border-radius: 8px; 
             border: 1px solid #262b36; 
-            margin-bottom: 10px; 
-            text-align: center; 
+            margin-bottom: 14px !important; 
         }
-        .total-shares-box label { 
+        .total-shares-box { 
+            background: #171a21; 
+            padding: 12px 14px; 
+            border-radius: 8px; 
+            border: 1px solid #262b36; 
+            margin-bottom: 14px !important; 
+            text-align: left; 
+        }
+        #budgetDrawer {
+            margin-bottom: 14px !important;
+        }
+        .equity-box-header {
+            margin-bottom: 6px;
+        }
+        .equity-box-header label { 
             font-size: 10px; 
             color: #ffd400; 
             text-transform: uppercase; 
-            font-weight: bold; 
+            font-weight: 800; 
+            letter-spacing: 0.5px;
+            white-space: nowrap !important; 
             display: block; 
-            margin-bottom: 4px; 
         }
-        .total-shares-box div.total-val { 
-            font-size: 18px; 
-            font-weight: bold; 
+        .equity-box-body {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 10px;
+        }
+        .equity-left-col {
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+        .equity-left-col .total-val { 
+            font-size: 24px; 
+            font-weight: 800; 
             color: #fff; 
+            line-height: 1;
+            margin-bottom: 8px;
         }
-        .total-shares-box div.total-pnl { 
-            font-size: 12px; 
-            font-weight: bold; 
-            color: #8a8a9e; 
-            margin-top: 4px; 
+        .equity-cash-shares {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        #mCashVal, #mSharesVal {
+            font-size: 11px;
+            font-weight: 600;
+            color: #8a8a9e;
+            line-height: 1.3;
+            white-space: nowrap;
+        }
+        .equity-right-col {
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: flex-end;
+            gap: 3px;
+            text-align: right;
+        }
+        .equity-stat-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 5px;
+            line-height: 1.3;
+            height: 15px;
+        }
+        .equity-label {
+            font-size: 9px;
+            font-weight: 800;
+            color: #8a8a9e;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+        .equity-val-group {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .equity-stat-val {
+            font-size: 11px;
+            font-weight: 800;
+            color: #0ecb81;
+        }
+        .equity-stat-pct {
+            font-size: 10px;
+            font-weight: 800;
+            color: #0ecb81;
         }
         
         .user-profile-box { 
@@ -1301,17 +1372,32 @@
                 </div>
             </div>
             
-            <!-- IMG_3260 TOTAL PORTFOLIO EQUITY BOX -->
-            <div class="total-shares-box" style="display:flex; justify-content:space-between; align-items:center; text-align:left; padding:10px 14px;">
-                <div>
-                    <label style="font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Total Portfolio Equity</label>
-                    <div id="mTotalSharesHeldVal" style="font-size:26px; font-weight:800; color:#fff; margin:2px 0;">£500.00</div>
-                    <div id="mTotalSharesPnL" style="font-size:11px; color:#8a8a9e; font-weight:600;">Cash: £500.00 | Shares: £0.00</div>
+            <!-- TOTAL PORTFOLIO EQUITY BOX (CLEAN GRID ALIGNMENT) -->
+            <div class="total-shares-box">
+                <div class="equity-box-header">
+                    <label>Total Portfolio Equity</label>
                 </div>
-                <div style="text-align:right; display:flex; flex-direction:column; gap:2px;">
-                    <div style="font-size:11px; font-weight:800; color:#8a8a9e;">TODAY <span id="mEquityTodayVal" style="color:#0ecb81; margin-left:4px;">+£0.00</span></div>
-                    <div id="mEquityTodayPct" style="font-size:11px; font-weight:800; color:#0ecb81;">+0.00%</div>
-                    <div style="font-size:10px; font-weight:800; color:#8a8a9e; margin-top:2px;">DAILY AVERAGE <span id="mEquityDailyAvg" style="color:#0ecb81; margin-left:3px;">+0.00%</span></div>
+                <div class="equity-box-body">
+                    <div class="equity-left-col">
+                        <div id="mTotalSharesHeldVal" class="total-val">£508.40</div>
+                        <div class="equity-cash-shares">
+                            <div id="mCashVal">Cash: £508.40</div>
+                            <div id="mSharesVal">Shares: £0.00</div>
+                        </div>
+                    </div>
+                    <div class="equity-right-col">
+                        <div class="equity-stat-row">
+                            <span class="equity-label">TODAY</span>
+                            <div class="equity-val-group">
+                                <span id="mEquityTodayVal" class="equity-stat-val">-£2.24</span>
+                                <span id="mEquityTodayPct" class="equity-stat-pct">(-0.44%)</span>
+                            </div>
+                        </div>
+                        <div class="equity-stat-row">
+                            <span class="equity-label">DAILY AVERAGE</span>
+                            <span id="mEquityDailyAvg" class="equity-stat-val">-0.44%</span>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -2743,30 +2829,15 @@
                 let activeHolds = (p.portfolio && p.portfolio.active_holds) || (p.metrics && p.metrics.active_holds) || [];
                 renderWatchlist(globalPortfolioData.watchlist, activeHolds);
 
-                // Update Mobile Current Held Share Card
-                let mobHeldEl = document.getElementById('mobHeldShareCard');
-                if (mobHeldEl) {
-                    if (activeHolds && activeHolds.length > 0) {
-                        let sym = activeHolds[0];
-                        mobHeldEl.innerHTML = `
-                            <div>
-                                <span style="font-weight:bold; font-size:15px; color:#fff;">${sym}</span>
-                                <span style="background:#ffd400; color:#000; padding:1px 5px; border-radius:3px; font-size:9px; font-weight:bold; margin-left:8px;">HELD</span>
-                            </div>
-                            <button class="btn-delete" style="font-size:14px;" onclick="deleteWatchlist('${sym}', event)">✕</button>
-                        `;
-                        mobHeldEl.onclick = () => selectStock(sym);
-                    } else {
-                        mobHeldEl.innerHTML = `
-                            <div>
-                                <span style="font-weight:bold; font-size:13px; color:#787e8e;">100% CASH</span>
-                                <span style="color:#0ecb81; font-size:10px; margin-left:6px; font-weight:bold;">(Scanning...)</span>
-                            </div>
-                            <span style="font-size:11px; color:#787e8e;">No Active Holds</span>
-                        `;
-                        mobHeldEl.onclick = null;
-                    }
-                }
+                // Update Mobile Chart Header (Preserves ticker and burger menu permanently)
+                let mobSym = document.getElementById('mobChartStockSymbol');
+                let mobHeld = document.getElementById('mobChartStockHeld');
+                let displaySymbol = currentTicker || (activeHolds.length > 0 ? activeHolds[0] : (globalPortfolioData.watchlist && globalPortfolioData.watchlist[0]) || 'TQQQ');
+                
+                if (mobSym) mobSym.innerText = displaySymbol;
+                let isCurrHeld = Array.isArray(activeHolds) && activeHolds.includes(displaySymbol);
+                if (mobHeld) mobHeld.style.display = isCurrHeld ? 'inline-block' : 'none';
+
                 if (typeof checkMobileLayout === 'function') checkMobileLayout();
                 renderLeaderboard(p.leaderboard);
                 renderHistory(globalPortfolioData.history);
@@ -2779,16 +2850,19 @@
                 document.getElementById('inputHeldVal').value = p.metrics ? p.metrics.value_owned || 0 : 0; 
                 document.getElementById('mSharesOwned').innerText = `${p.metrics ? p.metrics.shares_owned || 0 : 0} sh`;
                 
-                document.getElementById('mTotalSharesHeldVal').innerText = `£${(p.metrics ? (p.metrics.total_equity !== undefined ? p.metrics.total_equity : 500) : 500).toFixed(2)}`; 
-                document.getElementById('mTotalSharesPnL').innerText = `Cash: £${(p.metrics ? (p.metrics.budget_remaining !== undefined ? p.metrics.budget_remaining : 500) : 500).toFixed(2)} | Shares: £${(p.metrics ? p.metrics.total_portfolio_owned || 0 : 0).toFixed(2)}`;
-                
-                let pnlDisplayEl = document.getElementById('mTotalPnLDisplay');
-                if (pnlDisplayEl && p.metrics && p.metrics.total_pnl_display) {
-                    pnlDisplayEl.innerText = p.metrics.total_pnl_display;
-                    pnlDisplayEl.style.color = p.metrics.total_pnl_color || '#8a8a9e';
-                }
+                // Update Total Portfolio Equity & Separate Cash/Shares rows
+                let totEqVal = (p.metrics ? (p.metrics.total_equity !== undefined ? p.metrics.total_equity : 500) : 500).toFixed(2);
+                let cashAmt = (p.metrics ? (p.metrics.budget_remaining !== undefined ? p.metrics.budget_remaining : 500) : 500).toFixed(2);
+                let sharesAmt = (p.metrics ? p.metrics.total_portfolio_owned || 0 : 0).toFixed(2);
 
-                // Populate IMG_3260 Today & Daily Average Metrics
+                let eqValEl = document.getElementById('mTotalSharesHeldVal');
+                let cashEl = document.getElementById('mCashVal');
+                let sharesEl = document.getElementById('mSharesVal');
+                if (eqValEl) eqValEl.innerText = `£${totEqVal}`;
+                if (cashEl) cashEl.innerText = `Cash: £${cashAmt}`;
+                if (sharesEl) sharesEl.innerText = `Shares: £${sharesAmt}`;
+
+                // Update Today & Daily Average Metrics aligned with Cash & Shares
                 let activeProf = document.getElementById('userSelect')?.value || '';
                 let activeLb = (p.leaderboard || []).find(l => l.user === activeProf) || {};
                 let dayVal = activeLb.daily_pnl || 0;
@@ -2801,14 +2875,8 @@
                 let dAvgEl = document.getElementById('mEquityDailyAvg');
                 
                 if (tValEl) { tValEl.innerText = `${dayVal >= 0 ? '+' : '-'}£${Math.abs(dayVal).toFixed(2)}`; tValEl.style.color = dayCol; }
-                if (tPctEl) { tPctEl.innerText = pctStr; tPctEl.style.color = dayCol; }
+                if (tPctEl) { tPctEl.innerText = `(${pctStr})`; tPctEl.style.color = dayCol; }
                 if (dAvgEl) { dAvgEl.innerText = pctStr; dAvgEl.style.color = dayCol; }
-
-                let mobSym = document.getElementById('mobChartStockSymbol');
-                let mobHeld = document.getElementById('mobChartStockHeld');
-                if (mobSym) mobSym.innerText = currentTicker || 'TQQQ';
-                let isCurrHeld = Array.isArray(activeHolds) && activeHolds.includes(currentTicker);
-                if (mobHeld) mobHeld.style.display = isCurrHeld ? 'inline-block' : 'none';
 
                 if (p.metrics && p.metrics.regime) {
                     let fillEl = document.getElementById('thermoFill');
@@ -2857,8 +2925,9 @@
                             healthMarker.style.display = "block";
                             healthMarker.style.left = `${Math.max(0, Math.min(100, buyScore))}%`;
                         }
-                        if (stopEl) stopEl.innerText = '0';
-                        if (peakEl) peakEl.innerText = '100';
+                        // Thermometer spans full width with no 0 and 100 on the sides
+                        if (stopEl) stopEl.innerText = '';
+                        if (peakEl) peakEl.innerText = '';
                     }
                 }
                 
