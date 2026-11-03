@@ -2172,6 +2172,49 @@ def handle_broker_liquidate():
     res = alpaca_cancel_and_liquidate(broker.get('api_key'), broker.get('secret_key'), broker.get('mode', 'paper'))
     return jsonify(res)
 
+@app.route('/api/broker/liquidate_bot', methods=['POST'])
+def handle_bot_liquidate():
+    """Emergency individual strategy liquidator: closes open positions for one specific bot."""
+    portfolio_store.reload()
+    req = request.get_json() or {}
+    strat_key = req.get('strategy', '').strip().lower()
+    broker = portfolio_store.data.get('broker') or {}
+    api_k = broker.get('api_key', '').strip()
+    sec_k = broker.get('secret_key', '').strip()
+    b_mode = broker.get('mode', 'paper')
+
+    matched_profile = None
+    for p in portfolio_store.data.get('users', {}):
+        if strat_key in p.lower():
+            matched_profile = p
+            break
+
+    if not matched_profile:
+        return jsonify({'status': 'error', 'message': f'Profile matching {strat_key} not found.'}), 404
+
+    ud = portfolio_store.data['users'][matched_profile]
+    hist = ud.get('history') or []
+    active_tickers = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker'), matched_profile) > 0]))
+
+    if not active_tickers:
+        return jsonify({'status': 'ok', 'message': f'{matched_profile} has no open positions to liquidate.'})
+
+    for tick in active_tickers:
+        sh = portfolio_store.get_shares(tick, matched_profile)
+        if sh > 0:
+            df = fetch_yf_data(tick, '1d', '1m')
+            cur_p = df['Close'].iloc[-1] if not df.empty else 1.0
+            
+            # Send sell order to Alpaca if broker credentials are live
+            if api_k and sec_k:
+                send_alpaca_order(api_k, sec_k, b_mode, tick, 'sell', sh)
+            
+            # Execute local trade liquidation
+            portfolio_store.execute_trade(tick, 'SELL', sh, cur_p, matched_profile, metadata={'status': 'Manual Liquidation', 'reason': f'Individual Bot Liquidate Triggered'})
+
+    portfolio_store.save_data(portfolio_store.data)
+    return jsonify({'status': 'ok', 'message': f'Successfully liquidated {len(active_tickers)} position(s) for {matched_profile}.'})
+
 @app.route('/api/broker/disconnect', methods=['POST'])
 def handle_broker_disconnect():
     portfolio_store.reload()

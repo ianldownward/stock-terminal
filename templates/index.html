@@ -271,7 +271,7 @@
             .m-btn {
                 background: none;
                 border: none;
-                color: #fff;
+                color: #ffffff !important;
                 font-size: 11px;
                 font-weight: 700;
                 padding: 5px 4px;
@@ -284,9 +284,32 @@
                 align-items: center;
                 justify-content: center;
             }
+            .m-btn svg {
+                stroke: #ffffff !important;
+                color: #ffffff !important;
+            }
             .m-btn.active {
-                color: #ffd400;
-                background: #1e222d;
+                color: #ffd400 !important;
+                background: #1e222d !important;
+            }
+            .m-btn.active svg {
+                stroke: #ffd400 !important;
+                color: #ffd400 !important;
+            }
+            .btn-bot-liquidate {
+                padding: 3px 8px;
+                font-size: 10px;
+                font-weight: 700;
+                border: 1px solid #ff5364;
+                background: rgba(255, 83, 100, 0.12);
+                color: #ff5364;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: background 0.2s;
+            }
+            .btn-bot-liquidate:hover {
+                background: #ff5364;
+                color: #fff;
             }
             .user-profile-box {
                 margin-bottom: 0 !important;
@@ -941,69 +964,74 @@
                     </div>
                 </div>
 
-                <!-- 2. MULTI-BOT ALLOCATION MATRIX -->
+                <!-- 2. MULTI-BOT ALLOCATION MATRIX WITH INDIVIDUAL LIQUIDATORS -->
                 <div>
                     <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Active Bot Execution & Sizing</label>
-                    <p style="font-size:11px; color:#787e8e; margin:3px 0 10px 0;">Enable which algorithms route trades to Alpaca and assign their cash budget (£).</p>
+                    <p style="font-size:11px; color:#787e8e; margin:3px 0 10px 0;">Enable algorithms to route to Alpaca, assign cash budget (£), or liquidate individually.</p>
                     
                     <div style="display:flex; flex-direction:column; gap:8px; background:#13161c; padding:10px; border-radius:8px; border:1px solid #262b36;">
                         <!-- Test TQM -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28;">
                             <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
                                 <input type="checkbox" id="alloc_tqm_active" checked> 
-                                <span style="font-weight:700;">Test TQM</span> <span style="color:#787e8e; font-size:11px;">(Pure Index Hybrid)</span>
+                                <span style="font-weight:700;">Test TQM</span> <span style="color:#787e8e; font-size:11px;">(Hybrid)</span>
                             </label>
-                            <div style="display:flex; align-items:center; gap:4px;">
+                            <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" id="alloc_tqm_val" value="1000" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <input type="number" step="0.01" id="alloc_tqm_val" value="508.40" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <button type="button" onclick="liquidateSpecificBot('test tqm')" class="btn-bot-liquidate">Liquidate</button>
                             </div>
                         </div>
 
                         <!-- Test S -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28;">
                             <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
                                 <input type="checkbox" id="alloc_s_active" checked> 
-                                <span style="font-weight:700;">Test S</span> <span style="color:#787e8e; font-size:11px;">(Index Scalper)</span>
+                                <span style="font-weight:700;">Test S</span> <span style="color:#787e8e; font-size:11px;">(Scalper)</span>
                             </label>
-                            <div style="display:flex; align-items:center; gap:4px;">
+                            <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" id="alloc_s_val" value="1000" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <input type="number" step="0.01" id="alloc_s_val" value="513.99" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <button type="button" onclick="liquidateSpecificBot('test s')" class="btn-bot-liquidate">Liquidate</button>
                             </div>
                         </div>
 
                         <!-- Test TQ -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28;">
                             <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
                                 <input type="checkbox" id="alloc_tq_active" checked> 
-                                <span style="font-weight:700;">Test TQ</span> <span style="color:#787e8e; font-size:11px;">(BiDirectional Macro)</span>
+                                <span style="font-weight:700;">Test TQ</span> <span style="color:#787e8e; font-size:11px;">(Macro)</span>
                             </label>
-                            <div style="display:flex; align-items:center; gap:4px;">
+                            <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" id="alloc_tq_val" value="1000" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <input type="number" step="0.01" id="alloc_tq_val" value="510.64" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <button type="button" onclick="liquidateSpecificBot('test tq')" class="btn-bot-liquidate">Liquidate</button>
                             </div>
                         </div>
 
                         <!-- Test E25 -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0; opacity:0.85;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28; opacity:0.9;">
                             <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
                                 <input type="checkbox" id="alloc_e25_active"> 
-                                <span style="font-weight:700;">Test E25</span> <span style="color:#787e8e; font-size:11px;">(Chameleon Pro)</span>
+                                <span style="font-weight:700;">Test E25</span> <span style="color:#787e8e; font-size:11px;">(Chameleon)</span>
                             </label>
-                            <div style="display:flex; align-items:center; gap:4px;">
+                            <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" id="alloc_e25_val" value="500" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <input type="number" step="0.01" id="alloc_e25_val" value="501.70" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <button type="button" onclick="liquidateSpecificBot('test e25')" class="btn-bot-liquidate">Liquidate</button>
                             </div>
                         </div>
 
                         <!-- Test R -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0; opacity:0.85;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; opacity:0.9;">
                             <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
                                 <input type="checkbox" id="alloc_r_active"> 
-                                <span style="font-weight:700;">Test R</span> <span style="color:#787e8e; font-size:11px;">(Reversion Lab)</span>
+                                <span style="font-weight:700;">Test R</span> <span style="color:#787e8e; font-size:11px;">(Reversion)</span>
                             </label>
-                            <div style="display:flex; align-items:center; gap:4px;">
+                            <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" id="alloc_r_val" value="500" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <input type="number" step="0.01" id="alloc_r_val" value="494.70" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <button type="button" onclick="liquidateSpecificBot('test r')" class="btn-bot-liquidate">Liquidate</button>
                             </div>
                         </div>
                     </div>
@@ -1162,8 +1190,8 @@
     <!-- TOP GLOBAL HEADER BAR -->
     <header class="top-header-bar">
         <div class="header-left">
-            <img src="https://raw.githubusercontent.com/ianldownward/stock-terminal/main/static/idc-trading-logo.svg" alt="IDC Trading" id="headerLogo" class="desktop-only-logo" onerror="this.style.display='none'; document.getElementById('logoFallback').style.display='flex';">
-            <img src="https://raw.githubusercontent.com/ianldownward/stock-terminal/main/static/idc-trading-icon.svg" alt="IDC" class="mobile-only-logo" onerror="this.src='/static/idc-trading-icon.svg'">
+            <img src="/static/idc-trading-logo.svg" alt="IDC Trading" id="headerLogo" class="desktop-only-logo" onerror="this.src='https://raw.githubusercontent.com/ianldownward/stock-terminal/main/static/idc-trading-logo.svg';">
+            <img src="/static/idc-trading-icon.svg" alt="IDC" class="mobile-only-logo" onerror="this.style.display='none'; document.getElementById('logoFallback').style.display='flex';">
             <div id="logoFallback" style="display:none; align-items:center; gap:8px; font-weight:800; font-size:14px; letter-spacing:1px; color:#ffd400;">
                 <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ffd400; box-shadow:0 0 8px #ffd400;"></span>
                 <span>IDC TRADING</span>
@@ -1172,8 +1200,8 @@
         <div class="header-right" style="position:relative;">
             <!-- Flat Live Broker Status Pill -->
             <div class="header-broker-pill" id="headerBrokerPill" onclick="openSettingsModal()" title="Broker Status & Settings">
-                <span class="status-dot offline" id="headerBrokerDot"></span>
-                <span id="headerBrokerText">Broker Offline</span>
+                <span class="status-dot online" id="headerBrokerDot"></span>
+                <span id="headerBrokerText">Alpaca: Active</span>
             </div>
             <span class="header-user-badge" id="topHeaderUser">{{ current_user or 'Ian' }}</span>
             <div class="header-icons">
@@ -1477,13 +1505,13 @@
                 <span class="mobile-ctrl-label">Chart</span>
                 <div class="mobile-ctrl-pill">
                     <button class="m-btn active" id="mStyleCandle" onclick="setMobileStyle('candlestick', this)" title="Candlestick">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="2" x2="9" y2="22"></line><rect x="6" y="6" width="6" height="10" fill="#ffd400" stroke="#ffd400"></rect><line x1="17" y1="4" x2="17" y2="20"></line><rect x="14" y="9" width="6" height="8" fill="#ffd400" stroke="#ffd400"></rect></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="2" x2="9" y2="22"></line><rect x="6" y="6" width="6" height="10" fill="currentColor"></rect><line x1="17" y1="4" x2="17" y2="20"></line><rect x="14" y="9" width="6" height="8" fill="currentColor"></rect></svg>
                     </button>
                     <button class="m-btn" id="mStyleLine" onclick="setMobileStyle('line', this)" title="Line">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 17 9 11 13 15 21 7"></polyline></svg>
                     </button>
                     <button class="m-btn" id="mStyleArea" onclick="setMobileStyle('area', this)" title="Area">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8v12H3z" fill="rgba(255,212,0,0.25)" stroke="#ffd400"></path></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8v12H3z" fill="currentColor" fill-opacity="0.25"></path></svg>
                     </button>
                 </div>
             </div>
@@ -3188,7 +3216,7 @@
                         if (pauseBtn) { pauseBtn.innerText = 'Resume Relay'; }
                     } else {
                         if (dot) { dot.className = 'status-dot online'; }
-                        if (txt) { txt.style.color = '#0ecb81'; txt.innerText = `Alpaca: Active (${bpStr})`; }
+                        if (txt) { txt.style.color = '#0ecb81'; txt.innerText = 'Alpaca: Active'; }
                         if (modalTxt) { modalTxt.innerHTML = `<span style="color:#0ecb81;">Connected (${d.status})</span> &bull; Buying Power: ${bpStr}`; }
                         if (pauseBtn) { pauseBtn.innerText = 'Pause Relay'; }
                     }
@@ -3200,6 +3228,14 @@
             } catch(e) {}
         }
 
+        function getProfileCurrentEquity(keySnippet, fallback) {
+            if (Array.isArray(latestLeaderboardData) && latestLeaderboardData.length > 0) {
+                let found = latestLeaderboardData.find(l => l.user && l.user.toLowerCase().includes(keySnippet));
+                if (found && found.equity) return parseFloat(found.equity).toFixed(2);
+            }
+            return fallback.toFixed(2);
+        }
+
         function openSettingsModal() {
             fetchBrokerStatus();
             let keyInput = document.getElementById('settingApiKey');
@@ -3207,7 +3243,6 @@
             let urlInput = document.getElementById('settingBrokerUrl');
             if (urlInput) urlInput.value = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
 
-            // Auto-fill keys from local memory so the secret never opens blank
             if (keyInput && localStorage.getItem('alpaca_api_key')) {
                 keyInput.value = localStorage.getItem('alpaca_api_key');
             }
@@ -3216,28 +3251,43 @@
             }
 
             let allocs = window._activeAllocations || {};
-            if (allocs['test tqm']) {
-                document.getElementById('alloc_tqm_active').checked = !!allocs['test tqm'].enabled;
-                document.getElementById('alloc_tqm_val').value = allocs['test tqm'].budget || 1000;
-            }
-            if (allocs['test s']) {
-                document.getElementById('alloc_s_active').checked = !!allocs['test s'].enabled;
-                document.getElementById('alloc_s_val').value = allocs['test s'].budget || 1000;
-            }
-            if (allocs['test tq']) {
-                document.getElementById('alloc_tq_active').checked = !!allocs['test tq'].enabled;
-                document.getElementById('alloc_tq_val').value = allocs['test tq'].budget || 1000;
-            }
-            if (allocs['test e25']) {
-                document.getElementById('alloc_e25_active').checked = !!allocs['test e25'].enabled;
-                document.getElementById('alloc_e25_val').value = allocs['test e25'].budget || 500;
-            }
-            if (allocs['test r']) {
-                document.getElementById('alloc_r_active').checked = !!allocs['test r'].enabled;
-                document.getElementById('alloc_r_val').value = allocs['test r'].budget || 500;
-            }
+            
+            // Auto-populate with saved allocation or the bot's live £ equity from the leaderboard
+            document.getElementById('alloc_tqm_active').checked = allocs['test tqm'] ? !!allocs['test tqm'].enabled : true;
+            document.getElementById('alloc_tqm_val').value = allocs['test tqm']?.budget || getProfileCurrentEquity('test tqm', 508.40);
+
+            document.getElementById('alloc_s_active').checked = allocs['test s'] ? !!allocs['test s'].enabled : true;
+            document.getElementById('alloc_s_val').value = allocs['test s']?.budget || getProfileCurrentEquity('test s', 513.99);
+
+            document.getElementById('alloc_tq_active').checked = allocs['test tq'] ? !!allocs['test tq'].enabled : true;
+            document.getElementById('alloc_tq_val').value = allocs['test tq']?.budget || getProfileCurrentEquity('test tq', 510.64);
+
+            document.getElementById('alloc_e25_active').checked = allocs['test e25'] ? !!allocs['test e25'].enabled : false;
+            document.getElementById('alloc_e25_val').value = allocs['test e25']?.budget || getProfileCurrentEquity('test e25', 501.70);
+
+            document.getElementById('alloc_r_active').checked = allocs['test r'] ? !!allocs['test r'].enabled : false;
+            document.getElementById('alloc_r_val').value = allocs['test r']?.budget || getProfileCurrentEquity('test r', 494.70);
 
             document.getElementById('settingsModal').style.display = 'flex';
+        }
+
+        async function liquidateSpecificBot(stratKey) {
+            let prettyName = stratKey.toUpperCase();
+            if (!confirm(`Are you sure you want to close all open positions and liquidate ONLY ${prettyName}?`)) return;
+
+            try {
+                let res = await fetch('/api/broker/liquidate_bot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ strategy: stratKey })
+                });
+                let d = await res.json();
+                alert(d.message || 'Liquidation executed.');
+                fetchBrokerStatus();
+                fetchData(true);
+            } catch(e) {
+                alert('Failed to liquidate bot.');
+            }
         }
 
         function closeSettingsModal() {
