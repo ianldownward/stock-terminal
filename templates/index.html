@@ -2329,9 +2329,27 @@
             let style = document.getElementById('styleSelect') ? document.getElementById('styleSelect').value : 'candlestick';
             if (tvSeries) { try { tvChart.removeSeries(tvSeries); } catch(e){} tvSeries = null; }
 
-            if (style === 'line') tvSeries = tvChart.addLineSeries({ color: '#ffd400', lineWidth: 2 });
-            else if (style === 'area') tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(255, 212, 0, 0.4)', bottomColor: 'rgba(255, 212, 0, 0.0)', lineColor: '#ffd400' });
-            else tvSeries = tvChart.addCandlestickSeries({ upColor: '#0ecb81', downColor: '#ff5364', borderVisible: false });
+            if (style === 'line') {
+                tvSeries = tvChart.addLineSeries({ 
+                    color: '#ffd400', 
+                    lineWidth: 2 
+                });
+            } else if (style === 'area') {
+                tvSeries = tvChart.addAreaSeries({ 
+                    topColor: 'rgba(255, 212, 0, 0.35)', 
+                    bottomColor: 'rgba(255, 212, 0, 0.0)', 
+                    lineColor: '#ffd400', 
+                    lineWidth: 2 
+                });
+            } else {
+                tvSeries = tvChart.addCandlestickSeries({ 
+                    upColor: '#0ecb81', 
+                    downColor: '#ff5364', 
+                    borderVisible: false,
+                    wickUpColor: '#0ecb81',
+                    wickDownColor: '#ff5364'
+                });
+            }
 
             if (Array.isArray(masterData) && masterData.length > 0) {
                 let cleanData = masterData.map(d => {
@@ -2343,8 +2361,13 @@
                     return { time: d.time, open: o, high: h, low: l, close: c };
                 }).filter(d => d.time && !isNaN(d.close));
 
+                // Format dynamically: Line/Area expects { time, value }, Candlestick expects { time, open, high, low, close }
+                let seriesData = (style === 'line' || style === 'area')
+                    ? cleanData.map(d => ({ time: d.time, value: d.close }))
+                    : cleanData;
+
                 try {
-                    tvSeries.setData(cleanData);
+                    tvSeries.setData(seriesData);
 
                     // MATH OVERLAY: Plot 9-EMA (Orange) and 21-EMA (Purple)
                     if (showMath && cleanData.length >= 21) {
