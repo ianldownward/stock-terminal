@@ -62,6 +62,42 @@ def send_push_notification(topic, title, message):
         urllib.request.urlopen(req, timeout=5)
     except Exception: pass
 
+def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares):
+    """Sends live market orders directly to Alpaca."""
+    if not api_key or not secret_key or not ticker or shares <= 0:
+        return
+    if ticker.endswith('.L'):
+        return  # Alpaca handles US tickers (SOXL, TQQQ, SQQQ)
+    
+    base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
+    url = f"{base_url}/v2/orders"
+    payload = json.dumps({
+        "symbol": ticker.upper(),
+        "qty": int(shares),
+        "side": action.lower(),
+        "type": "market",
+        "time_in_force": "day"
+    }).encode('utf-8')
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "APCA-API-KEY-ID": api_key.strip(),
+            "APCA-API-SECRET-KEY": secret_key.strip(),
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            res_data = json.loads(resp.read().decode('utf-8'))
+            print(f"[ALPACA SUCCESS] Order Placed: {action} {shares} {ticker} -> Order ID: {res_data.get('id')}")
+            return res_data
+    except Exception as e:
+        print(f"[ALPACA ERROR] Could not execute {action} {shares} {ticker}: {e}")
+        return None
+    
 class PortfolioManager:
     def __init__(self):
         self.trade_lock = threading.Lock()
@@ -406,6 +442,26 @@ class PortfolioManager:
             else: ud['holdings'].pop(ticker, None)
             
             self.save_data(self.data)
+            # Automatic Broker Dispatch: Relays trades executed by the selected strategy
+            global_broker = self.data.get('broker') or ud.get('broker') or {}
+            active_strat = str(global_broker.get('strategy', 'test s')).lower()
+            current_profile = str(username or self.active_username()).lower()
+
+            # If this trade belongs to the strategy you selected in settings (e.g. Test S)
+            if active_strat in current_profile and global_broker.get('api_key') and global_broker.get('secret_key'):
+                threading.Thread(
+                    target=send_alpaca_order,
+                    args=(
+                        global_broker['api_key'],
+                        global_broker['secret_key'],
+                        global_broker.get('mode', 'paper'),
+                        ticker,
+                        action,
+                        shares
+                    ),
+                    daemon=True
+                ).start()
+
             ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
             if ntfy_topic: send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
             return entry
@@ -2047,6 +2103,55 @@ def export_forensic_report():
         mimetype="text/csv",
         headers={"Content-disposition": f"attachment; filename=Forensic_Trade_Audit_All_Time_{now_lon.strftime('%Y%m%d')}.csv"}
     )
+
+@app.route('/api/client/settings', methods=['POST'])
+def save_client_settings():
+    portfolio_store.reload()
+    data = request.get_json() or {}
+    
+    cap = float(data.get('starting_capital', 500.0))
+    strat = str(data.get('strategy', 'test s')).strip().lower()
+    b_mode = data.get('broker_mode', 'paper')
+    api_key = data.get('api_key', '').strip()
+    secret_key = data.get('secret_key', '').strip()
+
+    broker_config = {
+        'starting_capital': cap,
+        'strategy': strat,
+        'mode': b_mode,
+        'api_key': api_key,
+        'secret_key': secret_key
+    }
+
+    # Store globally so Test S or any other background worker profile can access it
+    portfolio_store.data['broker'] = broker_config
+
+    # Also bind to the specific test strategy profile
+    for u in portfolio_store.data.get('users', {}):
+        if strat in u.lower():
+            portfolio_store.data['users'][u]['broker'] = broker_config
+
+    # Test the connection live against Alpaca API
+    test_msg = "Settings saved in simulated sandbox mode."
+    if api_key and secret_key:
+        base_url = "https://paper-api.alpaca.markets" if b_mode == 'paper' else "https://api.alpaca.markets"
+        req = urllib.request.Request(
+            f"{base_url}/v2/account",
+            headers={
+                "APCA-API-KEY-ID": api_key,
+                "APCA-API-SECRET-KEY": secret_key
+            }
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                account_info = json.loads(resp.read().decode('utf-8'))
+                buying_power = float(account_info.get('buying_power', 0.0))
+                test_msg = f"Connected to Alpaca! Buying power: ${buying_power:,.2f}"
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': f"Alpaca verification failed: {e}"}), 400
+
+    portfolio_store.save_data(portfolio_store.data)
+    return jsonify({'status': 'ok', 'message': test_msg})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8095))
