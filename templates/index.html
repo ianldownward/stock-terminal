@@ -456,6 +456,7 @@
             margin-left: 4px;
         }
         
+        /* Clean Window Spacing in Sidebar */
         .user-profile-box { 
             background: #1a1d24; 
             padding: 10px 12px; 
@@ -472,101 +473,75 @@
             text-align: left; 
         }
         #budgetDrawer {
-            margin-bottom: 14px !important;
+            margin-bottom: 14px !important; 
         }
-        .equity-box-header {
+
+        /* Desktop Equity Grid: Clean Alignment With No Overlapping */
+        .equity-header-row {
             margin-bottom: 6px;
         }
-        .equity-box-header label { 
-            font-size: 10px; 
-            color: #ffd400; 
-            text-transform: uppercase; 
-            font-weight: 800; 
+        .equity-header-row label {
+            font-size: 10px;
+            color: #ffd400;
+            text-transform: uppercase;
+            font-weight: 800;
             letter-spacing: 0.5px;
-            white-space: nowrap !important; 
-            display: block; 
+            white-space: nowrap !important;
+            display: block;
         }
-        .equity-box-body {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            gap: 10px;
+        .equity-main-val {
+            font-size: 26px;
+            font-weight: 800;
+            color: #fff;
+            line-height: 1.1;
+            margin-bottom: 12px;
         }
-        .equity-left-col {
-            display: flex;
-            flex-direction: column;
-            text-align: left;
-        }
-        .equity-left-col .total-val { 
-            font-size: 24px; 
-            font-weight: 800; 
-            color: #fff; 
-            line-height: 1;
-            margin-bottom: 8px;
-        }
-        .equity-cash-shares {
+        .equity-stats-grid {
             display: flex;
             flex-direction: column;
-            gap: 3px;
-        }
-        #mCashVal, #mSharesVal {
-            font-size: 11px;
-            font-weight: 600;
-            color: #8a8a9e;
-            line-height: 1.3;
-            white-space: nowrap;
-        }
-        .equity-right-col {
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            align-items: flex-end;
-            gap: 3px;
-            text-align: right;
+            gap: 7px;
+            width: 100%;
         }
         .equity-stat-row {
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            justify-content: flex-end;
-            gap: 5px;
-            line-height: 1.3;
-            height: 15px;
+            height: auto;
+            min-height: 18px;
+            line-height: 1.2;
+            width: 100%;
         }
-        .equity-label {
+        .stat-left {
+            font-size: 11px;
+            font-weight: 600;
+            color: #8a8a9e;
+            white-space: nowrap;
+        }
+        .stat-right {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
+        }
+        .stat-label {
             font-size: 9px;
             font-weight: 800;
             color: #8a8a9e;
             letter-spacing: 0.4px;
             text-transform: uppercase;
+            white-space: nowrap;
         }
-        .equity-val-group {
-            display: flex;
-            align-items: center;
-            gap: 3px;
-        }
-        .equity-stat-val {
+        .stat-val {
             font-size: 11px;
             font-weight: 800;
             color: #0ecb81;
+            white-space: nowrap;
         }
-        .equity-stat-pct {
+        .stat-pct {
             font-size: 10px;
             font-weight: 800;
             color: #0ecb81;
-        }
-        
-        .user-profile-box { 
-            background: #1a1d24; 
-            padding: 10px 12px; 
-            border-radius: 8px; 
-            border: 1px solid #262b36; 
-            margin-bottom: 10px; 
-        }
-        .user-profile-box label { 
-            font-size: 10px; 
-            color: #ffd400; 
-            text-transform: uppercase; 
-            font-weight: bold; 
+            white-space: nowrap;
         }
         .user-btn { 
             padding: 3px 8px; 
@@ -1372,30 +1347,31 @@
                 </div>
             </div>
             
-            <!-- TOTAL PORTFOLIO EQUITY BOX (CLEAN GRID ALIGNMENT) -->
+            <!-- TOTAL PORTFOLIO EQUITY BOX (BALANCED TWO-ROW GRID) -->
             <div class="total-shares-box">
-                <div class="equity-box-header">
-                    <label>Total Portfolio Equity</label>
+                <div class="equity-header-row">
+                    <label>TOTAL PORTFOLIO EQUITY</label>
                 </div>
-                <div class="equity-box-body">
-                    <div class="equity-left-col">
-                        <div id="mTotalSharesHeldVal" class="total-val">£508.40</div>
-                        <div class="equity-cash-shares">
-                            <div id="mCashVal">Cash: £508.40</div>
-                            <div id="mSharesVal">Shares: £0.00</div>
+                
+                <div id="mTotalSharesHeldVal" class="equity-main-val">£508.40</div>
+                
+                <div class="equity-stats-grid">
+                    <!-- Row 1: Cash on left, TODAY on right -->
+                    <div class="equity-stat-row">
+                        <span id="mCashVal" class="stat-left">Cash: £508.40</span>
+                        <div class="stat-right">
+                            <span class="stat-label">TODAY</span>
+                            <span id="mEquityTodayVal" class="stat-val">-£2.24</span>
+                            <span id="mEquityTodayPct" class="stat-pct">(-0.44%)</span>
                         </div>
                     </div>
-                    <div class="equity-right-col">
-                        <div class="equity-stat-row">
-                            <span class="equity-label">TODAY</span>
-                            <div class="equity-val-group">
-                                <span id="mEquityTodayVal" class="equity-stat-val">-£2.24</span>
-                                <span id="mEquityTodayPct" class="equity-stat-pct">(-0.44%)</span>
-                            </div>
-                        </div>
-                        <div class="equity-stat-row">
-                            <span class="equity-label">DAILY AVERAGE</span>
-                            <span id="mEquityDailyAvg" class="equity-stat-val">-0.44%</span>
+                    
+                    <!-- Row 2: Shares on left, DAILY AVERAGE on right -->
+                    <div class="equity-stat-row">
+                        <span id="mSharesVal" class="stat-left">Shares: £0.00</span>
+                        <div class="stat-right">
+                            <span class="stat-label">DAILY AVG</span>
+                            <span id="mEquityDailyAvg" class="stat-val">+0.84%</span>
                         </div>
                     </div>
                 </div>
@@ -1430,16 +1406,15 @@
         <!-- MOBILE DASHBOARD CONTAINER -->
         <div id="mobileDashboardStack">
             <div id="mobLeaderboardCard" class="lb-item active-profile-card"></div>
-            <!-- Chart Header with Stock Symbol, HELD tag, Delete button and Watchlist Burger Menu -->
+            <!-- Permanent Chart Header Bar with Watchlist Scanner Burger -->
             <div id="mobHeldShareCard" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:6px 12px; display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:8px;">
                     <span id="mobChartStockSymbol" style="font-weight:800; font-size:15px; color:#fff;">TQQQ</span>
-                    <span id="mobChartStockHeld" style="background:#ffd400; color:#000; padding:1px 5px; border-radius:3px; font-size:9px; font-weight:800;">HELD</span>
+                    <span id="mobChartStockHeld" style="background:#ffd400; color:#000; padding:1px 5px; border-radius:3px; font-size:9px; font-weight:800; display:none;">HELD</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px;">
                     <button class="btn-delete" style="font-size:14px; padding:0 4px;" onclick="deleteWatchlist(currentTicker, event)">✕</button>
-                    <!-- Top-right burger opens Watchlist Scanner Modal -->
-                    <button type="button" class="header-icon-btn" style="width:28px; height:28px;" onclick="openWatchlistModal()" title="Watchlist Scanner">
+                    <button type="button" class="header-icon-btn" style="width:28px; height:28px; display:inline-flex;" onclick="openWatchlistModal()" title="Watchlist Scanner">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
                     </button>
                 </div>
@@ -2868,15 +2843,25 @@
                 let dayVal = activeLb.daily_pnl || 0;
                 let dayCol = dayVal >= 0 ? '#0ecb81' : '#ff5364';
                 let dayPct = activeLb.daily_pct || 0;
-                let pctStr = `${dayVal >= 0 ? '+' : ''}${dayPct.toFixed(2)}%`;
+                let pctStr = `(${dayVal >= 0 ? '+' : ''}${dayPct.toFixed(2)}%)`;
                 
+                // True Multi-Day Average: Total profit since inception divided by recorded active trading days
+                let initialCapital = activeLb.budget || 500.0;
+                let totalProfitSinceStart = parseFloat(totEqVal) - initialCapital;
+                let histEntries = globalPortfolioData.history || [];
+                let recordedDates = Array.from(new Set(histEntries.map(h => h.date_str).filter(Boolean)));
+                let activeTradingDays = Math.max(1, recordedDates.length);
+                let trueDailyAvgPct = (totalProfitSinceStart / initialCapital * 100.0) / activeTradingDays;
+                let dAvgCol = trueDailyAvgPct >= 0 ? '#0ecb81' : '#ff5364';
+                let dAvgStr = `${trueDailyAvgPct >= 0 ? '+' : ''}${trueDailyAvgPct.toFixed(2)}%`;
+
                 let tValEl = document.getElementById('mEquityTodayVal');
                 let tPctEl = document.getElementById('mEquityTodayPct');
                 let dAvgEl = document.getElementById('mEquityDailyAvg');
                 
                 if (tValEl) { tValEl.innerText = `${dayVal >= 0 ? '+' : '-'}£${Math.abs(dayVal).toFixed(2)}`; tValEl.style.color = dayCol; }
-                if (tPctEl) { tPctEl.innerText = `(${pctStr})`; tPctEl.style.color = dayCol; }
-                if (dAvgEl) { dAvgEl.innerText = pctStr; dAvgEl.style.color = dayCol; }
+                if (tPctEl) { tPctEl.innerText = pctStr; tPctEl.style.color = dayCol; }
+                if (dAvgEl) { dAvgEl.innerText = dAvgStr; dAvgEl.style.color = dAvgCol; }
 
                 if (p.metrics && p.metrics.regime) {
                     let fillEl = document.getElementById('thermoFill');
