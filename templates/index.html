@@ -1521,37 +1521,22 @@
         
         <div id="metricsDrawer">
             <div class="metrics-grid">
-                <div class="fused-card">
-                    <div class="fused-col">
-                        <h3>Live Price</h3>
-                        <p id="mPrice" class="val-highlight">--</p>
-                    </div>
-                    <div class="fused-divider"></div>
-                    <div class="fused-col">
-                        <h3>Math Discount</h3>
-                        <p id="mDisc" class="val-highlight">--</p>
-                    </div>
-                    <div class="fused-divider"></div>
-                    <div class="fused-col">
-                        <h3>Buy Score</h3>
-                        <p id="mBuy" class="val-highlight">--</p>
-                    </div>
-                </div>
-
-                <div class="card" style="flex: 0.8;">
-                    <h3>Active Tranches ⓘ</h3>
-                    <div id="mTranchesContainer" class="tranche-bars-container"></div>
-                    <p id="mTranchesText" style="font-size:10px; color:#787e8e; margin-top:4px;">--</p>
+                <!-- 1. LIVE PRICE -->
+                <div class="card" style="flex: 0.8; min-width: 120px;">
+                    <h3>Live Price</h3>
+                    <p id="mPrice" class="val-highlight" style="font-size: 19px; font-weight: 800;">--</p>
+                    <span style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Live Quote</span>
                 </div>
                 
-                <div class="card" style="flex: 0.8;">
+                <!-- 2. POSITION HELD -->
+                <div class="card" style="flex: 0.8; min-width: 130px;">
                     <h3>Position Held</h3>
-                    <p id="mHoldingShares" class="val-highlight">0 Shares</p>
+                    <p id="mHoldingShares" class="val-highlight" style="font-size: 19px; font-weight: 800;">0 Shares</p>
                     <span id="mHoldingWorth" style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Worth: £0.00</span>
                 </div>
                 
-                <!-- FULL-WIDTH THERMOMETER WITH FIGURES UNDERNEATH -->
-                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 12px; border-radius: 8px;">
+                <!-- 3. BUY SETUP READINESS / RISK THERMOMETER -->
+                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 12px; border-radius: 8px; flex: 1.5; min-width: 250px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="rotatorHealthHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buy Setup Readiness</h3>
                         <span id="rotatorHealthStatus" style="font-size:12px; font-weight:800; color:#fff;">10/100</span>
@@ -1566,7 +1551,8 @@
                     </div>
                 </div>
 
-                <div class="card" id="sentimentCard" style="flex: 1;">
+                <!-- 4. MARKET SENTIMENT -->
+                <div class="card" id="sentimentCard" style="flex: 1.1; min-width: 210px;">
                     <h3>Market Sentiment ⓘ</h3>
                     <div class="thermo-container">
                         <div class="thermo-bar-bg"><div id="thermoFill" class="thermo-bar-fill"></div></div>
@@ -2855,9 +2841,8 @@
                 renderHistory(globalPortfolioData.history);
                 
                 document.getElementById('activeTitle').innerText = p.name || currentTicker || 'Loaded Ticker';
-                document.getElementById('mPrice').innerText = p.metrics ? p.metrics.price_display || '--' : '--'; 
-                document.getElementById('mDisc').innerText = p.metrics ? p.metrics.discount || '--' : '--'; 
-                document.getElementById('mBuy').innerText = p.metrics ? p.metrics.buy_score || '--' : '--';
+                let priceEl = document.getElementById('mPrice');
+                if (priceEl) priceEl.innerText = p.metrics ? p.metrics.price_display || '--' : '--';
                 
                 let shOwned = p.metrics ? (p.metrics.shares_owned || 0) : 0;
                 let valOwned = (p.metrics ? (p.metrics.value_owned || 0) : 0).toFixed(2);
