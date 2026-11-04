@@ -1043,7 +1043,7 @@
     <div class="modal-overlay" id="watchlistModal" style="display:none;">
         <div class="modal" style="width: 480px; max-height: 85vh; display:flex; flex-direction:column;">
             <h2>
-                <span>Watchlist Scanner</span>
+                <span id="watchlistModalTitle">Watchlist</span>
                 <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeWatchlistModal()">✕</button>
             </h2>
             <div id="watchlistModalList" style="margin-top:12px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; padding-right:4px;">
@@ -3292,11 +3292,18 @@
         async function openWatchlistModal() {
             let m = document.getElementById('watchlistModal');
             let list = document.getElementById('watchlistModalList');
+            let titleEl = document.getElementById('watchlistModalTitle');
             if (m) m.style.display = 'flex';
             if (list) list.innerHTML = '<div style="color:#ffd400; text-align:center; padding:15px;">Scanning watchlist...</div>';
 
             try {
-                let res = await fetch('/api/watchlist/scan_all');
+                let activeUser = document.getElementById('userSelect')?.value || '';
+                let shortProfName = getShortProfileName(activeUser);
+                if (titleEl) titleEl.innerText = shortProfName ? `${shortProfName} Watchlist` : 'Watchlist';
+
+                // Request ONLY the active profile's own watchlist on mobile
+                let url = `/api/watchlist/scan_all?scope=active&user=${encodeURIComponent(activeUser)}`;
+                let res = await fetch(url);
                 let d = await res.json();
                 let items = d.items || [];
 
@@ -3321,9 +3328,9 @@
                                     <div style="position:absolute; top:-2px; left:${Math.max(0, Math.min(100, it.health_pct))}%; width:3px; height:14px; background:#fff; border-radius:2px;"></div>
                                 </div>
                                 <div style="display:flex; justify-content:space-between; margin-top:3px; font-size:10px; font-weight:700;">
-                                    <span style="color:#ff5364;">£${it.stop_price}</span>
+                                    <span style="color:#ff5364;">Stop: £${it.stop_price}</span>
                                     <span style="color:#8a8a9e;">${it.health_text || 'Tracking'}</span>
-                                    <span style="color:#0ecb81;">£${it.peak_price}</span>
+                                    <span style="color:#0ecb81;">Peak: £${it.peak_price}</span>
                                 </div>
                             </div>
                         `;
@@ -3332,10 +3339,11 @@
                             <div style="margin-top:6px;">
                                 <div style="display:flex; justify-content:space-between; font-size:10px; color:#ffd400; font-weight:800; margin-bottom:3px;">
                                     <span>BUY SETUP READINESS</span>
-                                    <span>${it.score}/100</span>
+                                    <span>${it.score} / 65 Target</span>
                                 </div>
                                 <div style="width:100%; height:10px; background:linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius:5px; position:relative;">
-                                    <div style="position:absolute; top:-2px; left:${Math.max(0, Math.min(100, it.score))}%; width:3px; height:14px; background:#fff; border-radius:2px;"></div>
+                                    <div style="position:absolute; top:-2px; left:65%; width:2px; height:14px; background:#ffd400; border-radius:1px; z-index:2;" title="Buy Trigger at 65"></div>
+                                    <div style="position:absolute; top:-2px; left:${Math.max(0, Math.min(100, it.score))}%; width:3px; height:14px; background:#fff; border-radius:2px; z-index:3;"></div>
                                 </div>
                                 <div style="text-align:center; font-size:10px; color:#8a8a9e; margin-top:3px;">${it.reason || 'Scanning setup...'}</div>
                             </div>
