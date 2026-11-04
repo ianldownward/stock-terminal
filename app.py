@@ -513,7 +513,7 @@ class PortfolioManager:
                     matched_alloc = s_data
                     break
 
-            if matched_alloc and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key'):
+            if matched_alloc and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
                 # Determine strategy's specific trailing stop percentage
                 strat_prof = str(current_profile).lower()
                 if any(x in strat_prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
@@ -1183,6 +1183,159 @@ def global_background_worker():
         time.sleep(90)
 
 threading.Thread(target=global_background_worker, daemon=True).start()
+
+def match_bot_from_order_id(client_order_id, profiles):
+    """Matches Alpaca client_order_id back to the specific bot profile."""
+    if not client_order_id:
+        return None
+    coid_clean = client_order_id.lower().replace('-', '_').replace(' ', '_')
+    # Sort profiles by prefix length so test_tqm is evaluated before test_tq
+    sorted_profs = sorted(profiles, key=lambda p: len(p.lower().split(' - ')[0].replace(' ', '_')), reverse=True)
+    for p in sorted_profs:
+        p_clean = p.lower().split(' - ')[0].replace(' ', '_')
+        if p_clean in coid_clean:
+            return p
+    return None
+
+def reconcile_alpaca_positions_and_orders():
+    """Two-way sync loop: reconciles Alpaca fills, trailing stops, and positions with local state."""
+    portfolio_store.reload()
+    broker = portfolio_store.data.get('broker') or {}
+    api_key = str(broker.get('api_key', '')).strip()
+    secret_key = str(broker.get('secret_key', '')).strip()
+    mode = broker.get('mode', 'paper')
+    
+    if not api_key or not secret_key:
+        return
+
+    base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
+    headers = {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": secret_key,
+        "Content-Type": "application/json"
+    }
+
+    auto_profiles = [
+        'Test TQM - Pure Index Hybrid', 
+        'Test TQ - BiDirectional Specialist',
+        'Test E25 - Chameleon Pro', 
+        'Test S - Index Scalper', 
+        'Test R - Reversion Lab'
+    ]
+
+    # 1. Reconcile Closed Orders (Native Trailing Stops & Exact Fill Prices)
+    try:
+        req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=30&direction=desc", headers=headers)
+        with urllib.request.urlopen(req_orders, timeout=5) as resp:
+            closed_orders = json.loads(resp.read().decode('utf-8'))
+            
+            for o in closed_orders:
+                if o.get('status') != 'filled':
+                    continue
+                coid = o.get('client_order_id') or ''
+                side = (o.get('side') or '').lower()
+                symbol = (o.get('symbol') or '').upper()
+                filled_qty = int(o.get('filled_qty') or 0)
+                filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
+                order_id = o.get('id')
+                
+                if not coid or filled_qty <= 0 or filled_price <= 0:
+                    continue
+                    
+                matched_prof = match_bot_from_order_id(coid, auto_profiles)
+                if not matched_prof:
+                    continue
+                    
+                ud = portfolio_store.user_data(matched_prof)
+                hist = ud.get('history') or []
+                
+                # Check for Trailing Stop SELLs executed on Alpaca
+                if side == 'sell':
+                    current_shares = portfolio_store.get_shares(symbol, matched_prof)
+                    already_logged = any(h.get('alpaca_order_id') == order_id for h in hist)
+                    if current_shares > 0 and not already_logged:
+                        print(f"[RECONCILE SYNC] Detected Alpaca filled SELL for {matched_prof}: {filled_qty} {symbol} @ £{filled_price:.2f}")
+                        portfolio_store.execute_trade(
+                            ticker=symbol,
+                            action_type='SELL',
+                            shares=min(current_shares, filled_qty),
+                            price=filled_price,
+                            username=matched_prof,
+                            metadata={
+                                'status': 'Alpaca Stop Filled',
+                                'reason': f"Native {o.get('order_type', 'stop').title()} Executed on Alpaca",
+                                'alpaca_order_id': order_id,
+                                'source': 'alpaca_sync'
+                            }
+                        )
+                # Reconcile BUY fill prices to exact Alpaca execution price
+                elif side == 'buy':
+                    for h in hist:
+                        if h.get('action') == 'BUY' and h.get('ticker') == symbol and not h.get('price_reconciled'):
+                            if abs(h.get('timestamp', 0) - int(time.time())) < 900:
+                                old_p = h.get('price', filled_price)
+                                if abs(old_p - filled_price) > 0.005:
+                                    h['price'] = round(filled_price, 2)
+                                    cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
+                                    h['amount'] = round(h['shares'] * cps, 2)
+                                    h['price_reconciled'] = True
+                                    h['alpaca_order_id'] = order_id
+                                    portfolio_store.save_data(portfolio_store.data)
+                                    print(f"[RECONCILE BUY PRICE] Updated {matched_prof} {symbol} to exact fill: £{filled_price:.2f}")
+                            break
+    except Exception as e:
+        pass
+
+    # 2. Reconcile Open Positions (Clear any orphan local holdings if Alpaca is flat)
+    try:
+        req_pos = urllib.request.Request(f"{base_url}/v2/positions", headers=headers)
+        with urllib.request.urlopen(req_pos, timeout=5) as resp:
+            live_pos = json.loads(resp.read().decode('utf-8'))
+            alpaca_holdings = {p['symbol'].upper(): int(p.get('qty', 0)) for p in live_pos}
+            allocations = broker.get('allocations') or {}
+            
+            for prof in auto_profiles:
+                # Check if this strategy is actively allocated to Alpaca
+                is_enabled = any(s_key in prof.lower() and s_data.get('enabled') for s_key, s_data in allocations.items())
+                if not is_enabled:
+                    continue
+                    
+                ud = portfolio_store.user_data(prof)
+                hist = ud.get('history') or []
+                active_tickers = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker'), prof) > 0]))
+                
+                for tk in active_tickers:
+                    if alpaca_holdings.get(tk, 0) == 0:
+                        local_sh = portfolio_store.get_shares(tk, prof)
+                        if local_sh > 0:
+                            df_p = fetch_yf_data(tk, "1d", "1m")
+                            cur_p = df_p['Close'].iloc[-1] if not df_p.empty else 1.0
+                            print(f"[RECONCILE SYNC] Clearing orphan local position for {prof}: {local_sh} {tk} (Alpaca balance = 0)")
+                            portfolio_store.execute_trade(
+                                ticker=tk,
+                                action_type='SELL',
+                                shares=local_sh,
+                                price=cur_p,
+                                username=prof,
+                                metadata={
+                                    'status': 'Alpaca Reconciled Flat',
+                                    'reason': 'Alpaca confirmed 0 shares',
+                                    'source': 'alpaca_sync'
+                                }
+                            )
+    except Exception as e:
+        pass
+
+def alpaca_reconciliation_worker():
+    time.sleep(5)
+    while True:
+        try:
+            reconcile_alpaca_positions_and_orders()
+        except Exception as e:
+            print(f"[RECONCILIATION WORKER ERROR]: {e}")
+        time.sleep(25)
+
+threading.Thread(target=alpaca_reconciliation_worker, daemon=True).start()
 
 @app.route('/health')
 def health_check():
