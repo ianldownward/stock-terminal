@@ -125,21 +125,35 @@ def send_push_notification(topic, title, message):
     except Exception: pass
 
 def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT", trail_pct=None):
-    """Sends live orders directly to Alpaca, cancelling any resting stop orders on exit so shares aren't locked."""
+    """Sends live orders directly to Alpaca with automatic Paper/Live host detection."""
     if not api_key or not secret_key or not ticker or shares <= 0:
+        print("[ALPACA REJECTED] Missing keys, ticker, or shares <= 0.")
         return None
     if ticker.endswith('.L'):
         return None  
-    
+
+    api_key_clean = api_key.strip()
+    secret_key_clean = secret_key.strip()
+
+    # AUTO-DETECT: If key starts with PK it MUST go to paper; if AK it goes to live
+    if api_key_clean.upper().startswith('PK'):
+        base_url = "https://paper-api.alpaca.markets"
+    elif api_key_clean.upper().startswith('AK'):
+        base_url = "https://api.alpaca.markets"
+    else:
+        base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
+
     clean_bot_tag = re.sub(r'[^a-zA-Z0-9_-]', '', str(bot_name).upper().replace(' ', '_'))
-    client_order_id = f"{clean_bot_tag}_{int(time.time())}"
-    base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
+    clean_client_id = f"{clean_bot_tag[:18]}_{int(time.time())}"
     
     headers = {
-        "APCA-API-KEY-ID": api_key.strip(),
-        "APCA-API-SECRET-KEY": secret_key.strip(),
-        "Content-Type": "application/json"
+        "APCA-API-KEY-ID": api_key_clean,
+        "APCA-API-SECRET-KEY": secret_key_clean,
+        "Content-Type": "application/json",
+        "User-Agent": "IDCTradingTerminal/1.0"
     }
+
+    print(f"[ALPACA ATTEMPT] {action.upper()} {shares} {ticker} via {base_url} (Bot: {bot_name})")
 
     # If exiting a position, cancel any resting trailing stop orders first so Alpaca doesn't block the sell
     if action.lower() == 'sell':
@@ -591,8 +605,10 @@ class PortfolioManager:
                     matched_alloc = s_data
                     break
 
-            if matched_alloc and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
-                # Determine strategy's specific trailing stop percentage
+            # Route to Alpaca if bot is matched OR if broker keys are present and profile is an automated test
+            should_route_alpaca = (matched_alloc is not None) or any(x in current_profile for x in ['test tqm', 'test s', 'test tq', 'test r', 'test e'])
+
+            if should_route_alpaca and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
                 strat_prof = str(current_profile).lower()
                 if any(x in strat_prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
                     t_pct = 0.75
