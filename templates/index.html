@@ -142,7 +142,7 @@
         }
 
         /* MOBILE VIEW REORDERING & BURGER MENU */
-        #mobileBurgerBtn {
+        #mobileBurgerBtn, #mobileRefreshBtn {
             display: none;
         }
         #mobileMenuDropdown {
@@ -198,7 +198,7 @@
                 height: 100vh !important; 
                 height: 100dvh !important;
                 overflow: hidden !important; 
-                padding: 6px 8px max(14px, env(safe-area-inset-bottom, 14px)) 8px !important;
+                padding: 6px 8px 0 8px !important;
                 background: #0b0c10 !important;
             }
             .top-header-bar {
@@ -214,7 +214,7 @@
                 width: auto !important; 
             }
             .header-user-badge, .header-icons { display: none !important; }
-            #mobileBurgerBtn { display: inline-flex !important; }
+            #mobileBurgerBtn, #mobileRefreshBtn { display: inline-flex !important; }
             .sidebar, .right-drawer, #colResizer { display: none !important; }
             
             .main-content { 
@@ -248,7 +248,8 @@
                 gap: 8px !important;
                 align-items: center !important;
                 justify-content: space-between !important;
-                padding: 4px 0 2px 0 !important;
+                padding: 4px 0 0 0 !important;
+                margin-bottom: max(34px, env(safe-area-inset-bottom, 34px)) !important;
                 flex-shrink: 0 !important;
             }
             .mobile-ctrl-group {
@@ -1350,6 +1351,15 @@
                 </a>
             </div>
 
+            <!-- Mobile Refresh Button -->
+            <button id="mobileRefreshBtn" class="header-icon-btn" onclick="manualRefreshTerminal(this)" title="Refresh Terminal">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="23 4 23 10 17 10"></polyline>
+                    <polyline points="1 20 1 14 7 14"></polyline>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+            </button>
+
             <!-- Mobile Burger Menu Button -->
             <button id="mobileBurgerBtn" class="header-icon-btn" onclick="toggleMobileBurgerMenu(event)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2383,6 +2393,8 @@
             if (triggerLabel) {
                 const activeLb = lbMap[activeProf] || { user: activeProf, equity: 500, daily_pnl: 0 };
                 const shortName = getShortProfileName(activeProf || 'Select Profile');
+                const isHeldActive = Boolean(activeLb.has_active_holds || activeLb.has_holding || activeLb.held_ticker || (activeLb.active_holds && activeLb.active_holds.length > 0));
+                const heldTagActive = isHeldActive ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(H)</span>` : '';
                 const eqVal = (parseFloat(activeLb.equity) || 500).toFixed(2);
                 const dVal = parseFloat(activeLb.daily_pnl) || 0;
                 const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
@@ -2396,7 +2408,7 @@
 
                 triggerLabel.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:center; width:100%; gap:8px;">
-                        <span style="font-weight:bold; color:#ffd400; font-size:13px;">${shortName}</span>
+                        <span style="font-weight:bold; color:#ffd400; font-size:13px;">${shortName}${heldTagActive}</span>
                         <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
                             <span style="color:#ffffff; font-weight:bold;">£${eqVal}</span>
                             <span style="color:${col}; font-weight:bold; white-space:nowrap;">${arrow} £${Math.abs(dVal).toFixed(2)} <span style="font-size:10px; opacity:0.9;">(${signStr}${pctStr})</span></span>
@@ -2405,12 +2417,14 @@
                 `;
             }
 
-            // Render list items
+            // Render list items with yellow (H) badge for any profile holding stock
             if (menu) {
                 menu.innerHTML = userList.map(u => {
                     const lb = lbMap[u] || { equity: 500, daily_pnl: 0 };
                     const shortName = getShortProfileName(u);
                     const isSel = (u === activeProf);
+                    const isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
+                    const heldTag = isHeld ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(H)</span>` : '';
                     const eqVal = (parseFloat(lb.equity) || 500).toFixed(2);
                     const dVal = parseFloat(lb.daily_pnl) || 0;
                     const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
@@ -2424,7 +2438,7 @@
 
                     return `
                         <div class="custom-select-item ${isSel ? 'selected' : ''}" onclick="selectCustomProfile('${u}')">
-                            <span style="font-weight:bold; color:${isSel ? '#ffd400' : '#fff'}; font-size:13px;">${shortName}</span>
+                            <span style="font-weight:bold; color:${isSel ? '#ffd400' : '#fff'}; font-size:13px;">${shortName}${heldTag}</span>
                             <div style="display:flex; align-items:center; gap:8px; font-size:12px;">
                                 <span style="color:#ffffff; font-weight:bold;">£${eqVal}</span>
                                 <span style="color:${col}; font-weight:bold; min-width:90px; text-align:right; white-space:nowrap;">${arrow} £${Math.abs(dVal).toFixed(2)} <span style="font-size:10px; opacity:0.9;">(${signStr}${pctStr})</span></span>
@@ -3191,6 +3205,16 @@
                 dd.classList.remove('open');
             }
         });
+
+        function manualRefreshTerminal(btn) {
+            if (btn) {
+                btn.style.transform = 'rotate(360deg)';
+                btn.style.transition = 'transform 0.45s ease';
+            }
+            setTimeout(() => {
+                window.location.reload();
+            }, 120);
+        }
 
         function launchBrokerPortal() {
             const url = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
