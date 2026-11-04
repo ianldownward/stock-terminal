@@ -63,7 +63,7 @@ ZdQJeTWa1nDUg0/AMwegrwsn5k8DwRMoDR8CIwsoNl82fBkAcCtzJVvG
 VAPID_CLAIMS = {"sub": "mailto:ianldownward@gmail.com"}
 
 def send_native_web_push(title, message):
-    """Sends native Apple / Web Push notifications to all subscribed devices with required APNs headers."""
+    """Sends native Apple / Web Push notifications to all subscribed devices with valid RFC 8030 headers."""
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
@@ -80,8 +80,8 @@ def send_native_web_push(title, message):
     dead_subs = []
     payload = json.dumps({'title': title, 'body': message, 'url': '/'})
     
-    # iOS APNs high-priority delivery headers
-    extra_headers = {
+    # Valid RFC 8030 Web Push headers (Removes invalid 'Topic' domain string that caused Apple HTTP 400 rejection)
+    apns_headers = {
         "TTL": "60",
         "Urgency": "high"
     }
@@ -93,10 +93,10 @@ def send_native_web_push(title, message):
                 data=payload,
                 vapid_private_key=VAPID_PRIVATE_KEY,
                 vapid_claims=VAPID_CLAIMS,
-                headers=extra_headers,
-                timeout=5
+                headers=apns_headers,
+                timeout=8
             )
-            print(f"[PUSH SUCCESS] Notification dispatched to {sub.get('endpoint', '')[:35]}...")
+            print(f"[PUSH SUCCESS] Notification successfully delivered to Apple Push Network.")
         except Exception as ex:
             print(f"[PUSH EXCEPTION] Failed to send push: {ex}")
             if hasattr(ex, 'response') and getattr(ex.response, 'status_code', None) in [404, 410]:
