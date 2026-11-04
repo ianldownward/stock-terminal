@@ -62,13 +62,16 @@ def send_push_notification(topic, title, message):
         urllib.request.urlopen(req, timeout=5)
     except Exception: pass
 
-def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares):
-    """Sends live market orders directly to Alpaca and records in memory."""
+def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT"):
+    """Sends live market orders directly to Alpaca tagged with the bot strategy name."""
     if not api_key or not secret_key or not ticker or shares <= 0:
         return None
     if ticker.endswith('.L'):
         return None  # Alpaca handles US tickers (TQQQ, SOXL, SQQQ)
     
+    clean_bot_tag = re.sub(r'[^a-zA-Z0-9_-]', '', str(bot_name).upper().replace(' ', '_'))
+    client_order_id = f"{clean_bot_tag}_{int(time.time())}"
+
     base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
     url = f"{base_url}/v2/orders"
     payload = json.dumps({
@@ -76,7 +79,8 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares):
         "qty": int(shares),
         "side": action.lower(),
         "type": "market",
-        "time_in_force": "day"
+        "time_in_force": "day",
+        "client_order_id": client_order_id
     }).encode('utf-8')
 
     req = urllib.request.Request(
@@ -493,7 +497,8 @@ class PortfolioManager:
                         global_broker.get('mode', 'paper'),
                         ticker,
                         action,
-                        shares
+                        shares,
+                        current_profile
                     ),
                     daemon=True
                 ).start()
@@ -2270,7 +2275,7 @@ def handle_bot_liquidate():
             
             # Send sell order to Alpaca if broker credentials are live
             if api_k and sec_k:
-                send_alpaca_order(api_k, sec_k, b_mode, tick, 'sell', sh)
+                send_alpaca_order(api_k, sec_k, b_mode, tick, 'sell', sh, matched_profile)
             
             # Execute local trade liquidation
             portfolio_store.execute_trade(tick, 'SELL', sh, cur_p, matched_profile, metadata={'status': 'Manual Liquidation', 'reason': f'Individual Bot Liquidate Triggered'})
