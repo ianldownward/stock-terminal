@@ -63,29 +63,33 @@ ZdQJeTWa1nDUg0/AMwegrwsn5k8DwRMoDR8CIwsoNl82fBkAcCtzJVvG
 VAPID_CLAIMS = {"sub": "mailto:ianldownward@gmail.com"}
 
 def send_native_web_push(title, message):
-    """Sends native Apple / Web Push notifications to all subscribed devices with RFC 8030 headers."""
+    """Sends native Apple / Web Push notifications with full APNs priority headers."""
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
-        print("[PUSH ALERT ERROR] 'pywebpush' library is not installed in the python environment.")
-        return
+        print("[PUSH ALERT ERROR] 'pywebpush' library is not installed.")
+        return {'status': 'error', 'message': 'pywebpush not installed on server'}
 
     portfolio_store.reload()
     subs = portfolio_store.data.get('push_subscriptions') or []
     print(f"[PUSH ATTEMPT] {title} | Subscribed devices: {len(subs)}")
     if not subs:
-        print("[PUSH ALERT NOTICE] No devices registered in database. Open IDC Trading on iPhone and tap Enable Alerts.")
-        return
+        print("[PUSH ALERT NOTICE] No devices registered. Tap Setup Alerts on iPhone.")
+        return {'status': 'error', 'message': 'No registered devices in database. Re-sync from iPhone.'}
 
     dead_subs = []
     payload = json.dumps({'title': title, 'body': message, 'url': '/'})
     
-    # Valid RFC 8030 headers for Apple Web Push
+    # Apple APNs High-Priority Wake Headers
     apns_headers = {
         "TTL": "60",
-        "Urgency": "high"
+        "Urgency": "high",
+        "apns-priority": "10",
+        "apns-push-type": "alert"
     }
 
+    sent_count = 0
+    errors = []
     for sub in subs:
         try:
             webpush(
@@ -96,15 +100,21 @@ def send_native_web_push(title, message):
                 headers=apns_headers,
                 timeout=8
             )
-            print(f"[PUSH SUCCESS] Notification delivered to Apple Push Network.")
+            sent_count += 1
+            print(f"[PUSH SUCCESS] Notification delivered to APNs.")
         except Exception as ex:
             print(f"[PUSH EXCEPTION] Delivery failed: {ex}")
+            errors.append(str(ex))
             if hasattr(ex, 'response') and getattr(ex.response, 'status_code', None) in [404, 410]:
                 dead_subs.append(sub)
 
     if dead_subs:
         portfolio_store.data['push_subscriptions'] = [s for s in subs if s not in dead_subs]
         portfolio_store.save_data(portfolio_store.data)
+
+    if sent_count > 0:
+        return {'status': 'ok', 'sent': sent_count}
+    return {'status': 'error', 'message': errors[0] if errors else 'Push failed'}
 
 def send_push_notification(topic, title, message):
     if not topic: return
@@ -144,18 +154,21 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
         except Exception as e:
             print(f"[ALPACA NOTICE] Pre-cancel open orders: {e}")
 
+    headers["User-Agent"] = "IDCTradingTerminal/1.0"
+    clean_client_id = f"{clean_bot_tag[:18]}_{int(time.time())}"
+
     payload = json.dumps({
         "symbol": ticker.upper(),
         "qty": int(shares),
         "side": action.lower(),
         "type": "market",
         "time_in_force": "day",
-        "client_order_id": client_order_id
+        "client_order_id": clean_client_id
     }).encode('utf-8')
 
     req = urllib.request.Request(f"{base_url}/v2/orders", data=payload, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=6) as resp:
             res_data = json.loads(resp.read().decode('utf-8'))
             print(f"[ALPACA SUCCESS] {action.upper()} {shares} {ticker} -> ID: {res_data.get('id')}")
             
@@ -169,15 +182,19 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
                     "type": "trailing_stop",
                     "trail_percent": round(trail_pct, 2),
                     "time_in_force": "day",
-                    "client_order_id": f"{clean_bot_tag}_TRAIL_{int(time.time())}"
+                    "client_order_id": f"{clean_bot_tag[:14]}_TR_{int(time.time())}"
                 }).encode('utf-8')
                 req_trail = urllib.request.Request(f"{base_url}/v2/orders", data=trail_payload, headers=headers, method="POST")
-                with urllib.request.urlopen(req_trail, timeout=5):
+                with urllib.request.urlopen(req_trail, timeout=6):
                     print(f"[ALPACA TRAIL SECURED] Native {trail_pct}% Stop active on exchange.")
             return res_data
+    except urllib.error.HTTPError as he:
+        err_body = he.read().decode('utf-8', errors='ignore')
+        print(f"[ALPACA HTTP ERROR {he.code}] {err_body}")
+        return {'status': 'error', 'code': he.code, 'message': err_body}
     except Exception as e:
         print(f"[ALPACA ERROR] Execution failed: {e}")
-        return None
+        return {'status': 'error', 'message': str(e)}
 
 def alpaca_cancel_and_liquidate(api_key, secret_key, mode):
     """Emergency Panic Switch: Cancels all open orders and liquidates all open positions."""
@@ -1404,11 +1421,41 @@ def alpaca_reconciliation_worker():
 
 threading.Thread(target=alpaca_reconciliation_worker, daemon=True).start()
 
+SW_JAVASCRIPT = """
+self.addEventListener('install', (e) => { self.skipWaiting(); });
+self.addEventListener('activate', (e) => { e.waitUntil(clients.claim()); });
+self.addEventListener('push', (e) => {
+    let d = { title: 'IDC Trading Alert', body: 'New trade executed.', url: '/' };
+    if (e.data) {
+        try { d = e.data.json(); } catch(err) { d.body = e.data.text(); }
+    }
+    const opts = {
+        body: d.body,
+        icon: '/static/apple-touch-icon.png',
+        badge: '/static/apple-touch-icon.png',
+        data: { url: d.url || '/' },
+        tag: 'idc-alert-' + Date.now(),
+        renotify: true
+    };
+    e.waitUntil(self.registration.showNotification(d.title, opts));
+});
+self.addEventListener('notificationclick', (e) => {
+    e.notification.close();
+    e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cl) => {
+        for (let c of cl) {
+            if (c.url.includes(self.location.origin) && 'focus' in c) return c.focus();
+        }
+        if (clients.openWindow) return clients.openWindow(e.notification.data.url || '/');
+    }));
+});
+"""
+
 @app.route('/sw.js')
 def service_worker_file():
-    resp = app.send_static_file('sw.js')
+    from flask import Response
+    resp = Response(SW_JAVASCRIPT.strip(), mimetype='application/javascript')
     resp.headers['Service-Worker-Allowed'] = '/'
-    resp.headers['Content-Type'] = 'application/javascript'
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return resp
 
 @app.route('/manifest.json')
@@ -1434,11 +1481,28 @@ def save_push_subscription():
 
 @app.route('/api/push/test', methods=['POST'])
 def test_push_notification():
-    send_native_web_push(
+    res = send_native_web_push(
         title="IDC Trading • Live Alert Test",
         message="✅ iPhone Web Push Connected! Live trades will now notify directly to your phone screen."
     )
-    return jsonify({'status': 'ok'})
+    return jsonify(res or {'status': 'ok'})
+
+@app.route('/api/broker/test_order', methods=['POST'])
+@login_required
+def test_alpaca_order():
+    portfolio_store.reload()
+    broker = portfolio_store.data.get('broker') or {}
+    api_k = str(broker.get('api_key', '')).strip()
+    sec_k = str(broker.get('secret_key', '')).strip()
+    b_mode = broker.get('mode', 'paper')
+
+    if not api_k or not sec_k:
+        return jsonify({'status': 'error', 'message': 'Missing Alpaca API credentials. Enter keys and click Save & Launch Engine first.'}), 400
+
+    res = send_alpaca_order(api_k, sec_k, b_mode, 'TQQQ', 'buy', 1, bot_name="TEST_ORDER")
+    if isinstance(res, dict) and res.get('id'):
+        return jsonify({'status': 'ok', 'message': f"Alpaca Order Placed! ID: {res.get('id')}", 'data': res})
+    return jsonify({'status': 'error', 'message': f"Order failed: {res.get('message') if isinstance(res, dict) else res}"}), 400
 
 @app.route('/health')
 def health_check():

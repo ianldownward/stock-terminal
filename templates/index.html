@@ -1087,6 +1087,10 @@
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
                                 <span id="pauseBtnLabel">Pause Relay</span>
                             </button>
+                            <button type="button" onclick="triggerTestAlpacaOrder()" class="btn-control" style="padding:5px 10px; font-size:11px; border-color:#0ecb81; color:#0ecb81;" title="Send a 1-share test market order to Alpaca">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                <span>Test 1-Sh Buy</span>
+                            </button>
                             <button type="button" onclick="triggerEmergencyLiquidate()" class="btn-control" style="padding:5px 10px; font-size:11px; border-color:#ff5364; background:rgba(255,83,100,0.12); color:#ff5364;">
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                                 <span>Liquidate All</span>
@@ -3635,10 +3639,16 @@
                 const d = await saveRes.json();
 
                 if (d.status === 'ok') {
-                    if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81;'>✅ Connected & Active! Dispatched test alert.</span>";
+                    if (statusEl) statusEl.innerHTML = "<span style='color:#ffd400;'>Registering... sending test alert...</span>";
                     if (btnLabel) btnLabel.innerText = 'Re-Sync Device';
-                    // Trigger immediate test push
-                    await fetch('/api/push/test', { method: 'POST' });
+                    
+                    let testRes = await fetch('/api/push/test', { method: 'POST' });
+                    let testData = await testRes.json();
+                    if (testData.status === 'ok') {
+                        if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81;'>✅ Connected! Alert sent to your lock screen.</span>";
+                    } else {
+                        if (statusEl) statusEl.innerHTML = `<span style='color:#ff5364;'>⚠️ ${testData.message || 'Error sending alert'}</span>`;
+                    }
                 } else {
                     alert("Could not register device with server.");
                     if (btnLabel) btnLabel.innerText = 'Enable Phone Alerts';
@@ -3647,6 +3657,22 @@
                 console.error("Push registration error:", err);
                 alert("Setup note: " + err.message);
                 if (btnLabel) btnLabel.innerText = 'Enable Phone Alerts';
+            }
+        }
+
+        async function triggerTestAlpacaOrder() {
+            if (!confirm("Send a test 1-share market order of TQQQ to your Alpaca paper account?")) return;
+            try {
+                let res = await fetch('/api/broker/test_order', { method: 'POST' });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    alert(d.message);
+                    fetchBrokerStatus();
+                } else {
+                    alert("Alpaca rejected order: " + (d.message || JSON.stringify(d)));
+                }
+            } catch(e) {
+                alert("Failed to communicate with broker endpoint.");
             }
         }
 
