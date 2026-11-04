@@ -2110,6 +2110,96 @@ def get_data():
     except Exception as e: 
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/report/forensic', methods=['GET'])
+def export_forensic_report():
+    import io, csv
+    from flask import Response
+    portfolio_store.reload()
+    now_lon = pd.Timestamp.now(tz='Europe/London')
+    
+    rows = []
+    users_data = portfolio_store.data.get('users', {})
+    daily_pnl_map = {} 
+    
+    # PASS 1: Calculate trade data and accumulate daily totals per profile
+    for u, u_data in users_data.items():
+        if not isinstance(u_data, dict): continue
+        hist = u_data.get('history') or []
+        
+        buy_records = {}
+        for t in reversed(hist):
+            tk = t.get('ticker')
+            if not tk or tk == 'CALIBRATION': continue
+            
+            if t.get('action') == 'BUY':
+                if tk not in buy_records: buy_records[tk] = []
+                buy_records[tk].append(t)
+            elif t.get('action') == 'SELL' and tk in buy_records and buy_records[tk]:
+                buy = buy_records[tk].pop(0)
+                buy_price = float(buy.get('price', 1))
+                sell_price = float(t.get('price', 1))
+                shares = int(t.get('shares', 1))
+                
+                diff_val = (sell_price - buy_price) * shares
+                diff_pct = ((sell_price - buy_price) / buy_price) * 100.0
+                
+                peak_p = float(t.get('highest_price', sell_price))
+                peak_p = max(peak_p, sell_price, buy_price)
+                peak_pct = ((peak_p - buy_price) / buy_price) * 100.0
+                capture_eff = (diff_pct / peak_pct * 100.0) if peak_pct > 0 else 0.0
+                
+                duration_mins = max(1, int((t.get('timestamp', 0) - buy.get('timestamp', 0)) / 60))
+                date_key = t.get('date_str', '')
+                
+                # Accumulate daily P&L for this specific profile
+                if (u, date_key) not in daily_pnl_map: 
+                    daily_pnl_map[(u, date_key)] = 0.0
+                daily_pnl_map[(u, date_key)] += diff_val
+                
+                rows.append({
+                    'Trade_Date': date_key,
+                    'Profile': u,
+                    'Ticker': tk,
+                    'Shares': shares,
+                    'Entry_Time': buy.get('time', ''),
+                    'Exit_Time': t.get('time', ''),
+                    'Hold_Mins': duration_mins,
+                    'Entry_Price': round(buy_price, 2),
+                    'Exit_Price': round(sell_price, 2),
+                    'Peak_Price': round(peak_p, 2),
+                    'Peak_PnL_%': round(peak_pct, 2),
+                    'Realized_PnL_£': round(diff_val, 2),
+                    'Realized_PnL_%': round(diff_pct, 2),
+                    'Capture_Efficiency_%': round(capture_eff, 2),
+                    'Exit_Trigger': t.get('status', 'Manual/EOD'),
+                    'Exit_Reason': t.get('reason', '')
+                })
+                
+    # PASS 2: Stamp the aggregate daily totals onto each row
+    for r in rows:
+        day_val = daily_pnl_map.get((r['Profile'], r['Trade_Date']), 0.0)
+        r['Profile_Daily_PnL_£'] = round(day_val, 2)
+        r['Profile_Daily_PnL_%'] = round((day_val / 500.0) * 100.0, 2)
+                
+    output = io.StringIO()
+    if rows:
+        fieldnames = [
+            'Trade_Date', 'Profile', 'Profile_Daily_PnL_£', 'Profile_Daily_PnL_%',
+            'Ticker', 'Shares', 'Entry_Time', 'Exit_Time', 'Hold_Mins',
+            'Entry_Price', 'Exit_Price', 'Peak_Price', 'Peak_PnL_%',
+            'Realized_PnL_£', 'Realized_PnL_%', 'Capture_Efficiency_%',
+            'Exit_Trigger', 'Exit_Reason'
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+        
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-disposition": f"attachment; filename=Forensic_Trade_Audit_All_Time_{now_lon.strftime('%Y%m%d')}.csv"}
+    )
+
 @app.route('/api/broker/status', methods=['GET'])
 def get_broker_status():
     portfolio_store.reload()
