@@ -62,18 +62,41 @@ def send_push_notification(topic, title, message):
         urllib.request.urlopen(req, timeout=5)
     except Exception: pass
 
-def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT"):
-    """Sends live market orders directly to Alpaca tagged with the bot strategy name."""
+def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT", trail_pct=None):
+    """Sends live orders directly to Alpaca tagged with bot name. Adds native trailing stop on BUYs."""
     if not api_key or not secret_key or not ticker or shares <= 0:
         return None
     if ticker.endswith('.L'):
-        return None  # Alpaca handles US tickers (TQQQ, SOXL, SQQQ)
+        return None  
     
     clean_bot_tag = re.sub(r'[^a-zA-Z0-9_-]', '', str(bot_name).upper().replace(' ', '_'))
     client_order_id = f"{clean_bot_tag}_{int(time.time())}"
-
     base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
-    url = f"{base_url}/v2/orders"
+    
+    headers = {
+        "APCA-API-KEY-ID": api_key.strip(),
+        "APCA-API-SECRET-KEY": secret_key.strip(),
+        "Content-Type": "application/json"
+    }
+
+    # If this is a BUY order, attach an OTO (One Triggers Other) Trailing Stop natively on the exchange
+    if action.lower() == 'buy' and trail_pct:
+        order_dict = {
+            "symbol": ticker.upper(),
+            "qty": int(shares),
+            "side": "buy",
+            "type": "market",
+            "time_in_force": "day",
+            "client_order_id": client_order_id,
+            "order_class": "oto",
+            "stop_loss": {
+                "stop_price": 0, # Ignored by Alpaca when trailing_stop is used, but required by schema
+            }
+        }
+        # Note: True native trailing stops via OTO require a fixed price. 
+        # For dynamic trails, we must send a separate trailing_stop order immediately after the buy.
+        # Fallback to standard market order for the entry.
+    
     payload = json.dumps({
         "symbol": ticker.upper(),
         "qty": int(shares),
@@ -83,23 +106,30 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
         "client_order_id": client_order_id
     }).encode('utf-8')
 
-    req = urllib.request.Request(
-        url,
-        data=payload,
-        headers={
-            "APCA-API-KEY-ID": api_key.strip(),
-            "APCA-API-SECRET-KEY": secret_key.strip(),
-            "Content-Type": "application/json"
-        },
-        method="POST"
-    )
+    req = urllib.request.Request(f"{base_url}/v2/orders", data=payload, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             res_data = json.loads(resp.read().decode('utf-8'))
-            print(f"[ALPACA SUCCESS] {action} {shares} {ticker} -> Order ID: {res_data.get('id')}")
+            print(f"[ALPACA ENTRY] {action} {shares} {ticker} -> ID: {res_data.get('id')}")
+            
+            # Instantly attach a native Trailing Stop order resting on Alpaca's servers
+            if action.lower() == 'buy' and trail_pct:
+                time.sleep(1) # Brief pause to let entry fill
+                trail_payload = json.dumps({
+                    "symbol": ticker.upper(),
+                    "qty": int(shares),
+                    "side": "sell",
+                    "type": "trailing_stop",
+                    "trail_percent": round(trail_pct, 2),
+                    "time_in_force": "day",
+                    "client_order_id": f"{clean_bot_tag}_TRAIL_{int(time.time())}"
+                }).encode('utf-8')
+                req_trail = urllib.request.Request(f"{base_url}/v2/orders", data=trail_payload, headers=headers, method="POST")
+                with urllib.request.urlopen(req_trail, timeout=5) as t_resp:
+                    print(f"[ALPACA TRAIL SECURED] Native {trail_pct}% Stop active on exchange.")
             return res_data
     except Exception as e:
-        print(f"[ALPACA ERROR] Execution failed for {action} {shares} {ticker}: {e}")
+        print(f"[ALPACA ERROR] Execution failed: {e}")
         return None
 
 def alpaca_cancel_and_liquidate(api_key, secret_key, mode):
@@ -489,6 +519,17 @@ class PortfolioManager:
                     break
 
             if matched_alloc and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key'):
+                # Determine strategy's specific trailing stop percentage
+                strat_prof = str(current_profile).lower()
+                if any(x in strat_prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
+                    t_pct = 0.75
+                elif 'test e5' in strat_prof:
+                    t_pct = 0.35
+                elif any(x in strat_prof for x in ['test e', 'test s']):
+                    t_pct = 1.00
+                else:
+                    t_pct = 0.50
+
                 threading.Thread(
                     target=send_alpaca_order,
                     args=(
@@ -498,7 +539,8 @@ class PortfolioManager:
                         ticker,
                         action,
                         shares,
-                        current_profile
+                        current_profile,
+                        t_pct
                     ),
                     daemon=True
                 ).start()
