@@ -44,7 +44,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
-        cache_duration = 115 if interval in ['1m', '2m', '5m'] else 300
+        cache_duration = 180 if interval in ['1m', '2m', '5m'] else 400
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
             if not df.empty and (now - cached_time < cache_duration): return df.copy()
@@ -59,11 +59,11 @@ def send_push_notification(topic, title, message):
     try:
         url = f"https://ntfy.sh/{topic.strip()}"
         req = urllib.request.Request(url, data=message.encode('utf-8'), headers={'Title': title})
-        urllib.request.urlopen(req, timeout=5)
+        with urllib.request.urlopen(req, timeout=5): pass
     except Exception: pass
 
 def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT", trail_pct=None):
-    """Sends live orders directly to Alpaca tagged with bot name. Adds native trailing stop on BUYs."""
+    """Sends live orders directly to Alpaca, cancelling any resting stop orders on exit so shares aren't locked."""
     if not api_key or not secret_key or not ticker or shares <= 0:
         return None
     if ticker.endswith('.L'):
@@ -79,24 +79,19 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
         "Content-Type": "application/json"
     }
 
-    # If this is a BUY order, attach an OTO (One Triggers Other) Trailing Stop natively on the exchange
-    if action.lower() == 'buy' and trail_pct:
-        order_dict = {
-            "symbol": ticker.upper(),
-            "qty": int(shares),
-            "side": "buy",
-            "type": "market",
-            "time_in_force": "day",
-            "client_order_id": client_order_id,
-            "order_class": "oto",
-            "stop_loss": {
-                "stop_price": 0, # Ignored by Alpaca when trailing_stop is used, but required by schema
-            }
-        }
-        # Note: True native trailing stops via OTO require a fixed price. 
-        # For dynamic trails, we must send a separate trailing_stop order immediately after the buy.
-        # Fallback to standard market order for the entry.
-    
+    # If exiting a position, cancel any resting trailing stop orders first so Alpaca doesn't block the sell
+    if action.lower() == 'sell':
+        try:
+            req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=open&symbols={ticker.upper()}", headers=headers)
+            with urllib.request.urlopen(req_orders, timeout=4) as resp:
+                open_orders = json.loads(resp.read().decode('utf-8'))
+                for o in open_orders:
+                    del_req = urllib.request.Request(f"{base_url}/v2/orders/{o['id']}", headers=headers, method="DELETE")
+                    with urllib.request.urlopen(del_req, timeout=4): pass
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"[ALPACA NOTICE] Pre-cancel open orders: {e}")
+
     payload = json.dumps({
         "symbol": ticker.upper(),
         "qty": int(shares),
@@ -110,11 +105,11 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             res_data = json.loads(resp.read().decode('utf-8'))
-            print(f"[ALPACA ENTRY] {action} {shares} {ticker} -> ID: {res_data.get('id')}")
+            print(f"[ALPACA SUCCESS] {action.upper()} {shares} {ticker} -> ID: {res_data.get('id')}")
             
-            # Instantly attach a native Trailing Stop order resting on Alpaca's servers
+            # Attach native trailing stop order on Alpaca exchange servers after BUY fills
             if action.lower() == 'buy' and trail_pct:
-                time.sleep(1) # Brief pause to let entry fill
+                time.sleep(1) # Brief pause to allow entry fill
                 trail_payload = json.dumps({
                     "symbol": ticker.upper(),
                     "qty": int(shares),
@@ -125,7 +120,7 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
                     "client_order_id": f"{clean_bot_tag}_TRAIL_{int(time.time())}"
                 }).encode('utf-8')
                 req_trail = urllib.request.Request(f"{base_url}/v2/orders", data=trail_payload, headers=headers, method="POST")
-                with urllib.request.urlopen(req_trail, timeout=5) as t_resp:
+                with urllib.request.urlopen(req_trail, timeout=5):
                     print(f"[ALPACA TRAIL SECURED] Native {trail_pct}% Stop active on exchange.")
             return res_data
     except Exception as e:
@@ -145,7 +140,7 @@ def alpaca_cancel_and_liquidate(api_key, secret_key, mode):
             headers={"APCA-API-KEY-ID": api_key.strip(), "APCA-API-SECRET-KEY": secret_key.strip()},
             method="DELETE"
         )
-        urllib.request.urlopen(req_cancel, timeout=5)
+        with urllib.request.urlopen(req_cancel, timeout=5): pass
     except Exception: pass
 
     # 2. Close all open positions at market
@@ -1166,12 +1161,13 @@ def global_background_worker():
     time.sleep(3)
     while True:
         try:
-            bot_tickers = ['SQQQ', '3SUS.L', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'CEG', 'VST', 'VRT', 'ANET', 'RKLB', 'ASTS', 'LUNR', 'FLY', 'YSS', 'TSAT', 'MDA', 'TSLA', 'AMD', 'AMZN', 'AAPL', 'META', 'MSFT', 'PLTR', 'COIN', 'CONL', 'MSTX', 'BITX', 'AZN.L', 'BARC.L', 'LLOY.L', 'GLEN.L', 'RIO.L', 'HSBA.L', 'GSK.L', 'ULVR.L', 'SGLN.L', 'SSLN.L', 'TQQQ', 'SOXL', 'NVDL', 'QQQ', 'YCA.L', 'U-UN.TO', 'PHYS', 'PSLV', 'CEF', 'JPM', 'BAC', 'AVGO']
+            # Prefetch active ETF and high-liquidity symbols to avoid rate limits
+            bot_tickers = ['TQQQ', 'SOXL', 'SQQQ', 'QQQ', 'NVDA', 'TSLA', 'PLTR', 'MSTR', 'AMD', 'AMZN', 'LUNR']
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
                 fetch_yf_data(tk, "1d", "1m")
-            with ThreadPoolExecutor(max_workers=4) as ex:
-                ex.map(prefetch, set(bot_tickers))
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                list(ex.map(prefetch, set(bot_tickers)))
 
             auto_profiles = [
                 'Test TQM - Pure Index Hybrid', 
@@ -1184,7 +1180,7 @@ def global_background_worker():
                 process_auto_profile(prof)
         except Exception as e: 
             print(f"Background Loop Error: {e}")
-        time.sleep(120)
+        time.sleep(90)
 
 threading.Thread(target=global_background_worker, daemon=True).start()
 
@@ -2404,13 +2400,8 @@ def handle_bot_liquidate():
         if sh > 0:
             df = fetch_yf_data(tick, '1d', '1m')
             cur_p = df['Close'].iloc[-1] if not df.empty else 1.0
-            
-            # Send sell order to Alpaca if broker credentials are live
-            if api_k and sec_k:
-                send_alpaca_order(api_k, sec_k, b_mode, tick, 'sell', sh, matched_profile)
-            
-            # Execute local trade liquidation
-            portfolio_store.execute_trade(tick, 'SELL', sh, cur_p, matched_profile, metadata={'status': 'Manual Liquidation', 'reason': f'Individual Bot Liquidate Triggered'})
+            # execute_trade already dispatches the sell to Alpaca internally; no duplicate call needed
+            portfolio_store.execute_trade(tick, 'SELL', sh, cur_p, matched_profile, metadata={'status': 'Manual Liquidation', 'reason': 'Individual Bot Liquidate Triggered'})
 
     portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok', 'message': f'Successfully liquidated {len(active_tickers)} position(s) for {matched_profile}.'})

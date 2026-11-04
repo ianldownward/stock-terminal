@@ -3,3 +3,6 @@ gunicorn
 pandas
 yfinance
 pymongo[srv]
+openpyxl
+numpy
+matplotlib
