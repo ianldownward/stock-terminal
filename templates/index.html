@@ -479,19 +479,18 @@
             margin-bottom: 14px !important; 
             text-align: left; 
         }
-        #budgetDrawer {
-            margin-bottom: 10px !important; 
-        }
         #watchlistDrawer[open] {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 10px;
+        }
+        #readinessDrawer[open] {
             flex: 1;
             display: flex;
             flex-direction: column;
             min-height: 0;
             margin-bottom: 0;
-        }
-        #watchlistDrawer[open] .watchlist {
-            flex: 1;
-            max-height: none !important;
         }
 
         /* Desktop Equity Grid: Clean Alignment With No Overlapping */
@@ -1452,25 +1451,21 @@
                 </div>
             </div>
             
-            <details class="drawer-details" id="budgetDrawer" open>
-                <summary>Capital Settings</summary>
-                <div class="master-budget-box" style="margin-top:10px; margin-bottom:0; background:transparent; border:none; padding:0;">
-                    <label>Starting Capital (£)</label>
-                    <input type="number" id="masterBudgetInput" value="500" onchange="onMasterBudgetInput()">
-                    <div class="budget-sub-stats">
-                        <div><span>Live Cash Balance:</span> <b id="mBudgetRemaining" style="color:#0ecb81;">£500.00</b></div>
-                    </div>
-                </div>
-            </details>
-
             <details class="drawer-details" id="watchlistDrawer" open>
                 <summary>Live Watchlist</summary>
-                <div style="margin-top:10px; flex:1; display:flex; flex-direction:column; min-height:0;">
+                <div style="margin-top:10px; display:flex; flex-direction:column; min-height:0;">
                     <div class="search-box">
                         <input type="text" id="addTickerInput" placeholder="Add Symbol...">
                         <button id="addBtn">+</button>
                     </div>
-                    <ul class="watchlist" id="watchlistUI" style="max-height: 520px;"></ul>
+                    <ul class="watchlist" id="watchlistUI" style="max-height: 220px;"></ul>
+                </div>
+            </details>
+
+            <details class="drawer-details" id="readinessDrawer" open>
+                <summary>Readiness & Risk</summary>
+                <div id="readinessUI" style="margin-top:10px; display:flex; flex-direction:column; gap:6px; flex:1; overflow-y:auto; padding-right:4px;">
+                    <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning all strategy tickers...</div>
                 </div>
             </details>
         </div>
@@ -1565,13 +1560,16 @@
                 </div>
                 
                 <!-- 3. BUY SETUP READINESS / RISK THERMOMETER -->
-                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 12px; border-radius: 8px; flex: 1.5; min-width: 250px;">
+                <!-- FULL-WIDTH THERMOMETER WITH FIGURES UNDERNEATH -->
+                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 12px; border-radius: 8px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="rotatorHealthHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buy Setup Readiness</h3>
-                        <span id="rotatorHealthStatus" style="font-size:12px; font-weight:800; color:#fff;">10/100</span>
+                        <span id="rotatorHealthStatus" style="font-size:12px; font-weight:800; color:#fff;">10 / 65 Target</span>
                     </div>
-                    <div style="width:100%; height: 13px; background: linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius: 7px; position: relative;">
-                        <div id="rotatorHealthMarker" style="position: absolute; top: -3px; left: 10%; width: 4px; height: 19px; background: #ffffff; border-radius: 2px; box-shadow: 0 0 6px #ffffff; transition: left 0.4s ease;"></div>
+                    <div style="width:100%; height: 13px; background: linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius: 7px; position: relative; overflow: visible;">
+                        <!-- Gold Buy Trigger Notch at 65% -->
+                        <div id="rotatorBuyTriggerLine" style="position: absolute; top: -4px; left: 65%; width: 2px; height: 21px; background: #ffd400; border-radius: 1px; box-shadow: 0 0 6px rgba(255, 212, 0, 0.9); z-index: 2;" title="Buy Trigger (65)"></div>
+                        <div id="rotatorHealthMarker" style="position: absolute; top: -3px; left: 10%; width: 4px; height: 19px; background: #ffffff; border-radius: 2px; box-shadow: 0 0 6px #ffffff; transition: left 0.4s ease; z-index: 3;"></div>
                     </div>
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:11px; font-weight:700;">
                         <span id="rotatorStopPrice" style="color:#ff5364;"></span>
@@ -2941,8 +2939,10 @@
                     let stopEl = document.getElementById('rotatorStopPrice');
                     let peakEl = document.getElementById('rotatorPeakPrice');
 
+                    let trigLine = document.getElementById('rotatorBuyTriggerLine');
                     let sharesOwned = p.metrics.shares_owned || 0;
                     if (sharesOwned > 0) {
+                        if (trigLine) trigLine.style.display = 'none'; // Hide trigger notch when in position
                         if (healthHeader) healthHeader.innerText = "Risk Thermometer (Trailing Stop)";
                         if (healthStatus) healthStatus.innerText = `${p.metrics.health_pct || 0}%`;
                         if (healthSubtext) healthSubtext.innerText = p.metrics.health_text || "Tracking Position";
@@ -2961,20 +2961,21 @@
                         let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
                         let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));
 
-                        if (stopEl) stopEl.innerText = `£${stopPrice.toFixed(2)}`;
-                        if (peakEl) peakEl.innerText = `£${peakPrice.toFixed(2)}`;
+                        if (stopEl) stopEl.innerText = `Stop: £${stopPrice.toFixed(2)}`;
+                        if (peakEl) peakEl.innerText = `Peak: £${peakPrice.toFixed(2)}`;
                     } else {
+                        if (trigLine) trigLine.style.display = 'block'; // Show trigger line at 65%
                         let buyScore = parseInt(p.metrics.buy_score) || 0;
+                        let isReady = buyScore >= 65;
                         if (healthHeader) healthHeader.innerText = "Buy Setup Readiness";
-                        if (healthStatus) healthStatus.innerText = `${buyScore}/100`;
-                        if (healthSubtext) healthSubtext.innerText = p.metrics.reason || p.metrics.action_main || "Scanning...";
+                        if (healthStatus) healthStatus.innerHTML = `<span style="color:${isReady ? '#0ecb81' : '#fff'};">${buyScore}</span> <span style="color:#ffd400; font-size:10px;">/ 65 Target</span>`;
+                        if (healthSubtext) healthSubtext.innerText = isReady ? `SURGE DETECTED (Trigger Hit): ${p.metrics.reason}` : (p.metrics.reason || p.metrics.action_main || "Scanning...");
                         if (healthMarker) {
                             healthMarker.style.display = "block";
                             healthMarker.style.left = `${Math.max(0, Math.min(100, buyScore))}%`;
                         }
-                        // Thermometer spans full width with no 0 and 100 on the sides
-                        if (stopEl) stopEl.innerText = '';
-                        if (peakEl) peakEl.innerText = '';
+                        if (stopEl) stopEl.innerHTML = `<span style="font-size:9px; color:#787e8e;">0</span>`;
+                        if (peakEl) peakEl.innerHTML = `<span style="font-size:9px; color:#ffd400;">65 Trigger &bull; 100 Max</span>`;
                     }
                 }
                 
@@ -3577,9 +3578,59 @@
             }
         }
 
+        async function fetchReadinessScanner() {
+            try {
+                let res = await fetch('/api/watchlist/scan_all');
+                let d = await res.json();
+                let items = d.items || [];
+                
+                // Sort: Held items at top (sorted by health), then non-held sorted by buy score descending
+                items.sort((a, b) => {
+                    if (a.is_held && !b.is_held) return -1;
+                    if (!a.is_held && b.is_held) return 1;
+                    if (a.is_held && b.is_held) return b.health_pct - a.health_pct;
+                    return b.score - a.score;
+                });
+                
+                let html = items.map(it => {
+                    let isHeld = it.is_held;
+                    let valPct = isHeld ? it.health_pct : it.score;
+                    let isCurrent = (it.ticker === currentTicker);
+                    let color = '#8a8a9e';
+                    let label = '';
+                    
+                    if (isHeld) {
+                        color = valPct >= 70 ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#ff5364');
+                        label = `<span style="color:${color}; font-weight:800;">RISK: ${valPct}%</span> <span style="font-size:9px; color:#8a8a9e;">(Stop £${it.stop_price})</span>`;
+                    } else {
+                        let isReady = valPct >= 65;
+                        color = isReady ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#4a5060');
+                        label = isReady ? `<span style="color:#0ecb81; font-weight:900;">READY ${valPct}</span> <span style="font-size:9px; color:#ffd400;">(65+)</span>` : `<span style="color:#e1e3e6; font-weight:700;">${valPct}</span> <span style="font-size:9px; color:#8a8a9e;">/ 65</span>`;
+                    }
+                    
+                    return `
+                    <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:6px; padding:6px 8px; cursor:pointer;" onclick="selectStock('${it.ticker}')">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <span style="font-weight:bold; font-size:11px; color:#fff;">${it.ticker} ${isHeld ? '<span style="color:#ffd400; font-weight:900; margin-left:3px;">(H)</span>' : ''}</span>
+                            <span style="font-size:10px;">${label}</span>
+                        </div>
+                        <div style="width:100%; height:6px; background:#1e222d; border-radius:3px; position:relative; overflow:hidden;">
+                            ${!isHeld ? '<div style="position:absolute; left:65%; top:0; bottom:0; width:1.5px; background:#ffd400; z-index:2;" title="Buy Trigger at 65"></div>' : ''}
+                            <div style="width:${Math.max(0, Math.min(100, valPct))}%; height:100%; background:${color}; transition: width 0.3s ease;"></div>
+                        </div>
+                    </div>`;
+                }).join('');
+                
+                let ui = document.getElementById('readinessUI');
+                if (ui) ui.innerHTML = html;
+            } catch(e) {}
+        }
+
         // Poll broker status every 15 seconds
         setInterval(fetchBrokerStatus, 15000);
+        setInterval(fetchReadinessScanner, 15000);
         setTimeout(fetchBrokerStatus, 1000);
+        setTimeout(fetchReadinessScanner, 1500);
     </script>
 </body>
 </html>
