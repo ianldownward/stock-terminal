@@ -2,7 +2,12 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="IDC Trading">
+    <link rel="apple-touch-icon" href="/static/idc-trading-icon.svg">
+    <link rel="icon" href="/static/idc-trading-icon.svg">
     <title>Pro Stock Terminal</title>
     <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
     <style>
@@ -977,6 +982,36 @@
         </div>
     </div>
 
+    <!-- PUSH NOTIFICATION ALERT MODAL -->
+    <div class="modal-overlay" id="alertModal" style="display:none;">
+        <div class="modal" style="width: 440px;">
+            <h2>
+                <span>Mobile Trade Alerts</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeAlertModal()">✕</button>
+            </h2>
+            <div style="margin-top:14px; display:flex; flex-direction:column; gap:12px;">
+                <p style="font-size:12px; color:#8a8a9e; line-height:1.5; margin:0;">
+                    Receive instant push notifications to your phone whenever a bot executes a trade or hits a trailing stop on Alpaca.
+                </p>
+                <div style="background:#13161c; border:1px solid #262b36; padding:12px; border-radius:8px;">
+                    <ol style="margin:0; padding-left:16px; font-size:12px; color:#e1e3e6; display:flex; flex-direction:column; gap:6px;">
+                        <li>Download the free <b>ntfy</b> app on your iPhone or Android.</li>
+                        <li>Tap '+' to subscribe to a new topic.</li>
+                        <li>Create a private, random topic name below and subscribe to the exact same name in the app.</li>
+                    </ol>
+                </div>
+                <div>
+                    <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Your Private Topic Name</label>
+                    <input type="text" id="alertTopicInput" placeholder="e.g. idc-trades-9x2b" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:14px; font-family:monospace;">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
+                    <button class="btn-control" onclick="closeAlertModal()">Cancel</button>
+                    <button class="btn-control" style="background:#ffd400; color:#000;" onclick="saveAlertSettings()">Save & Test Alert</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- MOBILE WATCHLIST SCANNER MODAL -->
     <div class="modal-overlay" id="watchlistModal" style="display:none;">
         <div class="modal" style="width: 480px; max-height: 85vh; display:flex; flex-direction:column;">
@@ -1442,7 +1477,7 @@
                     <div class="action-buttons">
                         <button id="btnShowTrades" class="btn-control active" onclick="toggleShowTrades()">Trades</button>
                         <button id="btnShowMath" class="btn-control" onclick="toggleShowMath()">Math Overlay</button>
-                        <button class="btn-control" onclick="openJourneyModal()">Setup Alerts</button>
+                        <button class="btn-control" onclick="openAlertModal()">Setup Alerts</button>
                         <button id="btnDraw" class="btn-control" onclick="toggleDrawMode()">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="21" y2="7"></line><polygon points="21 7 7 21 3 21 3 17 17 3"></polygon></svg>
                             <span id="drawBtnText">Draw Line</span>
@@ -3435,6 +3470,34 @@
                 await fetchBrokerStatus();
                 fetchData(true);
             } catch(e) {}
+        }
+
+        // PUSH NOTIFICATION MODAL ENGINE
+        function openAlertModal() {
+            let topic = (globalPortfolioData.settings && globalPortfolioData.settings.ntfy_topic) ? globalPortfolioData.settings.ntfy_topic : '';
+            document.getElementById('alertTopicInput').value = topic;
+            document.getElementById('alertModal').style.display = 'flex';
+        }
+
+        function closeAlertModal() {
+            document.getElementById('alertModal').style.display = 'none';
+        }
+
+        async function saveAlertSettings() {
+            let topic = document.getElementById('alertTopicInput').value.trim();
+            try {
+                await fetch('/api/portfolio/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ settings: { ntfy_topic: topic } })
+                });
+                
+                alert(`Alerts linked to topic: ${topic || 'DISABLED'}\n\nMake sure you subscribe to '${topic}' inside the ntfy app on your phone!`);
+                closeAlertModal();
+                fetchData(false);
+            } catch (e) {
+                alert('Failed to save alert settings.');
+            }
         }
 
         // Poll broker status every 15 seconds
