@@ -503,7 +503,7 @@
             max-height: none !important;
         }
         #readinessDrawer[open] {
-            flex: 1 1 0;
+            flex: 1 1 auto;
             min-height: 120px;
             display: flex;
             flex-direction: column;
@@ -513,6 +513,7 @@
         #readinessDrawer[open] #readinessUI {
             flex: 1;
             overflow-y: auto !important;
+            max-height: 46vh !important;
             min-height: 0;
             padding-right: 4px;
             -webkit-overflow-scrolling: touch;
@@ -1495,7 +1496,7 @@
 
             <details class="drawer-details" id="readinessDrawer" open>
                 <summary>Readiness & Risk</summary>
-                <div id="readinessUI" style="margin-top:10px; display:flex; flex-direction:column; gap:6px; flex:1; min-height:0; overflow-y:auto; padding-right:4px;">
+                <div id="readinessUI" style="margin-top:10px; display:flex; flex-direction:column; gap:6px; flex:1; min-height:0; max-height:46vh; overflow-y:auto; padding-right:4px;">
                     <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning all strategy tickers...</div>
                 </div>
             </details>
@@ -1576,22 +1577,22 @@
         
         <div id="metricsDrawer">
             <div class="metrics-grid">
-                <!-- 1. LIVE PRICE (Slimmed by ~30%) -->
-                <div class="card" style="flex: 0.55; min-width: 90px; padding: 10px 8px;">
+                <!-- 1. LIVE PRICE (Slimmed to flex: 0.5) -->
+                <div class="card" style="flex: 0.5; min-width: 90px; padding: 10px 8px;">
                     <h3>Live Price</h3>
                     <p id="mPrice" class="val-highlight" style="font-size: 18px; font-weight: 800;">--</p>
                     <span style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Live Quote</span>
                 </div>
                 
-                <!-- 2. POSITION HELD (Slimmed by ~30%) -->
-                <div class="card" style="flex: 0.55; min-width: 100px; padding: 10px 8px;">
+                <!-- 2. POSITION HELD (Slimmed to flex: 0.5) -->
+                <div class="card" style="flex: 0.5; min-width: 95px; padding: 10px 8px;">
                     <h3>Position Held</h3>
                     <p id="mHoldingShares" class="val-highlight" style="font-size: 18px; font-weight: 800;">0 Shares</p>
                     <span id="mHoldingWorth" style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Worth: £0.00</span>
                 </div>
                 
                 <!-- 3. BUY SETUP READINESS / RISK THERMOMETER -->
-                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 12px; border-radius: 8px; flex: 1.45; min-width: 220px;">
+                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.5; min-width: 230px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="rotatorHealthHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buy Setup Readiness</h3>
                         <span id="rotatorHealthStatus" style="font-size:12px; font-weight:800; color:#fff;">10 / 65 Target</span>
@@ -1608,8 +1609,8 @@
                     </div>
                 </div>
 
-                <!-- 4. MARKET SENTIMENT (Matching Style, Weight, and Alignment) -->
-                <div class="card" id="sentimentCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 12px; border-radius: 8px; flex: 1.45; min-width: 220px;">
+                <!-- 4. MARKET SENTIMENT (Identical Style, Weight, and Alignment) -->
+                <div class="card" id="sentimentCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.5; min-width: 230px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="sentimentHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Market Sentiment ⓘ</h3>
                         <span id="sentimentScore" style="font-size:12px; font-weight:800; color:#fff;">--/100</span>
@@ -3671,10 +3672,12 @@
                         label = isReady ? `<span style="color:#0ecb81; font-weight:900;">READY ${valPct}</span> <span style="font-size:9px; color:#ffd400;">(65+)</span>` : `<span style="color:#e1e3e6; font-weight:700;">${valPct}</span> <span style="font-size:9px; color:#8a8a9e;">/ 65</span>`;
                     }
                     
+                    let botBadge = (isHeld && it.user_tag) ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(${it.user_tag})</span>` : (isHeld ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(H)</span>` : '');
+
                     return `
                     <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:6px; padding:6px 8px; cursor:pointer;" onclick="selectStock('${it.ticker}')">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                            <span style="font-weight:bold; font-size:11px; color:#fff;">${it.ticker} ${isHeld ? '<span style="color:#ffd400; font-weight:900; margin-left:3px;">(H)</span>' : ''}</span>
+                            <span style="font-weight:bold; font-size:11px; color:#fff;">${it.ticker} ${botBadge}</span>
                             <span style="font-size:10px;">${label}</span>
                         </div>
                         <div style="width:100%; height:6px; background:#1e222d; border-radius:3px; position:relative; overflow:hidden;">

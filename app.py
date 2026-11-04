@@ -63,7 +63,7 @@ ZdQJeTWa1nDUg0/AMwegrwsn5k8DwRMoDR8CIwsoNl82fBkAcCtzJVvG
 VAPID_CLAIMS = {"sub": "mailto:ianldownward@gmail.com"}
 
 def send_native_web_push(title, message):
-    """Sends native Apple / Web Push notifications to all subscribed devices with valid RFC 8030 headers."""
+    """Sends native Apple / Web Push notifications to all subscribed devices with RFC 8030 headers."""
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
@@ -80,7 +80,7 @@ def send_native_web_push(title, message):
     dead_subs = []
     payload = json.dumps({'title': title, 'body': message, 'url': '/'})
     
-    # Valid RFC 8030 Web Push headers (Removes invalid 'Topic' domain string that caused Apple HTTP 400 rejection)
+    # Valid RFC 8030 headers for Apple Web Push
     apns_headers = {
         "TTL": "60",
         "Urgency": "high"
@@ -96,9 +96,9 @@ def send_native_web_push(title, message):
                 headers=apns_headers,
                 timeout=8
             )
-            print(f"[PUSH SUCCESS] Notification successfully delivered to Apple Push Network.")
+            print(f"[PUSH SUCCESS] Notification delivered to Apple Push Network.")
         except Exception as ex:
-            print(f"[PUSH EXCEPTION] Failed to send push: {ex}")
+            print(f"[PUSH EXCEPTION] Delivery failed: {ex}")
             if hasattr(ex, 'response') and getattr(ex.response, 'status_code', None) in [404, 410]:
                 dead_subs.append(sub)
 
@@ -554,6 +554,15 @@ class PortfolioManager:
             self.save_data(self.data)
             # Multi-Bot Broker Dispatch Engine
             global_broker = self.data.get('broker') or {}
+            
+            # Fallback to user credentials if top-level store is missing keys
+            if not global_broker.get('api_key') or not global_broker.get('secret_key'):
+                for u in self.data.get('users', {}).values():
+                    if isinstance(u, dict) and u.get('broker', {}).get('api_key'):
+                        global_broker.update(u['broker'])
+                        self.data['broker'] = global_broker
+                        break
+
             is_paused = global_broker.get('paused', False)
             allocations = global_broker.get('allocations') or {}
             current_profile = str(username or self.active_username()).lower()
@@ -2550,61 +2559,56 @@ def get_broker_status():
 @app.route('/api/watchlist/scan_all', methods=['GET'])
 def get_watchlist_scanner():
     portfolio_store.reload()
-    ud = portfolio_store.user_data()
     active_profile = portfolio_store.active_username().strip().lower()
-    
-    # Gather EVERY ticker across all watchlists and open positions globally
-    all_tickers = set()
-    held_by_any = {}
-    users_dict = portfolio_store.data.get('users', {})
-    for u, u_data in users_dict.items():
-        if isinstance(u_data, dict):
-            for tk in u_data.get('watchlist', []):
-                all_tickers.add(tk.upper())
-            for tr in u_data.get('history', []):
-                sh = portfolio_store.get_shares(tr.get('ticker', ''), u)
-                if sh > 0:
-                    all_tickers.add(tr.get('ticker').upper())
-                    held_by_any[tr.get('ticker').upper()] = u
-
-    wl = list(all_tickers) if all_tickers else ['TQQQ', 'SOXL', 'SQQQ']
-    holds = ud.get('holdings') or {}
-    hist = ud.get('history') or []
-    
     engine = MarketScoringEngine()
     regime = engine.check_market_regime()
+    users_dict = portfolio_store.data.get('users', {})
+    
+    held_positions = []
+    all_wl_tickers = set()
+
+    # 1. Collect every active holding across every bot with that bot's specific rules
+    for u, u_data in users_dict.items():
+        if not isinstance(u_data, dict): continue
+        for tk in u_data.get('watchlist', []):
+            all_wl_tickers.add(tk.upper())
+        for tr in u_data.get('history', []):
+            tk = tr.get('ticker', '').upper()
+            if not tk or tk == 'CALIBRATION': continue
+            sh = portfolio_store.get_shares(tk, u)
+            if sh > 0 and not any(p['ticker'] == tk and p['user'] == u for p in held_positions):
+                buys = [b for b in u_data.get('history', []) if b.get('ticker') == tk and b.get('action') == 'BUY']
+                avg_p = buys[0].get('price', 0.0) if buys else 0.0
+                hw = (u_data.get('holdings', {}).get(tk) or {}).get('high_water', avg_p)
+                short_tag = u.split(' - ')[0].replace('Test ', '').strip()
+                held_positions.append({
+                    'ticker': tk,
+                    'user': u,
+                    'user_tag': short_tag,
+                    'shares': sh,
+                    'avg_price': avg_p,
+                    'high_water': hw
+                })
+
     results = []
 
-    def scan_item(tick):
+    # 2. Process all held positions with their specific entry price & trailing stop
+    for p in held_positions:
         try:
-            df = fetch_yf_data(tick, "5d", "5m")
-            if df.empty: return None
+            df = fetch_yf_data(p['ticker'], "5d", "5m")
+            if df.empty: continue
             cur = df['Close'].iloc[-1]
-            sh = portfolio_store.get_shares(tick)
-            is_held_any = (tick in held_by_any) or (sh > 0)
+            st = engine.score_momentum(df, cur, avg_buy_price=p['avg_price'], highest_price=p['high_water'], profile=p['user'].lower(), regime=regime)
             
-            avg_p, high_p = 0.0, cur
-            if sh > 0:
-                buys = [tr for tr in hist if tr.get('ticker') == tick and tr.get('action') == 'BUY']
-                if buys: avg_p = buys[0].get('price', 0.0)
-                high_p = (holds.get(tick) or {}).get('high_water', cur)
-            elif is_held_any:
-                holder_u = held_by_any.get(tick)
-                holder_ud = users_dict.get(holder_u, {})
-                buys = [tr for tr in holder_ud.get('history', []) if tr.get('ticker') == tick and tr.get('action') == 'BUY']
-                if buys: avg_p = buys[0].get('price', 0.0)
-                high_p = (holder_ud.get('holdings', {}).get(tick) or {}).get('high_water', cur)
-
-            st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile, regime=regime)
+            trail_pct = 0.75 if any(x in p['user'].lower() for x in ['test e', 'test tq', 'test s2']) else 1.0
+            stop_price = p['high_water'] * (1.0 - (trail_pct / 100.0))
             
-            trail_pct = 0.75 if any(x in active_profile for x in ['test e', 'test tq', 'test s2']) else 1.0
-            stop_price = high_p * (1.0 - (trail_pct / 100.0))
-
-            return {
-                'ticker': tick,
+            results.append({
+                'ticker': p['ticker'],
+                'user_tag': p['user_tag'],
                 'price': round(cur, 2),
-                'shares': sh,
-                'is_held': is_held_any,
+                'shares': p['shares'],
+                'is_held': True,
                 'score': st.get('score', 0),
                 'target_score': 65,
                 'health_pct': st.get('health_pct', 0),
@@ -2612,13 +2616,38 @@ def get_watchlist_scanner():
                 'reason': st.get('reason', ''),
                 'action_main': st.get('action_main', 'HOLD'),
                 'stop_price': round(stop_price, 2),
-                'peak_price': round(high_p, 2)
+                'peak_price': round(p['high_water'], 2)
+            })
+        except Exception: pass
+
+    # 3. Process all non-held candidate tickers for the current active strategy
+    candidate_tickers = [t for t in all_wl_tickers if not any(p['ticker'] == t and p['user'].lower() == active_profile for p in held_positions)]
+    
+    def scan_candidate(tick):
+        try:
+            df = fetch_yf_data(tick, "5d", "5m")
+            if df.empty: return None
+            cur = df['Close'].iloc[-1]
+            st = engine.score_momentum(df, cur, avg_buy_price=0.0, highest_price=cur, profile=active_profile, regime=regime)
+            return {
+                'ticker': tick,
+                'user_tag': '',
+                'price': round(cur, 2),
+                'shares': 0,
+                'is_held': False,
+                'score': st.get('score', 0),
+                'target_score': 65,
+                'health_pct': 0,
+                'health_text': '',
+                'reason': st.get('reason', ''),
+                'action_main': st.get('action_main', 'HOLD'),
+                'stop_price': 0.0,
+                'peak_price': round(cur, 2)
             }
-        except Exception:
-            return None
+        except Exception: return None
 
     with ThreadPoolExecutor(max_workers=4) as ex:
-        for r in ex.map(scan_item, wl):
+        for r in ex.map(scan_candidate, candidate_tickers):
             if r: results.append(r)
 
     return jsonify({'items': results})
