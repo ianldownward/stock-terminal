@@ -503,8 +503,8 @@
             max-height: none !important;
         }
         #readinessDrawer[open] {
-            flex: 1 1 auto;
-            min-height: 120px;
+            flex: 1 1 0;
+            min-height: 140px;
             display: flex;
             flex-direction: column;
             margin-bottom: 0 !important;
@@ -512,9 +512,9 @@
         }
         #readinessDrawer[open] #readinessUI {
             flex: 1;
-            overflow-y: auto !important;
-            max-height: 46vh !important;
-            min-height: 0;
+            overflow-y: scroll !important;
+            max-height: calc(100vh - 430px) !important;
+            min-height: 100px;
             padding-right: 4px;
             -webkit-overflow-scrolling: touch;
         }
@@ -1577,28 +1577,27 @@
         
         <div id="metricsDrawer">
             <div class="metrics-grid">
-                <!-- 1. LIVE PRICE (Slimmed to flex: 0.5) -->
-                <div class="card" style="flex: 0.5; min-width: 90px; padding: 10px 8px;">
+                <!-- 1. LIVE PRICE -->
+                <div class="card" style="flex: 0.45; min-width: 85px; padding: 10px 8px;">
                     <h3>Live Price</h3>
                     <p id="mPrice" class="val-highlight" style="font-size: 18px; font-weight: 800;">--</p>
                     <span style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Live Quote</span>
                 </div>
                 
-                <!-- 2. POSITION HELD (Slimmed to flex: 0.5) -->
-                <div class="card" style="flex: 0.5; min-width: 95px; padding: 10px 8px;">
+                <!-- 2. POSITION HELD -->
+                <div class="card" style="flex: 0.45; min-width: 90px; padding: 10px 8px;">
                     <h3>Position Held</h3>
                     <p id="mHoldingShares" class="val-highlight" style="font-size: 18px; font-weight: 800;">0 Shares</p>
                     <span id="mHoldingWorth" style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Worth: £0.00</span>
                 </div>
                 
                 <!-- 3. BUY SETUP READINESS / RISK THERMOMETER -->
-                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.5; min-width: 230px;">
+                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.55; min-width: 230px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="rotatorHealthHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buy Setup Readiness</h3>
                         <span id="rotatorHealthStatus" style="font-size:12px; font-weight:800; color:#fff;">10 / 65 Target</span>
                     </div>
                     <div style="width:100%; height: 13px; background: linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius: 7px; position: relative; overflow: visible;">
-                        <!-- Gold Buy Trigger Notch at 65% -->
                         <div id="rotatorBuyTriggerLine" style="position: absolute; top: -4px; left: 65%; width: 2px; height: 21px; background: #ffd400; border-radius: 1px; box-shadow: 0 0 6px rgba(255, 212, 0, 0.9); z-index: 2;" title="Buy Trigger (65)"></div>
                         <div id="rotatorHealthMarker" style="position: absolute; top: -3px; left: 10%; width: 4px; height: 19px; background: #ffffff; border-radius: 2px; box-shadow: 0 0 6px #ffffff; transition: left 0.4s ease; z-index: 3;"></div>
                     </div>
@@ -1609,8 +1608,8 @@
                     </div>
                 </div>
 
-                <!-- 4. MARKET SENTIMENT (Identical Style, Weight, and Alignment) -->
-                <div class="card" id="sentimentCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.5; min-width: 230px;">
+                <!-- 4. MARKET SENTIMENT (Matching Style, Weight, and Alignment) -->
+                <div class="card" id="sentimentCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.55; min-width: 230px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="sentimentHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Market Sentiment ⓘ</h3>
                         <span id="sentimentScore" style="font-size:12px; font-weight:800; color:#fff;">--/100</span>
@@ -2454,14 +2453,14 @@
                 `;
             }
 
-            // Render list items with yellow (H) badge for any profile holding stock
+            // Render list items with stacked percentage under the figure (Strategy Name stays on 1 line)
             if (menu) {
                 menu.innerHTML = userList.map(u => {
                     const lb = lbMap[u] || { equity: 500, daily_pnl: 0 };
                     const shortName = getShortProfileName(u);
                     const isSel = (u === activeProf);
                     const isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
-                    const heldTag = isHeld ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(H)</span>` : '';
+                    const heldTag = isHeld ? `<span style="color:#ffd400; font-weight:800; margin-left:4px;">(H)</span>` : '';
                     const eqVal = (parseFloat(lb.equity) || 500).toFixed(2);
                     const dVal = parseFloat(lb.daily_pnl) || 0;
                     const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
@@ -2474,7 +2473,7 @@
                     const signStr = dVal > 0 ? '+' : (dVal < 0 ? '-' : '');
 
                     return `
-                        <div class="custom-select-item ${isSel ? 'selected' : ''}" onclick="selectCustomProfile('${u}')" style="padding: 9px 12px; display:flex; justify-content:space-between; align-items:center;">
+                        <div class="custom-select-item ${isSel ? 'selected' : ''}" onclick="selectCustomProfile('${u}')" style="padding: 8px 12px; display:flex; justify-content:space-between; align-items:center;">
                             <span style="font-weight:bold; color:${isSel ? '#ffd400' : '#fff'}; font-size:13px; white-space:nowrap;">${shortName}${heldTag}</span>
                             <div style="display:flex; flex-direction:column; align-items:flex-end; gap:1px;">
                                 <span style="color:#ffffff; font-weight:bold; font-size:12px;">£${eqVal}</span>
@@ -2614,7 +2613,7 @@
                 let activeClass = lb.user === activeProf ? 'active-profile-card' : '';
                 let isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
                 let heldTickerSymbol = (isHeld && lb.active_holds && lb.active_holds.length > 0) ? lb.active_holds[0] : (lb.held_ticker || '');
-                let tickerUnderName = isHeld ? `<div style="font-size:10px; color:#ffd400; font-weight:900; margin-top:3px; letter-spacing:0.3px;">${heldTickerSymbol}</div>` : '';
+                let tickerUnderName = isHeld && heldTickerSymbol ? `<div style="font-size:11px; color:#ffd400; font-weight:900; margin-top:3px; letter-spacing:0.4px;">${heldTickerSymbol}</div>` : '';
                 
                 let startEq = (lb.equity - dayVal);
                 let dayPct = lb.daily_pct !== undefined ? lb.daily_pct : (startEq > 0 ? ((dayVal / startEq) * 100.0) : 0.0);
@@ -2645,7 +2644,7 @@
 
                 let cardInner = `
                     <div class="lb-header">
-                        <div style="display:flex; flex-direction:column;">
+                        <div style="display:flex; flex-direction:column; align-items:flex-start;">
                             <div>
                                 <span>${lb.user}${liveTag}</span>
                                 <span class="info-icon" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
@@ -2969,9 +2968,11 @@
                 if (p.metrics && p.metrics.regime) {
                     let fillEl = document.getElementById('thermoFill');
                     let textEl = document.getElementById('thermoText');
+                    let scoreEl = document.getElementById('sentimentScore');
                     if (fillEl) fillEl.style.width = `${p.metrics.regime.score || 50}%`; 
-                    if (fillEl) fillEl.style.backgroundColor = p.metrics.regime.color || '#8a8a9e'; 
-                    if (textEl) textEl.innerText = `${p.metrics.regime.score || 50}/100 - ${p.metrics.regime.state || 'Room Temp'}`; 
+                    if (fillEl) fillEl.style.backgroundColor = p.metrics.regime.color || '#0ecb81'; 
+                    if (scoreEl) scoreEl.innerText = `${p.metrics.regime.score || 50}/100`;
+                    if (textEl) textEl.innerText = `${p.metrics.regime.state || 'Room Temp'}`; 
                 }
 
                 if (p.metrics) {
@@ -2987,9 +2988,9 @@
                     let curPrice = parseFloat(p.metrics.price) || 0;
 
                     if (sharesOwned > 0) {
-                        if (trigLine) trigLine.style.display = 'none'; // Hide trigger notch when in position
+                        if (trigLine) trigLine.style.display = 'none';
                         if (healthHeader) healthHeader.innerText = "Risk Thermometer (Trailing Stop)";
-                        // Show current price in top-right instead of health percentage
+                        // Show current price in top-right
                         if (healthStatus) healthStatus.innerHTML = `<span style="color:#0ecb81; font-weight:900;">£${curPrice.toFixed(2)}</span>`;
                         if (healthSubtext) healthSubtext.innerText = p.metrics.health_text || "Tracking Position";
                         if (healthMarker) {
@@ -3009,12 +3010,11 @@
                         if (stopEl) stopEl.innerText = `Stop: £${stopPrice.toFixed(2)}`;
                         if (peakEl) peakEl.innerText = `Peak: £${peakPrice.toFixed(2)}`;
                     } else {
-                        if (trigLine) trigLine.style.display = 'block'; // Show trigger line at 65%
+                        if (trigLine) trigLine.style.display = 'block';
                         let buyScore = parseInt(p.metrics.buy_score) || 0;
                         let isReady = buyScore >= 65;
                         if (healthHeader) healthHeader.innerText = "Buy Setup Readiness";
                         if (healthStatus) healthStatus.innerHTML = `<span style="color:${isReady ? '#0ecb81' : '#fff'};">${buyScore}</span> <span style="color:#ffd400; font-size:10px;">/ 65 Target</span>`;
-                        // Unobstructed single-line status sentence
                         if (healthSubtext) healthSubtext.innerText = isReady ? `SURGE DETECTED (Trigger Hit): ${p.metrics.reason}` : (p.metrics.reason || p.metrics.action_main || "Scanning...");
                         if (healthMarker) {
                             healthMarker.style.display = "block";
