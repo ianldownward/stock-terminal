@@ -6,3 +6,4 @@ pymongo[srv]
 openpyxl
 numpy
 matplotlib
+pywebpush

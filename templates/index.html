@@ -8,6 +8,7 @@
     <meta name="apple-mobile-web-app-title" content="IDC Trading">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
     <link rel="icon" type="image/png" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
     <title>Pro Stock Terminal</title>
     <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
     <style>
@@ -982,31 +983,27 @@
         </div>
     </div>
 
-    <!-- PUSH NOTIFICATION ALERT MODAL -->
+    <!-- NATIVE IPHONE WEB PUSH MODAL -->
     <div class="modal-overlay" id="alertModal" style="display:none;">
         <div class="modal" style="width: 440px;">
             <h2>
-                <span>Mobile Trade Alerts</span>
+                <span>Native Phone Alerts</span>
                 <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeAlertModal()">✕</button>
             </h2>
-            <div style="margin-top:14px; display:flex; flex-direction:column; gap:12px;">
+            <div style="margin-top:14px; display:flex; flex-direction:column; gap:14px;">
                 <p style="font-size:12px; color:#8a8a9e; line-height:1.5; margin:0;">
-                    Receive instant push notifications to your phone whenever a bot executes a trade or hits a trailing stop on Alpaca.
+                    Get native lock-screen notifications and sound alerts directly on your iPhone whenever a bot buys, sells, or triggers a trailing stop on Alpaca.
                 </p>
-                <div style="background:#13161c; border:1px solid #262b36; padding:12px; border-radius:8px;">
-                    <ol style="margin:0; padding-left:16px; font-size:12px; color:#e1e3e6; display:flex; flex-direction:column; gap:6px;">
-                        <li>Download the free <b>ntfy</b> app on your iPhone or Android.</li>
-                        <li>Tap '+' to subscribe to a new topic.</li>
-                        <li>Create a private, random topic name below and subscribe to the exact same name in the app.</li>
-                    </ol>
+                <div style="background:#13161c; border:1px solid #262b36; padding:12px; border-radius:8px; font-size:12px; color:#e1e3e6; line-height:1.5;">
+                    <b style="color:#ffd400;">iPhone Setup Tip:</b><br>
+                    Make sure you open IDC Trading from your <b>Home Screen icon</b> (not a standard Safari browser tab) before tapping enable, so iOS recognizes it as a standalone app.
                 </div>
-                <div>
-                    <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Your Private Topic Name</label>
-                    <input type="text" id="alertTopicInput" placeholder="e.g. idc-trades-9x2b" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:14px; font-family:monospace;">
+                <div id="pushStatusText" style="font-size:12px; font-weight:700; color:#0ecb81; text-align:center;">
+                    Ready to connect device.
                 </div>
-                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:10px;">
-                    <button class="btn-control" onclick="closeAlertModal()">Cancel</button>
-                    <button class="btn-control" style="background:#ffd400; color:#000;" onclick="saveAlertSettings()">Save & Test Alert</button>
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:6px;">
+                    <button class="btn-control" onclick="closeAlertModal()">Close</button>
+                    <button id="btnSubscribePush" class="btn-control" style="background:#ffd400; color:#000; font-weight:800; padding:8px 16px;" onclick="enableNativePhonePush()">🔔 Enable Phone Alerts</button>
                 </div>
             </div>
         </div>
@@ -3472,10 +3469,16 @@
             } catch(e) {}
         }
 
-        // PUSH NOTIFICATION MODAL ENGINE
+        // Register Background Service Worker for Native Push
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                    .then(reg => console.log('[SW] Active with scope:', reg.scope))
+                    .catch(err => console.error('[SW] Registration failed:', err));
+            });
+        }
+
         function openAlertModal() {
-            let topic = (globalPortfolioData.settings && globalPortfolioData.settings.ntfy_topic) ? globalPortfolioData.settings.ntfy_topic : '';
-            document.getElementById('alertTopicInput').value = topic;
             document.getElementById('alertModal').style.display = 'flex';
         }
 
@@ -3483,20 +3486,66 @@
             document.getElementById('alertModal').style.display = 'none';
         }
 
-        async function saveAlertSettings() {
-            let topic = document.getElementById('alertTopicInput').value.trim();
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        async function enableNativePhonePush() {
+            const btn = document.getElementById('btnSubscribePush');
+            const statusEl = document.getElementById('pushStatusText');
+            if (btn) btn.innerText = 'Connecting...';
+
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                alert("Apple Web Push requires opening IDC Trading from your iPhone Home Screen icon (iOS 16.4+). Please tap 'Share -> Add to Home Screen' and launch it from the home screen icon.");
+                if (btn) btn.innerText = '🔔 Enable Phone Alerts';
+                return;
+            }
+
             try {
-                await fetch('/api/portfolio/settings', {
+                const reg = await navigator.serviceWorker.ready;
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    alert("Notifications were blocked. Please enable notifications for IDC Trading in your iPhone Settings.");
+                    if (btn) btn.innerText = '🔔 Enable Phone Alerts';
+                    return;
+                }
+
+                const resKey = await fetch('/api/push/vapid_public_key');
+                const { public_key } = await resKey.json();
+
+                const subscription = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(public_key)
+                });
+
+                const saveRes = await fetch('/api/push/subscribe', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ settings: { ntfy_topic: topic } })
+                    body: JSON.stringify(subscription)
                 });
-                
-                alert(`Alerts linked to topic: ${topic || 'DISABLED'}\n\nMake sure you subscribe to '${topic}' inside the ntfy app on your phone!`);
-                closeAlertModal();
-                fetchData(false);
-            } catch (e) {
-                alert('Failed to save alert settings.');
+                const d = await saveRes.json();
+
+                if (d.status === 'ok') {
+                    if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81;'>✅ Connected! Check your lock screen for test alert.</span>";
+                    if (btn) btn.innerText = 'Connected';
+                    // Trigger immediate test push
+                    await fetch('/api/push/test', { method: 'POST' });
+                    setTimeout(() => closeAlertModal(), 2000);
+                } else {
+                    alert("Could not register device with server.");
+                    if (btn) btn.innerText = '🔔 Enable Phone Alerts';
+                }
+            } catch (err) {
+                console.error("Push registration error:", err);
+                alert("Setup note: " + err.message);
+                if (btn) btn.innerText = '🔔 Enable Phone Alerts';
             }
         }
 

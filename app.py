@@ -54,6 +54,46 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             return df.copy()
         except Exception: return pd.DataFrame()
 
+VAPID_PUBLIC_KEY = "BLshSEexXKlTrzHUfbIKDuxXro1PqiNl1Al5NZrWcNSDT8AzB6CvCyfmTwPBEygNHwIjCyg2XzZ8GQBwK3MlW8Y"
+VAPID_PRIVATE_KEY = """-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXCs6EaRB3z5RDtCj
+2Avw3h8EMgDsZUk6ahEHr0CBFZehRANCAAS7IUhHsVypU68x1H2yCg7sV66NT6oj
+ZdQJeTWa1nDUg0/AMwegrwsn5k8DwRMoDR8CIwsoNl82fBkAcCtzJVvG
+-----END PRIVATE KEY-----"""
+VAPID_CLAIMS = {"sub": "mailto:ianldownward@gmail.com"}
+
+def send_native_web_push(title, message):
+    """Sends native Apple / Web Push notifications to all subscribed devices without any 3rd party apps."""
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        return
+
+    portfolio_store.reload()
+    subs = portfolio_store.data.get('push_subscriptions') or []
+    if not subs:
+        return
+
+    dead_subs = []
+    payload = json.dumps({'title': title, 'body': message, 'url': '/'})
+
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims=VAPID_CLAIMS,
+                timeout=5
+            )
+        except Exception as ex:
+            if hasattr(ex, 'response') and getattr(ex.response, 'status_code', None) in [404, 410]:
+                dead_subs.append(sub)
+
+    if dead_subs:
+        portfolio_store.data['push_subscriptions'] = [s for s in subs if s not in dead_subs]
+        portfolio_store.save_data(portfolio_store.data)
+
 def send_push_notification(topic, title, message):
     if not topic: return
     try:
@@ -540,6 +580,12 @@ class PortfolioManager:
                     daemon=True
                 ).start()
 
+            # 1. Native Web Push to iPhone Lock Screen
+            send_native_web_push(
+                title=f"[{trade_type}] {entry['action']} {shares} sh {ticker}",
+                message=f"Executed @ £{cost_per_sh:.2f} (Total: £{tot_amt:.2f}) • {username or self.active_username()}"
+            )
+            # 2. Legacy fallback if topic configured
             ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
             if ntfy_topic: send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
             return entry
@@ -1336,6 +1382,42 @@ def alpaca_reconciliation_worker():
         time.sleep(25)
 
 threading.Thread(target=alpaca_reconciliation_worker, daemon=True).start()
+
+@app.route('/sw.js')
+def service_worker_file():
+    resp = app.send_static_file('sw.js')
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Content-Type'] = 'application/javascript'
+    return resp
+
+@app.route('/manifest.json')
+def manifest_file():
+    return app.send_static_file('manifest.json')
+
+@app.route('/api/push/vapid_public_key', methods=['GET'])
+def get_vapid_public_key():
+    return jsonify({'public_key': VAPID_PUBLIC_KEY})
+
+@app.route('/api/push/subscribe', methods=['POST'])
+def save_push_subscription():
+    sub = request.get_json() or {}
+    if not sub or not sub.get('endpoint'):
+        return jsonify({'status': 'error', 'message': 'Invalid subscription'}), 400
+    
+    portfolio_store.reload()
+    subs = portfolio_store.data.setdefault('push_subscriptions', [])
+    if not any(s.get('endpoint') == sub.get('endpoint') for s in subs):
+        subs.append(sub)
+        portfolio_store.save_data(portfolio_store.data)
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/push/test', methods=['POST'])
+def test_push_notification():
+    send_native_web_push(
+        title="IDC Trading • Live Alert Test",
+        message="✅ iPhone Web Push Connected! Live trades will now notify directly to your phone screen."
+    )
+    return jsonify({'status': 'ok'})
 
 @app.route('/health')
 def health_check():
