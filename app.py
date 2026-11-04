@@ -63,19 +63,28 @@ ZdQJeTWa1nDUg0/AMwegrwsn5k8DwRMoDR8CIwsoNl82fBkAcCtzJVvG
 VAPID_CLAIMS = {"sub": "mailto:ianldownward@gmail.com"}
 
 def send_native_web_push(title, message):
-    """Sends native Apple / Web Push notifications to all subscribed devices without any 3rd party apps."""
+    """Sends native Apple / Web Push notifications to all subscribed devices with required APNs headers."""
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
+        print("[PUSH ALERT ERROR] 'pywebpush' library is not installed in the python environment.")
         return
 
     portfolio_store.reload()
     subs = portfolio_store.data.get('push_subscriptions') or []
+    print(f"[PUSH ATTEMPT] {title} | Subscribed devices: {len(subs)}")
     if not subs:
+        print("[PUSH ALERT NOTICE] No devices registered in database. Open IDC Trading on iPhone and tap Enable Alerts.")
         return
 
     dead_subs = []
     payload = json.dumps({'title': title, 'body': message, 'url': '/'})
+    
+    # iOS APNs high-priority delivery headers
+    extra_headers = {
+        "TTL": "60",
+        "Urgency": "high"
+    }
 
     for sub in subs:
         try:
@@ -84,9 +93,12 @@ def send_native_web_push(title, message):
                 data=payload,
                 vapid_private_key=VAPID_PRIVATE_KEY,
                 vapid_claims=VAPID_CLAIMS,
+                headers=extra_headers,
                 timeout=5
             )
+            print(f"[PUSH SUCCESS] Notification dispatched to {sub.get('endpoint', '')[:35]}...")
         except Exception as ex:
+            print(f"[PUSH EXCEPTION] Failed to send push: {ex}")
             if hasattr(ex, 'response') and getattr(ex.response, 'status_code', None) in [404, 410]:
                 dead_subs.append(sub)
 
@@ -2540,7 +2552,22 @@ def get_watchlist_scanner():
     portfolio_store.reload()
     ud = portfolio_store.user_data()
     active_profile = portfolio_store.active_username().strip().lower()
-    wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
+    
+    # Gather EVERY ticker across all watchlists and open positions globally
+    all_tickers = set()
+    held_by_any = {}
+    users_dict = portfolio_store.data.get('users', {})
+    for u, u_data in users_dict.items():
+        if isinstance(u_data, dict):
+            for tk in u_data.get('watchlist', []):
+                all_tickers.add(tk.upper())
+            for tr in u_data.get('history', []):
+                sh = portfolio_store.get_shares(tr.get('ticker', ''), u)
+                if sh > 0:
+                    all_tickers.add(tr.get('ticker').upper())
+                    held_by_any[tr.get('ticker').upper()] = u
+
+    wl = list(all_tickers) if all_tickers else ['TQQQ', 'SOXL', 'SQQQ']
     holds = ud.get('holdings') or {}
     hist = ud.get('history') or []
     
@@ -2554,12 +2581,19 @@ def get_watchlist_scanner():
             if df.empty: return None
             cur = df['Close'].iloc[-1]
             sh = portfolio_store.get_shares(tick)
+            is_held_any = (tick in held_by_any) or (sh > 0)
             
             avg_p, high_p = 0.0, cur
             if sh > 0:
                 buys = [tr for tr in hist if tr.get('ticker') == tick and tr.get('action') == 'BUY']
                 if buys: avg_p = buys[0].get('price', 0.0)
                 high_p = (holds.get(tick) or {}).get('high_water', cur)
+            elif is_held_any:
+                holder_u = held_by_any.get(tick)
+                holder_ud = users_dict.get(holder_u, {})
+                buys = [tr for tr in holder_ud.get('history', []) if tr.get('ticker') == tick and tr.get('action') == 'BUY']
+                if buys: avg_p = buys[0].get('price', 0.0)
+                high_p = (holder_ud.get('holdings', {}).get(tick) or {}).get('high_water', cur)
 
             st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile, regime=regime)
             
@@ -2570,8 +2604,9 @@ def get_watchlist_scanner():
                 'ticker': tick,
                 'price': round(cur, 2),
                 'shares': sh,
-                'is_held': (sh > 0),
+                'is_held': is_held_any,
                 'score': st.get('score', 0),
+                'target_score': 65,
                 'health_pct': st.get('health_pct', 0),
                 'health_text': st.get('health_text', ''),
                 'reason': st.get('reason', ''),
