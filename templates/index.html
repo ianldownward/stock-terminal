@@ -1513,11 +1513,9 @@
                 </div>
                 
                 <div class="card" style="flex: 0.8;">
-                    <h3>Current Value Owned (£)</h3>
-                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">
-                        <input type="number" id="inputHeldVal" value="0" oninput="onValOwnedInput()">
-                        <span id="mSharesOwned" style="font-size:10px; color:#787e8e; display:block; margin-top:2px;">0 shares</span>
-                    </div>
+                    <h3>Position Held</h3>
+                    <p id="mHoldingShares" class="val-highlight">0 Shares</p>
+                    <span id="mHoldingWorth" style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Worth: £0.00</span>
                 </div>
                 
                 <!-- FULL-WIDTH THERMOMETER WITH FIGURES UNDERNEATH -->
@@ -2829,8 +2827,15 @@
                 document.getElementById('mDisc').innerText = p.metrics ? p.metrics.discount || '--' : '--'; 
                 document.getElementById('mBuy').innerText = p.metrics ? p.metrics.buy_score || '--' : '--';
                 
-                document.getElementById('inputHeldVal').value = p.metrics ? p.metrics.value_owned || 0 : 0; 
-                document.getElementById('mSharesOwned').innerText = `${p.metrics ? p.metrics.shares_owned || 0 : 0} sh`;
+                let shOwned = p.metrics ? (p.metrics.shares_owned || 0) : 0;
+                let valOwned = (p.metrics ? (p.metrics.value_owned || 0) : 0).toFixed(2);
+                let shEl = document.getElementById('mHoldingShares');
+                let worthEl = document.getElementById('mHoldingWorth');
+                if (shEl) shEl.innerText = `${shOwned} ${shOwned === 1 ? 'Share' : 'Shares'}`;
+                if (worthEl) {
+                    worthEl.innerText = `Worth: £${valOwned}`;
+                    worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
+                }
                 
                 // Update Total Portfolio Equity & Separate Cash/Shares rows
                 let totEqVal = (p.metrics ? (p.metrics.total_equity !== undefined ? p.metrics.total_equity : 500) : 500).toFixed(2);
