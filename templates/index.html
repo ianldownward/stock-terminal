@@ -473,7 +473,18 @@
             text-align: left; 
         }
         #budgetDrawer {
-            margin-bottom: 14px !important; 
+            margin-bottom: 10px !important; 
+        }
+        #watchlistDrawer[open] {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            margin-bottom: 0;
+        }
+        #watchlistDrawer[open] .watchlist {
+            flex: 1;
+            max-height: none !important;
         }
 
         /* Desktop Equity Grid: Clean Alignment With No Overlapping */
@@ -1377,9 +1388,9 @@
                 </div>
             </div>
             
-            <details id="budgetDrawer" open>
+            <details class="drawer-details" id="budgetDrawer" open>
                 <summary>Capital Settings</summary>
-                <div class="master-budget-box" style="margin-top:10px; margin-bottom:0;">
+                <div class="master-budget-box" style="margin-top:10px; margin-bottom:0; background:transparent; border:none; padding:0;">
                     <label>Starting Capital (£)</label>
                     <input type="number" id="masterBudgetInput" value="500" onchange="onMasterBudgetInput()">
                     <div class="budget-sub-stats">
@@ -1388,9 +1399,9 @@
                 </div>
             </details>
 
-            <details id="watchlistDrawer" open>
+            <details class="drawer-details" id="watchlistDrawer" open>
                 <summary>Live Watchlist</summary>
-                <div style="margin-top:10px;">
+                <div style="margin-top:10px; flex:1; display:flex; flex-direction:column; min-height:0;">
                     <div class="search-box">
                         <input type="text" id="addTickerInput" placeholder="Add Symbol...">
                         <button id="addBtn">+</button>
