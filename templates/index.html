@@ -3633,6 +3633,16 @@
                 const resKey = await fetch('/api/push/vapid_public_key');
                 const { public_key } = await resKey.json();
 
+                // Unsubscribe any stale subscription to avoid applicationServerKey mismatch
+                const existingSub = await reg.pushManager.getSubscription();
+                if (existingSub) {
+                    try {
+                        await existingSub.unsubscribe();
+                    } catch (unsubErr) {
+                        console.warn('[PUSH] Unsubscribe error:', unsubErr);
+                    }
+                }
+
                 const subscription = await reg.pushManager.subscribe({
                     userVisibleOnly: true,
                     applicationServerKey: urlBase64ToUint8Array(public_key)
