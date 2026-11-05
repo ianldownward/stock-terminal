@@ -1077,25 +1077,24 @@
 
                 <!-- 1. LIVE CONNECTION STATUS & OVERRIDES -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <span style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; letter-spacing:0.5px;">Alpaca Connection Status</span>
-                            <div id="modalBrokerStatusText" style="font-size:13px; font-weight:700; color:#8a8a9e; margin-top:3px;">Checking connection...</div>
-                        </div>
-                        <div style="display:flex; gap:6px;">
-                            <button type="button" id="btnPauseRelay" onclick="togglePauseBroker()" class="btn-control" style="padding:5px 10px; font-size:11px;">
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
-                                <span id="pauseBtnLabel">Pause Relay</span>
-                            </button>
-                            <button type="button" onclick="triggerTestAlpacaOrder()" class="btn-control" style="padding:5px 10px; font-size:11px; border-color:#0ecb81; color:#0ecb81;" title="Send a 1-share test market order to Alpaca">
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                <span>Test 1-Sh Buy</span>
-                            </button>
-                            <button type="button" onclick="triggerEmergencyLiquidate()" class="btn-control" style="padding:5px 10px; font-size:11px; border-color:#ff5364; background:rgba(255,83,100,0.12); color:#ff5364;">
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                                <span>Liquidate All</span>
-                            </button>
-                        </div>
+                    <div style="margin-bottom:10px;">
+                        <span style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; letter-spacing:0.5px;">Alpaca Connection Status</span>
+                        <div id="modalBrokerStatusText" style="font-size:13px; font-weight:700; color:#8a8a9e; margin-top:3px;">Checking connection...</div>
+                    </div>
+                    <!-- Responsive 3-Column Grid: Never squeezes or overflows on mobile -->
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;">
+                        <button type="button" id="btnPauseRelay" onclick="togglePauseBroker()" class="btn-control" style="padding:7px 4px; font-size:11px; justify-content:center; width:100%;">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                            <span id="pauseBtnLabel">Pause Relay</span>
+                        </button>
+                        <button type="button" onclick="triggerTestAlpacaOrder()" class="btn-control" style="padding:7px 4px; font-size:11px; border-color:#0ecb81; color:#0ecb81; justify-content:center; width:100%;" title="Send a 1-share test market order to Alpaca">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            <span>Test 1-Sh</span>
+                        </button>
+                        <button type="button" onclick="triggerEmergencyLiquidate()" class="btn-control" style="padding:7px 4px; font-size:11px; border-color:#ff5364; background:rgba(255,83,100,0.12); color:#ff5364; justify-content:center; width:100%;">
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                            <span>Liquidate All</span>
+                        </button>
                     </div>
                 </div>
 
@@ -2426,12 +2425,17 @@
                 userList = latestLeaderboardData.map(l => l.user);
             }
 
-            // Update trigger label with stacked rows and arrow inside window
+            // Update trigger label with stacked rows, arrow inside window, and dynamic ticker in brackets
             if (triggerLabel) {
                 const activeLb = lbMap[activeProf] || { user: activeProf, equity: 500, daily_pnl: 0 };
                 const shortName = getShortProfileName(activeProf || 'Select Profile');
                 const isHeldActive = Boolean(activeLb.has_active_holds || activeLb.has_holding || activeLb.held_ticker || (activeLb.active_holds && activeLb.active_holds.length > 0));
-                const heldTagActive = isHeldActive ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(H)</span>` : '';
+                
+                // Extract exact held ticker (e.g., NVDA, SQQQ, TQQQ)
+                const activeHoldsList = activeLb.active_holds || [];
+                const activeHeldTicker = activeHoldsList.length > 0 ? activeHoldsList[0] : (activeLb.held_ticker || activeLb.holding || '');
+                const heldTagActive = (isHeldActive && activeHeldTicker) ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(${activeHeldTicker})</span>` : '';
+
                 const eqVal = (parseFloat(activeLb.equity) || 500).toFixed(2);
                 const dVal = parseFloat(activeLb.daily_pnl) || 0;
                 const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
@@ -2451,20 +2455,23 @@
                         </div>
                         <div style="display:flex; justify-content:space-between; align-items:center; width:100%; font-size:12px;">
                             <span style="color:#ffffff; font-weight:bold; font-size:13px;">£${eqVal}</span>
-                            <span style="color:${col}; font-weight:bold; white-space:nowrap;">${arrow} £${Math.abs(dVal).toFixed(2)} <span style="font-size:10px; opacity:0.9;">(${signStr}${pctStr})</span></span>
+                            <span style="color:${col}; font-weight:bold; white-space:nowrap;">${arrow} £${Math.abs(dVal).toFixed(2)} (${signStr}${pctStr})</span>
                         </div>
                     </div>
                 `;
             }
 
-            // Render list items with stacked percentage under the figure (Strategy Name stays on 1 line)
+            // Render list items with dynamic ticker in brackets (e.g. Test TQ (SQQQ))
             if (menu) {
                 menu.innerHTML = userList.map(u => {
                     const lb = lbMap[u] || { equity: 500, daily_pnl: 0 };
                     const shortName = getShortProfileName(u);
                     const isSel = (u === activeProf);
                     const isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
-                    const heldTag = isHeld ? `<span style="color:#ffd400; font-weight:800; margin-left:4px;">(H)</span>` : '';
+                    
+                    const itemHoldsList = lb.active_holds || [];
+                    const itemHeldTicker = itemHoldsList.length > 0 ? itemHoldsList[0] : (lb.held_ticker || lb.holding || '');
+                    const heldTag = (isHeld && itemHeldTicker) ? `<span style="color:#ffd400; font-weight:800; margin-left:4px;">(${itemHeldTicker})</span>` : '';
                     const eqVal = (parseFloat(lb.equity) || 500).toFixed(2);
                     const dVal = parseFloat(lb.daily_pnl) || 0;
                     const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
