@@ -479,42 +479,39 @@
             margin-bottom: 14px !important; 
             text-align: left; 
         }
-        /* Dynamic 50/50 or Content-Fitted Sidebar Split */
+        /* Dynamic 5-Item Watchlist & Responsive Split */
         #watchlistDrawer[open] {
-            flex: 0 1 auto;
-            max-height: calc(50% - 6px);
+            flex: 0 0 auto;
             display: flex;
             flex-direction: column;
-            min-height: 80px;
             margin-bottom: 10px !important;
             overflow: hidden;
         }
         #watchlistDrawer[open] > div {
             display: flex;
             flex-direction: column;
-            flex: 1;
             min-height: 0;
             overflow: hidden;
         }
         #watchlistDrawer[open] .watchlist {
-            flex: 1;
             overflow-y: auto;
+            max-height: 232px !important; /* Fits up to exactly 5 items; scrolls if > 5 */
             min-height: 0;
-            max-height: none !important;
+            padding-right: 4px;
         }
         #readinessDrawer[open] {
             flex: 1 1 0;
-            min-height: 140px;
+            min-height: 120px;
             display: flex;
             flex-direction: column;
             margin-bottom: 0 !important;
             overflow: hidden;
         }
         #readinessDrawer[open] #readinessUI {
-            flex: 1;
-            overflow-y: scroll !important;
-            max-height: calc(100vh - 430px) !important;
-            min-height: 100px;
+            flex: 1 1 0;
+            overflow-y: auto !important;
+            min-height: 0;
+            max-height: none !important; /* Automatically expands/contracts to fill remaining sidebar space */
             padding-right: 4px;
             -webkit-overflow-scrolling: touch;
         }
@@ -1499,7 +1496,7 @@
 
             <details class="drawer-details" id="readinessDrawer" open>
                 <summary>Readiness & Risk</summary>
-                <div id="readinessUI" style="margin-top:10px; display:flex; flex-direction:column; gap:6px; flex:1; min-height:0; max-height:46vh; overflow-y:auto; padding-right:4px;">
+                <div id="readinessUI" style="margin-top:10px; display:flex; flex-direction:column; gap:6px; flex:1; min-height:0; overflow-y:auto; padding-right:4px;">
                     <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning all strategy tickers...</div>
                 </div>
             </details>
@@ -1712,43 +1709,88 @@
         async function openJourneyModal() {
             let overlay = document.getElementById('journeyModal');
             let content = document.getElementById('journeyContent');
+            let activeUser = document.getElementById('userSelect')?.value || '';
+            let shortProf = getShortProfileName(activeUser);
+
+            let headingEl = overlay.querySelector('h2 span');
+            if (headingEl) headingEl.innerText = `Trade History • ${shortProf || 'Profile'}`;
+
             overlay.style.display = 'flex';
-            content.innerHTML = '<div style="color:#ffd400; text-align:center;">Loading trade timeline...</div>';
-            
+            content.innerHTML = '<div style="color:#ffd400; text-align:center; padding:15px;">Loading history...</div>';
+
             try {
-                let activeUser = document.getElementById('userSelect')?.value || '';
-                let trades = [];
-                try {
-                    let res = await fetch(`/api/trade_journey?user=${encodeURIComponent(activeUser)}`);
-                    let d = await res.json();
-                    trades = d.trades || [];
-                } catch(err) {}
+                let trades = (globalPortfolioData && Array.isArray(globalPortfolioData.history)) ? globalPortfolioData.history : [];
+                let realTrades = trades.filter(t => t.ticker && t.ticker !== 'CALIBRATION');
 
-                // Fallback to local portfolio history if API doesn't return list
-                if ((!trades || trades.length === 0) && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
-                    trades = globalPortfolioData.history;
-                }
-
-                if (!trades || trades.length === 0) {
-                    content.innerHTML = `<div style="color:#787e8e; text-align:center; padding:20px;">No trades recorded yet for <b>${activeUser}</b>.</div>`;
+                if (!realTrades || realTrades.length === 0) {
+                    content.innerHTML = `<div style="color:#787e8e; text-align:center; padding:20px;">No trades recorded yet for <b>${shortProf}</b>.</div>`;
                     return;
                 }
 
-                let html = trades.slice().reverse().map(t => `
-                    <div style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <span style="font-weight:bold; color:${t.action === 'BUY' ? '#0ecb81' : '#ff5364'}; font-size:13px;">${t.action} ${t.shares} sh ${t.ticker}</span>
-                            <div style="font-size:11px; color:#787e8e; margin-top:3px;">${t.time || '--'} • ${t.trade_type || 'LONG'}</div>
+                // Match SELLs to compute realized P&L
+                let buyQueues = {};
+                let tradePnl = {};
+                let chronological = trades.slice().reverse();
+
+                chronological.forEach(t => {
+                    let tk = t.ticker;
+                    if (!tk || tk === 'CALIBRATION') return;
+                    if (!buyQueues[tk]) buyQueues[tk] = [];
+
+                    if (t.action === 'BUY') {
+                        buyQueues[tk].push({ shares: t.shares, amount: t.amount });
+                    } else if (t.action === 'SELL') {
+                        let remShares = t.shares;
+                        let costBasis = 0;
+                        let matchedShares = 0;
+
+                        while (buyQueues[tk].length > 0 && remShares > 0) {
+                            let buy = buyQueues[tk][0];
+                            let match = Math.min(buy.shares, remShares);
+                            let unitCost = buy.amount / buy.shares;
+                            costBasis += match * unitCost;
+                            matchedShares += match;
+                            remShares -= match;
+                            buy.shares -= match;
+                            buy.amount -= match * unitCost;
+                            if (buy.shares <= 0) buyQueues[tk].shift();
+                        }
+
+                        if (matchedShares > 0 && costBasis > 0) {
+                            let diffVal = t.amount - costBasis;
+                            let diffPct = (diffVal / costBasis) * 100.0;
+                            tradePnl[t.id] = { val: diffVal, pct: diffPct };
+                        }
+                    }
+                });
+
+                let html = realTrades.map(t => {
+                    let isBuy = t.action === 'BUY';
+                    let col = isBuy ? '#0ecb81' : '#ff5364';
+                    let pnlStr = '';
+                    if (!isBuy && tradePnl[t.id]) {
+                        let p = tradePnl[t.id];
+                        let sign = p.val >= 0 ? '+' : '-';
+                        let pCol = p.val >= 0 ? '#0ecb81' : '#ff5364';
+                        pnlStr = `<span style="color:${pCol}; font-weight:800; margin-left:4px;">${sign}£${Math.abs(p.val).toFixed(2)} (${sign}${Math.abs(p.pct).toFixed(1)}%)</span>`;
+                    }
+
+                    return `
+                        <div onclick="selectStock('${t.ticker}'); document.getElementById('journeyModal').style.display='none';" style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" title="View ${t.ticker} chart">
+                            <div>
+                                <span style="font-weight:bold; color:${col}; font-size:12px;">${t.action} ${t.shares} sh <span style="color:#ffd400; text-decoration:underline;">${t.ticker}</span></span>${pnlStr}
+                                <div style="font-size:10px; color:#8a8a9e; margin-top:2px;">${t.time || '--'} • Total £${(parseFloat(t.amount) || 0).toFixed(2)}</div>
+                            </div>
+                            <div style="text-align:right;">
+                                <span style="font-weight:bold; color:#fff; font-size:12px;">@ £${(parseFloat(t.price) || 0).toFixed(2)}</span>
+                            </div>
                         </div>
-                        <div style="text-align:right;">
-                            <span style="font-weight:bold; color:#fff; font-size:13px;">£${(parseFloat(t.amount) || 0).toFixed(2)}</span>
-                            <div style="font-size:11px; color:#ffd400;">@ £${(parseFloat(t.price) || 0).toFixed(2)}</div>
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
+
                 content.innerHTML = html;
             } catch(e) {
-                content.innerHTML = '<div style="color:#ff5364; text-align:center;">Failed to render trade journey.</div>';
+                content.innerHTML = '<div style="color:#ff5364; text-align:center;">Failed to render trade history.</div>';
             }
         }
 
@@ -2669,11 +2711,6 @@
                     </div>
                     <div class="lb-desc" style="display:${isInfoOpen ? 'block' : 'none'};">${profileDesc[lb.user] || 'Custom Strategy Profile.'}</div>`;
 
-                if (lb.user === activeProf) {
-                    let mobLb = document.getElementById('mobLeaderboardCard');
-                    if (mobLb) mobLb.innerHTML = cardInner;
-                }
-
                 return `
                     <div class="lb-item ${activeClass}" onclick="onUserChange('${lb.user}')">
                         ${cardInner}
@@ -2681,6 +2718,101 @@
             }).join('');
             document.getElementById('leaderboardUI').innerHTML = lbHtml;
             renderCustomProfileDropdown(leaderboard);
+            renderMobileLastTrade(globalPortfolioData ? globalPortfolioData.history : []);
+        }
+
+        function renderMobileLastTrade(history) {
+            let mobLb = document.getElementById('mobLeaderboardCard');
+            if (!mobLb) return;
+
+            mobLb.onclick = () => openJourneyModal();
+            mobLb.style.cursor = 'pointer';
+
+            let realTrades = (history || []).filter(t => t.ticker && t.ticker !== 'CALIBRATION');
+
+            if (!realTrades || realTrades.length === 0) {
+                mobLb.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; width:100%; padding:2px 0;">
+                        <div style="display:flex; flex-direction:column; gap:2px; text-align:left;">
+                            <div style="display:flex; align-items:center; gap:5px;">
+                                <span style="font-size:9px; font-weight:800; color:#ffd400; text-transform:uppercase; letter-spacing:0.5px;">LAST TRADE</span>
+                                <span style="font-size:9px; color:#8a8a9e;">• Tap for History</span>
+                            </div>
+                            <span style="font-size:12px; font-weight:700; color:#8a8a9e;">No trades executed yet</span>
+                        </div>
+                        <span style="font-size:11px; color:#787e8e;">--</span>
+                    </div>
+                `;
+                return;
+            }
+
+            // Match SELLs with preceding BUYs to calculate realized P&L
+            let buyQueues = {};
+            let tradePnl = {};
+            let chronological = (history || []).slice().reverse();
+
+            chronological.forEach(t => {
+                let tk = t.ticker;
+                if (!tk || tk === 'CALIBRATION') return;
+                if (!buyQueues[tk]) buyQueues[tk] = [];
+
+                if (t.action === 'BUY') {
+                    buyQueues[tk].push({ shares: t.shares, amount: t.amount });
+                } else if (t.action === 'SELL') {
+                    let remShares = t.shares;
+                    let costBasis = 0;
+                    let matchedShares = 0;
+
+                    while (buyQueues[tk].length > 0 && remShares > 0) {
+                        let buy = buyQueues[tk][0];
+                        let match = Math.min(buy.shares, remShares);
+                        let unitCost = buy.amount / buy.shares;
+                        costBasis += match * unitCost;
+                        matchedShares += match;
+                        remShares -= match;
+                        buy.shares -= match;
+                        buy.amount -= match * unitCost;
+                        if (buy.shares <= 0) buyQueues[tk].shift();
+                    }
+
+                    if (matchedShares > 0 && costBasis > 0) {
+                        let diffVal = t.amount - costBasis;
+                        let diffPct = (diffVal / costBasis) * 100.0;
+                        tradePnl[t.id] = { val: diffVal, pct: diffPct };
+                    }
+                }
+            });
+
+            let lt = realTrades[0];
+            let isBuy = lt.action === 'BUY';
+            let actCol = isBuy ? '#0ecb81' : '#ff5364';
+            let perShare = (parseFloat(lt.price) || 0).toFixed(2);
+
+            let pnlHtml = '';
+            if (!isBuy && tradePnl[lt.id]) {
+                let p = tradePnl[lt.id];
+                let sign = p.val >= 0 ? '+' : '-';
+                let pCol = p.val >= 0 ? '#0ecb81' : '#ff5364';
+                pnlHtml = `<span style="color:${pCol}; font-weight:800; margin-left:4px;">${sign}£${Math.abs(p.val).toFixed(2)} (${sign}${Math.abs(p.pct).toFixed(1)}%)</span>`;
+            }
+
+            mobLb.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%; padding:2px 0;">
+                    <div style="display:flex; flex-direction:column; gap:2px; text-align:left;">
+                        <div style="display:flex; align-items:center; gap:5px;">
+                            <span style="font-size:9px; font-weight:800; color:#ffd400; text-transform:uppercase; letter-spacing:0.5px;">LAST TRADE</span>
+                            <span style="font-size:9px; color:#8a8a9e;">• Tap for History</span>
+                        </div>
+                        <div style="font-size:12px; font-weight:800; color:#fff;">
+                            <span style="color:${actCol};">${lt.action}</span> ${lt.shares} sh <span style="color:#ffd400;">${lt.ticker}</span>${pnlHtml}
+                        </div>
+                    </div>
+                    <div style="text-align:right;">
+                        <span style="color:#fff; font-weight:700; font-size:11px;">@ £${perShare}</span>
+                        <div style="font-size:10px; color:#8a8a9e; margin-top:2px;">${lt.time || '--'}</div>
+                    </div>
+                </div>
+            `;
         }
 
         function renderHistory(history) {
