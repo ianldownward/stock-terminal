@@ -1539,6 +1539,17 @@ def save_push_subscription():
         portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok'})
 
+@app.route('/api/push/unsubscribe', methods=['POST'])
+def remove_push_subscription():
+    sub = request.get_json() or {}
+    endpoint = sub.get('endpoint')
+    portfolio_store.reload()
+    subs = portfolio_store.data.get('push_subscriptions') or []
+    if endpoint:
+        portfolio_store.data['push_subscriptions'] = [s for s in subs if s.get('endpoint') != endpoint]
+        portfolio_store.save_data(portfolio_store.data)
+    return jsonify({'status': 'ok'})
+
 @app.route('/api/push/test', methods=['POST'])
 def test_push_notification():
     res = send_native_web_push(
