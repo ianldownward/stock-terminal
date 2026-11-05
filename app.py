@@ -677,14 +677,60 @@ class PortfolioManager:
                     daemon=True
                 ).start()
 
-            # 1. Native Web Push to iPhone Lock Screen
+            # 1. Clean Notification Layout (No Colored Circle Emojis)
+            prof_short = (username or self.active_username()).split(' - ')[0].strip()
+            action_word = "Buy" if action == "BUY" else "Sell"
+            push_title = f"{prof_short} - {action_word} {shares} - {ticker}"
+
+            pnl_line = ""
+            if action == 'SELL':
+                # Match against open buys FIFO to determine realized P&L
+                hist_prior = [tr for tr in ud.get('history', []) if tr.get('id') != entry.get('id')]
+                buy_queue = []
+                for t in reversed(hist_prior):
+                    tk = t.get('ticker')
+                    if tk != ticker or tk == 'CALIBRATION': continue
+                    if t.get('action') == 'BUY':
+                        buy_queue.append({'shares': t.get('shares', 0), 'amount': t.get('amount', 0.0)})
+                    elif t.get('action') == 'SELL':
+                        rem = t.get('shares', 0)
+                        while buy_queue and rem > 0:
+                            b = buy_queue[0]
+                            m = min(b['shares'], rem)
+                            b['shares'] -= m
+                            rem -= m
+                            if b['shares'] <= 0: buy_queue.pop(0)
+
+                cost_basis = 0.0
+                matched_sh = 0
+                rem_sh = shares
+                while buy_queue and rem_sh > 0:
+                    b = buy_queue[0]
+                    m = min(b['shares'], rem_sh)
+                    unit_c = (b['amount'] / b['shares']) if b['shares'] > 0 else 0.0
+                    cost_basis += m * unit_c
+                    matched_sh += m
+                    rem_sh -= m
+                    b['shares'] -= m
+                    b['amount'] -= m * unit_c
+                    if b['shares'] <= 0: buy_queue.pop(0)
+
+                if matched_sh > 0 and cost_basis > 0:
+                    diff_val = tot_amt - cost_basis
+                    diff_pct = (diff_val / cost_basis) * 100.0
+                    arrow = "▲" if diff_val >= 0 else "▼"
+                    sign = "+" if diff_val >= 0 else "-"
+                    pnl_line = f"\n{arrow} {sign}£{abs(diff_val):.2f} ({sign}{abs(diff_pct):.1f}%)"
+
+            push_message = f"£{cost_per_sh:.2f} (Total £{tot_amt:.2f}){pnl_line}"
+
             send_native_web_push(
-                title=f"[{trade_type}] {entry['action']} {shares} sh {ticker}",
-                message=f"Executed @ £{cost_per_sh:.2f} (Total: £{tot_amt:.2f}) • {username or self.active_username()}"
+                title=push_title,
+                message=push_message
             )
             # 2. Legacy fallback if topic configured
             ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
-            if ntfy_topic: send_push_notification(ntfy_topic, f"[{trade_type}] Trade Executed ({username or self.active_username()}): {ticker}", f"{entry['action']} {shares} shares @ £{tot_amt}")
+            if ntfy_topic: send_push_notification(ntfy_topic, push_title, push_message)
             return entry
 
     def undo_trade(self, trade_id):
@@ -1553,8 +1599,8 @@ def remove_push_subscription():
 @app.route('/api/push/test', methods=['POST'])
 def test_push_notification():
     res = send_native_web_push(
-        title="IDC Trading • Live Alert Test",
-        message="✅ iPhone Web Push Connected! Live trades will now notify directly to your phone screen."
+        title="Test R - Sell 10 - SQQQ",
+        message="£47.33 (Total £473.35)\n▲ +£10.22 (+2.3%)"
     )
     return jsonify(res or {'status': 'ok'})
 
