@@ -186,8 +186,9 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
     else:
         base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
 
-    clean_bot_tag = re.sub(r'[^a-zA-Z0-9_-]', '', str(bot_name).upper().replace(' ', '_'))
-    clean_client_id = f"{clean_bot_tag[:18]}_{int(time.time())}"
+    # Clean bot prefix so Alpaca's table clearly identifies the bot (e.g. TEST_R, TEST_S, TEST_TQM)
+    short_bot_tag = re.sub(r'[^a-zA-Z0-9_]', '', str(bot_name).split(' - ')[0].strip().upper().replace(' ', '_'))
+    clean_client_id = f"{short_bot_tag}_{action.upper()}_{ticker.upper()}_{int(time.time())}"
     
     headers = {
         "APCA-API-KEY-ID": api_key_clean,
@@ -239,7 +240,7 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
                     "type": "trailing_stop",
                     "trail_percent": round(trail_pct, 2),
                     "time_in_force": "day",
-                    "client_order_id": f"{clean_bot_tag[:14]}_TR_{int(time.time())}"
+                    "client_order_id": f"{short_bot_tag}_TRAIL_{ticker.upper()}_{int(time.time())}"
                 }).encode('utf-8')
                 req_trail = urllib.request.Request(f"{base_url}/v2/orders", data=trail_payload, headers=headers, method="POST")
                 with urllib.request.urlopen(req_trail, timeout=6):
@@ -641,15 +642,14 @@ class PortfolioManager:
             allocations = global_broker.get('allocations') or {}
             current_profile = str(username or self.active_username()).lower()
 
-            # Check if this profile has live Alpaca routing enabled
+            # Strictly obey user allocations: If a bot is unchecked, DO NOT route to Alpaca
             matched_alloc = None
+            should_route_alpaca = False
             for s_key, s_data in allocations.items():
-                if s_key in current_profile and s_data.get('enabled'):
+                if s_key in current_profile:
                     matched_alloc = s_data
+                    should_route_alpaca = bool(s_data.get('enabled', False))
                     break
-
-            # Route to Alpaca if bot is matched OR if broker keys are present and profile is an automated test
-            should_route_alpaca = (matched_alloc is not None) or any(x in current_profile for x in ['test tqm', 'test s', 'test tq', 'test r', 'test e'])
 
             if should_route_alpaca and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
                 strat_prof = str(current_profile).lower()
