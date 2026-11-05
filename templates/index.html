@@ -447,6 +447,26 @@
             font-weight: bold; 
             color: #fff; 
         }
+        .lb-ticker-pill {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(255, 212, 0, 0.12);
+            border: 1px solid #ffd400;
+            color: #ffd400;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 1px 6px;
+            border-radius: 4px;
+            letter-spacing: 0.4px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .lb-ticker-pill:hover {
+            background: #ffd400;
+            color: #000;
+            box-shadow: 0 0 8px rgba(255, 212, 0, 0.5);
+            transform: translateY(-1px);
+        }
         .lb-desc { 
             font-size: 11px; 
             color: #8a8a9e; 
@@ -2569,19 +2589,30 @@
             } catch(e) {}
         }
 
-        async function onUserChange(username) {
+        async function onUserChange(username, targetTicker = null) {
             if (!username) return; 
             let sel = document.getElementById('userSelect');
             if (sel) sel.value = username;
             renderCustomProfileDropdown(latestLeaderboardData);
+
+            if (targetTicker) {
+                currentTicker = targetTicker;
+                window._userHasPannedChart = false;
+            } else {
+                currentTicker = null;
+            }
 
             await fetch('/api/users/select', { 
                 method: 'POST', 
                 headers: {'Content-Type': 'application/json'}, 
                 body: JSON.stringify({username: username})
             }); 
-            currentTicker = null; 
             await fetchData(false); 
+        }
+
+        function selectProfileAndStock(username, ticker, e) {
+            if (e) e.stopPropagation();
+            onUserChange(username, ticker);
         }
 
         async function addUserPrompt() {
@@ -2665,8 +2696,27 @@
 
                 let activeClass = lb.user === activeProf ? 'active-profile-card' : '';
                 let isHeld = Boolean(lb.has_active_holds || lb.has_holding || lb.held_ticker || (lb.active_holds && lb.active_holds.length > 0));
-                let heldTickerSymbol = (isHeld && lb.active_holds && lb.active_holds.length > 0) ? lb.active_holds[0] : (lb.held_ticker || '');
-                let tickerUnderName = isHeld && heldTickerSymbol ? `<div style="font-size:11px; color:#ffd400; font-weight:900; margin-top:3px; letter-spacing:0.4px;">${heldTickerSymbol}</div>` : '';
+                let holdsList = [];
+                if (Array.isArray(lb.active_holds) && lb.active_holds.length > 0) {
+                    holdsList = lb.active_holds;
+                } else if (lb.held_ticker) {
+                    holdsList = [lb.held_ticker];
+                }
+
+                let tickerUnderName = '';
+                if (holdsList.length > 0) {
+                    tickerUnderName = `
+                        <div style="display:flex; gap:5px; flex-wrap:wrap; margin-top:4px;">
+                            ${holdsList.map(sym => `
+                                <span class="lb-ticker-pill" 
+                                      onclick="selectProfileAndStock('${lb.user.replace(/'/g, "\\'")}', '${sym}', event)" 
+                                      title="Switch to ${lb.user} and open ${sym} chart">
+                                    ${sym}
+                                </span>
+                            `).join('')}
+                        </div>
+                    `;
+                }
                 
                 let startEq = (lb.equity - dayVal);
                 let dayPct = lb.daily_pct !== undefined ? lb.daily_pct : (startEq > 0 ? ((dayVal / startEq) * 100.0) : 0.0);
@@ -2711,10 +2761,11 @@
                     </div>
                     <div class="lb-desc" style="display:${isInfoOpen ? 'block' : 'none'};">${profileDesc[lb.user] || 'Custom Strategy Profile.'}</div>`;
 
+                let defaultHeld = (holdsList && holdsList.length > 0) ? holdsList[0] : '';
                 return `
-                    <div class="lb-item ${activeClass}" onclick="onUserChange('${lb.user}')">
+                    <div class="lb-item ${activeClass}" onclick="onUserChange('${lb.user.replace(/'/g, "\\'")}', '${defaultHeld}')">
                         ${cardInner}
-                    </div>`; 
+                    </div>`;
             }).join('');
             document.getElementById('leaderboardUI').innerHTML = lbHtml;
             renderCustomProfileDropdown(leaderboard);

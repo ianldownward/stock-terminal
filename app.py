@@ -2094,16 +2094,19 @@ def get_data():
     try:
         is_client = (session.get('role') != 'admin')
         client_name = session.get('user', 'Client')
+        req_user = request.args.get('user', '').strip()
 
         if is_client:
             ud = portfolio_store.get_client_store(client_name)
         else:
             portfolio_store.reload()
-            ud = portfolio_store.user_data()
+            if req_user and req_user in portfolio_store.data.get('users', {}):
+                portfolio_store.data['active_user'] = req_user
+            ud = portfolio_store.user_data(req_user if req_user else None)
 
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
-        active_profile = portfolio_store.active_username().strip().lower() if not is_client else client_name.lower()
+        active_profile = (req_user or portfolio_store.active_username()).strip().lower() if not is_client else client_name.lower()
         is_momentum = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
         is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
 
