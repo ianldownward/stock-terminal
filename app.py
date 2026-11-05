@@ -212,9 +212,6 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
         except Exception as e:
             print(f"[ALPACA NOTICE] Pre-cancel open orders: {e}")
 
-    headers["User-Agent"] = "IDCTradingTerminal/1.0"
-    clean_client_id = f"{clean_bot_tag[:18]}_{int(time.time())}"
-
     payload = json.dumps({
         "symbol": ticker.upper(),
         "qty": int(shares),

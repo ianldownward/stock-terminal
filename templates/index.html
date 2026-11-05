@@ -2671,7 +2671,8 @@
                 headers: {'Content-Type': 'application/json'}, 
                 body: JSON.stringify({username: username})
             }); 
-            await fetchData(false); 
+            await fetchData(false);
+            if (typeof fetchReadinessScanner === 'function') fetchReadinessScanner();
         }
 
         function selectProfileAndStock(username, ticker, e) {
@@ -3998,7 +3999,8 @@
 
         async function fetchReadinessScanner() {
             try {
-                let res = await fetch('/api/watchlist/scan_all');
+                let activeUser = document.getElementById('userSelect')?.value || '';
+                let res = await fetch(`/api/watchlist/scan_all?scope=active&user=${encodeURIComponent(activeUser)}`);
                 let d = await res.json();
                 let items = d.items || [];
                 
