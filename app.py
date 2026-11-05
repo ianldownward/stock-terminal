@@ -56,15 +56,22 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
 
 VAPID_CLAIMS = {"sub": "mailto:ianldownward@gmail.com"}
 
+VAPID_KEY_FILE = os.path.abspath("vapid_private_key.pem")
+
 def get_vapid_keypair():
-    """Generates and persists a valid NIST P-256 EC VAPID keypair, preventing ASN.1 parsing errors."""
+    """Generates and writes a valid NIST P-256 EC key directly to a .pem file on disk to prevent ASN.1 parsing errors."""
     portfolio_store.reload()
     vk = portfolio_store.data.get('vapid_keys') or {}
+    
     if vk.get('private_pem') and vk.get('public_key'):
         try:
             from cryptography.hazmat.primitives import serialization
             serialization.load_pem_private_key(vk['private_pem'].encode('utf-8'), password=None)
-            return vk['private_pem'], vk['public_key']
+            # Ensure the PEM file exists on disk for pywebpush
+            if not os.path.exists(VAPID_KEY_FILE):
+                with open(VAPID_KEY_FILE, "w") as f:
+                    f.write(vk['private_pem'])
+            return VAPID_KEY_FILE, vk['public_key']
         except Exception:
             pass
 
@@ -72,7 +79,7 @@ def get_vapid_keypair():
     from cryptography.hazmat.primitives import serialization
     import base64
 
-    # Generate standard SECP256R1 keypair
+    # Generate standard SECP256R1 NIST P-256 keypair
     priv = ec.generate_private_key(ec.SECP256R1())
     priv_pem = priv.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -87,11 +94,15 @@ def get_vapid_keypair():
     )
     pub_b64 = base64.urlsafe_b64encode(pub_bytes).decode('utf-8').rstrip('=')
 
+    # Save to disk as .pem file
+    with open(VAPID_KEY_FILE, "w") as f:
+        f.write(priv_pem)
+
     vk = {'private_pem': priv_pem, 'public_key': pub_b64}
     portfolio_store.data['vapid_keys'] = vk
     portfolio_store.save_data(portfolio_store.data)
-    print(f"[VAPID READY] Generated fresh NIST P-256 keypair.")
-    return priv_pem, pub_b64
+    print(f"[VAPID READY] Saved fresh VAPID key file to {VAPID_KEY_FILE}")
+    return VAPID_KEY_FILE, pub_b64
 
 def send_native_web_push(title, message):
     """Sends native Apple / Web Push notifications with full APNs priority headers."""
@@ -108,7 +119,7 @@ def send_native_web_push(title, message):
         print("[PUSH ALERT NOTICE] No devices registered in database. Tap Setup Alerts on iPhone.")
         return {'status': 'error', 'message': 'No registered devices in database. Tap Re-Sync Device on iPhone.'}
 
-    priv_pem, _ = get_vapid_keypair()
+    key_file_path, _ = get_vapid_keypair()
     dead_subs = []
     payload = json.dumps({'title': title, 'body': message, 'url': '/'})
     
@@ -127,7 +138,7 @@ def send_native_web_push(title, message):
             webpush(
                 subscription_info=sub,
                 data=payload,
-                vapid_private_key=priv_pem,
+                vapid_private_key=key_file_path,
                 vapid_claims=VAPID_CLAIMS,
                 headers=apns_headers,
                 timeout=8

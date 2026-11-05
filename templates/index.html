@@ -3630,9 +3630,6 @@
                     return;
                 }
 
-                const resKey = await fetch('/api/push/vapid_public_key');
-                const { public_key } = await resKey.json();
-
                 // Unsubscribe any stale subscription to avoid applicationServerKey mismatch
                 const existingSub = await reg.pushManager.getSubscription();
                 if (existingSub) {
@@ -3642,6 +3639,9 @@
                         console.warn('[PUSH] Unsubscribe error:', unsubErr);
                     }
                 }
+
+                const resKey = await fetch('/api/push/vapid_public_key');
+                const { public_key } = await resKey.json();
 
                 const subscription = await reg.pushManager.subscribe({
                     userVisibleOnly: true,
@@ -3656,24 +3656,23 @@
                 const d = await saveRes.json();
 
                 if (d.status === 'ok') {
-                    if (statusEl) statusEl.innerHTML = "<span style='color:#ffd400;'>Registering... sending test alert...</span>";
-                    if (btnLabel) btnLabel.innerText = 'Re-Sync Device';
+                    if (statusEl) statusEl.innerHTML = "<span style='color:#ffd400;'>Sending test alert...</span>";
                     
                     let testRes = await fetch('/api/push/test', { method: 'POST' });
                     let testData = await testRes.json();
                     if (testData.status === 'ok') {
-                        if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81;'>✅ Connected! Alert sent to your lock screen.</span>";
+                        if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81;'>✅ Connected & Active! Alert sent to lock screen.</span>";
                     } else {
                         if (statusEl) statusEl.innerHTML = `<span style='color:#ff5364;'>⚠️ ${testData.message || 'Error sending alert'}</span>`;
                     }
                 } else {
                     alert("Could not register device with server.");
-                    if (btnLabel) btnLabel.innerText = 'Enable Phone Alerts';
                 }
             } catch (err) {
                 console.error("Push registration error:", err);
                 alert("Setup note: " + err.message);
-                if (btnLabel) btnLabel.innerText = 'Enable Phone Alerts';
+            } finally {
+                if (btnLabel) btnLabel.innerText = 'Re-Sync Device';
             }
         }
 
