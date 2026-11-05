@@ -542,39 +542,26 @@
             margin-bottom: 14px !important; 
             text-align: left; 
         }
-        /* Dynamic 5-Item Watchlist & Responsive Split */
+        /* Merged Single Watchlist & Readiness Drawer */
         #watchlistDrawer[open] {
-            flex: 0 0 auto;
+            flex: 1 1 0;
             display: flex;
             flex-direction: column;
-            margin-bottom: 10px !important;
+            min-height: 0;
+            margin-bottom: 0 !important;
             overflow: hidden;
         }
         #watchlistDrawer[open] > div {
             display: flex;
             flex-direction: column;
+            flex: 1;
             min-height: 0;
             overflow: hidden;
         }
-        #watchlistDrawer[open] .watchlist {
-            overflow-y: auto;
-            max-height: 232px !important; /* Fits up to exactly 5 items; scrolls if > 5 */
-            min-height: 0;
-            padding-right: 4px;
-        }
-        #readinessDrawer[open] {
-            flex: 1 1 0;
-            min-height: 120px;
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 0 !important;
-            overflow: hidden;
-        }
-        #readinessDrawer[open] #readinessUI {
+        #watchlistDrawer[open] #readinessUI {
             flex: 1 1 0;
             overflow-y: auto !important;
             min-height: 0;
-            max-height: none !important; /* Automatically expands/contracts to fill remaining sidebar space */
             padding-right: 4px;
             -webkit-overflow-scrolling: touch;
         }
@@ -1568,20 +1555,17 @@
             </div>
             
             <details class="drawer-details" id="watchlistDrawer" open>
-                <summary>Live Watchlist</summary>
+                <summary>Live Watchlist & Readiness</summary>
                 <div style="margin-top:10px; display:flex; flex-direction:column; min-height:0; flex:1; overflow:hidden;">
                     <div class="search-box">
-                        <input type="text" id="addTickerInput" placeholder="Add Symbol...">
-                        <button id="addBtn">+</button>
+                        <input type="text" id="addTickerInput" placeholder="Add Symbol..." onkeydown="if(event.key==='Enter')addWatchlistTicker()">
+                        <button id="addBtn" onclick="addWatchlistTicker()">+</button>
                     </div>
-                    <ul class="watchlist" id="watchlistUI"></ul>
-                </div>
-            </details>
-
-            <details class="drawer-details" id="readinessDrawer" open>
-                <summary>Readiness & Risk</summary>
-                <div id="readinessUI" style="margin-top:10px; display:flex; flex-direction:column; gap:6px; flex:1; min-height:0; overflow-y:auto; padding-right:4px;">
-                    <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning all strategy tickers...</div>
+                    <div id="readinessUI" style="display:flex; flex-direction:column; gap:6px; flex:1; min-height:0; overflow-y:auto; padding-right:4px;">
+                        <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning strategy tickers...</div>
+                    </div>
+                    <!-- Hidden reference to preserve script compatibility -->
+                    <ul class="watchlist" id="watchlistUI" style="display:none;"></ul>
                 </div>
             </details>
         </div>
@@ -3285,6 +3269,7 @@
                 }
                 
                 renderChart();
+                if (typeof fetchReadinessScanner === 'function') fetchReadinessScanner();
             } catch(e) { 
                 console.error("fetchData error:", e);
             } finally {
@@ -3297,6 +3282,21 @@
             currentTicker = ticker;
             window._userHasPannedChart = false;
             fetchData(false);
+        }
+
+        async function addWatchlistTicker() {
+            let inp = document.getElementById('addTickerInput');
+            if (!inp) return;
+            let sym = inp.value.trim().toUpperCase();
+            if (!sym) return;
+            inp.value = '';
+            await fetch('/api/watchlist/add', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ticker: sym})
+            });
+            await fetchData(false);
+            if (typeof fetchReadinessScanner === 'function') fetchReadinessScanner();
         }
 
         function checkMobileLayout() {
