@@ -281,10 +281,10 @@ def alpaca_cancel_and_liquidate(api_key, secret_key, mode):
         with urllib.request.urlopen(req_cancel, timeout=5): pass
     except Exception: pass
 
-    # 2. Close all open positions at market
+    # 2. Close all open positions at market with cancel_orders=true
     try:
         req_close = urllib.request.Request(
-            f"{base_url}/v2/positions",
+            f"{base_url}/v2/positions?cancel_orders=true",
             headers={"APCA-API-KEY-ID": api_key.strip(), "APCA-API-SECRET-KEY": secret_key.strip()},
             method="DELETE"
         )

@@ -598,6 +598,7 @@
         
         /* Clean Window Spacing in Sidebar (Desktop Only) */
         @media (min-width: 901px) {
+            .header-broker-pill { display: none !important; }
             .mob-profile-name { display: none !important; }
             .user-profile-box { 
                 background: transparent; 
@@ -1483,6 +1484,47 @@
         </div>
     </div>
 
+    <!-- DEDICATED MOBILE ALPACA SYNC & RECTIFY MODAL -->
+    <div class="modal-overlay" id="alpacaSyncModal" style="display:none;">
+        <div class="modal" style="width: 420px; max-width: 92vw;">
+            <h2>
+                <span style="display:flex; align-items:center; gap:8px;">
+                    <span class="status-dot online" id="mobAlpacaModalDot"></span>
+                    <span>Alpaca Live Sync</span>
+                </span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeAlpacaSyncModal()">✕</button>
+            </h2>
+            <div style="margin-top:14px; display:flex; flex-direction:column; gap:12px;">
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:800; letter-spacing:0.5px;">Account Value</div>
+                        <div id="mobAlpacaVal" style="font-size:20px; font-weight:800; color:#fff; margin-top:2px;">$0.00</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:800; letter-spacing:0.5px;">Buying Power</div>
+                        <div id="mobAlpacaBP" style="font-size:13px; font-weight:800; color:#ffd400; margin-top:2px;">$0.00</div>
+                    </div>
+                </div>
+
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                    <span style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Sync Status & Live Exposure</span>
+                    <div id="mobAlpacaExposureBox" style="font-size:12px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:10px 12px; line-height:1.4;">
+                        ✅ 100% Flat (Cash)
+                    </div>
+                </div>
+
+                <div style="display:flex; gap:8px; margin-top:4px;">
+                    <button type="button" class="btn-control" style="flex:1; border-color:#ff5364; background:rgba(255,83,100,0.12); color:#ff5364; justify-content:center; padding:10px;" onclick="triggerEmergencyLiquidate()">
+                        Sweep to Cash (Rectify)
+                    </button>
+                    <button type="button" class="btn-control" style="flex:1; justify-content:center; padding:10px;" onclick="closeAlpacaSyncModal(); openSettingsModal();">
+                        Broker Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- TOP GLOBAL HEADER BAR -->
     <header class="top-header-bar">
         <div class="header-left">
@@ -1494,8 +1536,8 @@
             </div>
         </div>
         <div class="header-right" style="position:relative;">
-            <!-- Flat Live Broker Status Pill -->
-            <div class="header-broker-pill" id="headerBrokerPill" onclick="openSettingsModal()" title="Broker Status & Settings">
+            <!-- Flat Live Broker Status Pill (Opens Sync Window on Mobile) -->
+            <div class="header-broker-pill" id="headerBrokerPill" onclick="openAlpacaSyncModal()" title="Alpaca Live Status & Sync">
                 <span class="status-dot online" id="headerBrokerDot"></span>
                 <span id="headerBrokerText">Alpaca: Active</span>
             </div>
@@ -3804,30 +3846,47 @@
                     let bpStr = `$${(d.buying_power || 0).toLocaleString()}`;
                     let pvStr = `$${(d.portfolio_value || 0).toLocaleString()}`;
                     
-                    // Update Desktop Bottom-Left Monitor
+                    // Update Desktop Bottom-Left Monitor & Mobile Modal
                     let valEl = document.getElementById('alpacaCardValue');
                     let expBox = document.getElementById('alpacaExposureBox');
                     let cDot = document.getElementById('alpacaCardDot');
+                    let mobVal = document.getElementById('mobAlpacaVal');
+                    let mobBP = document.getElementById('mobAlpacaBP');
+                    let mobExp = document.getElementById('mobAlpacaExposureBox');
+                    let mobDot = document.getElementById('mobAlpacaModalDot');
+
                     if (valEl) valEl.innerText = pvStr;
+                    if (mobVal) mobVal.innerText = pvStr;
+                    if (mobBP) mobBP.innerText = bpStr;
                     if (cDot) cDot.className = d.paused ? 'status-dot paused' : 'status-dot online';
+                    if (mobDot) mobDot.className = d.paused ? 'status-dot paused' : 'status-dot online';
+
+                    let expHtml = '✅ 100% Flat (Cash)';
+                    let expCol = '#0ecb81';
+                    let expBorder = '#262b36';
+
+                    if (d.positions && d.positions.length > 0) {
+                        let posSummary = d.positions.map(p => `${p.qty} ${p.symbol} (${p.unrealized_pl >= 0 ? '+' : ''}$${p.unrealized_pl.toFixed(2)})`).join(', ');
+                        if (d.has_desync) {
+                            expCol = '#ff9900';
+                            expBorder = '#ff9900';
+                            expHtml = `⚠️ DESYNC: ${posSummary}`;
+                        } else {
+                            expCol = '#ffd400';
+                            expBorder = '#262b36';
+                            expHtml = `Active: ${posSummary}`;
+                        }
+                    }
 
                     if (expBox) {
-                        if (d.positions && d.positions.length > 0) {
-                            let posSummary = d.positions.map(p => `${p.qty} ${p.symbol} (${p.unrealized_pl >= 0 ? '+' : ''}$${p.unrealized_pl.toFixed(2)})`).join(', ');
-                            if (d.has_desync) {
-                                expBox.style.color = '#ff9900';
-                                expBox.style.borderColor = '#ff9900';
-                                expBox.innerHTML = `⚠️ DESYNC: ${posSummary}`;
-                            } else {
-                                expBox.style.color = '#ffd400';
-                                expBox.style.borderColor = '#262b36';
-                                expBox.innerHTML = `Active: ${posSummary}`;
-                            }
-                        } else {
-                            expBox.style.color = '#0ecb81';
-                            expBox.style.borderColor = '#262b36';
-                            expBox.innerText = '✅ 100% Flat (Cash)';
-                        }
+                        expBox.style.color = expCol;
+                        expBox.style.borderColor = expBorder;
+                        expBox.innerHTML = expHtml;
+                    }
+                    if (mobExp) {
+                        mobExp.style.color = expCol;
+                        mobExp.style.borderColor = expBorder;
+                        mobExp.innerHTML = expHtml;
                     }
 
                     if (d.paused) {
@@ -3855,6 +3914,21 @@
                 if (found && found.equity) return parseFloat(found.equity).toFixed(2);
             }
             return fallback.toFixed(2);
+        }
+
+        function openAlpacaSyncModal() {
+            if (window.innerWidth > 900) {
+                openSettingsModal();
+                return;
+            }
+            fetchBrokerStatus();
+            let m = document.getElementById('alpacaSyncModal');
+            if (m) m.style.display = 'flex';
+        }
+
+        function closeAlpacaSyncModal() {
+            let m = document.getElementById('alpacaSyncModal');
+            if (m) m.style.display = 'none';
         }
 
         function openSettingsModal() {
