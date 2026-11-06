@@ -360,6 +360,29 @@
                 background: #ff5364;
                 color: #fff;
             }
+            .desktop-only-profile-box {
+                display: none !important;
+            }
+            .desktop-equity-title {
+                display: none !important;
+            }
+            .mobile-equity-header {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                width: 100% !important;
+                margin-bottom: 2px !important;
+            }
+            .mob-profile-name {
+                font-size: 13px !important;
+                font-weight: 800 !important;
+                color: #ffd400 !important;
+                letter-spacing: 0.3px !important;
+            }
+            .mob-today-pnl {
+                font-size: 12px !important;
+                font-weight: 800 !important;
+            }
             .user-profile-box {
                 margin-bottom: 0 !important;
                 padding: 0 !important;
@@ -367,19 +390,28 @@
                 border: none !important;
             }
             .total-shares-box {
+                cursor: pointer !important;
                 margin-bottom: 0 !important;
-                padding: 6px 10px !important;
+                padding: 8px 12px !important;
+                background: #14171f !important;
+                border: 1px solid #262b36 !important;
+                border-radius: 8px !important;
+                transition: border-color 0.2s, background 0.2s !important;
             }
-            .total-shares-box label {
-                font-size: 9px !important;
+            .total-shares-box:active {
+                border-color: #ffd400 !important;
+                background: #181c26 !important;
+            }
+            .total-shares-box .equity-header-row {
                 margin-bottom: 2px !important;
             }
-            .total-shares-box div.total-val {
-                font-size: 16px !important;
+            .total-shares-box div.equity-main-val {
+                font-size: 22px !important;
+                margin-bottom: 6px !important;
+                line-height: 1.1 !important;
             }
-            .total-shares-box div.total-pnl {
-                font-size: 11px !important;
-                margin-top: 2px !important;
+            .custom-select-menu {
+                top: calc(100% + 4px) !important;
             }
             #rotatorHealthCard {
                 margin-bottom: 0 !important;
@@ -645,8 +677,14 @@
         .user-btn.del { background: #ff5364; color: #fff; }
 
         /* WIDE CUSTOM PROFILE DROPDOWN */
+        .desktop-equity-title { display: block; }
+        .mobile-equity-header { display: none; }
+        @media (min-width: 901px) {
+            .desktop-only-profile-box { display: flex !important; }
+            .custom-select-menu { top: 56px !important; }
+        }
         .custom-select-wrapper { position: relative; width: 100%; user-select: none; }
-        .custom-select-trigger { 
+        .custom-select-trigger {
             background: #0f1115; 
             border: 1px solid #262b36; 
             color: #fff; 
@@ -1517,40 +1555,46 @@
                 <select id="userSelect" onchange="onUserChange(this.value)" style="display:none;"></select>
                 <!-- Wide Custom Dropdown (Stacked Price & Inside Arrow) -->
                 <div class="custom-select-wrapper">
-                    <div id="customSelectTrigger" class="custom-select-trigger" onclick="toggleCustomProfileDropdown(event)" style="padding: 8px 12px; min-height: 52px; display: flex; align-items: center;">
+                    <!-- Desktop-Only Dropdown Trigger -->
+                    <div id="customSelectTrigger" class="custom-select-trigger desktop-only-profile-box" onclick="toggleCustomProfileDropdown(event)" style="padding: 8px 12px; min-height: 52px; display: flex; align-items: center;">
                         <div id="customSelectLabel" style="width:100%;"><span>Select Profile</span></div>
                     </div>
-                    <div id="customSelectDropdown" class="custom-select-menu" style="display:none;"></div>
-                </div>
-            </div>
-            
-            <!-- TOTAL PORTFOLIO EQUITY BOX (BALANCED TWO-ROW GRID) -->
-            <div class="total-shares-box">
-                <div class="equity-header-row">
-                    <label>TOTAL PORTFOLIO EQUITY</label>
-                </div>
-                
-                <div id="mTotalSharesHeldVal" class="equity-main-val">£508.40</div>
-                
-                <div class="equity-stats-grid">
-                    <!-- Row 1: Cash on left, TODAY on right -->
-                    <div class="equity-stat-row">
-                        <span id="mCashVal" class="stat-left">Cash: £508.40</span>
-                        <div class="stat-right">
-                            <span class="stat-label">TODAY</span>
-                            <span id="mEquityTodayVal" class="stat-val">-£2.24</span>
-                            <span id="mEquityTodayPct" class="stat-pct">(-0.44%)</span>
-                        </div>
-                    </div>
                     
-                    <!-- Row 2: Shares on left, DAILY AVERAGE on right -->
-                    <div class="equity-stat-row">
-                        <span id="mSharesVal" class="stat-left">Shares: £0.00</span>
-                        <div class="stat-right">
-                            <span class="stat-label">DAILY AVG</span>
-                            <span id="mEquityDailyAvg" class="stat-val">+0.84%</span>
+                    <!-- TOTAL PORTFOLIO EQUITY BOX (Combined Profile & Equity on Mobile) -->
+                    <div class="total-shares-box" onclick="if(window.innerWidth<=900)toggleCustomProfileDropdown(event)">
+                        <div class="equity-header-row">
+                            <label class="desktop-equity-title">TOTAL PORTFOLIO EQUITY</label>
+                            <div class="mobile-equity-header">
+                                <span id="mobCombinedProfileName" class="mob-profile-name">Select Profile</span>
+                                <span id="mobCombinedTodayPnl" class="mob-today-pnl">+£0.00 (0.0%)</span>
+                            </div>
+                        </div>
+                        
+                        <div id="mTotalSharesHeldVal" class="equity-main-val">£508.40</div>
+                        
+                        <div class="equity-stats-grid">
+                            <!-- Row 1: Cash on left, TODAY on right -->
+                            <div class="equity-stat-row">
+                                <span id="mCashVal" class="stat-left">Cash: £508.40</span>
+                                <div class="stat-right">
+                                    <span class="stat-label">TODAY</span>
+                                    <span id="mEquityTodayVal" class="stat-val">-£2.24</span>
+                                    <span id="mEquityTodayPct" class="stat-pct">(-0.44%)</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Row 2: Shares on left, DAILY AVERAGE on right -->
+                            <div class="equity-stat-row">
+                                <span id="mSharesVal" class="stat-left">Shares: £0.00</span>
+                                <div class="stat-right">
+                                    <span class="stat-label">DAILY AVG</span>
+                                    <span id="mEquityDailyAvg" class="stat-val">+0.84%</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    <div id="customSelectDropdown" class="custom-select-menu" style="display:none;"></div>
                 </div>
             </div>
             
@@ -2571,6 +2615,31 @@
                 `;
             }
 
+            // Sync Combined Mobile Card Header
+            let mobNameEl = document.getElementById('mobCombinedProfileName');
+            let mobPnlEl = document.getElementById('mobCombinedTodayPnl');
+            if (mobNameEl) {
+                const activeLb = lbMap[activeProf] || { user: activeProf, equity: 500, daily_pnl: 0 };
+                const shortName = getShortProfileName(activeProf || 'Select Profile');
+                const isHeldActive = Boolean(activeLb.has_active_holds || activeLb.has_holding || activeLb.held_ticker || (activeLb.active_holds && activeLb.active_holds.length > 0));
+                const activeHoldsList = activeLb.active_holds || [];
+                const activeHeldTicker = activeHoldsList.length > 0 ? activeHoldsList[0] : (activeLb.held_ticker || activeLb.holding || '');
+                const heldTagActive = (isHeldActive && activeHeldTicker) ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(${activeHeldTicker})</span>` : '';
+                mobNameEl.innerHTML = `${shortName}${heldTagActive}`;
+            }
+            if (mobPnlEl) {
+                const activeLb = lbMap[activeProf] || { user: activeProf, equity: 500, daily_pnl: 0 };
+                const dVal = parseFloat(activeLb.daily_pnl) || 0;
+                const arrow = dVal > 0 ? '▲ ' : (dVal < 0 ? '▼ ' : '');
+                const col = dVal > 0 ? '#0ecb81' : (dVal < 0 ? '#ff5364' : '#8a8a9e');
+                const startEq = (parseFloat(activeLb.equity) || 500) - dVal;
+                const dayPct = activeLb.daily_pct !== undefined ? activeLb.daily_pct : (startEq > 0 ? ((dVal / startEq) * 100.0) : 0.0);
+                const absPct = Math.abs(dayPct);
+                const pctStr = (absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1)) + '%';
+                const signStr = dVal > 0 ? '+' : (dVal < 0 ? '-' : '');
+                mobPnlEl.innerHTML = `<span style="color:${col}; font-weight:800;">${arrow}${signStr}£${Math.abs(dVal).toFixed(2)} (${signStr}${pctStr})</span>`;
+            }
+
             // Render list items with dynamic ticker in brackets (e.g. Test TQ (SQQQ))
             if (menu) {
                 menu.innerHTML = userList.map(u => {
@@ -3208,6 +3277,21 @@
                 if (tPctEl) { tPctEl.innerText = pctStr; tPctEl.style.color = dayCol; }
                 if (dAvgEl) { dAvgEl.innerText = dAvgStr; dAvgEl.style.color = dAvgCol; }
 
+                let mobNameEl = document.getElementById('mobCombinedProfileName');
+                let mobPnlEl = document.getElementById('mobCombinedTodayPnl');
+                if (mobNameEl && activeProf) {
+                    let shortName = getShortProfileName(activeProf);
+                    let isHeld = Boolean(activeLb.has_active_holds || activeLb.has_holding || activeLb.held_ticker || (activeLb.active_holds && activeLb.active_holds.length > 0));
+                    let activeHoldsList = activeLb.active_holds || [];
+                    let activeHeldTicker = activeHoldsList.length > 0 ? activeHoldsList[0] : (activeLb.held_ticker || activeLb.holding || '');
+                    let heldTag = (isHeld && activeHeldTicker) ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(${activeHeldTicker})</span>` : '';
+                    mobNameEl.innerHTML = `${shortName}${heldTag}`;
+                }
+                if (mobPnlEl) {
+                    let arrow = dayVal > 0 ? '▲ ' : (dayVal < 0 ? '▼ ' : '');
+                    mobPnlEl.innerHTML = `<span style="color:${dayCol}; font-weight:800;">${arrow}${dayVal >= 0 ? '+' : '-'}£${Math.abs(dayVal).toFixed(2)} ${pctStr}</span>`;
+                }
+
                 if (p.metrics && p.metrics.regime) {
                     let fillEl = document.getElementById('thermoFill');
                     let textEl = document.getElementById('thermoText');
@@ -3305,7 +3389,6 @@
             let sidebarTop = document.querySelector('.sidebar-top');
             let metricsGrid = document.querySelector('.metrics-grid');
             let profileBox = document.querySelector('.user-profile-box');
-            let equityBox = document.querySelector('.total-shares-box');
             let riskCard = document.getElementById('rotatorHealthCard');
             let mobLb = document.getElementById('mobLeaderboardCard');
             let mobHeld = document.getElementById('mobHeldShareCard');
@@ -3314,17 +3397,17 @@
 
             if (isMobile) {
                 if (profileBox && profileBox.parentElement !== stack) {
-                    stack.appendChild(profileBox);
-                    stack.appendChild(equityBox);
-                    stack.appendChild(riskCard);
-                    stack.appendChild(mobLb);
-                    stack.appendChild(mobHeld);
+                    stack.prepend(profileBox);
                 }
+                if (riskCard && riskCard.parentElement !== stack) stack.appendChild(riskCard);
+                if (mobLb && mobLb.parentElement !== stack) stack.appendChild(mobLb);
+                if (mobHeld && mobHeld.parentElement !== stack) stack.appendChild(mobHeld);
             } else {
                 if (sidebarTop && profileBox && profileBox.parentElement !== sidebarTop) {
-                    sidebarTop.prepend(equityBox);
                     sidebarTop.prepend(profileBox);
-                    if (metricsGrid && riskCard) metricsGrid.appendChild(riskCard);
+                    if (metricsGrid && riskCard && riskCard.parentElement !== metricsGrid) {
+                        metricsGrid.appendChild(riskCard);
+                    }
                 }
             }
             if (tvChart) {
