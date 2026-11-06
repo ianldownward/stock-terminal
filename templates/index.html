@@ -1281,68 +1281,42 @@
                     <p style="font-size:11px; color:#787e8e; margin:3px 0 10px 0;">Enable algorithms to route to Alpaca, assign cash budget (£), or liquidate individually.</p>
                     
                     <div style="display:flex; flex-direction:column; gap:8px; background:#13161c; padding:10px; border-radius:8px; border:1px solid #262b36;">
-                        <!-- Test TQM -->
+                        <!-- Vector Hybrid -->
                         <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28;">
                             <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
                                 <input type="checkbox" id="alloc_tqm_active" checked> 
-                                <span style="font-weight:700;">Test TQM</span> <span style="color:#787e8e; font-size:11px;">(Hybrid)</span>
+                                <span style="font-weight:700; color:#ffd400;">Vector Hybrid</span> <span style="color:#787e8e; font-size:11px;">(Momentum)</span>
                             </label>
                             <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" step="0.01" id="alloc_tqm_val" value="508.40" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
-                                <button type="button" onclick="liquidateSpecificBot('test tqm')" class="btn-bot-liquidate">Liquidate</button>
+                                <input type="number" step="0.01" id="alloc_tqm_val" value="500.00" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <button type="button" onclick="liquidateSpecificBot('vector hybrid')" class="btn-bot-liquidate">Liquidate</button>
                             </div>
                         </div>
 
-                        <!-- Test S -->
+                        <!-- Dual Axis -->
                         <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28;">
                             <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="alloc_s_active" checked> 
-                                <span style="font-weight:700;">Test S</span> <span style="color:#787e8e; font-size:11px;">(Scalper)</span>
+                                <input type="checkbox" id="alloc_tq_active"> 
+                                <span style="font-weight:700;">Dual Axis</span> <span style="color:#787e8e; font-size:11px;">(Directional)</span>
                             </label>
                             <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" step="0.01" id="alloc_s_val" value="513.99" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
-                                <button type="button" onclick="liquidateSpecificBot('test s')" class="btn-bot-liquidate">Liquidate</button>
+                                <input type="number" step="0.01" id="alloc_tq_val" value="500.00" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <button type="button" onclick="liquidateSpecificBot('dual axis')" class="btn-bot-liquidate">Liquidate</button>
                             </div>
                         </div>
 
-                        <!-- Test TQ -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28;">
+                        <!-- Velocity Pulse -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;">
                             <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="alloc_tq_active" checked> 
-                                <span style="font-weight:700;">Test TQ</span> <span style="color:#787e8e; font-size:11px;">(Macro)</span>
+                                <input type="checkbox" id="alloc_s_active"> 
+                                <span style="font-weight:700;">Velocity Pulse</span> <span style="color:#787e8e; font-size:11px;">(Scalper)</span>
                             </label>
                             <div style="display:flex; align-items:center; gap:6px;">
                                 <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" step="0.01" id="alloc_tq_val" value="510.64" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
-                                <button type="button" onclick="liquidateSpecificBot('test tq')" class="btn-bot-liquidate">Liquidate</button>
-                            </div>
-                        </div>
-
-                        <!-- Test E25 -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28; opacity:0.9;">
-                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="alloc_e25_active"> 
-                                <span style="font-weight:700;">Test E25</span> <span style="color:#787e8e; font-size:11px;">(Chameleon)</span>
-                            </label>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" step="0.01" id="alloc_e25_val" value="501.70" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
-                                <button type="button" onclick="liquidateSpecificBot('test e25')" class="btn-bot-liquidate">Liquidate</button>
-                            </div>
-                        </div>
-
-                        <!-- Test R -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; opacity:0.9;">
-                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="alloc_r_active"> 
-                                <span style="font-weight:700;">Test R</span> <span style="color:#787e8e; font-size:11px;">(Reversion)</span>
-                            </label>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" step="0.01" id="alloc_r_val" value="494.70" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
-                                <button type="button" onclick="liquidateSpecificBot('test r')" class="btn-bot-liquidate">Liquidate</button>
+                                <input type="number" step="0.01" id="alloc_s_val" value="500.00" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
+                                <button type="button" onclick="liquidateSpecificBot('velocity pulse')" class="btn-bot-liquidate">Liquidate</button>
                             </div>
                         </div>
                     </div>

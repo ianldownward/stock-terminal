@@ -447,12 +447,8 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Cleanly enforce allowed profiles and calibrate budgets to 500.0
+            # Ensure default profiles exist with £500 budget baseline
             existing_users = list(self.data['users'].keys())
-            for u in existing_users:
-                if u not in allowed_profiles:
-                    del self.data['users'][u]
-                    needs_save = True
 
             for p in allowed_profiles:
                 if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
@@ -1106,7 +1102,7 @@ def process_auto_profile(prof_name):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_auto_profile = any(x in active_profile for x in ['vector', 'dual', 'velocity', 'pulse', 'hybrid', 'axis', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         if not is_auto_profile: return
 
         # TEST B: PASSIVE BUY-AND-HOLD BENCHMARK
@@ -1172,17 +1168,14 @@ def process_auto_profile(prof_name):
 
                 # PHASE 2 BANK-AND-WALK HARVEST CURFEWS
         cur_mins = now_uk.hour * 60 + now_uk.minute
-        # TQM locks gains at +2.20% (+£11 on £500)
-        if 'test tqm' in active_profile and daily_pnl_pct >= 2.20:
+        # Vector Hybrid locks gains at +2.20% (+£11 on £500)
+        if any(x in active_profile for x in ['vector', 'test tqm']) and daily_pnl_pct >= 2.20:
             is_curfew_active = True
-        # TQ BiDirectional locks gains at +2.50% (+£12.50 on £500)
-        elif 'test tq' in active_profile and daily_pnl_pct >= 2.50:
+        # Dual Axis locks gains at +2.20%
+        elif any(x in active_profile for x in ['dual', 'test tq']) and daily_pnl_pct >= 2.20:
             is_curfew_active = True
-        # E25 locks gains if >= +2.00% after 18:00 BST
-        elif 'test e25' in active_profile and cur_mins >= (18 * 60) and daily_pnl_pct >= 2.00:
-            is_curfew_active = True
-        # Test S locks at +3.00%
-        elif 'test s' in active_profile and daily_pnl_pct >= 3.00:
+        # Velocity Pulse locks at +3.00%
+        elif any(x in active_profile for x in ['velocity', 'pulse', 'test s']) and daily_pnl_pct >= 3.00:
             is_curfew_active = True
 
         # ADAPTIVE MODE RESOLUTION (MOMENTUM VS REVERSION SWITCHBOARD)
@@ -2275,8 +2268,8 @@ def get_data():
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
         active_profile = (req_user or portfolio_store.active_username()).strip().lower() if not is_client else client_name.lower()
-        is_momentum = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
-        is_rotator = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_momentum = any(x in active_profile for x in ['vector', 'dual', 'velocity', 'pulse', 'hybrid', 'axis', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_rotator = is_momentum
 
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
