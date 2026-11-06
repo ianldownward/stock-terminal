@@ -905,6 +905,35 @@
             color: #000; 
             border-color: #ffd400; 
         }
+
+        /* DEDICATED SYNC BUTTON (Yellow outline, invert on hover/click) */
+        .btn-sync-action {
+            background: transparent !important;
+            border: 1px solid #ffd400 !important;
+            color: #ffd400 !important;
+            font-size: 10px !important;
+            font-weight: 800 !important;
+            padding: 3px 10px !important;
+            border-radius: 5px !important;
+            cursor: pointer !important;
+            transition: all 0.15s ease !important;
+            user-select: none !important;
+            outline: none !important;
+        }
+        .btn-sync-action:hover {
+            background: #ffd400 !important;
+            color: #000000 !important;
+        }
+        .btn-sync-action:active {
+            background: #e6be00 !important;
+            color: #000000 !important;
+            transform: scale(0.97) !important;
+        }
+        .btn-sync-action:disabled {
+            cursor: default !important;
+            opacity: 0.8 !important;
+            pointer-events: none !important;
+        }
         
         .btn-rec { 
             background: #ffd400; 
@@ -1514,7 +1543,7 @@
                 </div>
 
                 <div style="display:flex; gap:8px; margin-top:4px;">
-                    <button type="button" id="btnMobAlpacaSync" class="btn-control" style="flex:1; border-color:#0ecb81; background:rgba(14,203,129,0.12); color:#0ecb81; font-weight:800; justify-content:center; padding:10px;" onclick="syncWithAlpaca(this)">
+                    <button type="button" id="btnMobAlpacaSync" class="btn-sync-action" style="flex:1; padding:10px; font-size:12px;" onclick="syncWithAlpaca(this)">
                         Sync
                     </button>
                     <button type="button" class="btn-control" style="flex:1; justify-content:center; padding:10px;" onclick="closeAlpacaSyncModal(); openSettingsModal();">
@@ -1700,7 +1729,7 @@
                         <span class="status-dot online" id="alpacaCardDot"></span>
                         <span style="font-size:10px; font-weight:800; color:#ffd400; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
                     </div>
-                    <button class="btn-control" id="btnAlpacaSync" style="padding:2px 9px; font-size:10px; border-color:#0ecb81; color:#0ecb81; font-weight:800;" onclick="syncWithAlpaca(this)" title="Sync Alpaca with bot state">
+                    <button id="btnAlpacaSync" class="btn-sync-action" onclick="syncWithAlpaca(this)" title="Sync Alpaca with bot state">
                         Sync
                     </button>
                 </div>
@@ -1715,7 +1744,6 @@
                     ✅ 100% Flat (Cash)
                 </div>
             </div>
-        </div>
 
         </div>
     
@@ -3877,12 +3905,17 @@
                             let plCol = pl >= 0 ? '#0ecb81' : '#ff5364';
                             let plStr = `${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}`;
                             return `
-                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; padding:2px 0; border-bottom:1px solid #1a1e28;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; padding:3px 0; border-bottom:1px solid #1a1e28;">
                                     <span style="font-weight:700; color:#fff;">${p.qty} ${p.symbol}</span>
                                     <span style="font-weight:700; color:${plCol}; font-family:monospace;">${plStr}</span>
                                 </div>
                             `;
                         }).join('');
+
+                        let statusNotice = '';
+                        if (window._alpacaOrdersQueued) {
+                            statusNotice = `<div style="font-size:9px; color:#ff9900; font-weight:700; margin-top:4px; padding-top:3px; border-top:1px dashed #262b36; text-align:center;">⏳ Orders Queued: Closing at 14:30 BST</div>`;
+                        }
 
                         expHtml = `
                             <div style="display:flex; flex-direction:column; width:100%;">
@@ -3892,9 +3925,18 @@
                                 </div>
                                 <div id="alpacaExpList" style="display:${isExpanded ? 'flex' : 'none'}; flex-direction:column; max-height:100px; overflow-y:auto; margin-top:4px; padding-top:2px; border-top:1px solid #202531; gap:2px;">
                                     ${rowsHtml}
+                                    ${statusNotice}
                                 </div>
                             </div>
                         `;
+                    } else {
+                        window._alpacaOrdersQueued = false;
+                        let deskBtn = document.getElementById('btnAlpacaSync');
+                        let mobBtn = document.getElementById('btnMobAlpacaSync');
+                        [deskBtn, mobBtn].filter(Boolean).forEach(b => {
+                            b.disabled = false;
+                            b.innerText = 'Sync';
+                        });
                     }
 
                     if (expBox) {
@@ -3947,20 +3989,19 @@
             let mobBtn = document.getElementById('btnMobAlpacaSync');
             let targets = [deskBtn, mobBtn].filter(Boolean);
 
+            // Lock buttons immediately into "Syncing..." state
             targets.forEach(b => {
                 b.disabled = true;
                 b.innerText = 'Syncing...';
-                b.style.borderColor = '#ffd400';
-                b.style.color = '#ffd400';
             });
 
             try {
                 await fetch('/api/broker/liquidate', { method: 'POST' });
                 
-                // Poll every 1.2s to confirm positions clear
+                // Poll Alpaca to see if positions clear immediately
                 let isFlat = false;
-                for (let i = 0; i < 4; i++) {
-                    await new Promise(r => setTimeout(r, 1200));
+                for (let i = 0; i < 3; i++) {
+                    await new Promise(r => setTimeout(r, 1000));
                     let sRes = await fetch('/api/broker/status');
                     let sData = await sRes.json();
                     if (!sData.positions || sData.positions.length === 0) {
@@ -3972,300 +4013,31 @@
                 await fetchBrokerStatus();
 
                 if (isFlat) {
+                    window._alpacaOrdersQueued = false;
                     targets.forEach(b => {
                         b.innerText = 'Synced ✓';
-                        b.style.borderColor = '#0ecb81';
-                        b.style.color = '#0ecb81';
                     });
                     setTimeout(() => {
                         targets.forEach(b => {
                             b.disabled = false;
                             b.innerText = 'Sync';
-                            b.style.borderColor = '#0ecb81';
-                            b.style.color = '#0ecb81';
                         });
                     }, 2500);
                 } else {
+                    // Pre-market: positions remain open until 14:30 opening bell
+                    // KEEP BUTTON LOCKED ON "Queued (14:30)" so user cannot spam click it
+                    window._alpacaOrdersQueued = true;
                     targets.forEach(b => {
-                        b.disabled = false;
+                        b.disabled = true;
                         b.innerText = 'Queued (14:30)';
-                        b.style.borderColor = '#ff9900';
-                        b.style.color = '#ff9900';
                     });
-                    setTimeout(() => {
-                        targets.forEach(b => {
-                            b.innerText = 'Sync';
-                            b.style.borderColor = '#0ecb81';
-                            b.style.color = '#0ecb81';
-                        });
-                    }, 3500);
+                    await fetchBrokerStatus();
                 }
             } catch(err) {
                 targets.forEach(b => {
                     b.disabled = false;
-                    b.innerText = 'Error';
-                    b.style.borderColor = '#ff5364';
-                    b.style.color = '#ff5364';
+                    b.innerText = 'Sync';
                 });
-                setTimeout(() => {
-                    targets.forEach(b => {
-                        b.innerText = 'Sync';
-                        b.style.borderColor = '#0ecb81';
-                        b.style.color = '#0ecb81';
-                    });
-                }, 2000);
-            }
-        }
-
-        window.toggleAlpacaExpList = function(e) {
-            if (e) e.stopPropagation();
-            window._alpacaExpExpanded = (window._alpacaExpExpanded === undefined) ? false : !window._alpacaExpExpanded;
-            let list = document.getElementById('alpacaExpList');
-            let arrow = document.getElementById('alpacaExpArrow');
-            if (list) list.style.display = window._alpacaExpExpanded ? 'flex' : 'none';
-            if (arrow) arrow.innerText = window._alpacaExpExpanded ? '▲' : '▼';
-        };
-
-        async function syncWithAlpaca(btn) {
-            let deskBtn = document.getElementById('btnAlpacaSync');
-            let mobBtn = document.getElementById('btnMobAlpacaSync');
-            let targets = [deskBtn, mobBtn].filter(Boolean);
-
-            targets.forEach(b => {
-                b.disabled = true;
-                b.innerText = 'Syncing...';
-                b.style.borderColor = '#ffd400';
-                b.style.color = '#ffd400';
-            });
-
-            try {
-                await fetch('/api/broker/liquidate', { method: 'POST' });
-                
-                // Poll every 1.2s to confirm positions clear
-                let isFlat = false;
-                for (let i = 0; i < 4; i++) {
-                    await new Promise(r => setTimeout(r, 1200));
-                    let sRes = await fetch('/api/broker/status');
-                    let sData = await sRes.json();
-                    if (!sData.positions || sData.positions.length === 0) {
-                        isFlat = true;
-                        break;
-                    }
-                }
-
-                await fetchBrokerStatus();
-
-                if (isFlat) {
-                    targets.forEach(b => {
-                        b.innerText = 'Synced ✓';
-                        b.style.borderColor = '#0ecb81';
-                        b.style.color = '#0ecb81';
-                    });
-                    setTimeout(() => {
-                        targets.forEach(b => {
-                            b.disabled = false;
-                            b.innerText = 'Sync';
-                            b.style.borderColor = '#0ecb81';
-                            b.style.color = '#0ecb81';
-                        });
-                    }, 2500);
-                } else {
-                    targets.forEach(b => {
-                        b.disabled = false;
-                        b.innerText = 'Queued (14:30)';
-                        b.style.borderColor = '#ff9900';
-                        b.style.color = '#ff9900';
-                    });
-                    setTimeout(() => {
-                        targets.forEach(b => {
-                            b.innerText = 'Sync';
-                            b.style.borderColor = '#0ecb81';
-                            b.style.color = '#0ecb81';
-                        });
-                    }, 3500);
-                }
-            } catch(err) {
-                targets.forEach(b => {
-                    b.disabled = false;
-                    b.innerText = 'Error';
-                    b.style.borderColor = '#ff5364';
-                    b.style.color = '#ff5364';
-                });
-                setTimeout(() => {
-                    targets.forEach(b => {
-                        b.innerText = 'Sync';
-                        b.style.borderColor = '#0ecb81';
-                        b.style.color = '#0ecb81';
-                    });
-                }, 2000);
-            }
-        }
-
-        window.toggleAlpacaExpList = function(e) {
-            if (e) e.stopPropagation();
-            window._alpacaExpExpanded = (window._alpacaExpExpanded === undefined) ? false : !window._alpacaExpExpanded;
-            let list = document.getElementById('alpacaExpList');
-            let arrow = document.getElementById('alpacaExpArrow');
-            if (list) list.style.display = window._alpacaExpExpanded ? 'flex' : 'none';
-            if (arrow) arrow.innerText = window._alpacaExpExpanded ? '▲' : '▼';
-        };
-
-        async function syncWithAlpaca(btn) {
-            let deskBtn = document.getElementById('btnAlpacaSync');
-            let mobBtn = document.getElementById('btnMobAlpacaSync');
-            let targets = [deskBtn, mobBtn].filter(Boolean);
-
-            targets.forEach(b => {
-                b.disabled = true;
-                b.innerText = 'Syncing...';
-                b.style.borderColor = '#ffd400';
-                b.style.color = '#ffd400';
-            });
-
-            try {
-                await fetch('/api/broker/liquidate', { method: 'POST' });
-                
-                // Poll every 1.2s to confirm positions clear
-                let isFlat = false;
-                for (let i = 0; i < 4; i++) {
-                    await new Promise(r => setTimeout(r, 1200));
-                    let sRes = await fetch('/api/broker/status');
-                    let sData = await sRes.json();
-                    if (!sData.positions || sData.positions.length === 0) {
-                        isFlat = true;
-                        break;
-                    }
-                }
-
-                await fetchBrokerStatus();
-
-                if (isFlat) {
-                    targets.forEach(b => {
-                        b.innerText = 'Synced ✓';
-                        b.style.borderColor = '#0ecb81';
-                        b.style.color = '#0ecb81';
-                    });
-                    setTimeout(() => {
-                        targets.forEach(b => {
-                            b.disabled = false;
-                            b.innerText = 'Sync';
-                            b.style.borderColor = '#0ecb81';
-                            b.style.color = '#0ecb81';
-                        });
-                    }, 2500);
-                } else {
-                    targets.forEach(b => {
-                        b.disabled = false;
-                        b.innerText = 'Queued (14:30)';
-                        b.style.borderColor = '#ff9900';
-                        b.style.color = '#ff9900';
-                    });
-                    setTimeout(() => {
-                        targets.forEach(b => {
-                            b.innerText = 'Sync';
-                            b.style.borderColor = '#0ecb81';
-                            b.style.color = '#0ecb81';
-                        });
-                    }, 3500);
-                }
-            } catch(err) {
-                targets.forEach(b => {
-                    b.disabled = false;
-                    b.innerText = 'Error';
-                    b.style.borderColor = '#ff5364';
-                    b.style.color = '#ff5364';
-                });
-                setTimeout(() => {
-                    targets.forEach(b => {
-                        b.innerText = 'Sync';
-                        b.style.borderColor = '#0ecb81';
-                        b.style.color = '#0ecb81';
-                    });
-                }, 2000);
-            }
-        }
-
-        window.toggleAlpacaExpList = function(e) {
-            if (e) e.stopPropagation();
-            window._alpacaExpExpanded = (window._alpacaExpExpanded === undefined) ? false : !window._alpacaExpExpanded;
-            let list = document.getElementById('alpacaExpList');
-            let arrow = document.getElementById('alpacaExpArrow');
-            if (list) list.style.display = window._alpacaExpExpanded ? 'flex' : 'none';
-            if (arrow) arrow.innerText = window._alpacaExpExpanded ? '▲' : '▼';
-        };
-
-        async function syncWithAlpaca(btn) {
-            let deskBtn = document.getElementById('btnAlpacaSync');
-            let mobBtn = document.getElementById('btnMobAlpacaSync');
-            let targets = [deskBtn, mobBtn].filter(Boolean);
-
-            targets.forEach(b => {
-                b.disabled = true;
-                b.innerText = 'Syncing...';
-                b.style.borderColor = '#ffd400';
-                b.style.color = '#ffd400';
-            });
-
-            try {
-                await fetch('/api/broker/liquidate', { method: 'POST' });
-                
-                // Poll every 1.2s to confirm positions clear
-                let isFlat = false;
-                for (let i = 0; i < 4; i++) {
-                    await new Promise(r => setTimeout(r, 1200));
-                    let sRes = await fetch('/api/broker/status');
-                    let sData = await sRes.json();
-                    if (!sData.positions || sData.positions.length === 0) {
-                        isFlat = true;
-                        break;
-                    }
-                }
-
-                await fetchBrokerStatus();
-
-                if (isFlat) {
-                    targets.forEach(b => {
-                        b.innerText = 'Synced ✓';
-                        b.style.borderColor = '#0ecb81';
-                        b.style.color = '#0ecb81';
-                    });
-                    setTimeout(() => {
-                        targets.forEach(b => {
-                            b.disabled = false;
-                            b.innerText = 'Sync';
-                            b.style.borderColor = '#0ecb81';
-                            b.style.color = '#0ecb81';
-                        });
-                    }, 2500);
-                } else {
-                    targets.forEach(b => {
-                        b.disabled = false;
-                        b.innerText = 'Queued (14:30)';
-                        b.style.borderColor = '#ff9900';
-                        b.style.color = '#ff9900';
-                    });
-                    setTimeout(() => {
-                        targets.forEach(b => {
-                            b.innerText = 'Sync';
-                            b.style.borderColor = '#0ecb81';
-                            b.style.color = '#0ecb81';
-                        });
-                    }, 3500);
-                }
-            } catch(err) {
-                targets.forEach(b => {
-                    b.disabled = false;
-                    b.innerText = 'Error';
-                    b.style.borderColor = '#ff5364';
-                    b.style.color = '#ff5364';
-                });
-                setTimeout(() => {
-                    targets.forEach(b => {
-                        b.innerText = 'Sync';
-                        b.style.borderColor = '#0ecb81';
-                        b.style.color = '#0ecb81';
-                    });
-                }, 2000);
             }
         }
 
