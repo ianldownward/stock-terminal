@@ -266,30 +266,57 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
         return {'status': 'error', 'message': str(e)}
 
 def alpaca_cancel_and_liquidate(api_key, secret_key, mode):
-    """Emergency Panic Switch: Cancels all open orders and liquidates all open positions."""
+    """Emergency Panic Switch: Cancels all open orders and liquidates all open positions with pre-market limit routing."""
     if not api_key or not secret_key:
         return {'status': 'error', 'message': 'Missing API credentials.'}
     base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
-    
+    headers_auth = {"APCA-API-KEY-ID": api_key.strip(), "APCA-API-SECRET-KEY": secret_key.strip(), "Content-Type": "application/json"}
+
     # 1. Cancel all open orders
     try:
         req_cancel = urllib.request.Request(
             f"{base_url}/v2/orders",
-            headers={"APCA-API-KEY-ID": api_key.strip(), "APCA-API-SECRET-KEY": secret_key.strip()},
+            headers=headers_auth,
             method="DELETE"
         )
         with urllib.request.urlopen(req_cancel, timeout=5): pass
     except Exception: pass
 
-    # 2. Close all open positions at market with cancel_orders=true
+    # 2. Close all open positions
     try:
         req_close = urllib.request.Request(
             f"{base_url}/v2/positions?cancel_orders=true",
-            headers={"APCA-API-KEY-ID": api_key.strip(), "APCA-API-SECRET-KEY": secret_key.strip()},
+            headers=headers_auth,
             method="DELETE"
         )
         with urllib.request.urlopen(req_close, timeout=8) as resp:
             data = json.loads(resp.read().decode('utf-8'))
+
+            # Check if in pre-market (09:00 - 14:30 BST) where standard market orders queue
+            now_uk = pd.Timestamp.now(tz='Europe/London')
+            cur_mins = now_uk.hour * 60 + now_uk.minute
+            if (9 * 60) <= cur_mins < (14 * 60 + 30):
+                time.sleep(0.5)
+                # Fetch positions and submit extended-hours limit sells to fill immediately
+                try:
+                    req_pos = urllib.request.Request(f"{base_url}/v2/positions", headers=headers_auth)
+                    with urllib.request.urlopen(req_pos, timeout=4) as p_resp:
+                        p_list = json.loads(p_resp.read().decode('utf-8'))
+                        for p in p_list:
+                            sym = p['symbol'].upper()
+                            q = int(p.get('qty', 0))
+                            cur_p = float(p.get('current_price', 0.0))
+                            if q > 0 and cur_p > 0:
+                                lim_p = round(cur_p * 0.985, 2) # Cross pre-market spread to fill immediately
+                                ext_order = json.dumps({
+                                    "symbol": sym, "qty": q, "side": "sell",
+                                    "type": "limit", "time_in_force": "day",
+                                    "limit_price": lim_p, "extended_hours": True
+                                }).encode('utf-8')
+                                req_ext = urllib.request.Request(f"{base_url}/v2/orders", data=ext_order, headers=headers_auth, method="POST")
+                                with urllib.request.urlopen(req_ext, timeout=4): pass
+                except Exception: pass
+
             return {'status': 'ok', 'data': data}
     except Exception as e:
         return {'status': 'error', 'message': str(e)}

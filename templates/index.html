@@ -1514,8 +1514,8 @@
                 </div>
 
                 <div style="display:flex; gap:8px; margin-top:4px;">
-                    <button type="button" class="btn-control" style="flex:1; border-color:#ff5364; background:rgba(255,83,100,0.12); color:#ff5364; justify-content:center; padding:10px;" onclick="triggerEmergencyLiquidate()">
-                        Sweep to Cash (Rectify)
+                    <button type="button" id="btnMobAlpacaSync" class="btn-control" style="flex:1; border-color:#0ecb81; background:rgba(14,203,129,0.12); color:#0ecb81; font-weight:800; justify-content:center; padding:10px;" onclick="syncWithAlpaca(this)">
+                        Sync
                     </button>
                     <button type="button" class="btn-control" style="flex:1; justify-content:center; padding:10px;" onclick="closeAlpacaSyncModal(); openSettingsModal();">
                         Broker Settings
@@ -1700,8 +1700,8 @@
                         <span class="status-dot online" id="alpacaCardDot"></span>
                         <span style="font-size:10px; font-weight:800; color:#ffd400; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
                     </div>
-                    <button class="btn-control" style="padding:2px 7px; font-size:9px; border-color:#ff5364; color:#ff5364;" onclick="triggerEmergencyLiquidate()" title="Cancel resting stops and sweep Alpaca to 100% cash">
-                        Sweep to Cash
+                    <button class="btn-control" id="btnAlpacaSync" style="padding:2px 9px; font-size:10px; border-color:#0ecb81; color:#0ecb81; font-weight:800;" onclick="syncWithAlpaca(this)" title="Sync Alpaca with bot state">
+                        Sync
                     </button>
                 </div>
 
@@ -1710,7 +1710,8 @@
                     <span id="alpacaCardValue" style="font-size:12px; font-weight:800; color:#fff;">$0.00</span>
                 </div>
 
-                <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:5px 8px; text-align:center;">
+                <!-- EXPANDABLE EXPOSURE BOX -->
+                <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 8px;">
                     ✅ 100% Flat (Cash)
                 </div>
             </div>
@@ -3861,30 +3862,46 @@
                     if (cDot) cDot.className = d.paused ? 'status-dot paused' : 'status-dot online';
                     if (mobDot) mobDot.className = d.paused ? 'status-dot paused' : 'status-dot online';
 
-                    let expHtml = '✅ 100% Flat (Cash)';
-                    let expCol = '#0ecb81';
+                    let isExpanded = (window._alpacaExpExpanded !== undefined) ? window._alpacaExpExpanded : true;
                     let expBorder = '#262b36';
+                    let expHtml = '<div style="color:#0ecb81; font-weight:700; font-size:11px; text-align:center; padding:2px 0;">✅ 100% Flat (Cash)</div>';
 
                     if (d.positions && d.positions.length > 0) {
-                        let posSummary = d.positions.map(p => `${p.qty} ${p.symbol} (${p.unrealized_pl >= 0 ? '+' : ''}$${p.unrealized_pl.toFixed(2)})`).join(', ');
-                        if (d.has_desync) {
-                            expCol = '#ff9900';
-                            expBorder = '#ff9900';
-                            expHtml = `⚠️ DESYNC: ${posSummary}`;
-                        } else {
-                            expCol = '#ffd400';
-                            expBorder = '#262b36';
-                            expHtml = `Active: ${posSummary}`;
-                        }
+                        let isDesync = Boolean(d.has_desync);
+                        let titleColor = isDesync ? '#ff9900' : '#ffd400';
+                        expBorder = isDesync ? '#ff9900' : '#262b36';
+                        let titleText = isDesync ? `⚠️ DESYNC (${d.positions.length} Positions)` : `Active (${d.positions.length} Positions)`;
+
+                        let rowsHtml = d.positions.map(p => {
+                            let pl = parseFloat(p.unrealized_pl) || 0.0;
+                            let plCol = pl >= 0 ? '#0ecb81' : '#ff5364';
+                            let plStr = `${pl >= 0 ? '+' : ''}$${pl.toFixed(2)}`;
+                            return `
+                                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; padding:2px 0; border-bottom:1px solid #1a1e28;">
+                                    <span style="font-weight:700; color:#fff;">${p.qty} ${p.symbol}</span>
+                                    <span style="font-weight:700; color:${plCol}; font-family:monospace;">${plStr}</span>
+                                </div>
+                            `;
+                        }).join('');
+
+                        expHtml = `
+                            <div style="display:flex; flex-direction:column; width:100%;">
+                                <div onclick="toggleAlpacaExpList(event)" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; user-select:none; padding:1px 0;">
+                                    <span style="color:${titleColor}; font-weight:800; font-size:10px; letter-spacing:0.3px;">${titleText}</span>
+                                    <span id="alpacaExpArrow" style="font-size:9px; color:#8a8a9e; padding-left:4px;">${isExpanded ? '▲' : '▼'}</span>
+                                </div>
+                                <div id="alpacaExpList" style="display:${isExpanded ? 'flex' : 'none'}; flex-direction:column; max-height:100px; overflow-y:auto; margin-top:4px; padding-top:2px; border-top:1px solid #202531; gap:2px;">
+                                    ${rowsHtml}
+                                </div>
+                            </div>
+                        `;
                     }
 
                     if (expBox) {
-                        expBox.style.color = expCol;
                         expBox.style.borderColor = expBorder;
                         expBox.innerHTML = expHtml;
                     }
                     if (mobExp) {
-                        mobExp.style.color = expCol;
                         mobExp.style.borderColor = expBorder;
                         mobExp.innerHTML = expHtml;
                     }
@@ -3914,6 +3931,342 @@
                 if (found && found.equity) return parseFloat(found.equity).toFixed(2);
             }
             return fallback.toFixed(2);
+        }
+
+        window.toggleAlpacaExpList = function(e) {
+            if (e) e.stopPropagation();
+            window._alpacaExpExpanded = (window._alpacaExpExpanded === undefined) ? false : !window._alpacaExpExpanded;
+            let list = document.getElementById('alpacaExpList');
+            let arrow = document.getElementById('alpacaExpArrow');
+            if (list) list.style.display = window._alpacaExpExpanded ? 'flex' : 'none';
+            if (arrow) arrow.innerText = window._alpacaExpExpanded ? '▲' : '▼';
+        };
+
+        async function syncWithAlpaca(btn) {
+            let deskBtn = document.getElementById('btnAlpacaSync');
+            let mobBtn = document.getElementById('btnMobAlpacaSync');
+            let targets = [deskBtn, mobBtn].filter(Boolean);
+
+            targets.forEach(b => {
+                b.disabled = true;
+                b.innerText = 'Syncing...';
+                b.style.borderColor = '#ffd400';
+                b.style.color = '#ffd400';
+            });
+
+            try {
+                await fetch('/api/broker/liquidate', { method: 'POST' });
+                
+                // Poll every 1.2s to confirm positions clear
+                let isFlat = false;
+                for (let i = 0; i < 4; i++) {
+                    await new Promise(r => setTimeout(r, 1200));
+                    let sRes = await fetch('/api/broker/status');
+                    let sData = await sRes.json();
+                    if (!sData.positions || sData.positions.length === 0) {
+                        isFlat = true;
+                        break;
+                    }
+                }
+
+                await fetchBrokerStatus();
+
+                if (isFlat) {
+                    targets.forEach(b => {
+                        b.innerText = 'Synced ✓';
+                        b.style.borderColor = '#0ecb81';
+                        b.style.color = '#0ecb81';
+                    });
+                    setTimeout(() => {
+                        targets.forEach(b => {
+                            b.disabled = false;
+                            b.innerText = 'Sync';
+                            b.style.borderColor = '#0ecb81';
+                            b.style.color = '#0ecb81';
+                        });
+                    }, 2500);
+                } else {
+                    targets.forEach(b => {
+                        b.disabled = false;
+                        b.innerText = 'Queued (14:30)';
+                        b.style.borderColor = '#ff9900';
+                        b.style.color = '#ff9900';
+                    });
+                    setTimeout(() => {
+                        targets.forEach(b => {
+                            b.innerText = 'Sync';
+                            b.style.borderColor = '#0ecb81';
+                            b.style.color = '#0ecb81';
+                        });
+                    }, 3500);
+                }
+            } catch(err) {
+                targets.forEach(b => {
+                    b.disabled = false;
+                    b.innerText = 'Error';
+                    b.style.borderColor = '#ff5364';
+                    b.style.color = '#ff5364';
+                });
+                setTimeout(() => {
+                    targets.forEach(b => {
+                        b.innerText = 'Sync';
+                        b.style.borderColor = '#0ecb81';
+                        b.style.color = '#0ecb81';
+                    });
+                }, 2000);
+            }
+        }
+
+        window.toggleAlpacaExpList = function(e) {
+            if (e) e.stopPropagation();
+            window._alpacaExpExpanded = (window._alpacaExpExpanded === undefined) ? false : !window._alpacaExpExpanded;
+            let list = document.getElementById('alpacaExpList');
+            let arrow = document.getElementById('alpacaExpArrow');
+            if (list) list.style.display = window._alpacaExpExpanded ? 'flex' : 'none';
+            if (arrow) arrow.innerText = window._alpacaExpExpanded ? '▲' : '▼';
+        };
+
+        async function syncWithAlpaca(btn) {
+            let deskBtn = document.getElementById('btnAlpacaSync');
+            let mobBtn = document.getElementById('btnMobAlpacaSync');
+            let targets = [deskBtn, mobBtn].filter(Boolean);
+
+            targets.forEach(b => {
+                b.disabled = true;
+                b.innerText = 'Syncing...';
+                b.style.borderColor = '#ffd400';
+                b.style.color = '#ffd400';
+            });
+
+            try {
+                await fetch('/api/broker/liquidate', { method: 'POST' });
+                
+                // Poll every 1.2s to confirm positions clear
+                let isFlat = false;
+                for (let i = 0; i < 4; i++) {
+                    await new Promise(r => setTimeout(r, 1200));
+                    let sRes = await fetch('/api/broker/status');
+                    let sData = await sRes.json();
+                    if (!sData.positions || sData.positions.length === 0) {
+                        isFlat = true;
+                        break;
+                    }
+                }
+
+                await fetchBrokerStatus();
+
+                if (isFlat) {
+                    targets.forEach(b => {
+                        b.innerText = 'Synced ✓';
+                        b.style.borderColor = '#0ecb81';
+                        b.style.color = '#0ecb81';
+                    });
+                    setTimeout(() => {
+                        targets.forEach(b => {
+                            b.disabled = false;
+                            b.innerText = 'Sync';
+                            b.style.borderColor = '#0ecb81';
+                            b.style.color = '#0ecb81';
+                        });
+                    }, 2500);
+                } else {
+                    targets.forEach(b => {
+                        b.disabled = false;
+                        b.innerText = 'Queued (14:30)';
+                        b.style.borderColor = '#ff9900';
+                        b.style.color = '#ff9900';
+                    });
+                    setTimeout(() => {
+                        targets.forEach(b => {
+                            b.innerText = 'Sync';
+                            b.style.borderColor = '#0ecb81';
+                            b.style.color = '#0ecb81';
+                        });
+                    }, 3500);
+                }
+            } catch(err) {
+                targets.forEach(b => {
+                    b.disabled = false;
+                    b.innerText = 'Error';
+                    b.style.borderColor = '#ff5364';
+                    b.style.color = '#ff5364';
+                });
+                setTimeout(() => {
+                    targets.forEach(b => {
+                        b.innerText = 'Sync';
+                        b.style.borderColor = '#0ecb81';
+                        b.style.color = '#0ecb81';
+                    });
+                }, 2000);
+            }
+        }
+
+        window.toggleAlpacaExpList = function(e) {
+            if (e) e.stopPropagation();
+            window._alpacaExpExpanded = (window._alpacaExpExpanded === undefined) ? false : !window._alpacaExpExpanded;
+            let list = document.getElementById('alpacaExpList');
+            let arrow = document.getElementById('alpacaExpArrow');
+            if (list) list.style.display = window._alpacaExpExpanded ? 'flex' : 'none';
+            if (arrow) arrow.innerText = window._alpacaExpExpanded ? '▲' : '▼';
+        };
+
+        async function syncWithAlpaca(btn) {
+            let deskBtn = document.getElementById('btnAlpacaSync');
+            let mobBtn = document.getElementById('btnMobAlpacaSync');
+            let targets = [deskBtn, mobBtn].filter(Boolean);
+
+            targets.forEach(b => {
+                b.disabled = true;
+                b.innerText = 'Syncing...';
+                b.style.borderColor = '#ffd400';
+                b.style.color = '#ffd400';
+            });
+
+            try {
+                await fetch('/api/broker/liquidate', { method: 'POST' });
+                
+                // Poll every 1.2s to confirm positions clear
+                let isFlat = false;
+                for (let i = 0; i < 4; i++) {
+                    await new Promise(r => setTimeout(r, 1200));
+                    let sRes = await fetch('/api/broker/status');
+                    let sData = await sRes.json();
+                    if (!sData.positions || sData.positions.length === 0) {
+                        isFlat = true;
+                        break;
+                    }
+                }
+
+                await fetchBrokerStatus();
+
+                if (isFlat) {
+                    targets.forEach(b => {
+                        b.innerText = 'Synced ✓';
+                        b.style.borderColor = '#0ecb81';
+                        b.style.color = '#0ecb81';
+                    });
+                    setTimeout(() => {
+                        targets.forEach(b => {
+                            b.disabled = false;
+                            b.innerText = 'Sync';
+                            b.style.borderColor = '#0ecb81';
+                            b.style.color = '#0ecb81';
+                        });
+                    }, 2500);
+                } else {
+                    targets.forEach(b => {
+                        b.disabled = false;
+                        b.innerText = 'Queued (14:30)';
+                        b.style.borderColor = '#ff9900';
+                        b.style.color = '#ff9900';
+                    });
+                    setTimeout(() => {
+                        targets.forEach(b => {
+                            b.innerText = 'Sync';
+                            b.style.borderColor = '#0ecb81';
+                            b.style.color = '#0ecb81';
+                        });
+                    }, 3500);
+                }
+            } catch(err) {
+                targets.forEach(b => {
+                    b.disabled = false;
+                    b.innerText = 'Error';
+                    b.style.borderColor = '#ff5364';
+                    b.style.color = '#ff5364';
+                });
+                setTimeout(() => {
+                    targets.forEach(b => {
+                        b.innerText = 'Sync';
+                        b.style.borderColor = '#0ecb81';
+                        b.style.color = '#0ecb81';
+                    });
+                }, 2000);
+            }
+        }
+
+        window.toggleAlpacaExpList = function(e) {
+            if (e) e.stopPropagation();
+            window._alpacaExpExpanded = (window._alpacaExpExpanded === undefined) ? false : !window._alpacaExpExpanded;
+            let list = document.getElementById('alpacaExpList');
+            let arrow = document.getElementById('alpacaExpArrow');
+            if (list) list.style.display = window._alpacaExpExpanded ? 'flex' : 'none';
+            if (arrow) arrow.innerText = window._alpacaExpExpanded ? '▲' : '▼';
+        };
+
+        async function syncWithAlpaca(btn) {
+            let deskBtn = document.getElementById('btnAlpacaSync');
+            let mobBtn = document.getElementById('btnMobAlpacaSync');
+            let targets = [deskBtn, mobBtn].filter(Boolean);
+
+            targets.forEach(b => {
+                b.disabled = true;
+                b.innerText = 'Syncing...';
+                b.style.borderColor = '#ffd400';
+                b.style.color = '#ffd400';
+            });
+
+            try {
+                await fetch('/api/broker/liquidate', { method: 'POST' });
+                
+                // Poll every 1.2s to confirm positions clear
+                let isFlat = false;
+                for (let i = 0; i < 4; i++) {
+                    await new Promise(r => setTimeout(r, 1200));
+                    let sRes = await fetch('/api/broker/status');
+                    let sData = await sRes.json();
+                    if (!sData.positions || sData.positions.length === 0) {
+                        isFlat = true;
+                        break;
+                    }
+                }
+
+                await fetchBrokerStatus();
+
+                if (isFlat) {
+                    targets.forEach(b => {
+                        b.innerText = 'Synced ✓';
+                        b.style.borderColor = '#0ecb81';
+                        b.style.color = '#0ecb81';
+                    });
+                    setTimeout(() => {
+                        targets.forEach(b => {
+                            b.disabled = false;
+                            b.innerText = 'Sync';
+                            b.style.borderColor = '#0ecb81';
+                            b.style.color = '#0ecb81';
+                        });
+                    }, 2500);
+                } else {
+                    targets.forEach(b => {
+                        b.disabled = false;
+                        b.innerText = 'Queued (14:30)';
+                        b.style.borderColor = '#ff9900';
+                        b.style.color = '#ff9900';
+                    });
+                    setTimeout(() => {
+                        targets.forEach(b => {
+                            b.innerText = 'Sync';
+                            b.style.borderColor = '#0ecb81';
+                            b.style.color = '#0ecb81';
+                        });
+                    }, 3500);
+                }
+            } catch(err) {
+                targets.forEach(b => {
+                    b.disabled = false;
+                    b.innerText = 'Error';
+                    b.style.borderColor = '#ff5364';
+                    b.style.color = '#ff5364';
+                });
+                setTimeout(() => {
+                    targets.forEach(b => {
+                        b.innerText = 'Sync';
+                        b.style.borderColor = '#0ecb81';
+                        b.style.color = '#0ecb81';
+                    });
+                }, 2000);
+            }
         }
 
         function openAlpacaSyncModal() {
