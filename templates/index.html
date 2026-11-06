@@ -1537,8 +1537,9 @@
 
                 <div style="display:flex; flex-direction:column; gap:6px;">
                     <span style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Sync Status & Live Exposure</span>
-                    <div id="mobAlpacaExposureBox" style="font-size:12px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:10px 12px; line-height:1.4;">
-                        ✅ 100% Flat (Cash)
+                    <div id="mobAlpacaExposureBox" style="font-size:12px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:10px 12px; line-height:1.4; display:flex; align-items:center; gap:8px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ecb81" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <span>100% Flat (Cash)</span>
                     </div>
                 </div>
 
@@ -1740,8 +1741,9 @@
                 </div>
 
                 <!-- EXPANDABLE EXPOSURE BOX -->
-                <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 8px;">
-                    ✅ 100% Flat (Cash)
+                <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 8px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ecb81" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <span>100% Flat (Cash)</span>
                 </div>
             </div>
 
@@ -3893,13 +3895,26 @@
 
                     let isExpanded = (window._alpacaExpExpanded !== undefined) ? window._alpacaExpExpanded : true;
                     let expBorder = '#262b36';
-                    let expHtml = '<div style="color:#0ecb81; font-weight:700; font-size:11px; text-align:center; padding:2px 0;">✅ 100% Flat (Cash)</div>';
+                    let expHtml = `
+                        <div style="color:#0ecb81; font-weight:700; font-size:11px; display:flex; align-items:center; justify-content:center; gap:6px; padding:2px 0;">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ecb81" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            <span>100% Flat (Cash)</span>
+                        </div>`;
 
                     if (d.positions && d.positions.length > 0) {
                         let isDesync = Boolean(d.has_desync);
                         let titleColor = isDesync ? '#ff9900' : '#ffd400';
                         expBorder = isDesync ? '#ff9900' : '#262b36';
-                        let titleText = isDesync ? `⚠️ DESYNC (${d.positions.length} Positions)` : `Active (${d.positions.length} Positions)`;
+                        
+                        let warningIcon = isDesync ? `
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ff9900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                <line x1="12" y1="9" x2="12" y2="13"></line>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                        ` : '';
+                        
+                        let titleText = isDesync ? `DESYNC (${d.positions.length} Positions)` : `Active (${d.positions.length} Positions)`;
 
                         let rowsHtml = d.positions.map(p => {
                             let pl = parseFloat(p.unrealized_pl) || 0.0;
@@ -3915,13 +3930,20 @@
 
                         let statusNotice = '';
                         if (window._alpacaOrdersQueued) {
-                            statusNotice = `<div style="font-size:9px; color:#ff9900; font-weight:700; margin-top:4px; padding-top:3px; border-top:1px dashed #262b36; text-align:center;">⏳ Orders Queued: Closing at 14:30 BST</div>`;
+                            statusNotice = `
+                                <div style="font-size:9px; color:#ff9900; font-weight:700; margin-top:4px; padding-top:4px; border-top:1px dashed #262b36; display:flex; align-items:center; justify-content:center; gap:5px;">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ff9900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                    <span>Orders Queued: Closing at 14:30 BST</span>
+                                </div>`;
                         }
 
                         expHtml = `
                             <div style="display:flex; flex-direction:column; width:100%;">
                                 <div onclick="toggleAlpacaExpList(event)" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer; user-select:none; padding:1px 0;">
-                                    <span style="color:${titleColor}; font-weight:800; font-size:10px; letter-spacing:0.3px;">${titleText}</span>
+                                    <div style="display:flex; align-items:center; gap:5px;">
+                                        ${warningIcon}
+                                        <span style="color:${titleColor}; font-weight:800; font-size:10px; letter-spacing:0.3px;">${titleText}</span>
+                                    </div>
                                     <span id="alpacaExpArrow" style="font-size:9px; color:#8a8a9e; padding-left:4px;">${isExpanded ? '▲' : '▼'}</span>
                                 </div>
                                 <div id="alpacaExpList" style="display:${isExpanded ? 'flex' : 'none'}; flex-direction:column; max-height:100px; overflow-y:auto; margin-top:4px; padding-top:2px; border-top:1px solid #202531; gap:2px;">
@@ -4238,9 +4260,9 @@
             if (titleEl) titleEl.innerText = isEnabled ? 'Phone Alerts: ACTIVE' : 'Phone Alerts: MUTED';
             if (statusEl) {
                 if (isEnabled) {
-                    statusEl.innerHTML = "<span style='color:#0ecb81;'>✅ Connected & Active (Auto-Alerts ON)</span>";
+                    statusEl.innerHTML = "<span style='color:#0ecb81; font-weight:700;'>Connected & Active (Auto-Alerts ON)</span>";
                 } else {
-                    statusEl.innerHTML = "<span style='color:#8a8a9e;'>⚪ Alerts turned OFF on this device</span>";
+                    statusEl.innerHTML = "<span style='color:#8a8a9e; font-weight:700;'>Alerts turned OFF on this device</span>";
                 }
             }
         }
@@ -4330,9 +4352,9 @@
                 let testRes = await fetch('/api/push/test', { method: 'POST' });
                 let testData = await testRes.json();
                 if (testData.status === 'ok') {
-                    if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81;'>✅ Alert sent to your screen!</span>";
+                    if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81; font-weight:700;'>Alert sent to your screen!</span>";
                 } else {
-                    if (statusEl) statusEl.innerHTML = `<span style='color:#ff5364;'>⚠️ ${testData.message || 'Error sending alert'}</span>`;
+                    if (statusEl) statusEl.innerHTML = `<span style='color:#ff5364; font-weight:700;'>${testData.message || 'Error sending alert'}</span>`;
                 }
             } catch(e) {
                 if (statusEl) statusEl.innerHTML = "<span style='color:#ff5364;'>⚠️ Failed to reach server</span>";
