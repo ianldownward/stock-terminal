@@ -4327,13 +4327,83 @@
             let titleEl = document.getElementById('compoundChartTitle');
             if (titleEl) titleEl.innerText = `${shortName}: Inception Trajectory vs 1.0% Daily Target`;
 
-            // Build sequence: 5 days
-            let points = 6;
             let padL = 50, padR = 30, padT = 25, padB = 30;
             let graphW = w - padL - padR;
             let graphH = h - padT - padB;
 
-            let actualVals = [budget, budget, budget * 1.01, budget * 1.025, budget * 1.04, currentEq];
+            // Fetch actual history dynamically from memory
+            let pData = null;
+            if (userKey === (document.getElementById('userSelect')?.value || '')) {
+                pData = globalPortfolioData;
+            }
+            
+            // Reconstruct Real Equity Curve dynamically
+            let actualVals = [budget];
+            let dates = ['Start'];
+            
+            if (pData && pData.history && pData.history.length > 0) {
+                // Group P&L by Date to plot Daily Equity Curve accurately
+                let trades = [...pData.history].reverse();
+                let dailyPnlMap = new Map();
+                
+                let buyQueues = {};
+                trades.forEach(t => {
+                    let tk = t.ticker;
+                    if (!tk || tk === 'CALIBRATION') {
+                        if (t.ticker === 'CALIBRATION' && t.action === 'SELL' && t.amount > 0) {
+                            let dateStr = t.date_str;
+                            dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + parseFloat(t.amount));
+                        } else if (t.ticker === 'CALIBRATION' && t.action === 'BUY' && t.amount > 0) {
+                            let dateStr = t.date_str;
+                            dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) - parseFloat(t.amount));
+                        }
+                        return;
+                    }
+                    
+                    if (!buyQueues[tk]) buyQueues[tk] = [];
+                    if (t.action === 'BUY') {
+                        buyQueues[tk].push({ shares: t.shares, amount: t.amount });
+                    } else if (t.action === 'SELL') {
+                        let remShares = t.shares;
+                        let costBasis = 0;
+                        let matchedShares = 0;
+                        while (buyQueues[tk].length > 0 && remShares > 0) {
+                            let buy = buyQueues[tk][0];
+                            let match = Math.min(buy.shares, remShares);
+                            let unitCost = buy.amount / buy.shares;
+                            costBasis += match * unitCost;
+                            matchedShares += match;
+                            remShares -= match;
+                            buy.shares -= match;
+                            buy.amount -= match * unitCost;
+                            if (buy.shares <= 0) buyQueues[tk].shift();
+                        }
+                        if (matchedShares > 0 && costBasis > 0) {
+                            let diffVal = t.amount - costBasis;
+                            let dateStr = t.date_str;
+                            dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + diffVal);
+                        }
+                    }
+                });
+                
+                let sortedDates = Array.from(dailyPnlMap.keys()).sort();
+                let cumEq = budget;
+                
+                sortedDates.forEach(dStr => {
+                    cumEq += dailyPnlMap.get(dStr);
+                    actualVals.push(cumEq);
+                    let shortDate = dStr.substring(5).replace('-', '/');
+                    dates.push(shortDate);
+                });
+            }
+            
+            // Ensure Current Live Equity is always the final plot point
+            if (actualVals[actualVals.length - 1] !== currentEq) {
+                actualVals.push(currentEq);
+                dates.push('Live');
+            }
+            
+            let points = actualVals.length;
             let targetVals = [];
             for (let i = 0; i < points; i++) targetVals.push(budget * Math.pow(1.01, i));
 
@@ -4344,7 +4414,7 @@
                 return padT + graphH - ((val - minVal) / (maxVal - minVal)) * graphH;
             }
             function getX(idx) {
-                return padL + (idx / (points - 1)) * graphW;
+                return points <= 1 ? padL + graphW / 2 : padL + (idx / (points - 1)) * graphW;
             }
 
             // Grid lines
@@ -4387,7 +4457,9 @@
             }
             ctx.stroke();
 
-            // Draw Dots on Actual Points
+            // Draw Dots & X-Labels dynamically across time
+            let labelStep = Math.max(1, Math.floor(points / 6));
+            
             for (let i = 0; i < points; i++) {
                 let x = getX(i), y = getY(actualVals[i]);
                 ctx.beginPath();
@@ -4397,10 +4469,12 @@
                 ctx.strokeStyle = '#0ecb81';
                 ctx.stroke();
 
-                // X labels
-                ctx.fillStyle = '#8a8a9e';
-                ctx.font = '9px Calibri';
-                ctx.fillText(i === 0 ? 'Start' : `D+${i}`, x - 8, h - 10);
+                // Plot evenly spaced X-Axis labels
+                if (i === 0 || i === points - 1 || i % labelStep === 0) {
+                    ctx.fillStyle = '#8a8a9e';
+                    ctx.font = '9px Calibri';
+                    ctx.fillText(dates[i], x - 10, h - 10);
+                }
             }
         }
 
