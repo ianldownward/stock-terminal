@@ -419,6 +419,39 @@
                 margin-bottom: 0 !important;
                 border: 1px solid #262b36 !important;
             }
+            /* 3-IN-A-ROW HORIZONTALLY SCROLLABLE READINESS ROW */
+            #mobReadinessRow {
+                display: flex !important;
+                gap: 6px !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                scrollbar-width: none !important;
+                margin-bottom: 0 !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+            }
+            #mobReadinessRow::-webkit-scrollbar {
+                display: none !important;
+            }
+            .mob-readiness-card {
+                flex: 0 0 calc((100% - 12px) / 3) !important;
+                min-width: calc((100% - 12px) / 3) !important;
+                max-width: calc((100% - 12px) / 3) !important;
+                background: #14171f !important;
+                border: 1px solid #262b36 !important;
+                border-radius: 6px !important;
+                padding: 6px 8px !important;
+                cursor: pointer !important;
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 3px !important;
+                box-sizing: border-box !important;
+                transition: border-color 0.15s, background 0.15s !important;
+            }
+            .mob-readiness-card.active {
+                border-color: #ffd400 !important;
+                background: #1a1e28 !important;
+            }
             #mobHeldShareCard {
                 margin-bottom: 0 !important;
                 background: #171a21;
@@ -1631,6 +1664,8 @@
                     </button>
                 </div>
             </div>
+            <!-- Dynamic 3-In-A-Row Readiness Row -->
+            <div id="mobReadinessRow"></div>
         </div>
 
         <div id="chartControlsDrawer">
@@ -3397,7 +3432,6 @@
                 if (profileBox && profileBox.parentElement !== stack) {
                     stack.prepend(profileBox);
                 }
-                if (riskCard && riskCard.parentElement !== stack) stack.appendChild(riskCard);
                 if (mobLb && mobLb.parentElement !== stack) stack.appendChild(mobLb);
                 if (mobHeld && mobHeld.parentElement !== stack) stack.appendChild(mobHeld);
             } else {
@@ -4126,6 +4160,52 @@
                 
                 let ui = document.getElementById('readinessUI');
                 if (ui) ui.innerHTML = html;
+
+                // Render Mobile 3-Tile Readiness Row
+                let mobRow = document.getElementById('mobReadinessRow');
+                if (mobRow) {
+                    mobRow.innerHTML = items.map(it => {
+                        let isHeld = it.is_held;
+                        let valPct = isHeld ? it.health_pct : it.score;
+                        let isCurrent = (it.ticker === currentTicker);
+                        let isReady = !isHeld && valPct >= 65;
+                        
+                        let scoreColor = isHeld ? (valPct >= 70 ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#ff5364')) : (isReady ? '#0ecb81' : '#fff');
+                        let scoreLabel = isHeld ? `${valPct}%` : `${valPct}<span style="font-size:9px; color:#ffd400; font-weight:700;">/65</span>`;
+                        let heldTag = isHeld ? `<span style="background:#ffd400; color:#000; font-size:8px; padding:0 3px; border-radius:2px; font-weight:800; margin-left:3px;">H</span>` : '';
+                        
+                        // Short 1-line status text
+                        let subText = `£${it.price || '--'}`;
+                        if (isHeld) {
+                            subText = `Stop £${it.stop_price || '--'}`;
+                        } else if (isReady) {
+                            subText = `Ready Surge!`;
+                        } else if (it.reason) {
+                            let r = it.reason;
+                            if (r.includes('Volume') || r.includes('Vol')) subText = 'Low Vol';
+                            else if (r.includes('Overextended') || r.includes('Anti-Chase')) subText = 'Overextended';
+                            else if (r.includes('EMA crossover') || r.includes('surge') || r.includes('crossover')) subText = 'Awaiting EMA';
+                            else if (r.includes('Opening')) subText = 'Opening Lock';
+                            else if (r.includes('Curfew')) subText = 'Curfew';
+                        }
+
+                        return `
+                            <div class="mob-readiness-card ${isCurrent ? 'active' : ''}" onclick="selectStock('${it.ticker}')" title="${it.ticker}">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="font-size:11px; font-weight:800; color:${isCurrent ? '#ffd400' : '#fff'};">${it.ticker}${heldTag}</span>
+                                    <span style="font-size:10px; font-weight:800; color:${scoreColor};">${scoreLabel}</span>
+                                </div>
+                                <div style="width:100%; height:4px; background:linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius:2px; position:relative; overflow:visible; margin:2px 0;">
+                                    ${!isHeld ? '<div style="position:absolute; left:65%; top:-1px; bottom:-1px; width:1.5px; background:#ffd400; z-index:2;"></div>' : ''}
+                                    <div style="position:absolute; left:${Math.max(0, Math.min(100, valPct))}%; top:-2px; width:3px; height:8px; background:#fff; border-radius:1px; z-index:3; box-shadow:0 0 3px #fff;"></div>
+                                </div>
+                                <div style="font-size:9px; color:${isReady ? '#0ecb81' : '#8a8a9e'}; font-weight:${isReady ? '800' : '600'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                                    ${subText}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
             } catch(e) {}
         }
 
