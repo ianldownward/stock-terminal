@@ -407,6 +407,13 @@
                 margin-bottom: 0 !important;
                 line-height: 1.1 !important;
             }
+            .equity-stats-grid {
+                gap: 2px !important;
+            }
+            .equity-stat-row {
+                min-height: 15px !important;
+                line-height: 1.1 !important;
+            }
             .custom-select-menu {
                 top: calc(100% + 4px) !important;
             }
@@ -4174,33 +4181,15 @@
                         let scoreLabel = isHeld ? `${valPct}%` : `${valPct}<span style="font-size:9px; color:#ffd400; font-weight:700;">/65</span>`;
                         let heldTag = isHeld ? `<span style="background:#ffd400; color:#000; font-size:8px; padding:0 3px; border-radius:2px; font-weight:800; margin-left:3px;">H</span>` : '';
                         
-                        // Short 1-line status text
-                        let subText = `£${it.price || '--'}`;
-                        if (isHeld) {
-                            subText = `Stop £${it.stop_price || '--'}`;
-                        } else if (isReady) {
-                            subText = `Ready Surge!`;
-                        } else if (it.reason) {
-                            let r = it.reason;
-                            if (r.includes('Volume') || r.includes('Vol')) subText = 'Low Vol';
-                            else if (r.includes('Overextended') || r.includes('Anti-Chase')) subText = 'Overextended';
-                            else if (r.includes('EMA crossover') || r.includes('surge') || r.includes('crossover')) subText = 'Awaiting EMA';
-                            else if (r.includes('Opening')) subText = 'Opening Lock';
-                            else if (r.includes('Curfew')) subText = 'Curfew';
-                        }
-
                         return `
                             <div class="mob-readiness-card ${isCurrent ? 'active' : ''}" onclick="selectStock('${it.ticker}')" title="${it.ticker}">
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
                                     <span style="font-size:11px; font-weight:800; color:${isCurrent ? '#ffd400' : '#fff'};">${it.ticker}${heldTag}</span>
                                     <span style="font-size:10px; font-weight:800; color:${scoreColor};">${scoreLabel}</span>
                                 </div>
-                                <div style="width:100%; height:4px; background:linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius:2px; position:relative; overflow:visible; margin:2px 0;">
+                                <div style="width:100%; height:4px; background:linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius:2px; position:relative; overflow:visible; margin:3px 0 1px 0;">
                                     ${!isHeld ? '<div style="position:absolute; left:65%; top:-1px; bottom:-1px; width:1.5px; background:#ffd400; z-index:2;"></div>' : ''}
                                     <div style="position:absolute; left:${Math.max(0, Math.min(100, valPct))}%; top:-2px; width:3px; height:8px; background:#fff; border-radius:1px; z-index:3; box-shadow:0 0 3px #fff;"></div>
-                                </div>
-                                <div style="font-size:9px; color:${isReady ? '#0ecb81' : '#8a8a9e'}; font-weight:${isReady ? '800' : '600'}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                                    ${subText}
                                 </div>
                             </div>
                         `;
