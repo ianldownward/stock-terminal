@@ -2649,92 +2649,293 @@ def get_data():
 
 @app.route('/api/report/forensic', methods=['GET'])
 def export_forensic_report():
-    import io, csv
-    from flask import Response
+    import io
+    from flask import send_file
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.drawing.image import Image as OpenpyxlImage
+    from openpyxl.utils import get_column_letter
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
     portfolio_store.reload()
     now_lon = pd.Timestamp.now(tz='Europe/London')
-    
-    rows = []
     users_data = portfolio_store.data.get('users', {})
-    daily_pnl_map = {} 
     
-    # PASS 1: Calculate trade data and accumulate daily totals per profile
-    for u, u_data in users_data.items():
+    wb = openpyxl.Workbook()
+    # Sheet 1: Master Overview
+    ws_master = wb.active
+    ws_master.title = "Fleet Master Overview"
+    ws_master.views.sheetView[0].showGridLines = True
+
+    # Palette
+    dark_fill = PatternFill(start_color="14171F", end_color="14171F", fill_type="solid")
+    gold_fill = PatternFill(start_color="FFD400", end_color="FFD400", fill_type="solid")
+    header_fill = PatternFill(start_color="1B202C", end_color="1B202C", fill_type="solid")
+    card_fill = PatternFill(start_color="0F1115", end_color="0F1115", fill_type="solid")
+    green_fill = PatternFill(start_color="0A3622", end_color="0A3622", fill_type="solid")
+    red_fill = PatternFill(start_color="441217", end_color="441217", fill_type="solid")
+
+    thin_border = Border(
+        left=Side(style='thin', color='262B36'), right=Side(style='thin', color='262B36'),
+        top=Side(style='thin', color='262B36'), bottom=Side(style='thin', color='262B36')
+    )
+
+    # Master Overview Header
+    ws_master.merge_cells('A1:I1')
+    title_cell = ws_master['A1']
+    title_cell.value = "IDC TRADING • FLEET INTELLIGENCE & 5-YEAR COMPOUNDING AUDIT"
+    title_cell.font = Font(name="Calibri", size=13, bold=True, color="FFD400")
+    title_cell.fill = dark_fill
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws_master.row_dimensions[1].height = 32
+
+    # Overview Table Headers
+    ov_headers = ["Profile", "Budget", "Current Equity", "Net Return (£)", "Return %", "Trades", "Win Rate %", "Profit Factor", "Status"]
+    for c_i, h in enumerate(ov_headers, 1):
+        cell = ws_master.cell(row=3, column=c_i, value=h)
+        cell.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center" if c_i > 1 else "left", vertical="center")
+        cell.border = thin_border
+    ws_master.row_dimensions[3].height = 24
+
+    ov_row = 4
+    all_trade_rows = []
+
+    # Iterate over every profile dynamically
+    for u_name, u_data in users_data.items():
         if not isinstance(u_data, dict): continue
         hist = u_data.get('history') or []
-        
-        buy_records = {}
+        budget = float(u_data.get('master_budget', 500.0))
+
+        # Reconstruct trades and FIFO P&L
+        buy_q = []
+        p_trades = []
+        wins, losses, win_val, loss_val = 0, 0, 0.0, 0.0
+
         for t in reversed(hist):
             tk = t.get('ticker')
             if not tk or tk == 'CALIBRATION': continue
-            
             if t.get('action') == 'BUY':
-                if tk not in buy_records: buy_records[tk] = []
-                buy_records[tk].append(t)
-            elif t.get('action') == 'SELL' and tk in buy_records and buy_records[tk]:
-                buy = buy_records[tk].pop(0)
-                buy_price = float(buy.get('price', 1))
-                sell_price = float(t.get('price', 1))
-                shares = int(t.get('shares', 1))
-                
-                diff_val = (sell_price - buy_price) * shares
-                diff_pct = ((sell_price - buy_price) / buy_price) * 100.0
-                
-                peak_p = float(t.get('highest_price', sell_price))
-                peak_p = max(peak_p, sell_price, buy_price)
-                peak_pct = ((peak_p - buy_price) / buy_price) * 100.0
-                capture_eff = (diff_pct / peak_pct * 100.0) if peak_pct > 0 else 0.0
-                
-                duration_mins = max(1, int((t.get('timestamp', 0) - buy.get('timestamp', 0)) / 60))
-                date_key = t.get('date_str', '')
-                
-                # Accumulate daily P&L for this specific profile
-                if (u, date_key) not in daily_pnl_map: 
-                    daily_pnl_map[(u, date_key)] = 0.0
-                daily_pnl_map[(u, date_key)] += diff_val
-                
-                rows.append({
-                    'Trade_Date': date_key,
-                    'Profile': u,
-                    'Ticker': tk,
-                    'Shares': shares,
-                    'Entry_Time': buy.get('time', ''),
-                    'Exit_Time': t.get('time', ''),
-                    'Hold_Mins': duration_mins,
-                    'Entry_Price': round(buy_price, 2),
-                    'Exit_Price': round(sell_price, 2),
-                    'Peak_Price': round(peak_p, 2),
-                    'Peak_PnL_%': round(peak_pct, 2),
-                    'Realized_PnL_£': round(diff_val, 2),
-                    'Realized_PnL_%': round(diff_pct, 2),
-                    'Capture_Efficiency_%': round(capture_eff, 2),
-                    'Exit_Trigger': t.get('status', 'Manual/EOD'),
-                    'Exit_Reason': t.get('reason', '')
-                })
-                
-    # PASS 2: Stamp the aggregate daily totals onto each row
-    for r in rows:
-        day_val = daily_pnl_map.get((r['Profile'], r['Trade_Date']), 0.0)
-        r['Profile_Daily_PnL_£'] = round(day_val, 2)
-        r['Profile_Daily_PnL_%'] = round((day_val / 500.0) * 100.0, 2)
-                
-    output = io.StringIO()
-    if rows:
-        fieldnames = [
-            'Trade_Date', 'Profile', 'Profile_Daily_PnL_£', 'Profile_Daily_PnL_%',
-            'Ticker', 'Shares', 'Entry_Time', 'Exit_Time', 'Hold_Mins',
-            'Entry_Price', 'Exit_Price', 'Peak_Price', 'Peak_PnL_%',
-            'Realized_PnL_£', 'Realized_PnL_%', 'Capture_Efficiency_%',
-            'Exit_Trigger', 'Exit_Reason'
+                buy_q.append(t)
+            elif t.get('action') == 'SELL' and buy_q:
+                b = buy_q.pop(0)
+                b_price = float(b.get('price', 1.0))
+                s_price = float(t.get('price', 1.0))
+                sh = int(t.get('shares', 1))
+                diff = round((s_price - b_price) * sh, 2)
+                diff_pct = round(((s_price - b_price) / b_price) * 100.0, 2)
+                dur = max(1, int((t.get('timestamp', 0) - b.get('timestamp', 0)) / 60))
+
+                if diff >= 0:
+                    wins += 1; win_val += diff
+                else:
+                    losses += 1; loss_val += abs(diff)
+
+                t_record = {
+                    'date': t.get('date_str', ''),
+                    'time': t.get('time', ''),
+                    'profile': u_name,
+                    'ticker': tk,
+                    'shares': sh,
+                    'buy_price': b_price,
+                    'sell_price': s_price,
+                    'pnl_val': diff,
+                    'pnl_pct': diff_pct,
+                    'mins': dur,
+                    'reason': t.get('reason', t.get('status', 'Take Profit/Stop'))
+                }
+                p_trades.append(t_record)
+                all_trade_rows.append(t_record)
+
+        # Net balance calculation
+        net_gain = win_val - loss_val
+        current_eq = budget + net_gain
+        tot_trades = wins + losses
+        win_rate = (wins / tot_trades * 100.0) if tot_trades > 0 else 0.0
+        profit_factor = (win_val / loss_val) if loss_val > 0 else (win_val if win_val > 0 else 1.0)
+        ret_pct = (net_gain / budget * 100.0) if budget > 0 else 0.0
+
+        # Fill master row
+        c_prof = ws_master.cell(row=ov_row, column=1, value=u_name)
+        c_prof.font = Font(name="Calibri", size=10, bold=True, color="111827")
+        c_prof.border = thin_border
+
+        vals_master = [
+            (budget, '£#,##0.00'),
+            (current_eq, '£#,##0.00'),
+            (net_gain, '£#,##0.00'),
+            (ret_pct / 100.0, '0.00%'),
+            (tot_trades, '#,##0'),
+            (win_rate / 100.0, '0.0%'),
+            (round(profit_factor, 2), '0.00'),
+            ("Active (Auto)", '@')
         ]
-        writer = csv.DictWriter(output, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-        
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-disposition": f"attachment; filename=Forensic_Trade_Audit_All_Time_{now_lon.strftime('%Y%m%d')}.csv"}
+        for c_i, (v, fmt) in enumerate(vals_master, 2):
+            cell = ws_master.cell(row=ov_row, column=c_i, value=v)
+            cell.number_format = fmt
+            cell.alignment = Alignment(horizontal="right" if c_i < 9 else "center", vertical="center")
+            cell.border = thin_border
+            if c_i == 4:
+                cell.font = Font(name="Calibri", size=10, bold=True, color="0ECB81" if net_gain >= 0 else "FF5364")
+        ov_row += 1
+
+        # -------------------------------------------------------------
+        # PROFILE DEDICATED WORKSHEET WITH CHARTS & 5-YR COMPOUNDING
+        # -------------------------------------------------------------
+        safe_sheet_name = re.sub(r'[^a-zA-Z0-9 ]', '', u_name.split(' - ')[0])[:30].strip()
+        ws_prof = wb.create_sheet(title=safe_sheet_name)
+        ws_prof.views.sheetView[0].showGridLines = True
+
+        # Header Title
+        ws_prof.merge_cells('A1:G1')
+        p_title = ws_prof['A1']
+        p_title.value = f"{u_name.upper()} • PERFORMANCE AUDIT & 5-YEAR COMPOUNDING TRAJECTORY"
+        p_title.font = Font(name="Calibri", size=11, bold=True, color="FFD400")
+        p_title.fill = dark_fill
+        p_title.alignment = Alignment(horizontal="center", vertical="center")
+        ws_prof.row_dimensions[1].height = 28
+
+        # KPI Stats Cards Table
+        kpis = [
+            ("Starting Budget", f"£{budget:,.2f}"),
+            ("Current Equity", f"£{current_eq:,.2f}"),
+            ("Total Net P&L", f"{'+' if net_gain>=0 else ''}£{net_gain:,.2f} ({ret_pct:+.2f}%)"),
+            ("Win Rate", f"{win_rate:.1f}% ({wins}W / {losses}L)"),
+            ("Profit Factor", f"{profit_factor:.2f}"),
+            ("Daily Compounding Target", "1.00% / Day (~252 Days/Yr)")
+        ]
+        for k_i, (k_label, k_val) in enumerate(kpis, 1):
+            lbl_c = ws_prof.cell(row=3, column=k_i, value=k_label)
+            lbl_c.font = Font(name="Calibri", size=9, bold=True, color="8A8A9E")
+            lbl_c.fill = card_fill
+            lbl_c.alignment = Alignment(horizontal="center", vertical="center")
+            lbl_c.border = thin_border
+
+            val_c = ws_prof.cell(row=4, column=k_i, value=k_val)
+            val_c.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF" if k_i != 3 else ("0ECB81" if net_gain>=0 else "FF5364"))
+            val_c.fill = card_fill
+            val_c.alignment = Alignment(horizontal="center", vertical="center")
+            val_c.border = thin_border
+        ws_prof.row_dimensions[3].height = 18
+        ws_prof.row_dimensions[4].height = 22
+
+        # Profile Trade Log Headers
+        p_log_headers = ["Date", "Time", "Ticker", "Shares", "Buy (£)", "Sell (£)", "Realized P&L (£)", "Return %", "Hold (Mins)", "Exit Reason"]
+        for c_i, h in enumerate(p_log_headers, 1):
+            cell = ws_prof.cell(row=6, column=c_i, value=h)
+            cell.font = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center" if c_i in [1,2,3,4,9] else ("right" if c_i in [5,6,7,8] else "left"), vertical="center")
+            cell.border = thin_border
+        ws_prof.row_dimensions[6].height = 22
+
+        p_row = 7
+        for tr in p_trades:
+            ws_prof.cell(row=p_row, column=1, value=tr['date']).border = thin_border
+            ws_prof.cell(row=p_row, column=2, value=tr['time']).border = thin_border
+            ws_prof.cell(row=p_row, column=3, value=tr['ticker']).border = thin_border
+            ws_prof.cell(row=p_row, column=4, value=tr['shares']).border = thin_border
+            
+            c_bp = ws_prof.cell(row=p_row, column=5, value=tr['buy_price'])
+            c_bp.number_format = '£#,##0.00'; c_bp.border = thin_border
+            
+            c_sp = ws_prof.cell(row=p_row, column=6, value=tr['sell_price'])
+            c_sp.number_format = '£#,##0.00'; c_sp.border = thin_border
+            
+            c_pnl = ws_prof.cell(row=p_row, column=7, value=tr['pnl_val'])
+            c_pnl.number_format = '£#,##0.00; -£#,##0.00; £0.00'; c_pnl.border = thin_border
+            c_pnl.font = Font(name="Calibri", size=9, bold=True, color="0A3622" if tr['pnl_val']>=0 else "78281F")
+            
+            c_pct = ws_prof.cell(row=p_row, column=8, value=tr['pnl_pct'] / 100.0)
+            c_pct.number_format = '+0.00%; -0.00%; 0.00%'; c_pct.border = thin_border
+            
+            ws_prof.cell(row=p_row, column=9, value=tr['mins']).border = thin_border
+            ws_prof.cell(row=p_row, column=10, value=tr['reason']).border = thin_border
+            p_row += 1
+
+        # -------------------------------------------------------------
+        # GENERATE EMBEDDED MATPLOTLIB CHART: 1% 5-YEAR COMPOUNDING TRAJECTORY
+        # -------------------------------------------------------------
+        try:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 4.8), dpi=140)
+            fig.patch.set_facecolor('#0F1115')
+            ax1.set_facecolor('#14171F')
+            ax2.set_facecolor('#14171F')
+
+            # Left Chart: Recent Trading Days vs 1.0% Daily Target
+            cum_vals = [budget]
+            for tr in reversed(p_trades):
+                cum_vals.append(cum_vals[-1] + tr['pnl_val'])
+            day_indices = list(range(len(cum_vals)))
+            compounded_1pct_days = [budget * ((1.01) ** d) for d in day_indices]
+
+            ax1.plot(day_indices, cum_vals, marker='o', color='#0ECB81', linewidth=2.2, label='Actual Equity (£)', zorder=4)
+            ax1.plot(day_indices, compounded_1pct_days, linestyle='--', color='#FFD400', linewidth=1.8, label='1.0% Daily Target Line', zorder=3)
+            ax1.axhline(budget, color='#8A8A9E', linestyle=':', alpha=0.6, label=f'Initial (£{budget:,.0f})')
+            ax1.set_title(f"{safe_sheet_name} • Inception Trajectory", color='#FFFFFF', fontsize=11, fontweight='bold', pad=10)
+            ax1.set_xlabel("Executed Trade Sequence / Days", color='#8A8A9E', fontsize=9)
+            ax1.set_ylabel("Equity (£)", color='#8A8A9E', fontsize=9)
+            ax1.tick_params(colors='#8A8A9E', labelsize=8)
+            ax1.grid(True, linestyle=':', alpha=0.25, color='#8A8A9E')
+            ax1.legend(loc="upper left", facecolor='#171A21', edgecolor='#262B36', labelcolor='#FFFFFF', fontsize=8)
+
+            # Right Chart: 5-Year Macro Compounding Projection (252 Trading Days/Yr)
+            macro_days = np.linspace(0, 252 * 5, 200)
+            macro_compounded = budget * (1.01 ** macro_days)
+            ax2.plot(macro_days, macro_compounded, color='#FFD400', linewidth=2.0, label='5-Yr Momentum Curve (1%/day)')
+            # Plot current position on the curve
+            current_day_equiv = np.log(current_eq / budget) / np.log(1.01) if current_eq > budget else 0
+            ax2.scatter([current_day_equiv], [current_eq], color='#0ECB81', s=70, zorder=5, label=f'Current: £{current_eq:,.2f}')
+            
+            # 1-Yr to 5-Yr Milestones
+            for yr in range(1, 6):
+                yr_day = yr * 252
+                yr_val = budget * (1.01 ** yr_day)
+                ax2.axvline(yr_day, color='#262B36', linestyle='--', alpha=0.8)
+                ax2.text(yr_day, yr_val * 0.9, f"Y{yr}: £{yr_val:,.0f}", color='#8A8A9E', fontsize=7, rotation=90, verticalalignment='top')
+
+            ax2.set_yscale('log')
+            ax2.set_title("5-Year Compounding Benchmark (Log Scale: 1% Daily)", color='#FFFFFF', fontsize=11, fontweight='bold', pad=10)
+            ax2.set_xlabel("Trading Days (252 Days/Year)", color='#8A8A9E', fontsize=9)
+            ax2.set_ylabel("Compounded Equity (£)", color='#8A8A9E', fontsize=9)
+            ax2.tick_params(colors='#8A8A9E', labelsize=8)
+            ax2.grid(True, linestyle=':', alpha=0.25, color='#8A8A9E')
+            ax2.legend(loc="upper left", facecolor='#171A21', edgecolor='#262B36', labelcolor='#FFFFFF', fontsize=8)
+
+            plt.tight_layout()
+            img_buf = io.BytesIO()
+            plt.savefig(img_buf, format='png', bbox_inches='tight', facecolor='#0F1115')
+            img_buf.seek(0)
+            plt.close(fig)
+
+            chart_obj = OpenpyxlImage(img_buf)
+            chart_obj.width = 960
+            chart_obj.height = 330
+            ws_prof.add_image(chart_obj, f"B{max(10, p_row + 2)}")
+        except Exception as e_plot:
+            pass
+
+        # Adjust Column Widths
+        for c_i in range(1, 11):
+            ws_prof.column_dimensions[get_column_letter(c_i)].width = 18 if c_i == 10 else 14
+
+    # Adjust Master Overview Widths
+    for c_i in range(1, len(ov_headers) + 1):
+        ws_master.column_dimensions[get_column_letter(c_i)].width = 30 if c_i == 1 else 16
+
+    out_buf = io.BytesIO()
+    wb.save(out_buf)
+    out_buf.seek(0)
+
+    filename = f"IDC_Trading_Fleet_Forensic_Compounding_{now_lon.strftime('%Y%m%d_%H%M')}.xlsx"
+    return send_file(
+        out_buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 @app.route('/api/broker/status', methods=['GET'])
@@ -2791,6 +2992,16 @@ def get_broker_status():
                     } for p in raw_pos]
             except Exception: pass
 
+            # Fetch open/queued orders directly from Alpaca
+            has_queued_orders = False
+            try:
+                req_o = urllib.request.Request(f"{base_url}/v2/orders?status=open", headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": secret_key})
+                with urllib.request.urlopen(req_o, timeout=4) as r_o:
+                    open_orders = json.loads(r_o.read().decode('utf-8'))
+                    if len(open_orders) > 0:
+                        has_queued_orders = True
+            except Exception: pass
+
             # Audit desync against all active bots
             claimed_symbols = set()
             for u in portfolio_store.data.get('users', {}).values():
@@ -2810,6 +3021,7 @@ def get_broker_status():
                 'portfolio_value': float(acc.get('portfolio_value', 0.0)),
                 'positions': live_positions,
                 'has_desync': has_desync,
+                'has_queued_orders': has_queued_orders,
                 'paused': paused,
                 'mode': mode,
                 'api_key': api_key,

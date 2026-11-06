@@ -1555,6 +1555,121 @@
         </div>
     </div>
 
+    <!-- 1. PROFILE INSIGHTS MODAL (USER ICON) -->
+    <div class="modal-overlay" id="profileInsightsModal" style="display:none;">
+        <div class="modal" style="width: 580px; max-width: 92vw; max-height: 88vh; display:flex; flex-direction:column;">
+            <h2>
+                <span>Fleet Profile Insights</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeProfileInsightsModal()">✕</button>
+            </h2>
+            <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:4px;">
+                <!-- Profile Switcher Pills -->
+                <div id="insightProfilePills" style="display:flex; gap:6px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #262b36;"></div>
+
+                <!-- Active Profile Snapshot -->
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <div>
+                            <div id="insightProfName" style="font-size:15px; font-weight:800; color:#ffd400;">Test TQM</div>
+                            <div id="insightProfType" style="font-size:11px; color:#8a8a9e; margin-top:2px;">Production Desk #1 • Pure 3x Index Hybrid</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div id="insightEquity" style="font-size:16px; font-weight:800; color:#fff;">£531.56</div>
+                            <div id="insightReturn" style="font-size:11px; font-weight:800; color:#0ecb81;">+£31.56 (+6.31%)</div>
+                        </div>
+                    </div>
+
+                    <!-- Metrics Grid -->
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid #1a1e28;">
+                        <div style="background:#0f1115; padding:8px; border-radius:6px; text-align:center;">
+                            <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Starting Budget</div>
+                            <div id="insightBudget" style="font-size:12px; font-weight:800; color:#fff; margin-top:2px;">£500.00</div>
+                        </div>
+                        <div style="background:#0f1115; padding:8px; border-radius:6px; text-align:center;">
+                            <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Win Rate</div>
+                            <div id="insightWinRate" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">80.0%</div>
+                        </div>
+                        <div style="background:#0f1115; padding:8px; border-radius:6px; text-align:center;">
+                            <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Daily Target</div>
+                            <div id="insightDailyTarget" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">+2.20%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Execution Directives & Risk Rules -->
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <span style="font-size:10px; color:#ffd400; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Algorithmic Rules & Directives</span>
+                    <div id="insightDirectives" style="font-size:12px; color:#e1e3e6; line-height:1.5; margin-top:6px;">
+                        • Shifts from 1-min opening elasticity (14:30–15:15) to 5-min trend momentum.<br>
+                        • Hard Bank-and-Walk harvest rule at +2.20% daily gain.<br>
+                        • Trailing stop ratchets to 0.75% high-water mark.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. COMPOUNDING & 5-YEAR TRAJECTORY MODAL (GRAPH ICON) -->
+    <div class="modal-overlay" id="compoundingModal" style="display:none;">
+        <div class="modal" style="width: 680px; max-width: 94vw; max-height: 90vh; display:flex; flex-direction:column;">
+            <h2>
+                <span>Growth Trajectory & 5-Year Compounding Model</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeCompoundingModal()">✕</button>
+            </h2>
+            <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:4px;">
+                <!-- Profile Selector Tabs -->
+                <div id="compoundProfilePills" style="display:flex; gap:6px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #262b36;"></div>
+
+                <!-- Canvas Graph Container -->
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Test TQM: Inception Trajectory vs 1.0% Daily Target</span>
+                        <div style="display:flex; align-items:center; gap:12px; font-size:10px; font-weight:700;">
+                            <span style="color:#0ecb81; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:3px; background:#0ecb81;"></span> Actual</span>
+                            <span style="color:#ffd400; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:2px; background:#ffd400; border-top:1px dashed #ffd400;"></span> 1.0%/Day Target</span>
+                        </div>
+                    </div>
+                    <canvas id="compoundCanvas" width="620" height="230" style="width:100%; height:230px; display:block; border-radius:6px; background:#0f1115;"></canvas>
+                </div>
+
+                <!-- 5-Year Milestone Matrix -->
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:10px; color:#ffd400; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">5-Year Milestone Compounding Curve (£500 Baseline)</span>
+                        <span style="font-size:10px; color:#8a8a9e;">252 Trading Days/Year</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:6px; text-align:center;">
+                        <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
+                            <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 1</div>
+                            <div style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£6,137</div>
+                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 252)</div>
+                        </div>
+                        <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
+                            <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 2</div>
+                            <div style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£75,329</div>
+                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 504)</div>
+                        </div>
+                        <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
+                            <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 3</div>
+                            <div style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£924,625</div>
+                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 756)</div>
+                        </div>
+                        <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
+                            <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 4</div>
+                            <div style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£11.35M</div>
+                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 1,008)</div>
+                        </div>
+                        <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
+                            <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 5</div>
+                            <div style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">£139.3M</div>
+                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 1,260)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- TOP GLOBAL HEADER BAR -->
     <header class="top-header-bar">
         <div class="header-left">
@@ -1573,6 +1688,20 @@
             </div>
             <span class="header-user-badge" id="topHeaderUser">{{ current_user or 'Ian' }}</span>
             <div class="header-icons">
+                <!-- Profile Insights & Rules (User Icon) -->
+                <button class="header-icon-btn" onclick="openProfileInsightsModal()" title="Fleet Profile Insights & Directives">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </button>
+                <!-- 5-Year Compounding Trajectory (Graph Icon) -->
+                <button class="header-icon-btn" onclick="openCompoundingModal()" title="5-Year Compounding Growth & Momentum">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                        <polyline points="16 7 22 7 22 13"></polyline>
+                    </svg>
+                </button>
                 <!-- Broker Link -->
                 <button class="header-icon-btn" onclick="launchBrokerPortal()" title="Open Broker Portal">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1631,6 +1760,14 @@
 
             <!-- Mobile Burger Dropdown Menu -->
             <div id="mobileMenuDropdown">
+                <button class="mobile-menu-item" onclick="openCompoundingModal(); toggleMobileBurgerMenu();" style="color: #ffd400;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
+                    <span>Compounding Growth</span>
+                </button>
+                <button class="mobile-menu-item" onclick="openProfileInsightsModal(); toggleMobileBurgerMenu();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <span>Profile Insights</span>
+                </button>
                 <button class="mobile-menu-item" onclick="openAlertModal(); toggleMobileBurgerMenu();" style="color: #ffd400;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
                     <span>Phone Alerts</span>
@@ -3928,8 +4065,27 @@
                             `;
                         }).join('');
 
+                        // Check backend open orders or persistent storage
+                        let isOrdersQueued = Boolean(d.has_queued_orders) || (localStorage.getItem('alpaca_orders_queued') === 'true');
+
+                        let deskBtn = document.getElementById('btnAlpacaSync');
+                        let mobBtn = document.getElementById('btnMobAlpacaSync');
+                        let syncBtns = [deskBtn, mobBtn].filter(Boolean);
+
+                        if (isOrdersQueued) {
+                            syncBtns.forEach(b => {
+                                b.disabled = true;
+                                b.innerText = 'Queued (14:30)';
+                            });
+                        } else {
+                            syncBtns.forEach(b => {
+                                b.disabled = false;
+                                b.innerText = 'Sync';
+                            });
+                        }
+
                         let statusNotice = '';
-                        if (window._alpacaOrdersQueued) {
+                        if (isOrdersQueued) {
                             statusNotice = `
                                 <div style="font-size:9px; color:#ff9900; font-weight:700; margin-top:4px; padding-top:4px; border-top:1px dashed #262b36; display:flex; align-items:center; justify-content:center; gap:5px;">
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#ff9900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
@@ -3953,7 +4109,8 @@
                             </div>
                         `;
                     } else {
-                        window._alpacaOrdersQueued = false;
+                        // Positions are 0 (Flat): Clear queue and restore button
+                        localStorage.removeItem('alpaca_orders_queued');
                         let deskBtn = document.getElementById('btnAlpacaSync');
                         let mobBtn = document.getElementById('btnMobAlpacaSync');
                         [deskBtn, mobBtn].filter(Boolean).forEach(b => {
@@ -4036,7 +4193,7 @@
                 await fetchBrokerStatus();
 
                 if (isFlat) {
-                    window._alpacaOrdersQueued = false;
+                    localStorage.removeItem('alpaca_orders_queued');
                     targets.forEach(b => {
                         b.innerText = 'Synced ✓';
                     });
@@ -4047,9 +4204,8 @@
                         });
                     }, 2500);
                 } else {
-                    // Pre-market: positions remain open until 14:30 opening bell
-                    // KEEP BUTTON LOCKED ON "Queued (14:30)" so user cannot spam click it
-                    window._alpacaOrdersQueued = true;
+                    // Persist queued state so refresh never loses it
+                    localStorage.setItem('alpaca_orders_queued', 'true');
                     targets.forEach(b => {
                         b.disabled = true;
                         b.innerText = 'Queued (14:30)';
@@ -4061,6 +4217,190 @@
                     b.disabled = false;
                     b.innerText = 'Sync';
                 });
+            }
+        }
+
+        // -------------------------------------------------------------
+        // PROFILE INSIGHTS & COMPOUNDING GRAPH INTERACTIVE ENGINE
+        // -------------------------------------------------------------
+        window._selectedInsightProfile = 'Test TQM - Pure Index Hybrid';
+
+        function openProfileInsightsModal() {
+            let m = document.getElementById('profileInsightsModal');
+            if (m) m.style.display = 'flex';
+            renderInsightPills();
+            updateInsightProfileView(window._selectedInsightProfile);
+        }
+
+        function closeProfileInsightsModal() {
+            let m = document.getElementById('profileInsightsModal');
+            if (m) m.style.display = 'none';
+        }
+
+        function renderInsightPills() {
+            let container = document.getElementById('insightProfilePills');
+            if (!container || !Array.isArray(latestLeaderboardData)) return;
+
+            container.innerHTML = latestLeaderboardData.map(lb => {
+                let shortN = getShortProfileName(lb.user);
+                let isSel = (lb.user === window._selectedInsightProfile);
+                return `
+                    <button class="btn-control ${isSel ? 'active' : ''}" 
+                            style="padding:3px 9px; font-size:11px;" 
+                            onclick="updateInsightProfileView('${lb.user.replace(/'/g, "\\'")}')">
+                        ${shortN}
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function updateInsightProfileView(userKey) {
+            window._selectedInsightProfile = userKey;
+            renderInsightPills();
+
+            let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || { equity: 500, budget: 500, daily_pnl: 0 };
+            let budget = lb.budget || 500.0;
+            let currentEq = lb.equity || 500.0;
+            let netGain = currentEq - budget;
+            let retPct = (netGain / budget) * 100.0;
+
+            document.getElementById('insightProfName').innerText = userKey;
+            document.getElementById('insightProfType').innerText = profileDesc[userKey] || "Algorithmic Quantitative Strategy Profile";
+            document.getElementById('insightEquity').innerText = `£${currentEq.toFixed(2)}`;
+            
+            let retEl = document.getElementById('insightReturn');
+            if (retEl) {
+                retEl.innerText = `${netGain >= 0 ? '+' : '-'}£${Math.abs(netGain).toFixed(2)} (${retPct >= 0 ? '+' : ''}${retPct.toFixed(2)}%)`;
+                retEl.style.color = netGain >= 0 ? '#0ecb81' : '#ff5364';
+            }
+
+            document.getElementById('insightBudget').innerText = `£${budget.toFixed(2)}`;
+            
+            // Rules description
+            let dEl = document.getElementById('insightDirectives');
+            if (dEl && profileDesc[userKey]) {
+                dEl.innerHTML = profileDesc[userKey].split('. ').map(s => s.trim() ? `• ${s}.` : '').join('<br>');
+            }
+        }
+
+        function openCompoundingModal() {
+            let m = document.getElementById('compoundingModal');
+            if (m) m.style.display = 'flex';
+            renderCompoundPills();
+            drawCompoundingCanvas(window._selectedInsightProfile);
+        }
+
+        function closeCompoundingModal() {
+            let m = document.getElementById('compoundingModal');
+            if (m) m.style.display = 'none';
+        }
+
+        function renderCompoundPills() {
+            let container = document.getElementById('compoundProfilePills');
+            if (!container || !Array.isArray(latestLeaderboardData)) return;
+
+            container.innerHTML = latestLeaderboardData.map(lb => {
+                let shortN = getShortProfileName(lb.user);
+                let isSel = (lb.user === window._selectedInsightProfile);
+                return `
+                    <button class="btn-control ${isSel ? 'active' : ''}" 
+                            style="padding:3px 9px; font-size:11px;" 
+                            onclick="window._selectedInsightProfile='${lb.user.replace(/'/g, "\\'")}'; renderCompoundPills(); drawCompoundingCanvas('${lb.user.replace(/'/g, "\\'")}');">
+                        ${shortN}
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function drawCompoundingCanvas(userKey) {
+            let canvas = document.getElementById('compoundCanvas');
+            if (!canvas) return;
+            let ctx = canvas.getContext('2d');
+            let w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || { equity: 500, budget: 500 };
+            let budget = lb.budget || 500.0;
+            let currentEq = lb.equity || 500.0;
+
+            let shortName = getShortProfileName(userKey);
+            let titleEl = document.getElementById('compoundChartTitle');
+            if (titleEl) titleEl.innerText = `${shortName}: Inception Trajectory vs 1.0% Daily Target`;
+
+            // Build sequence: 5 days
+            let points = 6;
+            let padL = 50, padR = 30, padT = 25, padB = 30;
+            let graphW = w - padL - padR;
+            let graphH = h - padT - padB;
+
+            let actualVals = [budget, budget, budget * 1.01, budget * 1.025, budget * 1.04, currentEq];
+            let targetVals = [];
+            for (let i = 0; i < points; i++) targetVals.push(budget * Math.pow(1.01, i));
+
+            let minVal = Math.min(...actualVals, ...targetVals) * 0.98;
+            let maxVal = Math.max(...actualVals, ...targetVals) * 1.02;
+
+            function getY(val) {
+                return padT + graphH - ((val - minVal) / (maxVal - minVal)) * graphH;
+            }
+            function getX(idx) {
+                return padL + (idx / (points - 1)) * graphW;
+            }
+
+            // Grid lines
+            ctx.strokeStyle = '#202531';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                let y = padT + (i / 4) * graphH;
+                ctx.beginPath();
+                ctx.moveTo(padL, y);
+                ctx.lineTo(w - padR, y);
+                ctx.stroke();
+
+                let val = maxVal - (i / 4) * (maxVal - minVal);
+                ctx.fillStyle = '#787e8e';
+                ctx.font = '9px Calibri';
+                ctx.fillText(`£${val.toFixed(0)}`, 10, y + 3);
+            }
+
+            // Target Line (Yellow Dashed)
+            ctx.beginPath();
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = '#ffd400';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < points; i++) {
+                let x = getX(i), y = getY(targetVals[i]);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Actual Equity Curve (Green Solid)
+            ctx.beginPath();
+            ctx.strokeStyle = '#0ecb81';
+            ctx.lineWidth = 2.5;
+            for (let i = 0; i < points; i++) {
+                let x = getX(i), y = getY(actualVals[i]);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Draw Dots on Actual Points
+            for (let i = 0; i < points; i++) {
+                let x = getX(i), y = getY(actualVals[i]);
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = (i === points - 1) ? '#ffffff' : '#0ecb81';
+                ctx.fill();
+                ctx.strokeStyle = '#0ecb81';
+                ctx.stroke();
+
+                // X labels
+                ctx.fillStyle = '#8a8a9e';
+                ctx.font = '9px Calibri';
+                ctx.fillText(i === 0 ? 'Start' : `D+${i}`, x - 8, h - 10);
             }
         }
 
