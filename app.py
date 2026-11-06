@@ -2649,7 +2649,7 @@ def get_data():
 
 @app.route('/api/report/forensic', methods=['GET'])
 def export_forensic_report():
-    import io
+    import io, re
     from flask import send_file
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -2662,18 +2662,19 @@ def export_forensic_report():
     
     wb = openpyxl.Workbook()
 
-    # 1. Sheet: Fleet Master Overview
+    # Sheet 1: Fleet Master Overview
     ws_master = wb.active
     ws_master.title = "Fleet Master Overview"
     ws_master.views.sheetView[0].showGridLines = True
 
-    # 2. Sheet: Forensic Raw Audit Log (Preserves 100% of data for parameter sweeps)
+    # Sheet 2: Complete Forensic Raw Audit Log (All 18 parameters for sweep)
     ws_raw = wb.create_sheet(title="Forensic Raw Audit Log")
     ws_raw.views.sheetView[0].showGridLines = True
 
     dark_fill = PatternFill(start_color="14171F", end_color="14171F", fill_type="solid")
-    header_fill = PatternFill(start_color="1B202C", end_color="1B202C", fill_type="solid")
-    card_fill = PatternFill(start_color="0F1115", end_color="0F1115", fill_type="solid")
+    sub_header_fill = PatternFill(start_color="1E222D", end_color="1E222D", fill_type="solid")
+    kpi_label_fill = PatternFill(start_color="1A1D24", end_color="1A1D24", fill_type="solid")
+    kpi_val_fill = PatternFill(start_color="0F1115", end_color="0F1115", fill_type="solid")
     thin_border = Border(
         left=Side(style='thin', color='262B36'), right=Side(style='thin', color='262B36'),
         top=Side(style='thin', color='262B36'), bottom=Side(style='thin', color='262B36')
@@ -2683,16 +2684,16 @@ def export_forensic_report():
     ws_master.merge_cells('A1:I1')
     t_cell = ws_master['A1']
     t_cell.value = "IDC TRADING • FLEET INTELLIGENCE & FORENSIC AUDIT"
-    t_cell.font = Font(name="Calibri", size=13, bold=True, color="FFD400")
+    t_cell.font = Font(name="Calibri", size=12, bold=True, color="FFD400")
     t_cell.fill = dark_fill
     t_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws_master.row_dimensions[1].height = 30
+    ws_master.row_dimensions[1].height = 28
 
     ov_headers = ["Profile", "Budget", "Current Equity", "Net Return (£)", "Return %", "Trades", "Win Rate %", "Profit Factor", "Status"]
     for c_i, h in enumerate(ov_headers, 1):
         cell = ws_master.cell(row=3, column=c_i, value=h)
         cell.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-        cell.fill = header_fill
+        cell.fill = sub_header_fill
         cell.alignment = Alignment(horizontal="center" if c_i > 1 else "left", vertical="center")
         cell.border = thin_border
     ws_master.row_dimensions[3].height = 24
@@ -2706,7 +2707,7 @@ def export_forensic_report():
     for c_i, h in enumerate(raw_headers, 1):
         cell = ws_raw.cell(row=1, column=c_i, value=h)
         cell.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-        cell.fill = header_fill
+        cell.fill = sub_header_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = thin_border
     ws_raw.row_dimensions[1].height = 24
@@ -2821,37 +2822,53 @@ def export_forensic_report():
         ws_p = wb.create_sheet(title=safe_name)
         ws_p.views.sheetView[0].showGridLines = True
 
-        ws_p.merge_cells('A1:J1')
+        # Header Title
+        ws_p.merge_cells('A1:L1')
         p_t = ws_p['A1']
-        p_t.value = f"{u_name.upper()} • PERFORMANCE AUDIT"
+        p_t.value = f"{u_name.upper()} • PERFORMANCE AUDIT & COMPOUNDING INTELLIGENCE"
         p_t.font = Font(name="Calibri", size=11, bold=True, color="FFD400")
         p_t.fill = dark_fill
         p_t.alignment = Alignment(horizontal="center", vertical="center")
-        ws_p.row_dimensions[1].height = 28
+        ws_p.row_dimensions[1].height = 26
 
+        # Full-Width 6-Card KPI Row (Merged across pairs to cover A through L)
         kpis = [
-            ("Starting Budget", f"£{budget:,.2f}"), ("Current Equity", f"£{current_eq:,.2f}"),
-            ("Total Net P&L", f"{'+' if net_gain>=0 else ''}£{net_gain:,.2f} ({ret_pct:+.2f}%)"),
-            ("Win Rate", f"{win_rate:.1f}% ({wins}W / {losses}L)"), ("Profit Factor", f"{profit_factor:.2f}"),
-            ("Daily Compounding Target", "1.00% / Day (~252 Days/Yr)")
+            ("STARTING BUDGET", f"£{budget:,.2f}", "A", "B"),
+            ("CURRENT EQUITY", f"£{current_eq:,.2f}", "C", "D"),
+            ("TOTAL NET P&L", f"{'+' if net_gain>=0 else ''}£{net_gain:,.2f} ({ret_pct:+.2f}%)", "E", "F"),
+            ("WIN RATE", f"{win_rate:.1f}% ({wins}W / {losses}L)", "G", "H"),
+            ("PROFIT FACTOR", f"{profit_factor:.2f}", "I", "J"),
+            ("DAILY RUN-RATE", f"{'+' if net_gain>=0 else ''}{(ret_pct/5):.2f}% / Day", "K", "L")
         ]
-        for k_i, (k_l, k_v) in enumerate(kpis, 1):
-            ws_p.cell(row=3, column=k_i, value=k_l).font = Font(name="Calibri", size=9, bold=True, color="8A8A9E")
-            ws_p.cell(row=3, column=k_i).fill = card_fill
-            ws_p.cell(row=3, column=k_i).border = thin_border
-            val_c = ws_p.cell(row=4, column=k_i, value=k_v)
-            val_c.font = Font(name="Calibri", size=10, bold=True, color="0ECB81" if k_i==3 and net_gain>=0 else ("FF5364" if k_i==3 else "FFFFFF"))
-            val_c.fill = card_fill
-            val_c.border = thin_border
+        ws_p.row_dimensions[3].height = 16
+        ws_p.row_dimensions[4].height = 22
+
+        for label, val, c1, c2 in kpis:
+            ws_p.merge_cells(f"{c1}3:{c2}3")
+            cl = ws_p[f"{c1}3"]
+            cl.value = label
+            cl.font = Font(name="Calibri", size=8, bold=True, color="8A8A9E")
+            cl.fill = kpi_label_fill
+            cl.alignment = Alignment(horizontal="center", vertical="center")
+            cl.border = thin_border
+
+            ws_p.merge_cells(f"{c1}4:{c2}4")
+            cv = ws_p[f"{c1}4"]
+            cv.value = val
+            cv.font = Font(name="Calibri", size=10, bold=True, color="0ECB81" if ('+' in val or '£' in val and net_gain>=0) else ("FF5364" if '-' in val else "FFFFFF"))
+            cv.fill = kpi_val_fill
+            cv.alignment = Alignment(horizontal="center", vertical="center")
+            cv.border = thin_border
 
         # Trade History Table Headers
-        p_headers = ["Date", "Time In", "Time Out", "Ticker", "Shares", "Buy (£)", "Sell (£)", "Peak (£)", "P&L (£)", "Return %", "Hold (Mins)", "Reason"]
+        p_headers = ["Date", "Time In", "Time Out", "Ticker", "Shares", "Buy (£)", "Sell (£)", "Peak (£)", "P&L (£)", "Return %", "Hold (Mins)", "Exit Reason / Trigger"]
         for c_i, h in enumerate(p_headers, 1):
             cell = ws_p.cell(row=6, column=c_i, value=h)
             cell.font = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
-            cell.fill = header_fill
+            cell.fill = sub_header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = thin_border
-        ws_p.row_dimensions[6].height = 20
+        ws_p.row_dimensions[6].height = 22
 
         p_row = 7
         for tr in p_trades:
@@ -2868,49 +2885,88 @@ def export_forensic_report():
             c_diff.font = Font(name="Calibri", size=9, bold=True, color="0A3622" if tr['pnl_val']>=0 else "78281F")
             ws_p.cell(row=p_row, column=10, value=tr['pnl_pct'] / 100.0).number_format = '0.00%'
             ws_p.cell(row=p_row, column=11, value=tr['mins']).border = thin_border
-            ws_p.cell(row=p_row, column=12, value=tr['reason']).border = thin_border
+            
+            # Formatted Reason Column with wrap
+            c_rsn = ws_p.cell(row=p_row, column=12, value=tr['reason'])
+            c_rsn.border = thin_border
+            c_rsn.alignment = Alignment(wrap_text=True, vertical="center")
             p_row += 1
 
-        # Native Excel Vector LineChart (Zero external image dependencies)
+        # 3-Line Native Vector Excel Chart
         chart_start_row = max(10, p_row + 2)
         ws_p.cell(row=chart_start_row, column=1, value="Sequence").font = Font(name="Calibri", size=9, bold=True)
         ws_p.cell(row=chart_start_row, column=2, value="Actual Equity").font = Font(name="Calibri", size=9, bold=True)
-        ws_p.cell(row=chart_start_row, column=3, value="1% Daily Target").font = Font(name="Calibri", size=9, bold=True)
+        ws_p.cell(row=chart_start_row, column=3, value="Projected Run-Rate").font = Font(name="Calibri", size=9, bold=True)
+        ws_p.cell(row=chart_start_row, column=4, value="1.0% Daily Target").font = Font(name="Calibri", size=9, bold=True)
 
         c_data_r = chart_start_row + 1
-        cum = budget
         ws_p.cell(row=c_data_r, column=1, value="Start")
         ws_p.cell(row=c_data_r, column=2, value=budget)
         ws_p.cell(row=c_data_r, column=3, value=budget)
+        ws_p.cell(row=c_data_r, column=4, value=budget)
         c_data_r += 1
 
-        for idx, tr in enumerate(reversed(p_trades), 1):
-            cum += tr['pnl_val']
-            ws_p.cell(row=c_data_r, column=1, value=f"T+{idx}")
-            ws_p.cell(row=c_data_r, column=2, value=cum)
-            ws_p.cell(row=c_data_r, column=3, value=round(budget * (1.01 ** idx), 2))
+        cum = budget
+        actual_trade_list = list(reversed(p_trades))
+        total_chart_points = max(20, len(actual_trade_list) + 10)
+        r_daily_avg = (net_gain / budget / 5.0) if budget > 0 else 0.01
+
+        for idx in range(1, total_chart_points + 1):
+            seq_lbl = f"T+{idx}"
+            ws_p.cell(row=c_data_r, column=1, value=seq_lbl)
+
+            if idx <= len(actual_trade_list):
+                cum += actual_trade_list[idx - 1]['pnl_val']
+                ws_p.cell(row=c_data_r, column=2, value=round(cum, 2))
+                ws_p.cell(row=c_data_r, column=3, value=round(cum, 2))
+            else:
+                ws_p.cell(row=c_data_r, column=2, value=None) # Blank for future actuals
+                proj_val = current_eq * ((1 + r_daily_avg) ** (idx - len(actual_trade_list)))
+                ws_p.cell(row=c_data_r, column=3, value=round(proj_val, 2))
+
+            tgt_val = budget * ((1.01) ** idx)
+            ws_p.cell(row=c_data_r, column=4, value=round(tgt_val, 2))
             c_data_r += 1
 
         chart = LineChart()
-        chart.title = f"{safe_name}: Actual Equity vs 1.0% Daily Target Curve"
+        chart.title = f"{safe_name}: Actual vs Run-Rate vs 1.0% Daily Target"
         chart.style = 13
-        chart.y_axis.title = "Equity (£)"
-        chart.x_axis.title = "Executed Trades Sequence"
-        chart.width = 17
-        chart.height = 8.5
+        chart.y_axis.title = "Portfolio Value (£)"
+        chart.x_axis.title = "Trade Sequence / Sessions"
+        chart.width = 19
+        chart.height = 9.5
 
-        data_ref = Reference(ws_p, min_col=2, min_row=chart_start_row, max_col=3, max_row=c_data_r - 1)
+        data_ref = Reference(ws_p, min_col=2, min_row=chart_start_row, max_col=4, max_row=c_data_r - 1)
         cats_ref = Reference(ws_p, min_col=1, min_row=chart_start_row + 1, max_row=c_data_r - 1)
         chart.add_data(data_ref, titles_from_data=True)
         chart.set_categories(cats_ref)
 
-        ws_p.add_chart(chart, f"E{chart_start_row}")
+        if len(chart.series) >= 3:
+            # Series 1: Actual Equity (Solid Green)
+            chart.series[0].graphicalProperties.line.solidFill = "0ECB81"
+            chart.series[0].graphicalProperties.line.width = 28000
+            # Series 2: Projected Run-Rate (Dashed Cyan)
+            chart.series[1].graphicalProperties.line.solidFill = "38BDF8"
+            chart.series[1].graphicalProperties.line.dashStyle = "dash"
+            chart.series[1].graphicalProperties.line.width = 22000
+            # Series 3: Target Line (Dotted Gold)
+            chart.series[2].graphicalProperties.line.solidFill = "FFD400"
+            chart.series[2].graphicalProperties.line.dashStyle = "dot"
+            chart.series[2].graphicalProperties.line.width = 20000
 
-        for ci in range(1, 13):
-            ws_p.column_dimensions[get_column_letter(ci)].width = 14
+        ws_p.add_chart(chart, f"F{chart_start_row}")
 
+        # Explicit Auto-Fitted Column Widths (No Clipping)
+        col_w_map = {
+            'A': 12, 'B': 14, 'C': 14, 'D': 8, 'E': 8, 'F': 11,
+            'G': 11, 'H': 11, 'I': 11, 'J': 10, 'K': 11, 'L': 52
+        }
+        for col_letter, width in col_w_map.items():
+            ws_p.column_dimensions[col_letter].width = width
+
+    # Auto-fit Master Sheet & Raw Audit Sheet
     for ci in range(1, len(ov_headers) + 1):
-        ws_master.column_dimensions[get_column_letter(ci)].width = 28 if ci==1 else 15
+        ws_master.column_dimensions[get_column_letter(ci)].width = 30 if ci == 1 else 15
     for ci in range(1, len(raw_headers) + 1):
         ws_raw.column_dimensions[get_column_letter(ci)].width = 16
 

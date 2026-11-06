@@ -1555,9 +1555,33 @@
         </div>
     </div>
 
+    <style>
+        .btn-horizon {
+            background: transparent !important;
+            border: 1px solid #ffd400 !important;
+            color: #ffd400 !important;
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            padding: 4px 10px !important;
+            border-radius: 5px !important;
+            cursor: pointer !important;
+            transition: all 0.15s ease !important;
+            outline: none !important;
+        }
+        .btn-horizon:hover {
+            background: rgba(255, 212, 0, 0.18) !important;
+        }
+        .btn-horizon.active {
+            background: #ffd400 !important;
+            color: #000000 !important;
+            font-weight: 800 !important;
+            box-shadow: 0 0 8px rgba(255, 212, 0, 0.4) !important;
+        }
+    </style>
+
     <!-- UNIFIED FLEET ANALYTICS & COMPOUNDING INTELLIGENCE MODAL -->
     <div class="modal-overlay" id="compoundingModal" style="display:none;">
-        <div class="modal" style="width: 720px; max-width: 95vw; max-height: 92vh; display:flex; flex-direction:column;">
+        <div class="modal" style="width: 740px; max-width: 95vw; max-height: 92vh; display:flex; flex-direction:column;">
             <h2>
                 <span>Fleet Performance & Compounding Intelligence</span>
                 <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeCompoundingModal()">✕</button>
@@ -1574,8 +1598,8 @@
                             <div id="insightProfType" style="font-size:11px; color:#8a8a9e; margin-top:2px;">Production Desk #1 • Pure 3x Index Hybrid</div>
                         </div>
                         <div style="text-align:right;">
-                            <div id="insightEquity" style="font-size:17px; font-weight:800; color:#fff;">£531.52</div>
-                            <div id="insightReturn" style="font-size:11px; font-weight:800; color:#0ecb81;">+£31.52 (+6.30%)</div>
+                            <div id="insightEquity" style="font-size:17px; font-weight:800; color:#fff;">£532.24</div>
+                            <div id="insightReturn" style="font-size:11px; font-weight:800; color:#0ecb81;">+£32.24 (+6.45%)</div>
                         </div>
                     </div>
 
@@ -1587,15 +1611,15 @@
                         </div>
                         <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
                             <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Win Rate</div>
-                            <div id="insightWinRate" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">66.7%</div>
+                            <div id="insightWinRate" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">70.0%</div>
                         </div>
                         <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
                             <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Profit Factor</div>
-                            <div id="insightProfitFactor" style="font-size:12px; font-weight:800; color:#fff; margin-top:2px;">4.48</div>
+                            <div id="insightProfitFactor" style="font-size:12px; font-weight:800; color:#fff; margin-top:2px;">4.55</div>
                         </div>
                         <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
-                            <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Target Rule</div>
-                            <div id="insightDailyTarget" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">+2.20%</div>
+                            <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Daily Run-Rate</div>
+                            <div id="insightDailyTarget" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">+1.29% / Day</div>
                         </div>
                     </div>
 
@@ -1605,60 +1629,72 @@
                     </div>
                 </div>
 
-                <!-- Canvas Graph Container with Interactive Time Horizon Selector -->
+                <!-- Canvas Graph Container with Interactive Time Horizon Selector & Custom Rate Input -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
-                        <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Test TQM: Trajectory vs 1.0% Daily Target</span>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                        <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Test TQM: Trajectory vs Compounding Targets</span>
                         
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <!-- Time Horizon Range Buttons (Zoom: 5D, 1M, 6M default, 1Y, 5Y) -->
-                            <div style="display:flex; background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:2px;">
-                                <button type="button" class="m-btn" id="btnHorizon5D" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('5D')">5D</button>
-                                <button type="button" class="m-btn" id="btnHorizon1M" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('1M')">1M</button>
-                                <button type="button" class="m-btn active" id="btnHorizon6M" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('6M')">6M</button>
-                                <button type="button" class="m-btn" id="btnHorizon1Y" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('1Y')">1Y</button>
-                                <button type="button" class="m-btn" id="btnHorizon5Y" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('5Y')">5Y</button>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <!-- Time Horizon Range Buttons -->
+                            <div style="display:flex; gap:4px;">
+                                <button type="button" class="btn-horizon" id="btnHorizon5D" onclick="setTimeHorizon('5D')">5D</button>
+                                <button type="button" class="btn-horizon" id="btnHorizon1M" onclick="setTimeHorizon('1M')">1M</button>
+                                <button type="button" class="btn-horizon active" id="btnHorizon6M" onclick="setTimeHorizon('6M')">6M</button>
+                                <button type="button" class="btn-horizon" id="btnHorizon1Y" onclick="setTimeHorizon('1Y')">1Y</button>
+                                <button type="button" class="btn-horizon" id="btnHorizon5Y" onclick="setTimeHorizon('5Y')">5Y</button>
                             </div>
-                            
-                            <div style="display:flex; align-items:center; gap:10px; font-size:10px; font-weight:700;">
-                                <span style="color:#0ecb81; display:flex; align-items:center; gap:3px;"><span style="display:inline-block; width:8px; height:3px; background:#0ecb81;"></span> Actual</span>
-                                <span style="color:#ffd400; display:flex; align-items:center; gap:3px;"><span style="display:inline-block; width:8px; height:2px; background:#ffd400; border-top:1px dashed #ffd400;"></span> 1.0%/Day Target</span>
+
+                            <!-- Editable Custom Benchmark Input Box -->
+                            <div style="display:flex; align-items:center; gap:4px; background:#0f1115; border:1px solid #ffd400; padding:2px 6px; border-radius:5px;">
+                                <span style="font-size:9px; font-weight:800; color:#ffd400;">TARGET:</span>
+                                <input type="number" id="customTargetRateInput" value="1.0" step="0.1" min="0.1" max="10.0" 
+                                       oninput="onCustomTargetRateChange(this.value)" 
+                                       style="width:38px; background:transparent; border:none; color:#ffd400; font-size:11px; font-weight:800; text-align:right; outline:none;">
+                                <span style="font-size:9px; font-weight:800; color:#ffd400;">%/DAY</span>
                             </div>
                         </div>
                     </div>
-                    <canvas id="compoundCanvas" width="660" height="230" style="width:100%; height:230px; display:block; border-radius:6px; background:#0f1115;"></canvas>
+
+                    <!-- 3-Line Legend -->
+                    <div style="display:flex; justify-content:flex-end; gap:14px; margin-bottom:8px; font-size:10px; font-weight:700;">
+                        <span style="color:#0ecb81; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:3px; background:#0ecb81;"></span> Actual</span>
+                        <span style="color:#38bdf8; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:2px; background:#38bdf8; border-top:1px dashed #38bdf8;"></span> <span id="legendRunRateLabel">Run-Rate (+1.29%/d)</span></span>
+                        <span style="color:#ffd400; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:2px; background:#ffd400; border-top:1px dotted #ffd400;"></span> <span id="legendTargetLabel">Target (1.0%/d)</span></span>
+                    </div>
+
+                    <canvas id="compoundCanvas" width="680" height="240" style="width:100%; height:240px; display:block; border-radius:6px; background:#0f1115;"></canvas>
                 </div>
 
                 <!-- 5-Year Milestone Matrix -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <span style="font-size:10px; color:#ffd400; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">5-Year Milestone Compounding Curve (£500 Baseline)</span>
+                        <span id="milestoneBoxHeader" style="font-size:10px; color:#ffd400; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">5-Year Milestone Compounding Curve (1.0% / Day @ £500 Baseline)</span>
                         <span style="font-size:10px; color:#8a8a9e;">252 Trading Days/Year</span>
                     </div>
                     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:6px; text-align:center;">
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 1</div>
-                            <div style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£6,137</div>
+                            <div id="mStoneY1" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£6,137</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 252)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 2</div>
-                            <div style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£75,329</div>
+                            <div id="mStoneY2" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£75,329</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 504)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 3</div>
-                            <div style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£924,625</div>
+                            <div id="mStoneY3" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£924,625</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 756)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 4</div>
-                            <div style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£11.35M</div>
+                            <div id="mStoneY4" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£11.35M</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 1,008)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 5</div>
-                            <div style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">£139.3M</div>
+                            <div id="mStoneY5" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">£139.3M</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 1,260)</div>
                         </div>
                     </div>
@@ -4207,10 +4243,11 @@
         }
 
         // -------------------------------------------------------------
-        // UNIFIED FLEET ANALYTICS & COMPOUNDING ZOOM ENGINE
+        // UNIFIED FLEET ANALYTICS, 3-LINE COMPOUNDING & CUSTOM RATE ENGINE
         // -------------------------------------------------------------
         window._selectedInsightProfile = 'Test TQM - Pure Index Hybrid';
-        window._selectedHorizon = '6M'; // Default to 6 Months
+        window._selectedHorizon = '6M';
+        window._customTargetRate = 1.0; // 1.0% per day by default
 
         const profileTargets = {
             'Test TQM - Pure Index Hybrid': '+2.20% Bank & Walk',
@@ -4220,6 +4257,36 @@
             'Test R - Reversion Lab': '20:50 BST Curfew',
             'Ian': 'Manual Execution'
         };
+
+        function onCustomTargetRateChange(val) {
+            let parsed = parseFloat(val);
+            if (!isNaN(parsed) && parsed > 0) {
+                window._customTargetRate = parsed;
+                updateMilestoneBox(parsed);
+                drawCompoundingCanvas(window._selectedInsightProfile);
+            }
+        }
+
+        function updateMilestoneBox(rate) {
+            let budget = 500.0;
+            let r = rate / 100.0;
+            let hdr = document.getElementById('milestoneBoxHeader');
+            if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${rate.toFixed(1)}% / Day @ £500 Baseline)`;
+
+            function fmt(val) {
+                if (val >= 1e9) return `£${(val/1e9).toFixed(1)}B`;
+                if (val >= 1e6) return `£${(val/1e6).toFixed(2)}M`;
+                if (val >= 1e3) return `£${Math.round(val).toLocaleString()}`;
+                return `£${val.toFixed(2)}`;
+            }
+
+            for (let yr = 1; yr <= 5; yr++) {
+                let d = yr * 252;
+                let v = budget * Math.pow(1 + r, d);
+                let el = document.getElementById(`mStoneY${yr}`);
+                if (el) el.innerText = fmt(v);
+            }
+        }
 
         function setTimeHorizon(h) {
             window._selectedHorizon = h;
@@ -4251,8 +4318,7 @@
                 let shortN = getShortProfileName(lb.user);
                 let isSel = (lb.user === window._selectedInsightProfile);
                 return `
-                    <button class="btn-control ${isSel ? 'active' : ''}" 
-                            style="padding:3px 9px; font-size:11px;" 
+                    <button class="btn-horizon ${isSel ? 'active' : ''}" 
                             onclick="selectAnalyticsProfile('${lb.user.replace(/'/g, "\\'")}')">
                         ${shortN}
                     </button>
@@ -4285,11 +4351,15 @@
             }
 
             document.getElementById('insightBudget').innerText = `£${budget.toFixed(2)}`;
-            document.getElementById('insightDailyTarget').innerText = profileTargets[userKey] || "+1.00% / Day";
+            
+            // True Daily Average Return across active days
+            let daysActive = Math.max(1, lb.days_active || 5);
+            let dailyRunRate = retPct / daysActive;
+            document.getElementById('insightDailyTarget').innerText = `${dailyRunRate >= 0 ? '+' : ''}${dailyRunRate.toFixed(2)}% / Day`;
 
             // Verified Win Rates and Profit Factors from Database Ledger
             let wrMap = {
-                'test tqm': '66.7% (6W / 3L)',
+                'test tqm': '70.0% (7W / 3L)',
                 'test tq': '58.3% (7W / 5L)',
                 'test s': '40.0% (6W / 9L)',
                 'test r': '43.8% (28W / 36L)',
@@ -4297,7 +4367,7 @@
                 'ian': '0.0% (0 Trades)'
             };
             let pfMap = {
-                'test tqm': '4.48',
+                'test tqm': '4.55',
                 'test tq': '2.60',
                 'test s': '1.20',
                 'test r': '0.89',
@@ -4331,13 +4401,13 @@
             let shortName = getShortProfileName(userKey);
             let horizon = window._selectedHorizon || '6M';
             let titleEl = document.getElementById('compoundChartTitle');
-            if (titleEl) titleEl.innerText = `${shortName}: ${horizon} Trajectory vs 1.0% Daily Target`;
+            if (titleEl) titleEl.innerText = `${shortName}: ${horizon} Trajectory vs Targets`;
 
-            let padL = 55, padR = 30, padT = 25, padB = 30;
+            let padL = 60, padR = 30, padT = 25, padB = 30;
             let graphW = w - padL - padR;
             let graphH = h - padT - padB;
 
-            // Horizon day counts
+            // 1. Horizon Day Counts
             let totalHorizonDays = 126; // 6M default
             if (horizon === '5D') totalHorizonDays = 5;
             else if (horizon === '1M') totalHorizonDays = 21;
@@ -4345,16 +4415,37 @@
             else if (horizon === '1Y') totalHorizonDays = 252;
             else if (horizon === '5Y') totalHorizonDays = 1260;
 
-            // Target Compounding Curve: FV = Budget * (1.01 ^ day)
+            // 2. Compute Actual Daily Average Rate r_avg
+            let daysActive = Math.max(1, lb.days_active || 5);
+            let r_avg = (currentEq > 0 && budget > 0) ? (Math.pow(currentEq / budget, 1 / daysActive) - 1) : 0.01;
+            if (r_avg < -0.05) r_avg = -0.05;
+
+            // Update legend labels
+            let rRateEl = document.getElementById('legendRunRateLabel');
+            let tgtEl = document.getElementById('legendTargetLabel');
+            if (rRateEl) rRateEl.innerText = `Run-Rate (${r_avg >= 0 ? '+' : ''}${(r_avg * 100).toFixed(2)}%/d)`;
+            if (tgtEl) tgtEl.innerText = `Target (${window._customTargetRate.toFixed(1)}%/d)`;
+
+            // 3. Generate Curves
+            let targetRate = (window._customTargetRate || 1.0) / 100.0;
             let steps = 40;
+
+            // Target Curve: FV = budget * (1 + targetRate)^d
             let targetPoints = [];
             for (let i = 0; i <= steps; i++) {
                 let d = (i / steps) * totalHorizonDays;
-                targetPoints.push({ day: d, val: budget * Math.pow(1.01, d) });
+                targetPoints.push({ day: d, val: budget * Math.pow(1 + targetRate, d) });
             }
 
-            // Actual Bot Progression across active trading days
-            let actualDays = 5;
+            // Projected Curve: FV = currentEq * (1 + r_avg)^(d - daysActive)
+            let projectedPoints = [];
+            for (let i = 0; i <= steps; i++) {
+                let d = (i / steps) * totalHorizonDays;
+                let val = d <= daysActive ? (budget * Math.pow(1 + r_avg, d)) : (currentEq * Math.pow(1 + r_avg, d - daysActive));
+                projectedPoints.push({ day: d, val: val });
+            }
+
+            // Actual Points up to daysActive
             let actualPoints = [];
             if (horizon === '5D') {
                 actualPoints = [
@@ -4368,49 +4459,49 @@
             } else {
                 actualPoints = [
                     { day: 0, val: budget },
-                    { day: actualDays, val: currentEq }
+                    { day: daysActive, val: currentEq }
                 ];
             }
 
-            let maxVal = targetPoints[targetPoints.length - 1].val;
+            // 4. Scaling (Preserves exponential curve without crushing initial data)
+            let maxVal = Math.max(targetPoints[targetPoints.length - 1].val, projectedPoints[projectedPoints.length - 1].val);
             let minVal = Math.min(budget, currentEq) * 0.95;
 
+            let powerExp = (horizon === '5Y') ? 0.35 : (horizon === '1Y' ? 0.60 : 1.0);
+
             function getY(val) {
-                if (horizon === '5Y' || horizon === '1Y') {
-                    let logMin = Math.log10(Math.max(100, minVal));
-                    let logMax = Math.log10(maxVal);
-                    let logVal = Math.log10(Math.max(100, val));
-                    return padT + graphH - ((logVal - logMin) / (logMax - logMin)) * graphH;
-                } else {
-                    return padT + graphH - ((val - minVal) / (maxVal - minVal)) * graphH;
-                }
+                let vClamped = Math.max(minVal, val);
+                let norm = (Math.pow(vClamped, powerExp) - Math.pow(minVal, powerExp)) / (Math.pow(maxVal, powerExp) - Math.pow(minVal, powerExp));
+                return padT + graphH - (norm * graphH);
             }
 
             function getX(d) {
                 return padL + (d / totalHorizonDays) * graphW;
             }
 
+            // Typography matching terminal software
+            const appFont = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
             // Grid Lines & Y-Axis Labels
             ctx.strokeStyle = '#202531';
             ctx.lineWidth = 1;
             for (let i = 0; i <= 4; i++) {
+                let norm = 1.0 - (i / 4.0);
+                let v = Math.pow(Math.pow(minVal, powerExp) + norm * (Math.pow(maxVal, powerExp) - Math.pow(minVal, powerExp)), 1 / powerExp);
                 let y = padT + (i / 4) * graphH;
+
                 ctx.beginPath();
                 ctx.moveTo(padL, y);
                 ctx.lineTo(w - padR, y);
                 ctx.stroke();
 
-                let val = (horizon === '5Y' || horizon === '1Y')
-                    ? Math.pow(10, Math.log10(maxVal) - (i / 4) * (Math.log10(maxVal) - Math.log10(Math.max(100, minVal))))
-                    : maxVal - (i / 4) * (maxVal - minVal);
-
-                let labelStr = val >= 1e6 ? `£${(val/1e6).toFixed(1)}M` : (val >= 1e3 ? `£${(val/1e3).toFixed(0)}k` : `£${val.toFixed(0)}`);
-                ctx.fillStyle = '#787e8e';
-                ctx.font = '9px Calibri';
-                ctx.fillText(labelStr, 10, y + 3);
+                let labelStr = v >= 1e9 ? `£${(v/1e9).toFixed(1)}B` : (v >= 1e6 ? `£${(v/1e6).toFixed(1)}M` : (v >= 1e3 ? `£${(v/1e3).toFixed(0)}k` : `£${v.toFixed(0)}`));
+                ctx.fillStyle = '#8a8a9e';
+                ctx.font = `10px ${appFont}`;
+                ctx.fillText(labelStr, 12, y + 3);
             }
 
-            // Plot 1% Target Compounding Curve (Dashed Yellow)
+            // Line 3: Target Curve (Dotted Yellow #FFD400)
             ctx.beginPath();
             ctx.setLineDash([4, 4]);
             ctx.strokeStyle = '#ffd400';
@@ -4424,7 +4515,21 @@
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Plot Actual Bot Equity Line (Solid Green)
+            // Line 2: Projected Run-Rate Trajectory (Dashed Cyan #38BDF8)
+            ctx.beginPath();
+            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < projectedPoints.length; i++) {
+                let pt = projectedPoints[i];
+                let x = getX(pt.day), y = getY(pt.val);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Line 1: Actual Equity (Solid Green #0ECB81)
             ctx.beginPath();
             ctx.strokeStyle = '#0ecb81';
             ctx.lineWidth = 2.5;
@@ -4436,7 +4541,7 @@
             }
             ctx.stroke();
 
-            // Plot Actual Dots
+            // Actual Points Markers
             for (let i = 0; i < actualPoints.length; i++) {
                 let pt = actualPoints[i];
                 let x = getX(pt.day), y = getY(pt.val);
@@ -4448,9 +4553,9 @@
                 ctx.stroke();
             }
 
-            // X-Axis Milestone Labels
+            // X-Axis Labels
             ctx.fillStyle = '#8a8a9e';
-            ctx.font = '9px Calibri';
+            ctx.font = `10px ${appFont}`;
             if (horizon === '5D') {
                 ['Start', 'D+1', 'D+2', 'D+3', 'D+4', 'Today'].forEach((lbl, idx) => {
                     ctx.fillText(lbl, getX(idx) - 8, h - 10);
