@@ -366,22 +366,19 @@
             .desktop-equity-title {
                 display: none !important;
             }
-            .mobile-equity-header {
+            .equity-top-row {
                 display: flex !important;
                 justify-content: space-between !important;
-                align-items: center !important;
+                align-items: baseline !important;
                 width: 100% !important;
-                margin-bottom: 2px !important;
+                margin-bottom: 5px !important;
             }
             .mob-profile-name {
                 font-size: 13px !important;
                 font-weight: 800 !important;
                 color: #ffd400 !important;
                 letter-spacing: 0.3px !important;
-            }
-            .mob-today-pnl {
-                font-size: 12px !important;
-                font-weight: 800 !important;
+                text-align: right !important;
             }
             .user-profile-box {
                 margin-bottom: 0 !important;
@@ -392,7 +389,7 @@
             .total-shares-box {
                 cursor: pointer !important;
                 margin-bottom: 0 !important;
-                padding: 8px 12px !important;
+                padding: 7px 12px 9px 12px !important;
                 background: #14171f !important;
                 border: 1px solid #262b36 !important;
                 border-radius: 8px !important;
@@ -403,11 +400,11 @@
                 background: #181c26 !important;
             }
             .total-shares-box .equity-header-row {
-                margin-bottom: 2px !important;
+                margin-bottom: 0 !important;
             }
             .total-shares-box div.equity-main-val {
                 font-size: 22px !important;
-                margin-bottom: 6px !important;
+                margin-bottom: 0 !important;
                 line-height: 1.1 !important;
             }
             .custom-select-menu {
@@ -559,20 +556,23 @@
             margin-left: 4px;
         }
         
-        /* Clean Window Spacing in Sidebar */
-        .user-profile-box { 
-            background: transparent !important; 
-            padding: 0 !important; 
-            border: none !important; 
-            margin-bottom: 10px !important; 
-        }
-        .total-shares-box { 
-            background: #171a21; 
-            padding: 12px 14px; 
-            border-radius: 8px; 
-            border: 1px solid #262b36; 
-            margin-bottom: 14px !important; 
-            text-align: left; 
+        /* Clean Window Spacing in Sidebar (Desktop Only) */
+        @media (min-width: 901px) {
+            .mob-profile-name { display: none !important; }
+            .user-profile-box { 
+                background: transparent; 
+                padding: 0; 
+                border: none; 
+                margin-bottom: 10px; 
+            }
+            .total-shares-box { 
+                background: #171a21; 
+                padding: 12px 14px; 
+                border-radius: 8px; 
+                border: 1px solid #262b36; 
+                margin-bottom: 14px; 
+                text-align: left; 
+            }
         }
         /* Merged Single Watchlist & Readiness Drawer */
         #watchlistDrawer[open] {
@@ -1564,13 +1564,11 @@
                     <div class="total-shares-box" onclick="if(window.innerWidth<=900)toggleCustomProfileDropdown(event)">
                         <div class="equity-header-row">
                             <label class="desktop-equity-title">TOTAL PORTFOLIO EQUITY</label>
-                            <div class="mobile-equity-header">
+                            <div class="equity-top-row">
+                                <div id="mTotalSharesHeldVal" class="equity-main-val">£508.40</div>
                                 <span id="mobCombinedProfileName" class="mob-profile-name">Select Profile</span>
-                                <span id="mobCombinedTodayPnl" class="mob-today-pnl">+£0.00 (0.0%)</span>
                             </div>
                         </div>
-                        
-                        <div id="mTotalSharesHeldVal" class="equity-main-val">£508.40</div>
                         
                         <div class="equity-stats-grid">
                             <!-- Row 1: Cash on left, TODAY on right -->
