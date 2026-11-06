@@ -447,8 +447,13 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Ensure default profiles exist with £500 budget baseline
+            # Clean out all retired prototype profiles (starts with Test or legacy names)
             existing_users = list(self.data['users'].keys())
+            for u in existing_users:
+                u_clean = u.strip().lower()
+                if u.startswith('Test ') or any(x in u_clean for x in ['test tqm', 'test tq', 'test e25', 'test s', 'test r', 'test e']):
+                    del self.data['users'][u]
+                    needs_save = True
 
             for p in allowed_profiles:
                 if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
@@ -460,7 +465,7 @@ class PortfolioManager:
                         needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
-                self.data['active_user'] = 'Ian'
+                self.data['active_user'] = 'Vector Hybrid'
                 needs_save = True
                 
             if needs_save: self.save_data(self.data)
@@ -869,19 +874,11 @@ class MarketScoringEngine:
         # DYNAMIC ASSET-SPECIFIC TRAILING STOPS & HARD STOPS
         peak_gain_pct = ((highest_price - avg_buy_price) / avg_buy_price * 100.0) if avg_buy_price > 0 and highest_price > 0 else 0.0
 
-        if 'test w' in prof:
-            if is_3x_etf: trail_pct, hard_pct = 1.25, -1.00
-            elif ticker.endswith('.L') or ticker in ['PHYS', 'PSLV', 'CEF', 'GLD']: trail_pct, hard_pct = 0.30, -0.50
-            else: trail_pct, hard_pct = 1.00, -1.00
-        elif 'test e14' in prof:
-            # When gain touches +1.00%, trail expands to 1.50% to let runners breathe
-            trail_pct, hard_pct = (1.50, -1.00) if peak_gain_pct >= 1.00 else (1.00, -1.00)
-        elif any(x in prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']): trail_pct, hard_pct = 0.75, -0.75
-        elif 'test e7' in prof: trail_pct, hard_pct = 0.50, -0.50
-        elif 'test e5' in prof: trail_pct, hard_pct = 0.35, -0.35
-        elif 'test u' in prof or 'test x' in prof: trail_pct, hard_pct = 0.50, -0.50
-        elif any(x in prof for x in ['test e', 'test s']): trail_pct, hard_pct = 1.00, -1.00
-        else: trail_pct, hard_pct = 0.50, -0.50
+        # Standardized Production Trailing Stops
+        if any(x in prof for x in ['velocity', 'test s']):
+            trail_pct, hard_pct = 0.50, -0.50
+        else:
+            trail_pct, hard_pct = 0.75, -0.75
 
         health_pct, health_color, health_text = 0, "#8a8a9e", "Scanning..."
 
@@ -1192,14 +1189,11 @@ def process_auto_profile(prof_name):
                     today_loss_stops += 1
         today_stops_cnt = today_loss_stops
 
-        if 'test e25' in active_profile:
-            reg_check = engine.check_market_regime()
-            current_mode = 'momentum' if reg_check.get('score', 50) >= 60 else 'reversion'
-        elif 'test tqm' in active_profile:
-            # TQM SESSION SHIFTER: 14:30–15:15 BST = 1m Reversion Scalp; 15:15–20:00 BST = 5m Index Momentum
+        # VECTOR HYBRID OPENING SHIFTER: 14:50–15:15 BST = 1m Elasticity; 15:15–20:00 BST = 5m Momentum
+        if any(x in active_profile for x in ['vector', 'tqm']):
             current_mode = 'reversion' if (now_uk.hour == 14 or (now_uk.hour == 15 and now_uk.minute < 15)) else 'momentum'
-        elif 'test r' in active_profile:
-            current_mode = 'reversion'
+        else:
+            current_mode = 'momentum'
 
         dirs, buys, held_scores = [], [], []
         MIN_BUY_VALUE = 20.0
@@ -1207,9 +1201,9 @@ def process_auto_profile(prof_name):
 
         dfs = {}
         def fetch_data_thread(tick): 
-            use_1m = (current_mode == 'reversion') or any(x in active_profile for x in ['test p', 'test t'])
-            interval = "1m" if use_1m else ("1d" if 'test a' in active_profile else "5m")
-            period = "1d" if use_1m else ("1y" if 'test a' in active_profile else "5d")
+            use_1m = (current_mode == 'reversion') or ('velocity' in active_profile) or ('test s' in active_profile)
+            interval = "1m" if use_1m else "5m"
+            period = "1d" if use_1m else "5d"
             return tick, fetch_yf_data(tick, period, interval)
 
         with ThreadPoolExecutor(max_workers=4) as ex:
@@ -1283,48 +1277,36 @@ def process_auto_profile(prof_name):
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
             except Exception: pass
 
-        max_allowed_holds = 2 if any(x in active_profile for x in ['test e27', 'test e28']) else (5 if 'test a' in active_profile else (1 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x', 'test tq', 'test s2', 'test m']) else 3))
-        
-        swap_hurdle = 5 if 'test e3' in active_profile else 10
-        
-        if buys and held_scores and len(held_scores) >= max_allowed_holds:
-            top_candidate = max(buys, key=lambda x: x['s'])
-            weakest_holding = min(held_scores, key=lambda x: x['score'])
-            if top_candidate['s'] >= (weakest_holding['score'] + swap_hurdle) and top_candidate['s'] >= 65:
-                dirs.append({'ticker': weakest_holding['ticker'], 'action': 'SELL', 'shares': weakest_holding['shares'], 'price': weakest_holding['price'], 'amount': round(weakest_holding['value'], 2)})
-
+        # Standard Single-Slot execution (1 asset held at a time)
+        max_allowed_holds = 1
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
-        # DEFENSIVE CHOP SHIELDS & COOLDOWNS
-        if any(x in active_profile for x in ['test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
-            cur_mins = now_uk.hour * 60 + now_uk.minute
-            
-            # 1. 19:45 BST Late Curfew
-            if cur_mins >= (19 * 60 + 45):
-                is_curfew_active = True
+        # DEFENSIVE CHOP SHIELDS & COOLDOWNS FOR ACTIVE FLEET
+        cur_mins = now_uk.hour * 60 + now_uk.minute
+        if cur_mins >= (19 * 60 + 45):
+            is_curfew_active = True
 
-            # 2. Three-Strike Loss Lockout (Enforced on E23, E28, and TQ)
-            if any(x in active_profile for x in ['test e23', 'test e28', 'test tq']) and today_stops_cnt >= 3:
-                is_curfew_active = True
+        # Three-Strike Loss Lockout
+        if today_stops_cnt >= 3:
+            is_curfew_active = True
 
-            # 3. 15-Minute Post-Loss Cooldown
-            if hist and hist[0].get('action') == 'SELL':
-                if (time.time() - hist[0].get('timestamp', 0)) < 900:
-                    buys = []
+        # 15-Minute Post-Loss Cooldown
+        if hist and hist[0].get('action') == 'SELL':
+            if (time.time() - hist[0].get('timestamp', 0)) < 900:
+                buys = []
 
-            # 4. 60-Minute Ticker Wash Rule
-            recent_stopped_tickers = {
-                h.get('ticker') for h in hist
-                if h.get('action') == 'SELL' and (time.time() - h.get('timestamp', 0)) < 3600
-            }
-            buys = [b for b in buys if b.get('t') not in recent_stopped_tickers]
+        # 60-Minute Ticker Wash Rule
+        recent_stopped_tickers = {
+            h.get('ticker') for h in hist
+            if h.get('action') == 'SELL' and (time.time() - h.get('timestamp', 0)) < 3600
+        }
+        buys = [b for b in buys if b.get('t') not in recent_stopped_tickers]
 
         # Emergency Shutdown: If circuit breaker tripped or curfew active, block ALL buys
         if circuit_breaker_tripped or is_curfew_active:
             buys = []
 
-        # If circuit breaker tripped while holding, liquidate to preserve cash
         if circuit_breaker_tripped and held_scores:
             for h in held_scores:
                 if not any(d['ticker'] == h['ticker'] and d['action'] == 'SELL' for d in dirs):
@@ -1332,27 +1314,13 @@ def process_auto_profile(prof_name):
 
         if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
-            # Filter out any ticker currently under 15-minute cooldown
             valid_buys = [b for b in buys if time.time() >= ud.get('cooldowns', {}).get(b['t'], 0)]
             top_buys = valid_buys[:slots_available]
             if top_buys:
-                if 'test e28' in active_profile:
-                    # CONVICTION SIZING ENGINE (TEST E28):
-                    # If top candidate is TQQQ/SOXL, market sentiment >= 65, score >= 85, and account is 100% cash -> 98% ALL-IN
-                    top_b = top_buys[0]
-                    reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
-                    is_conviction_all_in = (top_b['t'] in ['TQQQ', 'SOXL'] and reg_score >= 65 and top_b['s'] >= 85 and current_hold_count == 0)
-                    
-                    if is_conviction_all_in:
-                        per_stock_budget = min(rem_cash, total_equity * 0.98)
-                        top_buys = [top_b]
-                    else:
-                        # Standard 2-Slot sizing: 49% allocation per stock
-                        per_stock_budget = min(rem_cash, (total_equity * 0.49))
-                else:
-                    live_allocation_pct = 0.98 if any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm']) else 0.33
-                    compound_capital = min(rem_cash, total_equity * live_allocation_pct)
-                    per_stock_budget = compound_capital / len(top_buys)
+                # 98% Focused Allocation per trade
+                live_allocation_pct = 0.98
+                compound_capital = min(rem_cash, total_equity * live_allocation_pct)
+                per_stock_budget = compound_capital / len(top_buys)
 
                 for b in top_buys:
                     bs = int(per_stock_budget // b['cps'])
@@ -1430,11 +1398,9 @@ def reconcile_alpaca_positions_and_orders():
     }
 
     auto_profiles = [
-        'Test TQM - Pure Index Hybrid', 
-        'Test TQ - BiDirectional Specialist',
-        'Test E25 - Chameleon Pro', 
-        'Test S - Index Scalper', 
-        'Test R - Reversion Lab'
+        'Vector Hybrid',
+        'Dual Axis',
+        'Velocity Pulse'
     ]
 
     # 1. Reconcile Closed Orders (Native Trailing Stops & Exact Fill Prices)

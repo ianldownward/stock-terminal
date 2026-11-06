@@ -1590,8 +1590,8 @@
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                         <div>
-                            <div id="insightProfName" style="font-size:15px; font-weight:800; color:#ffd400;">Test TQM</div>
-                            <div id="insightProfType" style="font-size:11px; color:#8a8a9e; margin-top:2px;">Production Desk #1 • Pure 3x Index Hybrid</div>
+                            <div id="insightProfName" style="font-size:15px; font-weight:800; color:#ffd400;">Vector Hybrid</div>
+                            <div id="insightProfType" style="font-size:11px; color:#8a8a9e; margin-top:2px;">Production Desk #1 • Index Momentum</div>
                         </div>
                         <div style="text-align:right;">
                             <div id="insightEquity" style="font-size:17px; font-weight:800; color:#fff;">£532.24</div>
@@ -1628,7 +1628,7 @@
                 <!-- Canvas Graph Container with Interactive Time Horizon Selector & Custom Rate Input -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                        <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Test TQM: Trajectory vs Compounding Targets</span>
+                        <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Vector Hybrid: Trajectory vs Compounding Targets</span>
                         
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                             <!-- Time Horizon Range Buttons -->
@@ -2258,11 +2258,10 @@
         let openInfoSet = new Set();
 
         const profileDesc = {
-            'Test TQM - Pure Index Hybrid': 'Production Desk #1: Pure 3x Index ETFs (TQQQ/SOXL/SQQQ). Shifts from 1-min opening elasticity (14:30–15:15) to 5-min trend momentum (15:15–20:00). Hard Bank-and-Walk at +2.20% daily profit.',
-            'Test TQ - BiDirectional Specialist': 'Production Desk #2: Institutional 5-min EMA momentum on TQQQ/SOXL with Capitulation Downside Switch (trades SQQQ when Sentiment ≤ 35). Hard Bank-and-Walk at +2.50% profit.',
-            'Test E25 - Chameleon Pro': 'Production Desk #3: Full-market rotator with regime filter. Switches between breakout momentum (Sentiment ≥ 60) and defensive reversion (< 60). Enforces 3-strike lockout and 60-min wash rule.',
-            'Test S - Index Scalper': 'R&D Skunkworks #1: Pure 3x ETF speed engine (TQQQ/SOXL/SQQQ only, zero single stocks). Rapid 2-min execution with +1.20% take-profit target for zero-commission broker benchmark.',
-            'Test R - Reversion Lab': 'R&D Skunkworks #2: Mean-reversion elasticity sniper with 200-SMA trend filter and mandatory 20:50 BST cash sweep to eliminate overnight gap risk.'
+            'Vector Hybrid': 'Production Desk #1: Flagship 3x leveraged ETF momentum engine. Shifts from opening elasticity to trend momentum. Harvests daily gains at +2.20% and moves 100% to cash.',
+            'Dual Axis': 'Production Desk #2: All-Weather Directional Engine. Longs tech during market expansions and flips across the axis to SQQQ during market pullbacks. Bank-and-Walk at +2.20%.',
+            'Velocity Pulse': 'Production Desk #3: High-speed index scalper. Enters short-duration momentum bursts with a rapid +1.20% take-profit harvest target.',
+            'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
 
         async function openJourneyModal() {
@@ -4517,17 +4516,15 @@
         // -------------------------------------------------------------
         // UNIFIED FLEET ANALYTICS, 3-LINE COMPOUNDING & CUSTOM RATE ENGINE
         // -------------------------------------------------------------
-        window._selectedInsightProfile = 'Test TQM - Pure Index Hybrid';
+        window._selectedInsightProfile = 'Vector Hybrid';
         window._selectedHorizon = '6M';
         window._customTargetRate = 1.0; // 1.0% per day by default
 
         const profileTargets = {
-            'Test TQM - Pure Index Hybrid': '+2.20% Bank & Walk',
-            'Test TQ - BiDirectional Specialist': '+2.50% Bank & Walk',
-            'Test E25 - Chameleon Pro': 'Regime Switch (≥60)',
-            'Test S - Index Scalper': '+3.00% Take Profit',
-            'Test R - Reversion Lab': '20:50 BST Curfew',
-            'Ian': 'Manual Execution'
+            'Vector Hybrid': '+2.20% Bank & Walk',
+            'Dual Axis': '+2.20% Bank & Walk',
+            'Velocity Pulse': '+3.00% Take Profit',
+            'Sovereign Core': 'Manual Execution'
         };
 
         function onCustomTargetRateChange(val) {
@@ -4631,20 +4628,16 @@
 
             // Verified Win Rates and Profit Factors from Database Ledger
             let wrMap = {
-                'test tqm': '70.0% (7W / 3L)',
-                'test tq': '58.3% (7W / 5L)',
-                'test s': '40.0% (6W / 9L)',
-                'test r': '43.8% (28W / 36L)',
-                'test e25': '33.3% (6W / 12L)',
-                'ian': '0.0% (0 Trades)'
+                'vector': '61.5% (8W / 5L)',
+                'dual': '50.0% (8W / 8L)',
+                'velocity': '40.0% (6W / 9L)',
+                'sovereign': '0.0% (0 Trades)'
             };
             let pfMap = {
-                'test tqm': '4.55',
-                'test tq': '2.60',
-                'test s': '1.20',
-                'test r': '0.89',
-                'test e25': '0.22',
-                'ian': '1.00'
+                'vector': '3.55',
+                'dual': '2.07',
+                'velocity': '1.20',
+                'sovereign': '1.00'
             };
 
             let uLower = userKey.toLowerCase();
@@ -4905,7 +4898,7 @@
 
         function openSettingsModal() {
             let currentMode = document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
-            updateAlpacaInstructions(currentMode);
+            if (typeof updateAlpacaInstructions === 'function') updateAlpacaInstructions(currentMode);
             fetchBrokerStatus();
             syncAlertStateUI();
             let keyInput = document.getElementById('settingApiKey');
@@ -4913,7 +4906,6 @@
             let urlInput = document.getElementById('settingBrokerUrl');
             if (urlInput) urlInput.value = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
 
-            // Visibly populate both inputs with saved keys
             if (keyInput) {
                 keyInput.value = window._savedApiKey || localStorage.getItem('alpaca_api_key') || '';
             }
@@ -4923,21 +4915,41 @@
 
             let allocs = window._activeAllocations || {};
             
-            // Auto-populate with saved allocation or the bot's live £ equity from the leaderboard
-            document.getElementById('alloc_tqm_active').checked = allocs['test tqm'] ? !!allocs['test tqm'].enabled : true;
-            document.getElementById('alloc_tqm_val').value = allocs['test tqm']?.budget || getProfileCurrentEquity('test tqm', 508.40);
+            // Check Vector Hybrid (checked by default, supports legacy or new key)
+            let vActive = document.getElementById('alloc_tqm_active');
+            let vVal = document.getElementById('alloc_tqm_val');
+            if (vActive) {
+                let vEntry = allocs['vector hybrid'] || allocs['vector'] || allocs['test tqm'];
+                vActive.checked = vEntry ? !!vEntry.enabled : true;
+            }
+            if (vVal) {
+                let vEntry = allocs['vector hybrid'] || allocs['vector'] || allocs['test tqm'];
+                vVal.value = vEntry?.budget || getProfileCurrentEquity('vector', 500.00);
+            }
 
-            document.getElementById('alloc_s_active').checked = allocs['test s'] ? !!allocs['test s'].enabled : true;
-            document.getElementById('alloc_s_val').value = allocs['test s']?.budget || getProfileCurrentEquity('test s', 513.99);
+            // Dual Axis
+            let dActive = document.getElementById('alloc_tq_active');
+            let dVal = document.getElementById('alloc_tq_val');
+            if (dActive) {
+                let dEntry = allocs['dual axis'] || allocs['dual'] || allocs['test tq'];
+                dActive.checked = dEntry ? !!dEntry.enabled : false;
+            }
+            if (dVal) {
+                let dEntry = allocs['dual axis'] || allocs['dual'] || allocs['test tq'];
+                dVal.value = dEntry?.budget || getProfileCurrentEquity('dual', 500.00);
+            }
 
-            document.getElementById('alloc_tq_active').checked = allocs['test tq'] ? !!allocs['test tq'].enabled : true;
-            document.getElementById('alloc_tq_val').value = allocs['test tq']?.budget || getProfileCurrentEquity('test tq', 510.64);
-
-            document.getElementById('alloc_e25_active').checked = allocs['test e25'] ? !!allocs['test e25'].enabled : false;
-            document.getElementById('alloc_e25_val').value = allocs['test e25']?.budget || getProfileCurrentEquity('test e25', 501.70);
-
-            document.getElementById('alloc_r_active').checked = allocs['test r'] ? !!allocs['test r'].enabled : false;
-            document.getElementById('alloc_r_val').value = allocs['test r']?.budget || getProfileCurrentEquity('test r', 494.70);
+            // Velocity Pulse
+            let sActive = document.getElementById('alloc_s_active');
+            let sVal = document.getElementById('alloc_s_val');
+            if (sActive) {
+                let sEntry = allocs['velocity pulse'] || allocs['velocity'] || allocs['test s'];
+                sActive.checked = sEntry ? !!sEntry.enabled : false;
+            }
+            if (sVal) {
+                let sEntry = allocs['velocity pulse'] || allocs['velocity'] || allocs['test s'];
+                sVal.value = sEntry?.budget || getProfileCurrentEquity('velocity', 500.00);
+            }
 
             document.getElementById('settingsModal').style.display = 'flex';
         }
@@ -4975,11 +4987,18 @@
             if (apiSecret) localStorage.setItem('alpaca_api_secret', apiSecret);
 
             let allocations = {
-                'test tqm': { enabled: document.getElementById('alloc_tqm_active').checked, budget: parseFloat(document.getElementById('alloc_tqm_val').value) || 1000 },
-                'test s': { enabled: document.getElementById('alloc_s_active').checked, budget: parseFloat(document.getElementById('alloc_s_val').value) || 1000 },
-                'test tq': { enabled: document.getElementById('alloc_tq_active').checked, budget: parseFloat(document.getElementById('alloc_tq_val').value) || 1000 },
-                'test e25': { enabled: document.getElementById('alloc_e25_active').checked, budget: parseFloat(document.getElementById('alloc_e25_val').value) || 500 },
-                'test r': { enabled: document.getElementById('alloc_r_active').checked, budget: parseFloat(document.getElementById('alloc_r_val').value) || 500 }
+                'vector hybrid': { 
+                    enabled: document.getElementById('alloc_tqm_active')?.checked || false, 
+                    budget: parseFloat(document.getElementById('alloc_tqm_val')?.value) || 500.0 
+                },
+                'dual axis': { 
+                    enabled: document.getElementById('alloc_tq_active')?.checked || false, 
+                    budget: parseFloat(document.getElementById('alloc_tq_val')?.value) || 500.0 
+                },
+                'velocity pulse': { 
+                    enabled: document.getElementById('alloc_s_active')?.checked || false, 
+                    budget: parseFloat(document.getElementById('alloc_s_val')?.value) || 500.0 
+                }
             };
 
             let payload = {
