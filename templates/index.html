@@ -4357,7 +4357,7 @@
                     if (statusEl) statusEl.innerHTML = `<span style='color:#ff5364; font-weight:700;'>${testData.message || 'Error sending alert'}</span>`;
                 }
             } catch(e) {
-                if (statusEl) statusEl.innerHTML = "<span style='color:#ff5364;'>⚠️ Failed to reach server</span>";
+                if (statusEl) statusEl.innerHTML = "<span style='color:#ff5364; font-weight:700;'>Failed to reach server</span>";
             }
         }
 
