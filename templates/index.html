@@ -1348,21 +1348,42 @@
                     </div>
                 </div>
 
-                <!-- 3. BROKER KEYS -->
+                <!-- 3. BROKER KEYS & STEP-BY-STEP ONBOARDING -->
                 <div style="border-top:1px solid #262b36; padding-top:12px;">
-                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Alpaca API Keys</label>
-                    <div style="display:flex; gap:16px; margin:8px 0 10px 0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Connect Your Alpaca Account</label>
+                        <a href="https://app.alpaca.markets" target="_blank" style="font-size:11px; color:#ffd400; text-decoration:none; font-weight:700;">Open Alpaca Dashboard ↗</a>
+                    </div>
+
+                    <!-- Mode Toggle -->
+                    <div style="display:flex; gap:16px; margin:10px 0 10px 0;">
                         <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="radio" name="settingBrokerMode" value="paper" checked> Paper Simulation
+                            <input type="radio" name="settingBrokerMode" value="paper" checked onchange="updateAlpacaInstructions('paper')"> Paper Simulation (Practice)
                         </label>
                         <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="radio" name="settingBrokerMode" value="live"> Real Money (Live)
+                            <input type="radio" name="settingBrokerMode" value="live" onchange="updateAlpacaInstructions('live')"> Real Money (Live Trading)
                         </label>
                     </div>
+
+                    <!-- Dynamic Layman Step-by-Step Instruction Card -->
+                    <div id="alpacaGuideCard" style="background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:12px; margin-bottom:12px; font-size:11px; line-height:1.5;">
+                        <!-- Content populated dynamically by updateAlpacaInstructions() below -->
+                    </div>
+
+                    <!-- API Credential Inputs -->
                     <div style="display:flex; flex-direction:column; gap:8px;">
-                        <input type="text" id="settingApiKey" placeholder="Alpaca API Key ID (e.g. PK...)" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
-                        <input type="text" id="settingApiSecret" placeholder="Alpaca Secret Key" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
-                        <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                        <div>
+                            <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">API Key ID</label>
+                            <input type="text" id="settingApiKey" placeholder="Paste your Key ID here" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
+                        </div>
+                        <div>
+                            <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Secret Key</label>
+                            <input type="text" id="settingApiSecret" placeholder="Paste your Secret Key here" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
+                        </div>
+                        <div>
+                            <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Broker Dashboard URL (Optional)</label>
+                            <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                        </div>
                     </div>
                 </div>
 
@@ -4870,8 +4891,47 @@
             let m = document.getElementById('alpacaSyncModal');
             if (m) m.style.display = 'none';
         }
+        
+        function updateAlpacaInstructions(mode) {
+            let guide = document.getElementById('alpacaGuideCard');
+            if (!guide) return;
+
+            if (mode === 'paper') {
+                guide.innerHTML = `
+                    <div style="color:#ffd400; font-weight:800; margin-bottom:6px;">[GUIDE] How to Get Your Paper (Practice) Keys:</div>
+                    <div style="color:#e1e3e6;">
+                        <div><b>[STEP 1]</b> Log into your account at <a href="https://app.alpaca.markets" target="_blank" style="color:#ffd400;">app.alpaca.markets</a>.</div>
+                        <div><b>[STEP 2]</b> In the top-left dropdown of Alpaca, confirm it is set to <b>Paper Trading</b>.</div>
+                        <div><b>[STEP 3]</b> On the right-hand side of your overview screen, find the box labeled <b>Your API Keys</b> and click <b>Generate API Key</b>.</div>
+                        <div><b>[STEP 4]</b> Copy the <b>Key ID</b> (starts with <span style="color:#ffd400; font-family:monospace;">PK...</span>) and <b>Secret Key</b>, then paste them below.</div>
+                    </div>
+                    <div style="color:#8a8a9e; font-size:10px; margin-top:6px; border-top:1px dashed #262b36; padding-top:4px;">
+                        [NOTICE]: Paper trading uses simulated virtual funds with zero financial risk.
+                    </div>
+                `;
+                let keyInput = document.getElementById('settingApiKey');
+                if (keyInput) keyInput.placeholder = "Paper Key ID (starts with PK...)";
+            } else {
+                guide.innerHTML = `
+                    <div style="color:#0ecb81; font-weight:800; margin-bottom:6px;">[GUIDE] How to Get Your Real Money (Live) Keys:</div>
+                    <div style="color:#e1e3e6;">
+                        <div><b>[STEP 1]</b> Log into your account at <a href="https://app.alpaca.markets" target="_blank" style="color:#0ecb81;">app.alpaca.markets</a>.</div>
+                        <div><b>[STEP 2]</b> In the top-left dropdown of Alpaca, switch to <b>Live Trading</b> (requires completed identity verification and funded balance).</div>
+                        <div><b>[STEP 3]</b> On the right-hand side under <b>Live API Keys</b>, click <b>Generate API Key</b>.</div>
+                        <div><b>[STEP 4]</b> Copy the <b>Key ID</b> (starts with <span style="color:#0ecb81; font-family:monospace;">AK...</span>) and <b>Secret Key</b>, then paste them below.</div>
+                    </div>
+                    <div style="color:#ff9900; font-size:10px; font-weight:700; margin-top:6px; border-top:1px dashed #262b36; padding-top:4px;">
+                        [IMPORTANT]: Ensure you have deposited settled cash into your Alpaca account before starting live automation.
+                    </div>
+                `;
+                let keyInput = document.getElementById('settingApiKey');
+                if (keyInput) keyInput.placeholder = "Live Key ID (starts with AK...)";
+            }
+        }
 
         function openSettingsModal() {
+            let currentMode = document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
+            updateAlpacaInstructions(currentMode);
             fetchBrokerStatus();
             syncAlertStateUI();
             let keyInput = document.getElementById('settingApiKey');
