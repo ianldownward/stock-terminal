@@ -338,15 +338,7 @@ class PortfolioManager:
 
     def default_user_state(self, username=""):
         prof = username.strip().lower()
-        ai_rotator_wl = ['TQQQ', 'SOXL', 'NVDL', 'NVDA', 'MU', 'SMCI', 'GEV', 'RDW', 'STM', 'NBIS', 'SNDK', 'CEG', 'VST', 'VRT', 'ANET', 'RKLB', 'ASTS', 'LUNR', 'FLY', 'YSS', 'TSAT', 'MDA', 'TSLA', 'AMD', 'AMZN', 'META', 'MSTR', 'PLTR', 'COIN', 'AVGO', 'SQQQ', '3SUS.L']
-
-        if 'test tqm' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ']
-        elif 'test tq' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ']
-        elif 'test s' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ']
-        elif 'test r' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ']
-        elif 'test e25' in prof or 'test e' in prof: wl = ai_rotator_wl
-        elif 'ian' in prof: wl = ['TQQQ', 'SOXL', 'SQQQ', 'NVDA', 'TSLA', 'PLTR', 'MSTR', 'AMD', 'AMZN']
-        else: wl = ['TQQQ', 'SOXL', 'SQQQ']
+        wl = ['TQQQ', 'SOXL', 'SQQQ'] # Clean 3x leveraged index ETF universe only
 
         return {
             'master_budget': 500.0,
@@ -445,12 +437,10 @@ class PortfolioManager:
     def _ensure_default_user(self):
         try:
             allowed_profiles = [
-                'Ian', 
-                'Test TQM - Pure Index Hybrid', 
-                'Test TQ - BiDirectional Specialist',
-                'Test E25 - Chameleon Pro', 
-                'Test S - Index Scalper', 
-                'Test R - Reversion Lab'
+                'Vector Hybrid',
+                'Dual Axis',
+                'Velocity Pulse',
+                'Sovereign Core'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
@@ -919,12 +909,16 @@ class MarketScoringEngine:
                 if current_price <= s2_floor:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"S2 VELOCITY FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Velocity Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Velocity Lock (+{pnl_pct:.2f}%)"}
 
-            # WIDENED BREAKEVEN LOCK RULE (+0.20% LOCK ONCE +0.80% PEAK HIT)
-            # Gives runners 0.60% cushion to absorb standard intraday pullbacks
-            if any(x in prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and peak_pnl_pct >= 0.80:
-                breakeven_price = avg_buy_price * 1.0020  # Lock +0.20% profit minimum
+            # SIMULATION-OPTIMIZED BREAKEVEN LOCK (+0.18% LOCK ONCE +0.50% PEAK HIT)
+            # Protects early winning turns from turning into losses across Vector Hybrid and Dual Axis
+            if any(x in prof for x in ['vector', 'dual', 'tqm', 'tq']) and peak_pnl_pct >= 0.50:
+                breakeven_price = avg_buy_price * 1.0018  # Locks +0.18% minimum profit
                 if current_price <= breakeven_price:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK TRIPPED ({pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.20%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+
+            # VELOCITY CHOKE ON RUNNERS: Choke trail to 0.40% once peak reaches >= +1.20%
+            if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 1.20:
+                trail_pct = 0.40
 
             # TIERED CHOKE-TRAIL, RATCHET PROFIT FLOORS & 18:30 BANK-AND-WALK
             if any(x in prof for x in ['test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
@@ -1034,8 +1028,8 @@ class MarketScoringEngine:
             if any(x in prof for x in ['test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # 14:30 - 14:50 BST Morning Opening Moratorium (Test M and Test P have NO moratorium)
-            if any(x in prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2']):
+            # UNIVERSAL 14:30 - 14:50 BST OPENING MORATORIUM (Blocks opening whipsaws across all bots)
+            if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
                 if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:50 BST for opening range confirmation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
 
@@ -1388,40 +1382,40 @@ def global_background_worker():
     time.sleep(3)
     while True:
         try:
-            # Prefetch active ETF and high-liquidity symbols to avoid rate limits
-            bot_tickers = ['TQQQ', 'SOXL', 'SQQQ', 'QQQ', 'NVDA', 'TSLA', 'PLTR', 'MSTR', 'AMD', 'AMZN', 'LUNR']
+            # Prefetch only core index ETFs
+            bot_tickers = ['TQQQ', 'SOXL', 'SQQQ', 'QQQ']
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
                 fetch_yf_data(tk, "1d", "1m")
             with ThreadPoolExecutor(max_workers=3) as ex:
                 list(ex.map(prefetch, set(bot_tickers)))
 
-            auto_profiles = [
-                'Test TQM - Pure Index Hybrid', 
-                'Test TQ - BiDirectional Specialist',
-                'Test E25 - Chameleon Pro', 
-                'Test S - Index Scalper', 
-                'Test R - Reversion Lab'
-            ]
-            for prof in auto_profiles:
-                process_auto_profile(prof)
+            portfolio_store.reload()
+            # Scan active profiles dynamically
+            for prof_name in list(portfolio_store.data.get('users', {}).keys()):
+                p_lower = prof_name.lower()
+                if any(k in p_lower for k in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
+                    process_auto_profile(prof_name)
         except Exception as e: 
             print(f"Background Loop Error: {e}")
-        time.sleep(90)
+        time.sleep(20) # 20-second high-speed cycle
 
 threading.Thread(target=global_background_worker, daemon=True).start()
 
 def match_bot_from_order_id(client_order_id, profiles):
-    """Matches Alpaca client_order_id back to the specific bot profile."""
+    """Matches Alpaca client_order_id back to the specific bot profile or custom version."""
     if not client_order_id:
         return None
     coid_clean = client_order_id.lower().replace('-', '_').replace(' ', '_')
-    # Sort profiles by prefix length so test_tqm is evaluated before test_tq
-    sorted_profs = sorted(profiles, key=lambda p: len(p.lower().split(' - ')[0].replace(' ', '_')), reverse=True)
+    sorted_profs = sorted(profiles, key=lambda p: len(p.lower().replace(' ', '_')), reverse=True)
     for p in sorted_profs:
-        p_clean = p.lower().split(' - ')[0].replace(' ', '_')
+        p_clean = p.lower().replace(' ', '_').replace('(', '').replace(')', '')
         if p_clean in coid_clean:
             return p
+    # Prefix fallbacks
+    if 'vector' in coid_clean: return 'Vector Hybrid'
+    if 'dual' in coid_clean: return 'Dual Axis'
+    if 'velocity' in coid_clean or 'pulse' in coid_clean: return 'Velocity Pulse'
     return None
 
 def reconcile_alpaca_positions_and_orders():
@@ -1862,6 +1856,64 @@ def add_user():
         portfolio_store.add_user((request.get_json() or {}).get('username', ''))
         return jsonify({'status': 'ok'})
     return jsonify({'status': 'error'})
+
+@app.route('/api/users/add_v2', methods=['POST'])
+@login_required
+def add_user_v2():
+    data = request.get_json() or {}
+    prof_name = data.get('profile_name', '').strip()
+    method = data.get('method', 'Vector Hybrid').strip()
+    capital = float(data.get('capital', 500.0))
+
+    if not prof_name:
+        return jsonify({'status': 'error', 'message': 'Profile name required'}), 400
+
+    portfolio_store.reload()
+    users = portfolio_store.data.setdefault('users', {})
+    
+    if prof_name in users:
+        return jsonify({'status': 'error', 'message': 'A profile with this name already exists'}), 400
+
+    state = portfolio_store.default_user_state(method)
+    state['master_budget'] = capital
+    state['method'] = method
+    users[prof_name] = state
+    portfolio_store.data['active_user'] = prof_name
+    portfolio_store.save_data(portfolio_store.data)
+
+    return jsonify({'status': 'ok', 'profile': prof_name})
+
+@app.route('/api/portfolio/add_capital', methods=['POST'])
+@login_required
+def add_capital_route():
+    data = request.get_json() or {}
+    username = data.get('username') or portfolio_store.active_username()
+    amount = float(data.get('amount', 0.0))
+
+    if amount <= 0:
+        return jsonify({'status': 'error', 'message': 'Invalid deposit amount'}), 400
+
+    portfolio_store.reload()
+    ud = portfolio_store.user_data(username)
+    
+    ud['master_budget'] = float(ud.get('master_budget', 500.0)) + amount
+    
+    now_lon = pd.Timestamp.now(tz='Europe/London')
+    ud.setdefault('history', []).insert(0, {
+        'id': str(int(time.time() * 1000)),
+        'ticker': 'CAPITAL_INJECTION',
+        'trade_type': 'DEPOSIT',
+        'action': 'BUY',
+        'shares': 0,
+        'price': amount,
+        'amount': amount,
+        'time': now_lon.strftime('%d %b %H:%M'),
+        'date_str': now_lon.strftime('%Y-%m-%d'),
+        'timestamp': int(now_lon.timestamp())
+    })
+    
+    portfolio_store.save_data(portfolio_store.data)
+    return jsonify({'status': 'ok', 'new_budget': ud['master_budget']})
 
 @app.route('/api/users/delete', methods=['POST'])
 @login_required
