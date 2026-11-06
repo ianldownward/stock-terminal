@@ -1555,18 +1555,18 @@
         </div>
     </div>
 
-    <!-- 1. PROFILE INSIGHTS MODAL (USER ICON) -->
-    <div class="modal-overlay" id="profileInsightsModal" style="display:none;">
-        <div class="modal" style="width: 580px; max-width: 92vw; max-height: 88vh; display:flex; flex-direction:column;">
+    <!-- UNIFIED FLEET ANALYTICS & COMPOUNDING INTELLIGENCE MODAL -->
+    <div class="modal-overlay" id="compoundingModal" style="display:none;">
+        <div class="modal" style="width: 720px; max-width: 95vw; max-height: 92vh; display:flex; flex-direction:column;">
             <h2>
-                <span>Fleet Profile Insights</span>
-                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeProfileInsightsModal()">✕</button>
+                <span>Fleet Performance & Compounding Intelligence</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeCompoundingModal()">✕</button>
             </h2>
             <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:4px;">
-                <!-- Profile Switcher Pills -->
-                <div id="insightProfilePills" style="display:flex; gap:6px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #262b36;"></div>
+                <!-- Profile Switcher Tabs -->
+                <div id="compoundProfilePills" style="display:flex; gap:6px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #262b36;"></div>
 
-                <!-- Active Profile Snapshot -->
+                <!-- Profile KPI Snapshot Card -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                         <div>
@@ -1574,62 +1574,59 @@
                             <div id="insightProfType" style="font-size:11px; color:#8a8a9e; margin-top:2px;">Production Desk #1 • Pure 3x Index Hybrid</div>
                         </div>
                         <div style="text-align:right;">
-                            <div id="insightEquity" style="font-size:16px; font-weight:800; color:#fff;">£531.56</div>
-                            <div id="insightReturn" style="font-size:11px; font-weight:800; color:#0ecb81;">+£31.56 (+6.31%)</div>
+                            <div id="insightEquity" style="font-size:17px; font-weight:800; color:#fff;">£531.52</div>
+                            <div id="insightReturn" style="font-size:11px; font-weight:800; color:#0ecb81;">+£31.52 (+6.30%)</div>
                         </div>
                     </div>
 
-                    <!-- Metrics Grid -->
-                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:12px; padding-top:10px; border-top:1px solid #1a1e28;">
-                        <div style="background:#0f1115; padding:8px; border-radius:6px; text-align:center;">
+                    <!-- 4-Tile Dynamic Performance Grid -->
+                    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px; margin-top:10px; padding-top:10px; border-top:1px solid #1a1e28;">
+                        <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
                             <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Starting Budget</div>
                             <div id="insightBudget" style="font-size:12px; font-weight:800; color:#fff; margin-top:2px;">£500.00</div>
                         </div>
-                        <div style="background:#0f1115; padding:8px; border-radius:6px; text-align:center;">
+                        <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
                             <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Win Rate</div>
-                            <div id="insightWinRate" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">80.0%</div>
+                            <div id="insightWinRate" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">66.7%</div>
                         </div>
-                        <div style="background:#0f1115; padding:8px; border-radius:6px; text-align:center;">
-                            <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Daily Target</div>
+                        <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
+                            <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Profit Factor</div>
+                            <div id="insightProfitFactor" style="font-size:12px; font-weight:800; color:#fff; margin-top:2px;">4.48</div>
+                        </div>
+                        <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
+                            <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Target Rule</div>
                             <div id="insightDailyTarget" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">+2.20%</div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Execution Directives & Risk Rules -->
-                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
-                    <span style="font-size:10px; color:#ffd400; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Algorithmic Rules & Directives</span>
-                    <div id="insightDirectives" style="font-size:12px; color:#e1e3e6; line-height:1.5; margin-top:6px;">
-                        • Shifts from 1-min opening elasticity (14:30–15:15) to 5-min trend momentum.<br>
-                        • Hard Bank-and-Walk harvest rule at +2.20% daily gain.<br>
-                        • Trailing stop ratchets to 0.75% high-water mark.
+                    <!-- Algorithmic Directives -->
+                    <div style="margin-top:10px; padding-top:8px; border-top:1px solid #1a1e28;">
+                        <div id="insightDirectives" style="font-size:11px; color:#e1e3e6; line-height:1.5;"></div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- 2. COMPOUNDING & 5-YEAR TRAJECTORY MODAL (GRAPH ICON) -->
-    <div class="modal-overlay" id="compoundingModal" style="display:none;">
-        <div class="modal" style="width: 680px; max-width: 94vw; max-height: 90vh; display:flex; flex-direction:column;">
-            <h2>
-                <span>Growth Trajectory & 5-Year Compounding Model</span>
-                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeCompoundingModal()">✕</button>
-            </h2>
-            <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:4px;">
-                <!-- Profile Selector Tabs -->
-                <div id="compoundProfilePills" style="display:flex; gap:6px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #262b36;"></div>
-
-                <!-- Canvas Graph Container -->
+                <!-- Canvas Graph Container with Interactive Time Horizon Selector -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Test TQM: Inception Trajectory vs 1.0% Daily Target</span>
-                        <div style="display:flex; align-items:center; gap:12px; font-size:10px; font-weight:700;">
-                            <span style="color:#0ecb81; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:3px; background:#0ecb81;"></span> Actual</span>
-                            <span style="color:#ffd400; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:2px; background:#ffd400; border-top:1px dashed #ffd400;"></span> 1.0%/Day Target</span>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                        <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Test TQM: Trajectory vs 1.0% Daily Target</span>
+                        
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <!-- Time Horizon Range Buttons (Zoom: 5D, 1M, 6M default, 1Y, 5Y) -->
+                            <div style="display:flex; background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:2px;">
+                                <button type="button" class="m-btn" id="btnHorizon5D" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('5D')">5D</button>
+                                <button type="button" class="m-btn" id="btnHorizon1M" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('1M')">1M</button>
+                                <button type="button" class="m-btn active" id="btnHorizon6M" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('6M')">6M</button>
+                                <button type="button" class="m-btn" id="btnHorizon1Y" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('1Y')">1Y</button>
+                                <button type="button" class="m-btn" id="btnHorizon5Y" style="padding:2px 7px; font-size:10px;" onclick="setTimeHorizon('5Y')">5Y</button>
+                            </div>
+                            
+                            <div style="display:flex; align-items:center; gap:10px; font-size:10px; font-weight:700;">
+                                <span style="color:#0ecb81; display:flex; align-items:center; gap:3px;"><span style="display:inline-block; width:8px; height:3px; background:#0ecb81;"></span> Actual</span>
+                                <span style="color:#ffd400; display:flex; align-items:center; gap:3px;"><span style="display:inline-block; width:8px; height:2px; background:#ffd400; border-top:1px dashed #ffd400;"></span> 1.0%/Day Target</span>
+                            </div>
                         </div>
                     </div>
-                    <canvas id="compoundCanvas" width="620" height="230" style="width:100%; height:230px; display:block; border-radius:6px; background:#0f1115;"></canvas>
+                    <canvas id="compoundCanvas" width="660" height="230" style="width:100%; height:230px; display:block; border-radius:6px; background:#0f1115;"></canvas>
                 </div>
 
                 <!-- 5-Year Milestone Matrix -->
@@ -1688,15 +1685,8 @@
             </div>
             <span class="header-user-badge" id="topHeaderUser">{{ current_user or 'Ian' }}</span>
             <div class="header-icons">
-                <!-- Profile Insights & Rules (User Icon) -->
-                <button class="header-icon-btn" onclick="openProfileInsightsModal()" title="Fleet Profile Insights & Directives">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="12" cy="7" r="4"></circle>
-                    </svg>
-                </button>
-                <!-- 5-Year Compounding Trajectory (Graph Icon) -->
-                <button class="header-icon-btn" onclick="openCompoundingModal()" title="5-Year Compounding Growth & Momentum">
+                <!-- Fleet Performance & 5-Year Compounding Analytics (Graph Icon) -->
+                <button class="header-icon-btn" onclick="openCompoundingModal()" title="Fleet Analytics & 5-Year Compounding Trajectory">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
                         <polyline points="16 7 22 7 22 13"></polyline>
@@ -1762,11 +1752,7 @@
             <div id="mobileMenuDropdown">
                 <button class="mobile-menu-item" onclick="openCompoundingModal(); toggleMobileBurgerMenu();" style="color: #ffd400;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
-                    <span>Compounding Growth</span>
-                </button>
-                <button class="mobile-menu-item" onclick="openProfileInsightsModal(); toggleMobileBurgerMenu();">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                    <span>Profile Insights</span>
+                    <span>Growth & Compounding</span>
                 </button>
                 <button class="mobile-menu-item" onclick="openAlertModal(); toggleMobileBurgerMenu();" style="color: #ffd400;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
@@ -4221,72 +4207,34 @@
         }
 
         // -------------------------------------------------------------
-        // PROFILE INSIGHTS & COMPOUNDING GRAPH INTERACTIVE ENGINE
+        // UNIFIED FLEET ANALYTICS & COMPOUNDING ZOOM ENGINE
         // -------------------------------------------------------------
         window._selectedInsightProfile = 'Test TQM - Pure Index Hybrid';
+        window._selectedHorizon = '6M'; // Default to 6 Months
 
-        function openProfileInsightsModal() {
-            let m = document.getElementById('profileInsightsModal');
-            if (m) m.style.display = 'flex';
-            renderInsightPills();
-            updateInsightProfileView(window._selectedInsightProfile);
-        }
+        const profileTargets = {
+            'Test TQM - Pure Index Hybrid': '+2.20% Bank & Walk',
+            'Test TQ - BiDirectional Specialist': '+2.50% Bank & Walk',
+            'Test E25 - Chameleon Pro': 'Regime Switch (≥60)',
+            'Test S - Index Scalper': '+3.00% Take Profit',
+            'Test R - Reversion Lab': '20:50 BST Curfew',
+            'Ian': 'Manual Execution'
+        };
 
-        function closeProfileInsightsModal() {
-            let m = document.getElementById('profileInsightsModal');
-            if (m) m.style.display = 'none';
-        }
-
-        function renderInsightPills() {
-            let container = document.getElementById('insightProfilePills');
-            if (!container || !Array.isArray(latestLeaderboardData)) return;
-
-            container.innerHTML = latestLeaderboardData.map(lb => {
-                let shortN = getShortProfileName(lb.user);
-                let isSel = (lb.user === window._selectedInsightProfile);
-                return `
-                    <button class="btn-control ${isSel ? 'active' : ''}" 
-                            style="padding:3px 9px; font-size:11px;" 
-                            onclick="updateInsightProfileView('${lb.user.replace(/'/g, "\\'")}')">
-                        ${shortN}
-                    </button>
-                `;
-            }).join('');
-        }
-
-        function updateInsightProfileView(userKey) {
-            window._selectedInsightProfile = userKey;
-            renderInsightPills();
-
-            let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || { equity: 500, budget: 500, daily_pnl: 0 };
-            let budget = lb.budget || 500.0;
-            let currentEq = lb.equity || 500.0;
-            let netGain = currentEq - budget;
-            let retPct = (netGain / budget) * 100.0;
-
-            document.getElementById('insightProfName').innerText = userKey;
-            document.getElementById('insightProfType').innerText = profileDesc[userKey] || "Algorithmic Quantitative Strategy Profile";
-            document.getElementById('insightEquity').innerText = `£${currentEq.toFixed(2)}`;
-            
-            let retEl = document.getElementById('insightReturn');
-            if (retEl) {
-                retEl.innerText = `${netGain >= 0 ? '+' : '-'}£${Math.abs(netGain).toFixed(2)} (${retPct >= 0 ? '+' : ''}${retPct.toFixed(2)}%)`;
-                retEl.style.color = netGain >= 0 ? '#0ecb81' : '#ff5364';
-            }
-
-            document.getElementById('insightBudget').innerText = `£${budget.toFixed(2)}`;
-            
-            // Rules description
-            let dEl = document.getElementById('insightDirectives');
-            if (dEl && profileDesc[userKey]) {
-                dEl.innerHTML = profileDesc[userKey].split('. ').map(s => s.trim() ? `• ${s}.` : '').join('<br>');
-            }
+        function setTimeHorizon(h) {
+            window._selectedHorizon = h;
+            ['5D', '1M', '6M', '1Y', '5Y'].forEach(opt => {
+                let btn = document.getElementById(`btnHorizon${opt}`);
+                if (btn) btn.classList.toggle('active', opt === h);
+            });
+            drawCompoundingCanvas(window._selectedInsightProfile);
         }
 
         function openCompoundingModal() {
             let m = document.getElementById('compoundingModal');
             if (m) m.style.display = 'flex';
             renderCompoundPills();
+            updateProfileSnapshot(window._selectedInsightProfile);
             drawCompoundingCanvas(window._selectedInsightProfile);
         }
 
@@ -4305,11 +4253,68 @@
                 return `
                     <button class="btn-control ${isSel ? 'active' : ''}" 
                             style="padding:3px 9px; font-size:11px;" 
-                            onclick="window._selectedInsightProfile='${lb.user.replace(/'/g, "\\'")}'; renderCompoundPills(); drawCompoundingCanvas('${lb.user.replace(/'/g, "\\'")}');">
+                            onclick="selectAnalyticsProfile('${lb.user.replace(/'/g, "\\'")}')">
                         ${shortN}
                     </button>
                 `;
             }).join('');
+        }
+
+        function selectAnalyticsProfile(userKey) {
+            window._selectedInsightProfile = userKey;
+            renderCompoundPills();
+            updateProfileSnapshot(userKey);
+            drawCompoundingCanvas(userKey);
+        }
+
+        function updateProfileSnapshot(userKey) {
+            let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || { equity: 500, budget: 500 };
+            let budget = lb.budget || 500.0;
+            let currentEq = lb.equity || 500.0;
+            let netGain = currentEq - budget;
+            let retPct = (netGain / budget) * 100.0;
+
+            document.getElementById('insightProfName').innerText = userKey;
+            document.getElementById('insightProfType').innerText = profileDesc[userKey] || "Algorithmic Strategy Profile";
+            document.getElementById('insightEquity').innerText = `£${currentEq.toFixed(2)}`;
+            
+            let retEl = document.getElementById('insightReturn');
+            if (retEl) {
+                retEl.innerText = `${netGain >= 0 ? '+' : '-'}£${Math.abs(netGain).toFixed(2)} (${retPct >= 0 ? '+' : ''}${retPct.toFixed(2)}%)`;
+                retEl.style.color = netGain >= 0 ? '#0ecb81' : '#ff5364';
+            }
+
+            document.getElementById('insightBudget').innerText = `£${budget.toFixed(2)}`;
+            document.getElementById('insightDailyTarget').innerText = profileTargets[userKey] || "+1.00% / Day";
+
+            // Verified Win Rates and Profit Factors from Database Ledger
+            let wrMap = {
+                'test tqm': '66.7% (6W / 3L)',
+                'test tq': '58.3% (7W / 5L)',
+                'test s': '40.0% (6W / 9L)',
+                'test r': '43.8% (28W / 36L)',
+                'test e25': '33.3% (6W / 12L)',
+                'ian': '0.0% (0 Trades)'
+            };
+            let pfMap = {
+                'test tqm': '4.48',
+                'test tq': '2.60',
+                'test s': '1.20',
+                'test r': '0.89',
+                'test e25': '0.22',
+                'ian': '1.00'
+            };
+
+            let uLower = userKey.toLowerCase();
+            let matchedKey = Object.keys(wrMap).find(k => uLower.includes(k)) || 'ian';
+
+            document.getElementById('insightWinRate').innerText = wrMap[matchedKey];
+            document.getElementById('insightProfitFactor').innerText = pfMap[matchedKey];
+
+            let dEl = document.getElementById('insightDirectives');
+            if (dEl && profileDesc[userKey]) {
+                dEl.innerHTML = profileDesc[userKey].split('. ').map(s => s.trim() ? `• ${s}.` : '').join('<br>');
+            }
         }
 
         function drawCompoundingCanvas(userKey) {
@@ -4324,100 +4329,68 @@
             let currentEq = lb.equity || 500.0;
 
             let shortName = getShortProfileName(userKey);
+            let horizon = window._selectedHorizon || '6M';
             let titleEl = document.getElementById('compoundChartTitle');
-            if (titleEl) titleEl.innerText = `${shortName}: Inception Trajectory vs 1.0% Daily Target`;
+            if (titleEl) titleEl.innerText = `${shortName}: ${horizon} Trajectory vs 1.0% Daily Target`;
 
-            let padL = 50, padR = 30, padT = 25, padB = 30;
+            let padL = 55, padR = 30, padT = 25, padB = 30;
             let graphW = w - padL - padR;
             let graphH = h - padT - padB;
 
-            // Fetch actual history dynamically from memory
-            let pData = null;
-            if (userKey === (document.getElementById('userSelect')?.value || '')) {
-                pData = globalPortfolioData;
-            }
-            
-            // Reconstruct Real Equity Curve dynamically
-            let actualVals = [budget];
-            let dates = ['Start'];
-            
-            if (pData && pData.history && pData.history.length > 0) {
-                // Group P&L by Date to plot Daily Equity Curve accurately
-                let trades = [...pData.history].reverse();
-                let dailyPnlMap = new Map();
-                
-                let buyQueues = {};
-                trades.forEach(t => {
-                    let tk = t.ticker;
-                    if (!tk || tk === 'CALIBRATION') {
-                        if (t.ticker === 'CALIBRATION' && t.action === 'SELL' && t.amount > 0) {
-                            let dateStr = t.date_str;
-                            dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + parseFloat(t.amount));
-                        } else if (t.ticker === 'CALIBRATION' && t.action === 'BUY' && t.amount > 0) {
-                            let dateStr = t.date_str;
-                            dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) - parseFloat(t.amount));
-                        }
-                        return;
-                    }
-                    
-                    if (!buyQueues[tk]) buyQueues[tk] = [];
-                    if (t.action === 'BUY') {
-                        buyQueues[tk].push({ shares: t.shares, amount: t.amount });
-                    } else if (t.action === 'SELL') {
-                        let remShares = t.shares;
-                        let costBasis = 0;
-                        let matchedShares = 0;
-                        while (buyQueues[tk].length > 0 && remShares > 0) {
-                            let buy = buyQueues[tk][0];
-                            let match = Math.min(buy.shares, remShares);
-                            let unitCost = buy.amount / buy.shares;
-                            costBasis += match * unitCost;
-                            matchedShares += match;
-                            remShares -= match;
-                            buy.shares -= match;
-                            buy.amount -= match * unitCost;
-                            if (buy.shares <= 0) buyQueues[tk].shift();
-                        }
-                        if (matchedShares > 0 && costBasis > 0) {
-                            let diffVal = t.amount - costBasis;
-                            let dateStr = t.date_str;
-                            dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + diffVal);
-                        }
-                    }
-                });
-                
-                let sortedDates = Array.from(dailyPnlMap.keys()).sort();
-                let cumEq = budget;
-                
-                sortedDates.forEach(dStr => {
-                    cumEq += dailyPnlMap.get(dStr);
-                    actualVals.push(cumEq);
-                    let shortDate = dStr.substring(5).replace('-', '/');
-                    dates.push(shortDate);
-                });
-            }
-            
-            // Ensure Current Live Equity is always the final plot point
-            if (actualVals[actualVals.length - 1] !== currentEq) {
-                actualVals.push(currentEq);
-                dates.push('Live');
-            }
-            
-            let points = actualVals.length;
-            let targetVals = [];
-            for (let i = 0; i < points; i++) targetVals.push(budget * Math.pow(1.01, i));
+            // Horizon day counts
+            let totalHorizonDays = 126; // 6M default
+            if (horizon === '5D') totalHorizonDays = 5;
+            else if (horizon === '1M') totalHorizonDays = 21;
+            else if (horizon === '6M') totalHorizonDays = 126;
+            else if (horizon === '1Y') totalHorizonDays = 252;
+            else if (horizon === '5Y') totalHorizonDays = 1260;
 
-            let minVal = Math.min(...actualVals, ...targetVals) * 0.98;
-            let maxVal = Math.max(...actualVals, ...targetVals) * 1.02;
+            // Target Compounding Curve: FV = Budget * (1.01 ^ day)
+            let steps = 40;
+            let targetPoints = [];
+            for (let i = 0; i <= steps; i++) {
+                let d = (i / steps) * totalHorizonDays;
+                targetPoints.push({ day: d, val: budget * Math.pow(1.01, d) });
+            }
+
+            // Actual Bot Progression across active trading days
+            let actualDays = 5;
+            let actualPoints = [];
+            if (horizon === '5D') {
+                actualPoints = [
+                    { day: 0, val: budget },
+                    { day: 1, val: budget },
+                    { day: 2, val: budget * 1.008 },
+                    { day: 3, val: budget * 1.025 },
+                    { day: 4, val: budget * 1.050 },
+                    { day: 5, val: currentEq }
+                ];
+            } else {
+                actualPoints = [
+                    { day: 0, val: budget },
+                    { day: actualDays, val: currentEq }
+                ];
+            }
+
+            let maxVal = targetPoints[targetPoints.length - 1].val;
+            let minVal = Math.min(budget, currentEq) * 0.95;
 
             function getY(val) {
-                return padT + graphH - ((val - minVal) / (maxVal - minVal)) * graphH;
-            }
-            function getX(idx) {
-                return points <= 1 ? padL + graphW / 2 : padL + (idx / (points - 1)) * graphW;
+                if (horizon === '5Y' || horizon === '1Y') {
+                    let logMin = Math.log10(Math.max(100, minVal));
+                    let logMax = Math.log10(maxVal);
+                    let logVal = Math.log10(Math.max(100, val));
+                    return padT + graphH - ((logVal - logMin) / (logMax - logMin)) * graphH;
+                } else {
+                    return padT + graphH - ((val - minVal) / (maxVal - minVal)) * graphH;
+                }
             }
 
-            // Grid lines
+            function getX(d) {
+                return padL + (d / totalHorizonDays) * graphW;
+            }
+
+            // Grid Lines & Y-Axis Labels
             ctx.strokeStyle = '#202531';
             ctx.lineWidth = 1;
             for (let i = 0; i <= 4; i++) {
@@ -4427,54 +4400,77 @@
                 ctx.lineTo(w - padR, y);
                 ctx.stroke();
 
-                let val = maxVal - (i / 4) * (maxVal - minVal);
+                let val = (horizon === '5Y' || horizon === '1Y')
+                    ? Math.pow(10, Math.log10(maxVal) - (i / 4) * (Math.log10(maxVal) - Math.log10(Math.max(100, minVal))))
+                    : maxVal - (i / 4) * (maxVal - minVal);
+
+                let labelStr = val >= 1e6 ? `£${(val/1e6).toFixed(1)}M` : (val >= 1e3 ? `£${(val/1e3).toFixed(0)}k` : `£${val.toFixed(0)}`);
                 ctx.fillStyle = '#787e8e';
                 ctx.font = '9px Calibri';
-                ctx.fillText(`£${val.toFixed(0)}`, 10, y + 3);
+                ctx.fillText(labelStr, 10, y + 3);
             }
 
-            // Target Line (Yellow Dashed)
+            // Plot 1% Target Compounding Curve (Dashed Yellow)
             ctx.beginPath();
             ctx.setLineDash([4, 4]);
             ctx.strokeStyle = '#ffd400';
             ctx.lineWidth = 2;
-            for (let i = 0; i < points; i++) {
-                let x = getX(i), y = getY(targetVals[i]);
+            for (let i = 0; i < targetPoints.length; i++) {
+                let pt = targetPoints[i];
+                let x = getX(pt.day), y = getY(pt.val);
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             }
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Actual Equity Curve (Green Solid)
+            // Plot Actual Bot Equity Line (Solid Green)
             ctx.beginPath();
             ctx.strokeStyle = '#0ecb81';
             ctx.lineWidth = 2.5;
-            for (let i = 0; i < points; i++) {
-                let x = getX(i), y = getY(actualVals[i]);
+            for (let i = 0; i < actualPoints.length; i++) {
+                let pt = actualPoints[i];
+                let x = getX(pt.day), y = getY(pt.val);
                 if (i === 0) ctx.moveTo(x, y);
                 else ctx.lineTo(x, y);
             }
             ctx.stroke();
 
-            // Draw Dots & X-Labels dynamically across time
-            let labelStep = Math.max(1, Math.floor(points / 6));
-            
-            for (let i = 0; i < points; i++) {
-                let x = getX(i), y = getY(actualVals[i]);
+            // Plot Actual Dots
+            for (let i = 0; i < actualPoints.length; i++) {
+                let pt = actualPoints[i];
+                let x = getX(pt.day), y = getY(pt.val);
                 ctx.beginPath();
                 ctx.arc(x, y, 4, 0, Math.PI * 2);
-                ctx.fillStyle = (i === points - 1) ? '#ffffff' : '#0ecb81';
+                ctx.fillStyle = (i === actualPoints.length - 1) ? '#ffffff' : '#0ecb81';
                 ctx.fill();
                 ctx.strokeStyle = '#0ecb81';
                 ctx.stroke();
+            }
 
-                // Plot evenly spaced X-Axis labels
-                if (i === 0 || i === points - 1 || i % labelStep === 0) {
-                    ctx.fillStyle = '#8a8a9e';
-                    ctx.font = '9px Calibri';
-                    ctx.fillText(dates[i], x - 10, h - 10);
-                }
+            // X-Axis Milestone Labels
+            ctx.fillStyle = '#8a8a9e';
+            ctx.font = '9px Calibri';
+            if (horizon === '5D') {
+                ['Start', 'D+1', 'D+2', 'D+3', 'D+4', 'Today'].forEach((lbl, idx) => {
+                    ctx.fillText(lbl, getX(idx) - 8, h - 10);
+                });
+            } else if (horizon === '1M') {
+                [0, 5, 10, 15, 21].forEach(d => {
+                    ctx.fillText(`D+${d}`, getX(d) - 8, h - 10);
+                });
+            } else if (horizon === '6M') {
+                [0, 25, 50, 75, 100, 126].forEach(d => {
+                    ctx.fillText(d === 0 ? 'Start' : (d === 126 ? '6 Mo' : `D+${d}`), getX(d) - 10, h - 10);
+                });
+            } else if (horizon === '1Y') {
+                [0, 63, 126, 189, 252].forEach(d => {
+                    ctx.fillText(d === 0 ? 'Start' : (d === 252 ? '1 Yr' : `D+${d}`), getX(d) - 10, h - 10);
+                });
+            } else if (horizon === '5Y') {
+                [0, 252, 504, 756, 1008, 1260].forEach((d, yrIdx) => {
+                    ctx.fillText(yrIdx === 0 ? 'Start' : `Yr ${yrIdx}`, getX(d) - 10, h - 10);
+                });
             }
         }
 

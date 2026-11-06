@@ -2653,30 +2653,27 @@ def export_forensic_report():
     from flask import send_file
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    from openpyxl.drawing.image import Image as OpenpyxlImage
+    from openpyxl.chart import LineChart, Reference
     from openpyxl.utils import get_column_letter
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
 
     portfolio_store.reload()
     now_lon = pd.Timestamp.now(tz='Europe/London')
     users_data = portfolio_store.data.get('users', {})
     
     wb = openpyxl.Workbook()
-    # Sheet 1: Master Overview
+
+    # 1. Sheet: Fleet Master Overview
     ws_master = wb.active
     ws_master.title = "Fleet Master Overview"
     ws_master.views.sheetView[0].showGridLines = True
 
-    # Palette
+    # 2. Sheet: Forensic Raw Audit Log (Preserves 100% of data for parameter sweeps)
+    ws_raw = wb.create_sheet(title="Forensic Raw Audit Log")
+    ws_raw.views.sheetView[0].showGridLines = True
+
     dark_fill = PatternFill(start_color="14171F", end_color="14171F", fill_type="solid")
-    gold_fill = PatternFill(start_color="FFD400", end_color="FFD400", fill_type="solid")
     header_fill = PatternFill(start_color="1B202C", end_color="1B202C", fill_type="solid")
     card_fill = PatternFill(start_color="0F1115", end_color="0F1115", fill_type="solid")
-    green_fill = PatternFill(start_color="0A3622", end_color="0A3622", fill_type="solid")
-    red_fill = PatternFill(start_color="441217", end_color="441217", fill_type="solid")
-
     thin_border = Border(
         left=Side(style='thin', color='262B36'), right=Side(style='thin', color='262B36'),
         top=Side(style='thin', color='262B36'), bottom=Side(style='thin', color='262B36')
@@ -2684,14 +2681,13 @@ def export_forensic_report():
 
     # Master Overview Header
     ws_master.merge_cells('A1:I1')
-    title_cell = ws_master['A1']
-    title_cell.value = "IDC TRADING • FLEET INTELLIGENCE & 5-YEAR COMPOUNDING AUDIT"
-    title_cell.font = Font(name="Calibri", size=13, bold=True, color="FFD400")
-    title_cell.fill = dark_fill
-    title_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws_master.row_dimensions[1].height = 32
+    t_cell = ws_master['A1']
+    t_cell.value = "IDC TRADING • FLEET INTELLIGENCE & FORENSIC AUDIT"
+    t_cell.font = Font(name="Calibri", size=13, bold=True, color="FFD400")
+    t_cell.fill = dark_fill
+    t_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws_master.row_dimensions[1].height = 30
 
-    # Overview Table Headers
     ov_headers = ["Profile", "Budget", "Current Equity", "Net Return (£)", "Return %", "Trades", "Win Rate %", "Profit Factor", "Status"]
     for c_i, h in enumerate(ov_headers, 1):
         cell = ws_master.cell(row=3, column=c_i, value=h)
@@ -2701,16 +2697,46 @@ def export_forensic_report():
         cell.border = thin_border
     ws_master.row_dimensions[3].height = 24
 
-    ov_row = 4
-    all_trade_rows = []
+    # Raw Audit Log Headers
+    raw_headers = [
+        'Trade_Date', 'Profile', 'Ticker', 'Shares', 'Entry_Time', 'Exit_Time', 'Hold_Mins',
+        'Entry_Price', 'Exit_Price', 'Peak_Price', 'Peak_PnL_%', 'Realized_PnL_£', 'Realized_PnL_%',
+        'Capture_Efficiency_%', 'Exit_Trigger', 'Exit_Reason', 'Profile_Daily_PnL_£', 'Profile_Daily_PnL_%'
+    ]
+    for c_i, h in enumerate(raw_headers, 1):
+        cell = ws_raw.cell(row=1, column=c_i, value=h)
+        cell.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin_border
+    ws_raw.row_dimensions[1].height = 24
 
-    # Iterate over every profile dynamically
+    ov_row = 4
+    raw_row = 2
+    daily_pnl_map = {}
+
+    # PASS 1: Build trade details & accumulate daily P&L
+    for u_name, u_data in users_data.items():
+        if not isinstance(u_data, dict): continue
+        hist = u_data.get('history') or []
+        buy_q = []
+        for t in reversed(hist):
+            tk = t.get('ticker')
+            if not tk or tk == 'CALIBRATION': continue
+            if t.get('action') == 'BUY':
+                buy_q.append(t)
+            elif t.get('action') == 'SELL' and buy_q:
+                b = buy_q.pop(0)
+                diff = round((float(t.get('price', 1)) - float(b.get('price', 1))) * int(t.get('shares', 1)), 2)
+                d_key = t.get('date_str', '')
+                daily_pnl_map[(u_name, d_key)] = daily_pnl_map.get((u_name, d_key), 0.0) + diff
+
+    # PASS 2: Populate Master Sheet & Dedicated Profile Worksheets
     for u_name, u_data in users_data.items():
         if not isinstance(u_data, dict): continue
         hist = u_data.get('history') or []
         budget = float(u_data.get('master_budget', 500.0))
 
-        # Reconstruct trades and FIFO P&L
         buy_q = []
         p_trades = []
         wins, losses, win_val, loss_val = 0, 0, 0.0, 0.0
@@ -2722,35 +2748,52 @@ def export_forensic_report():
                 buy_q.append(t)
             elif t.get('action') == 'SELL' and buy_q:
                 b = buy_q.pop(0)
-                b_price = float(b.get('price', 1.0))
-                s_price = float(t.get('price', 1.0))
+                b_p = float(b.get('price', 1.0))
+                s_p = float(t.get('price', 1.0))
                 sh = int(t.get('shares', 1))
-                diff = round((s_price - b_price) * sh, 2)
-                diff_pct = round(((s_price - b_price) / b_price) * 100.0, 2)
+                diff = round((s_p - b_p) * sh, 2)
+                diff_pct = round(((s_p - b_p) / b_p) * 100.0, 2)
                 dur = max(1, int((t.get('timestamp', 0) - b.get('timestamp', 0)) / 60))
+                peak_p = max(float(t.get('highest_price', s_p)), s_p, b_p)
+                peak_pct = round(((peak_p - b_p) / b_p) * 100.0, 2)
+                cap_eff = round((diff_pct / peak_pct * 100.0), 2) if peak_pct > 0 else 0.0
+                d_key = t.get('date_str', '')
 
-                if diff >= 0:
-                    wins += 1; win_val += diff
-                else:
-                    losses += 1; loss_val += abs(diff)
+                if diff >= 0: wins += 1; win_val += diff
+                else: losses += 1; loss_val += abs(diff)
 
                 t_record = {
-                    'date': t.get('date_str', ''),
-                    'time': t.get('time', ''),
-                    'profile': u_name,
-                    'ticker': tk,
-                    'shares': sh,
-                    'buy_price': b_price,
-                    'sell_price': s_price,
-                    'pnl_val': diff,
-                    'pnl_pct': diff_pct,
-                    'mins': dur,
-                    'reason': t.get('reason', t.get('status', 'Take Profit/Stop'))
+                    'date': d_key, 'time_in': b.get('time', ''), 'time_out': t.get('time', ''),
+                    'ticker': tk, 'shares': sh, 'buy_price': b_p, 'sell_price': s_p,
+                    'peak_price': peak_p, 'peak_pct': peak_pct, 'pnl_val': diff, 'pnl_pct': diff_pct,
+                    'cap_eff': cap_eff, 'mins': dur, 'trigger': t.get('status', 'Take Profit/Stop'),
+                    'reason': t.get('reason', '')
                 }
                 p_trades.append(t_record)
-                all_trade_rows.append(t_record)
 
-        # Net balance calculation
+                # Append to raw audit log
+                ws_raw.cell(row=raw_row, column=1, value=d_key).border = thin_border
+                ws_raw.cell(row=raw_row, column=2, value=u_name).border = thin_border
+                ws_raw.cell(row=raw_row, column=3, value=tk).border = thin_border
+                ws_raw.cell(row=raw_row, column=4, value=sh).border = thin_border
+                ws_raw.cell(row=raw_row, column=5, value=b.get('time', '')).border = thin_border
+                ws_raw.cell(row=raw_row, column=6, value=t.get('time', '')).border = thin_border
+                ws_raw.cell(row=raw_row, column=7, value=dur).border = thin_border
+                ws_raw.cell(row=raw_row, column=8, value=b_p).number_format = '£#,##0.00'
+                ws_raw.cell(row=raw_row, column=9, value=s_p).number_format = '£#,##0.00'
+                ws_raw.cell(row=raw_row, column=10, value=peak_p).number_format = '£#,##0.00'
+                ws_raw.cell(row=raw_row, column=11, value=peak_pct / 100.0).number_format = '0.00%'
+                ws_raw.cell(row=raw_row, column=12, value=diff).number_format = '£#,##0.00; -£#,##0.00; £0.00'
+                ws_raw.cell(row=raw_row, column=13, value=diff_pct / 100.0).number_format = '0.00%'
+                ws_raw.cell(row=raw_row, column=14, value=cap_eff / 100.0).number_format = '0.00%'
+                ws_raw.cell(row=raw_row, column=15, value=t.get('status', 'Exit')).border = thin_border
+                ws_raw.cell(row=raw_row, column=16, value=t.get('reason', '')).border = thin_border
+                
+                day_tot = daily_pnl_map.get((u_name, d_key), 0.0)
+                ws_raw.cell(row=raw_row, column=17, value=day_tot).number_format = '£#,##0.00; -£#,##0.00; £0.00'
+                ws_raw.cell(row=raw_row, column=18, value=(day_tot / budget)).number_format = '0.00%'
+                raw_row += 1
+
         net_gain = win_val - loss_val
         current_eq = budget + net_gain
         tot_trades = wins + losses
@@ -2758,173 +2801,118 @@ def export_forensic_report():
         profit_factor = (win_val / loss_val) if loss_val > 0 else (win_val if win_val > 0 else 1.0)
         ret_pct = (net_gain / budget * 100.0) if budget > 0 else 0.0
 
-        # Fill master row
-        c_prof = ws_master.cell(row=ov_row, column=1, value=u_name)
-        c_prof.font = Font(name="Calibri", size=10, bold=True, color="111827")
-        c_prof.border = thin_border
-
+        # Master Overview Row
+        ws_master.cell(row=ov_row, column=1, value=u_name).border = thin_border
         vals_master = [
-            (budget, '£#,##0.00'),
-            (current_eq, '£#,##0.00'),
-            (net_gain, '£#,##0.00'),
-            (ret_pct / 100.0, '0.00%'),
-            (tot_trades, '#,##0'),
-            (win_rate / 100.0, '0.0%'),
-            (round(profit_factor, 2), '0.00'),
-            ("Active (Auto)", '@')
+            (budget, '£#,##0.00'), (current_eq, '£#,##0.00'), (net_gain, '£#,##0.00'),
+            (ret_pct / 100.0, '0.00%'), (tot_trades, '#,##0'), (win_rate / 100.0, '0.0%'),
+            (round(profit_factor, 2), '0.00'), ("Active (Auto)", '@')
         ]
         for c_i, (v, fmt) in enumerate(vals_master, 2):
-            cell = ws_master.cell(row=ov_row, column=c_i, value=v)
-            cell.number_format = fmt
-            cell.alignment = Alignment(horizontal="right" if c_i < 9 else "center", vertical="center")
-            cell.border = thin_border
+            c = ws_master.cell(row=ov_row, column=c_i, value=v)
+            c.number_format = fmt
+            c.border = thin_border
             if c_i == 4:
-                cell.font = Font(name="Calibri", size=10, bold=True, color="0ECB81" if net_gain >= 0 else "FF5364")
+                c.font = Font(name="Calibri", size=10, bold=True, color="0ECB81" if net_gain >= 0 else "FF5364")
         ov_row += 1
 
-        # -------------------------------------------------------------
-        # PROFILE DEDICATED WORKSHEET WITH CHARTS & 5-YR COMPOUNDING
-        # -------------------------------------------------------------
-        safe_sheet_name = re.sub(r'[^a-zA-Z0-9 ]', '', u_name.split(' - ')[0])[:30].strip()
-        ws_prof = wb.create_sheet(title=safe_sheet_name)
-        ws_prof.views.sheetView[0].showGridLines = True
+        # Individual Profile Sheet
+        safe_name = re.sub(r'[^a-zA-Z0-9 ]', '', u_name.split(' - ')[0])[:30].strip()
+        ws_p = wb.create_sheet(title=safe_name)
+        ws_p.views.sheetView[0].showGridLines = True
 
-        # Header Title
-        ws_prof.merge_cells('A1:G1')
-        p_title = ws_prof['A1']
-        p_title.value = f"{u_name.upper()} • PERFORMANCE AUDIT & 5-YEAR COMPOUNDING TRAJECTORY"
-        p_title.font = Font(name="Calibri", size=11, bold=True, color="FFD400")
-        p_title.fill = dark_fill
-        p_title.alignment = Alignment(horizontal="center", vertical="center")
-        ws_prof.row_dimensions[1].height = 28
+        ws_p.merge_cells('A1:J1')
+        p_t = ws_p['A1']
+        p_t.value = f"{u_name.upper()} • PERFORMANCE AUDIT"
+        p_t.font = Font(name="Calibri", size=11, bold=True, color="FFD400")
+        p_t.fill = dark_fill
+        p_t.alignment = Alignment(horizontal="center", vertical="center")
+        ws_p.row_dimensions[1].height = 28
 
-        # KPI Stats Cards Table
         kpis = [
-            ("Starting Budget", f"£{budget:,.2f}"),
-            ("Current Equity", f"£{current_eq:,.2f}"),
+            ("Starting Budget", f"£{budget:,.2f}"), ("Current Equity", f"£{current_eq:,.2f}"),
             ("Total Net P&L", f"{'+' if net_gain>=0 else ''}£{net_gain:,.2f} ({ret_pct:+.2f}%)"),
-            ("Win Rate", f"{win_rate:.1f}% ({wins}W / {losses}L)"),
-            ("Profit Factor", f"{profit_factor:.2f}"),
+            ("Win Rate", f"{win_rate:.1f}% ({wins}W / {losses}L)"), ("Profit Factor", f"{profit_factor:.2f}"),
             ("Daily Compounding Target", "1.00% / Day (~252 Days/Yr)")
         ]
-        for k_i, (k_label, k_val) in enumerate(kpis, 1):
-            lbl_c = ws_prof.cell(row=3, column=k_i, value=k_label)
-            lbl_c.font = Font(name="Calibri", size=9, bold=True, color="8A8A9E")
-            lbl_c.fill = card_fill
-            lbl_c.alignment = Alignment(horizontal="center", vertical="center")
-            lbl_c.border = thin_border
-
-            val_c = ws_prof.cell(row=4, column=k_i, value=k_val)
-            val_c.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF" if k_i != 3 else ("0ECB81" if net_gain>=0 else "FF5364"))
+        for k_i, (k_l, k_v) in enumerate(kpis, 1):
+            ws_p.cell(row=3, column=k_i, value=k_l).font = Font(name="Calibri", size=9, bold=True, color="8A8A9E")
+            ws_p.cell(row=3, column=k_i).fill = card_fill
+            ws_p.cell(row=3, column=k_i).border = thin_border
+            val_c = ws_p.cell(row=4, column=k_i, value=k_v)
+            val_c.font = Font(name="Calibri", size=10, bold=True, color="0ECB81" if k_i==3 and net_gain>=0 else ("FF5364" if k_i==3 else "FFFFFF"))
             val_c.fill = card_fill
-            val_c.alignment = Alignment(horizontal="center", vertical="center")
             val_c.border = thin_border
-        ws_prof.row_dimensions[3].height = 18
-        ws_prof.row_dimensions[4].height = 22
 
-        # Profile Trade Log Headers
-        p_log_headers = ["Date", "Time", "Ticker", "Shares", "Buy (£)", "Sell (£)", "Realized P&L (£)", "Return %", "Hold (Mins)", "Exit Reason"]
-        for c_i, h in enumerate(p_log_headers, 1):
-            cell = ws_prof.cell(row=6, column=c_i, value=h)
+        # Trade History Table Headers
+        p_headers = ["Date", "Time In", "Time Out", "Ticker", "Shares", "Buy (£)", "Sell (£)", "Peak (£)", "P&L (£)", "Return %", "Hold (Mins)", "Reason"]
+        for c_i, h in enumerate(p_headers, 1):
+            cell = ws_p.cell(row=6, column=c_i, value=h)
             cell.font = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
             cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center" if c_i in [1,2,3,4,9] else ("right" if c_i in [5,6,7,8] else "left"), vertical="center")
             cell.border = thin_border
-        ws_prof.row_dimensions[6].height = 22
+        ws_p.row_dimensions[6].height = 20
 
         p_row = 7
         for tr in p_trades:
-            ws_prof.cell(row=p_row, column=1, value=tr['date']).border = thin_border
-            ws_prof.cell(row=p_row, column=2, value=tr['time']).border = thin_border
-            ws_prof.cell(row=p_row, column=3, value=tr['ticker']).border = thin_border
-            ws_prof.cell(row=p_row, column=4, value=tr['shares']).border = thin_border
-            
-            c_bp = ws_prof.cell(row=p_row, column=5, value=tr['buy_price'])
-            c_bp.number_format = '£#,##0.00'; c_bp.border = thin_border
-            
-            c_sp = ws_prof.cell(row=p_row, column=6, value=tr['sell_price'])
-            c_sp.number_format = '£#,##0.00'; c_sp.border = thin_border
-            
-            c_pnl = ws_prof.cell(row=p_row, column=7, value=tr['pnl_val'])
-            c_pnl.number_format = '£#,##0.00; -£#,##0.00; £0.00'; c_pnl.border = thin_border
-            c_pnl.font = Font(name="Calibri", size=9, bold=True, color="0A3622" if tr['pnl_val']>=0 else "78281F")
-            
-            c_pct = ws_prof.cell(row=p_row, column=8, value=tr['pnl_pct'] / 100.0)
-            c_pct.number_format = '+0.00%; -0.00%; 0.00%'; c_pct.border = thin_border
-            
-            ws_prof.cell(row=p_row, column=9, value=tr['mins']).border = thin_border
-            ws_prof.cell(row=p_row, column=10, value=tr['reason']).border = thin_border
+            ws_p.cell(row=p_row, column=1, value=tr['date']).border = thin_border
+            ws_p.cell(row=p_row, column=2, value=tr['time_in']).border = thin_border
+            ws_p.cell(row=p_row, column=3, value=tr['time_out']).border = thin_border
+            ws_p.cell(row=p_row, column=4, value=tr['ticker']).border = thin_border
+            ws_p.cell(row=p_row, column=5, value=tr['shares']).border = thin_border
+            ws_p.cell(row=p_row, column=6, value=tr['buy_price']).number_format = '£#,##0.00'
+            ws_p.cell(row=p_row, column=7, value=tr['sell_price']).number_format = '£#,##0.00'
+            ws_p.cell(row=p_row, column=8, value=tr['peak_price']).number_format = '£#,##0.00'
+            c_diff = ws_p.cell(row=p_row, column=9, value=tr['pnl_val'])
+            c_diff.number_format = '£#,##0.00; -£#,##0.00; £0.00'
+            c_diff.font = Font(name="Calibri", size=9, bold=True, color="0A3622" if tr['pnl_val']>=0 else "78281F")
+            ws_p.cell(row=p_row, column=10, value=tr['pnl_pct'] / 100.0).number_format = '0.00%'
+            ws_p.cell(row=p_row, column=11, value=tr['mins']).border = thin_border
+            ws_p.cell(row=p_row, column=12, value=tr['reason']).border = thin_border
             p_row += 1
 
-        # -------------------------------------------------------------
-        # GENERATE EMBEDDED MATPLOTLIB CHART: 1% 5-YEAR COMPOUNDING TRAJECTORY
-        # -------------------------------------------------------------
-        try:
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 4.8), dpi=140)
-            fig.patch.set_facecolor('#0F1115')
-            ax1.set_facecolor('#14171F')
-            ax2.set_facecolor('#14171F')
+        # Native Excel Vector LineChart (Zero external image dependencies)
+        chart_start_row = max(10, p_row + 2)
+        ws_p.cell(row=chart_start_row, column=1, value="Sequence").font = Font(name="Calibri", size=9, bold=True)
+        ws_p.cell(row=chart_start_row, column=2, value="Actual Equity").font = Font(name="Calibri", size=9, bold=True)
+        ws_p.cell(row=chart_start_row, column=3, value="1% Daily Target").font = Font(name="Calibri", size=9, bold=True)
 
-            # Left Chart: Recent Trading Days vs 1.0% Daily Target
-            cum_vals = [budget]
-            for tr in reversed(p_trades):
-                cum_vals.append(cum_vals[-1] + tr['pnl_val'])
-            day_indices = list(range(len(cum_vals)))
-            compounded_1pct_days = [budget * ((1.01) ** d) for d in day_indices]
+        c_data_r = chart_start_row + 1
+        cum = budget
+        ws_p.cell(row=c_data_r, column=1, value="Start")
+        ws_p.cell(row=c_data_r, column=2, value=budget)
+        ws_p.cell(row=c_data_r, column=3, value=budget)
+        c_data_r += 1
 
-            ax1.plot(day_indices, cum_vals, marker='o', color='#0ECB81', linewidth=2.2, label='Actual Equity (£)', zorder=4)
-            ax1.plot(day_indices, compounded_1pct_days, linestyle='--', color='#FFD400', linewidth=1.8, label='1.0% Daily Target Line', zorder=3)
-            ax1.axhline(budget, color='#8A8A9E', linestyle=':', alpha=0.6, label=f'Initial (£{budget:,.0f})')
-            ax1.set_title(f"{safe_sheet_name} • Inception Trajectory", color='#FFFFFF', fontsize=11, fontweight='bold', pad=10)
-            ax1.set_xlabel("Executed Trade Sequence / Days", color='#8A8A9E', fontsize=9)
-            ax1.set_ylabel("Equity (£)", color='#8A8A9E', fontsize=9)
-            ax1.tick_params(colors='#8A8A9E', labelsize=8)
-            ax1.grid(True, linestyle=':', alpha=0.25, color='#8A8A9E')
-            ax1.legend(loc="upper left", facecolor='#171A21', edgecolor='#262B36', labelcolor='#FFFFFF', fontsize=8)
+        for idx, tr in enumerate(reversed(p_trades), 1):
+            cum += tr['pnl_val']
+            ws_p.cell(row=c_data_r, column=1, value=f"T+{idx}")
+            ws_p.cell(row=c_data_r, column=2, value=cum)
+            ws_p.cell(row=c_data_r, column=3, value=round(budget * (1.01 ** idx), 2))
+            c_data_r += 1
 
-            # Right Chart: 5-Year Macro Compounding Projection (252 Trading Days/Yr)
-            macro_days = np.linspace(0, 252 * 5, 200)
-            macro_compounded = budget * (1.01 ** macro_days)
-            ax2.plot(macro_days, macro_compounded, color='#FFD400', linewidth=2.0, label='5-Yr Momentum Curve (1%/day)')
-            # Plot current position on the curve
-            current_day_equiv = np.log(current_eq / budget) / np.log(1.01) if current_eq > budget else 0
-            ax2.scatter([current_day_equiv], [current_eq], color='#0ECB81', s=70, zorder=5, label=f'Current: £{current_eq:,.2f}')
-            
-            # 1-Yr to 5-Yr Milestones
-            for yr in range(1, 6):
-                yr_day = yr * 252
-                yr_val = budget * (1.01 ** yr_day)
-                ax2.axvline(yr_day, color='#262B36', linestyle='--', alpha=0.8)
-                ax2.text(yr_day, yr_val * 0.9, f"Y{yr}: £{yr_val:,.0f}", color='#8A8A9E', fontsize=7, rotation=90, verticalalignment='top')
+        chart = LineChart()
+        chart.title = f"{safe_name}: Actual Equity vs 1.0% Daily Target Curve"
+        chart.style = 13
+        chart.y_axis.title = "Equity (£)"
+        chart.x_axis.title = "Executed Trades Sequence"
+        chart.width = 17
+        chart.height = 8.5
 
-            ax2.set_yscale('log')
-            ax2.set_title("5-Year Compounding Benchmark (Log Scale: 1% Daily)", color='#FFFFFF', fontsize=11, fontweight='bold', pad=10)
-            ax2.set_xlabel("Trading Days (252 Days/Year)", color='#8A8A9E', fontsize=9)
-            ax2.set_ylabel("Compounded Equity (£)", color='#8A8A9E', fontsize=9)
-            ax2.tick_params(colors='#8A8A9E', labelsize=8)
-            ax2.grid(True, linestyle=':', alpha=0.25, color='#8A8A9E')
-            ax2.legend(loc="upper left", facecolor='#171A21', edgecolor='#262B36', labelcolor='#FFFFFF', fontsize=8)
+        data_ref = Reference(ws_p, min_col=2, min_row=chart_start_row, max_col=3, max_row=c_data_r - 1)
+        cats_ref = Reference(ws_p, min_col=1, min_row=chart_start_row + 1, max_row=c_data_r - 1)
+        chart.add_data(data_ref, titles_from_data=True)
+        chart.set_categories(cats_ref)
 
-            plt.tight_layout()
-            img_buf = io.BytesIO()
-            plt.savefig(img_buf, format='png', bbox_inches='tight', facecolor='#0F1115')
-            img_buf.seek(0)
-            plt.close(fig)
+        ws_p.add_chart(chart, f"E{chart_start_row}")
 
-            chart_obj = OpenpyxlImage(img_buf)
-            chart_obj.width = 960
-            chart_obj.height = 330
-            ws_prof.add_image(chart_obj, f"B{max(10, p_row + 2)}")
-        except Exception as e_plot:
-            pass
+        for ci in range(1, 13):
+            ws_p.column_dimensions[get_column_letter(ci)].width = 14
 
-        # Adjust Column Widths
-        for c_i in range(1, 11):
-            ws_prof.column_dimensions[get_column_letter(c_i)].width = 18 if c_i == 10 else 14
-
-    # Adjust Master Overview Widths
-    for c_i in range(1, len(ov_headers) + 1):
-        ws_master.column_dimensions[get_column_letter(c_i)].width = 30 if c_i == 1 else 16
+    for ci in range(1, len(ov_headers) + 1):
+        ws_master.column_dimensions[get_column_letter(ci)].width = 28 if ci==1 else 15
+    for ci in range(1, len(raw_headers) + 1):
+        ws_raw.column_dimensions[get_column_letter(ci)].width = 16
 
     out_buf = io.BytesIO()
     wb.save(out_buf)
