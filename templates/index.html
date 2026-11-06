@@ -1650,6 +1650,28 @@
                     <ul class="watchlist" id="watchlistUI" style="display:none;"></ul>
                 </div>
             </details>
+
+            <!-- DEDICATED BOTTOM-LEFT ALPACA LIVE MONITOR -->
+            <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-top:10px; display:flex; flex-direction:column; gap:6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="status-dot online" id="alpacaCardDot"></span>
+                        <span style="font-size:10px; font-weight:800; color:#ffd400; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
+                    </div>
+                    <button class="btn-control" style="padding:2px 7px; font-size:9px; border-color:#ff5364; color:#ff5364;" onclick="triggerEmergencyLiquidate()" title="Cancel resting stops and sweep Alpaca to 100% cash">
+                        Sweep to Cash
+                    </button>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:2px;">
+                    <span style="font-size:11px; color:#8a8a9e;">Account Val:</span>
+                    <span id="alpacaCardValue" style="font-size:12px; font-weight:800; color:#fff;">$0.00</span>
+                </div>
+
+                <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:5px 8px; text-align:center;">
+                    ✅ 100% Flat (Cash)
+                </div>
+            </div>
         </div>
 
         </div>
@@ -3780,6 +3802,34 @@
 
                 if (d.connected) {
                     let bpStr = `$${(d.buying_power || 0).toLocaleString()}`;
+                    let pvStr = `$${(d.portfolio_value || 0).toLocaleString()}`;
+                    
+                    // Update Desktop Bottom-Left Monitor
+                    let valEl = document.getElementById('alpacaCardValue');
+                    let expBox = document.getElementById('alpacaExposureBox');
+                    let cDot = document.getElementById('alpacaCardDot');
+                    if (valEl) valEl.innerText = pvStr;
+                    if (cDot) cDot.className = d.paused ? 'status-dot paused' : 'status-dot online';
+
+                    if (expBox) {
+                        if (d.positions && d.positions.length > 0) {
+                            let posSummary = d.positions.map(p => `${p.qty} ${p.symbol} (${p.unrealized_pl >= 0 ? '+' : ''}$${p.unrealized_pl.toFixed(2)})`).join(', ');
+                            if (d.has_desync) {
+                                expBox.style.color = '#ff9900';
+                                expBox.style.borderColor = '#ff9900';
+                                expBox.innerHTML = `⚠️ DESYNC: ${posSummary}`;
+                            } else {
+                                expBox.style.color = '#ffd400';
+                                expBox.style.borderColor = '#262b36';
+                                expBox.innerHTML = `Active: ${posSummary}`;
+                            }
+                        } else {
+                            expBox.style.color = '#0ecb81';
+                            expBox.style.borderColor = '#262b36';
+                            expBox.innerText = '✅ 100% Flat (Cash)';
+                        }
+                    }
+
                     if (d.paused) {
                         if (dot) { dot.className = 'status-dot paused'; }
                         if (txt) { txt.style.color = '#ffd400'; txt.innerText = 'Alpaca: Paused'; }

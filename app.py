@@ -199,18 +199,32 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
 
     print(f"[ALPACA ATTEMPT] {action.upper()} {shares} {ticker} via {base_url} (Bot: {bot_name})")
 
-    # If exiting a position, cancel any resting trailing stop orders first so Alpaca doesn't block the sell
+    # Clean liquidation: If selling, close directly via Alpaca position endpoint to automatically cancel resting stops
     if action.lower() == 'sell':
         try:
-            req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=open&symbols={ticker.upper()}", headers=headers)
-            with urllib.request.urlopen(req_orders, timeout=4) as resp:
-                open_orders = json.loads(resp.read().decode('utf-8'))
-                for o in open_orders:
-                    del_req = urllib.request.Request(f"{base_url}/v2/orders/{o['id']}", headers=headers, method="DELETE")
-                    with urllib.request.urlopen(del_req, timeout=4): pass
+            # 1. First cancel any resting open orders for this symbol so shares are unlocked
+            req_cancel_sym = urllib.request.Request(f"{base_url}/v2/orders?status=open", headers=headers)
+            with urllib.request.urlopen(req_cancel_sym, timeout=4) as r_c:
+                all_o = json.loads(r_c.read().decode('utf-8'))
+                for o in all_o:
+                    if (o.get('symbol') or '').upper() == ticker.upper():
+                        d_req = urllib.request.Request(f"{base_url}/v2/orders/{o['id']}", headers=headers, method="DELETE")
+                        with urllib.request.urlopen(d_req, timeout=4): pass
             time.sleep(0.5)
+            
+            # 2. Use DELETE /v2/positions/{symbol} which liquidates directly without race conditions
+            req_close_pos = urllib.request.Request(f"{base_url}/v2/positions/{ticker.upper()}?qty={int(shares)}", headers=headers, method="DELETE")
+            with urllib.request.urlopen(req_close_pos, timeout=6) as resp_c:
+                res_data = json.loads(resp_c.read().decode('utf-8'))
+                print(f"[ALPACA SUCCESS] Closed position {shares} {ticker} -> ID: {res_data.get('id')}")
+                return res_data
+        except urllib.error.HTTPError as he:
+            # If 404, position is already flat; otherwise fall back to market sell order
+            if he.code == 404:
+                return {'status': 'ok', 'message': 'Position already closed'}
+            print(f"[ALPACA CLOSE NOTICE {he.code}] Falling back to standard market sell: {he.read().decode('utf-8', errors='ignore')}")
         except Exception as e:
-            print(f"[ALPACA NOTICE] Pre-cancel open orders: {e}")
+            print(f"[ALPACA CLOSE ERROR]: {e}")
 
     payload = json.dumps({
         "symbol": ticker.upper(),
@@ -1472,7 +1486,7 @@ def reconcile_alpaca_positions_and_orders():
     except Exception as e:
         pass
 
-    # 2. Reconcile Open Positions (Clear any orphan local holdings if Alpaca is flat)
+    # 2. True Two-Way Reconciliation & Overnight Orphan Sweep
     try:
         req_pos = urllib.request.Request(f"{base_url}/v2/positions", headers=headers)
         with urllib.request.urlopen(req_pos, timeout=5) as resp:
@@ -1480,8 +1494,8 @@ def reconcile_alpaca_positions_and_orders():
             alpaca_holdings = {p['symbol'].upper(): int(p.get('qty', 0)) for p in live_pos}
             allocations = broker.get('allocations') or {}
             
+            # Step 2A: Clear local positions if Alpaca already sold them
             for prof in auto_profiles:
-                # Check if this strategy is actively allocated to Alpaca
                 is_enabled = any(s_key in prof.lower() and s_data.get('enabled') for s_key, s_data in allocations.items())
                 if not is_enabled:
                     continue
@@ -1509,6 +1523,27 @@ def reconcile_alpaca_positions_and_orders():
                                     'source': 'alpaca_sync'
                                 }
                             )
+
+            # Step 2B: Check the REVERSE — Alpaca holds shares that NO bot claims or after 20:50 sweep
+            now_uk = pd.Timestamp.now(tz='Europe/London')
+            is_post_sweep = (now_uk.hour == 20 and now_uk.minute >= 50) or (now_uk.hour >= 21) or (now_uk.hour < 14)
+            
+            for p in live_pos:
+                tk = p['symbol'].upper()
+                qty = int(p.get('qty', 0))
+                if qty <= 0: continue
+
+                total_local_shares_claimed = sum(portfolio_store.get_shares(tk, prof) for prof in auto_profiles)
+
+                # If after 20:50 sweep OR no bot owns these shares, auto-liquidate on Alpaca
+                if is_post_sweep or total_local_shares_claimed == 0:
+                    print(f"[ORPHAN SWEEP] Liquidating unowned/overnight position on Alpaca: {qty} {tk} (Local claimed: {total_local_shares_claimed})")
+                    try:
+                        req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
+                        with urllib.request.urlopen(req_del, timeout=5):
+                            print(f"[ORPHAN SWEEP SUCCESS] Flattened {tk} on Alpaca.")
+                    except Exception as e_del:
+                        print(f"[ORPHAN SWEEP ERROR]: {e_del}")
     except Exception as e:
         pass
 
@@ -2714,12 +2749,40 @@ def get_broker_status():
     try:
         with urllib.request.urlopen(req, timeout=4) as resp:
             acc = json.loads(resp.read().decode('utf-8'))
+            
+            # Fetch live positions directly from Alpaca
+            live_positions = []
+            try:
+                req_p = urllib.request.Request(f"{base_url}/v2/positions", headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": secret_key})
+                with urllib.request.urlopen(req_p, timeout=4) as r_p:
+                    raw_pos = json.loads(r_p.read().decode('utf-8'))
+                    live_positions = [{
+                        'symbol': p['symbol'],
+                        'qty': int(p.get('qty', 0)),
+                        'market_value': float(p.get('market_value', 0.0)),
+                        'unrealized_pl': float(p.get('unrealized_pl', 0.0))
+                    } for p in raw_pos]
+            except Exception: pass
+
+            # Audit desync against all active bots
+            claimed_symbols = set()
+            for u in portfolio_store.data.get('users', {}).values():
+                if isinstance(u, dict):
+                    for tr in u.get('history', []):
+                        tk = tr.get('ticker')
+                        if tk and portfolio_store.get_shares(tk) > 0:
+                            claimed_symbols.add(tk)
+
+            has_desync = any(p['symbol'] not in claimed_symbols for p in live_positions)
+
             return jsonify({
                 'connected': True,
                 'status': acc.get('status', 'ACTIVE'),
                 'buying_power': float(acc.get('buying_power', 0.0)),
                 'cash': float(acc.get('cash', 0.0)),
                 'portfolio_value': float(acc.get('portfolio_value', 0.0)),
+                'positions': live_positions,
+                'has_desync': has_desync,
                 'paused': paused,
                 'mode': mode,
                 'api_key': api_key,
