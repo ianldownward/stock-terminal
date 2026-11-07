@@ -459,6 +459,13 @@ class PortfolioManager:
                 if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
+                else:
+                    # Clean out any old fake CAPITAL_INJECTION trades from database history
+                    u_hist = self.data['users'][p].get('history', [])
+                    clean_hist = [h for h in u_hist if h.get('ticker') != 'CAPITAL_INJECTION']
+                    if len(clean_hist) != len(u_hist):
+                        self.data['users'][p]['history'] = clean_hist
+                        needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = 'Vector Hybrid'
@@ -1122,7 +1129,7 @@ def process_auto_profile(prof_name):
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
 
-        net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist)
+        net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
         init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values())
         cash_balance = mb + net_history - init_manual
         rem_cash = max(0, cash_balance)
@@ -1843,7 +1850,6 @@ def add_user_v2():
 def add_capital_route():
     data = request.get_json() or {}
     username = data.get('username') or portfolio_store.active_username()
-    # Allow negative amounts so users can subtract/bank capital
     amount = float(data.get('amount', 0.0))
 
     if amount == 0:
@@ -1852,11 +1858,19 @@ def add_capital_route():
     portfolio_store.reload()
     ud = portfolio_store.user_data(username)
     
-    # Directly adjust the master baseline budget without logging a fake trade
-    ud['master_budget'] = float(ud.get('master_budget', 500.0)) + amount
+    # Cleanly add or subtract capital directly without deducting cash
+    new_budget = max(50.0, round(float(ud.get('master_budget', 500.0)) + amount, 2))
+    ud['master_budget'] = new_budget
     
+    # Keep broker allocation for Alpaca automatically in sync
+    broker = portfolio_store.data.setdefault('broker', {})
+    allocs = broker.setdefault('allocations', {})
+    for k in allocs:
+        if k in username.lower() or username.lower() in k:
+            allocs[k]['budget'] = new_budget
+
     portfolio_store.save_data(portfolio_store.data)
-    return jsonify({'status': 'ok', 'new_budget': ud['master_budget']})
+    return jsonify({'status': 'ok', 'new_budget': new_budget})
 
 @app.route('/api/users/delete', methods=['POST'])
 @login_required
@@ -2287,7 +2301,7 @@ def get_data():
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
             
-            nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist_lb)
+            nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist_lb if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
             im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos_lb.values())
             cash_now = mb_lb + nh_lb - im_lb
             

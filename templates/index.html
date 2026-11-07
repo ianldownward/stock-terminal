@@ -1221,166 +1221,182 @@
         </div>
     </div>
 
-    <!-- ACCOUNT & BROKER SETTINGS MODAL -->
+    <!-- ACCOUNT & BROKER SETTINGS MODAL WITH TABS -->
     <div class="modal-overlay" id="settingsModal" style="display:none;">
-        <div class="modal" style="width: 530px; max-height: 90vh;">
+        <div class="modal" style="width: 580px; max-width: 95vw; max-height: 90vh;">
             <h2>
-                <span>Broker Settings & Bot Allocations</span>
+                <span>Broker Settings & Management</span>
                 <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeSettingsModal()">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
             </h2>
-            
-            <div style="margin-top:14px; display:flex; flex-direction:column; gap:16px;">
-                <!-- 0. PHONE TRADE ALERTS WITH TOGGLE SWITCH -->
-                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <span style="font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.5px;">Phone Alerts</span>
-                            <span id="settingsAlertBadge" style="font-size:9px; font-weight:800; padding:1px 6px; border-radius:3px; background:#262b36; color:#8a8a9e;">OFF</span>
-                        </div>
-                        <div style="font-size:11px; color:#8a8a9e; margin-top:3px;" id="settingsAlertDesc">Lock-screen notifications on trades</div>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px;" onclick="closeSettingsModal(); openAlertModal();" title="Alert Details & Test">
-                            Settings
-                        </button>
-                        <label class="toggle-switch" title="Toggle Phone Alerts ON/OFF">
-                            <input type="checkbox" id="togglePhoneAlertsSetting" onchange="onTogglePhoneAlerts(this.checked)">
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-                </div>
 
-                <!-- 1. LIVE CONNECTION STATUS & OVERRIDES -->
-                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
-                    <div style="margin-bottom:10px;">
-                        <span style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; letter-spacing:0.5px;">Alpaca Connection Status</span>
-                        <div id="modalBrokerStatusText" style="font-size:13px; font-weight:700; color:#8a8a9e; margin-top:3px;">Checking connection...</div>
+            <!-- Top Tab Switcher -->
+            <div style="display:flex; gap:6px; margin: 14px 0 12px 0; border-bottom: 1px solid #262b36; padding-bottom: 8px;">
+                <button type="button" id="tabBtnBots" class="btn-control active" onclick="switchSettingsTab('bots')" style="padding:6px 12px; font-size:11px;">Active Bots & Capital</button>
+                <button type="button" id="tabBtnAlpaca" class="btn-control" onclick="switchSettingsTab('alpaca')" style="padding:6px 12px; font-size:11px;">Alpaca Connection</button>
+                <button type="button" id="tabBtnAlerts" class="btn-control" onclick="switchSettingsTab('alerts')" style="padding:6px 12px; font-size:11px;">Phone Alerts & Portal</button>
+            </div>
+            
+            <!-- TAB 1: ACTIVE BOTS & PER-PROFILE CAPITAL -->
+            <div id="tabContentBots" style="display:flex; flex-direction:column; gap:14px;">
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:10px 12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:bold; letter-spacing:0.5px;">Broker Relay Status</span>
+                        <div id="modalBrokerStatusText" style="font-size:11px; font-weight:700; color:#0ecb81;">Connected</div>
                     </div>
-                    <!-- Responsive 3-Column Grid: Never squeezes or overflows on mobile -->
                     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px;">
                         <button type="button" id="btnPauseRelay" onclick="togglePauseBroker()" class="btn-control" style="padding:7px 4px; font-size:11px; justify-content:center; width:100%;">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
                             <span id="pauseBtnLabel">Pause Relay</span>
                         </button>
-                        <button type="button" onclick="triggerTestAlpacaOrder()" class="btn-control" style="padding:7px 4px; font-size:11px; border-color:#0ecb81; color:#0ecb81; justify-content:center; width:100%;" title="Send a 1-share test market order to Alpaca">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <button type="button" onclick="triggerTestAlpacaOrder()" class="btn-control" style="padding:7px 4px; font-size:11px; border-color:#ffd400; color:#ffd400; justify-content:center; width:100%;">
                             <span>Test 1-Sh</span>
                         </button>
-                        <button type="button" onclick="triggerEmergencyLiquidate()" class="btn-control" style="padding:7px 4px; font-size:11px; border-color:#ff5364; background:rgba(255,83,100,0.12); color:#ff5364; justify-content:center; width:100%;">
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        <button type="button" onclick="triggerEmergencyLiquidate()" class="btn-control" style="padding:7px 4px; font-size:11px; border-color:#ffd400; background:rgba(255,212,0,0.12); color:#ffd400; justify-content:center; width:100%;">
                             <span>Liquidate All</span>
                         </button>
                     </div>
                 </div>
 
-                <!-- 2. MULTI-BOT ALLOCATION MATRIX WITH INDIVIDUAL LIQUIDATORS -->
-                <div>
-                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Active Bot Execution & Sizing</label>
-                    <p style="font-size:11px; color:#787e8e; margin:3px 0 10px 0;">Enable algorithms to route to Alpaca, assign cash budget (£), or liquidate individually.</p>
+                <!-- Bot Execution & Non-Editable Capital Matrix -->
+                <div style="display:flex; flex-direction:column; gap:8px; background:#13161c; padding:12px; border-radius:8px; border:1px solid #262b36;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:11px; color:#ffd400; font-weight:800; text-transform:uppercase;">Strategy Allocations</span>
+                        <span style="font-size:10px; color:#8a8a9e;">Use [+ / - Capital] to add or bank funds</span>
+                    </div>
                     
-                    <div style="display:flex; flex-direction:column; gap:8px; background:#13161c; padding:10px; border-radius:8px; border:1px solid #262b36;">
-                        <!-- Vector Hybrid -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28;">
-                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="alloc_tqm_active" checked> 
-                                <span style="font-weight:700; color:#ffd400;">Vector Hybrid</span> <span style="color:#787e8e; font-size:11px;">(Momentum)</span>
-                            </label>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" step="0.01" id="alloc_tqm_val" value="500.00" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
-                                <button type="button" onclick="liquidateSpecificBot('vector hybrid')" class="btn-bot-liquidate">Liquidate</button>
-                            </div>
-                        </div>
-
-                        <!-- Dual Axis -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #1a1e28;">
-                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="alloc_tq_active"> 
-                                <span style="font-weight:700;">Dual Axis</span> <span style="color:#787e8e; font-size:11px;">(Directional)</span>
-                            </label>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" step="0.01" id="alloc_tq_val" value="500.00" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
-                                <button type="button" onclick="liquidateSpecificBot('dual axis')" class="btn-bot-liquidate">Liquidate</button>
-                            </div>
-                        </div>
-
-                        <!-- Velocity Pulse -->
-                        <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0;">
-                            <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="alloc_s_active"> 
-                                <span style="font-weight:700;">Velocity Pulse</span> <span style="color:#787e8e; font-size:11px;">(Scalper)</span>
-                            </label>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <span style="color:#787e8e; font-size:12px; font-weight:700;">£</span>
-                                <input type="number" step="0.01" id="alloc_s_val" value="500.00" style="width:75px; background:#0f1115; border:1px solid #262b36; color:#fff; padding:4px 6px; border-radius:4px; font-size:12px; font-weight:700; text-align:right;">
-                                <button type="button" onclick="liquidateSpecificBot('velocity pulse')" class="btn-bot-liquidate">Liquidate</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 3. BROKER KEYS & STEP-BY-STEP ONBOARDING -->
-                <div style="border-top:1px solid #262b36; padding-top:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Connect Your Alpaca Account</label>
-                        <a href="https://app.alpaca.markets" target="_blank" style="font-size:11px; color:#ffd400; text-decoration:none; font-weight:700;">Open Alpaca Dashboard ↗</a>
-                    </div>
-
-                    <!-- Mode Toggle -->
-                    <div style="display:flex; gap:16px; margin:10px 0 10px 0;">
-                        <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="radio" name="settingBrokerMode" value="paper" checked onchange="updateAlpacaInstructions('paper')"> Paper Simulation (Practice)
+                    <!-- Vector Hybrid -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #1a1e28;">
+                        <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox" id="alloc_tqm_active" checked style="accent-color:#ffd400;"> 
+                            <span style="font-weight:700; color:#ffd400;">Vector Hybrid</span>
                         </label>
-                        <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
-                            <input type="radio" name="settingBrokerMode" value="live" onchange="updateAlpacaInstructions('live')"> Real Money (Live Trading)
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span id="alloc_vector_display" style="font-size:12px; font-weight:800; color:#fff; background:#0f1115; border:1px solid #262b36; padding:4px 8px; border-radius:4px;">£500.00</span>
+                            <button type="button" onclick="openCapitalModalFor('Vector Hybrid')" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400;">+ / - Capital</button>
+                            <button type="button" onclick="liquidateSpecificBot('vector hybrid')" class="btn-bot-liquidate">Liquidate</button>
+                        </div>
+                    </div>
+
+                    <!-- Dual Axis -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #1a1e28;">
+                        <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox" id="alloc_tq_active" style="accent-color:#ffd400;"> 
+                            <span style="font-weight:700; color:#fff;">Dual Axis</span>
                         </label>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span id="alloc_dual_display" style="font-size:12px; font-weight:800; color:#fff; background:#0f1115; border:1px solid #262b36; padding:4px 8px; border-radius:4px;">£500.00</span>
+                            <button type="button" onclick="openCapitalModalFor('Dual Axis')" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400;">+ / - Capital</button>
+                            <button type="button" onclick="liquidateSpecificBot('dual axis')" class="btn-bot-liquidate">Liquidate</button>
+                        </div>
                     </div>
 
-                    <!-- Dynamic Layman Step-by-Step Instruction Card -->
-                    <div id="alpacaGuideCard" style="background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:12px; margin-bottom:12px; font-size:11px; line-height:1.5;">
-                        <!-- Content populated dynamically by updateAlpacaInstructions() below -->
-                    </div>
-
-                    <!-- API Credential Inputs -->
-                    <div style="display:flex; flex-direction:column; gap:8px;">
-                        <div>
-                            <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">API Key ID</label>
-                            <input type="text" id="settingApiKey" placeholder="Paste your Key ID here" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
-                        </div>
-                        <div>
-                            <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Secret Key</label>
-                            <input type="text" id="settingApiSecret" placeholder="Paste your Secret Key here" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
-                        </div>
-                        <div>
-                            <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Broker Dashboard URL (Optional)</label>
-                            <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                    <!-- Velocity Pulse -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0;">
+                        <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox" id="alloc_s_active" style="accent-color:#ffd400;"> 
+                            <span style="font-weight:700; color:#fff;">Velocity Pulse</span>
+                        </label>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <span id="alloc_pulse_display" style="font-size:12px; font-weight:800; color:#fff; background:#0f1115; border:1px solid #262b36; padding:4px 8px; border-radius:4px;">£500.00</span>
+                            <button type="button" onclick="openCapitalModalFor('Velocity Pulse')" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400;">+ / - Capital</button>
+                            <button type="button" onclick="liquidateSpecificBot('velocity pulse')" class="btn-bot-liquidate">Liquidate</button>
                         </div>
                     </div>
                 </div>
 
-                <!-- PROFILE CALIBRATIONS & MANAGEMENT -->
-                <div style="border-top:1px solid #262b36; padding-top:12px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Profile Management & Capital</label>
-                        <div style="display:flex; gap:6px;">
-                            <button type="button" onclick="openStrategyWizard()" class="btn-control" style="padding:4px 10px; font-size:11px; border-color:#ffd400; color:#000; background:#ffd400;">+ New Profile</button>
-                            <button type="button" onclick="openAddCapitalModal()" class="btn-control" style="padding:4px 10px; font-size:11px; border-color:#ffd400; color:#ffd400; background:transparent;">Manage Capital</button>
-                            <button type="button" onclick="deleteUserPrompt()" class="btn-control" style="padding:4px 10px; font-size:11px; border-color:#ff5364; color:#ff5364; background:rgba(255,83,100,0.1);">Delete</button>
-                        </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding-top:4px;">
+                    <button type="button" onclick="openStrategyWizard()" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 14px; font-weight:800;">+ New Strategy Profile</button>
+                    <button type="button" onclick="deleteUserPrompt()" class="btn-control" style="border-color:#262b36; color:#8a8a9e; padding:8px 12px;">Delete Active Profile</button>
+                </div>
+            </div>
+
+            <!-- TAB 2: ALPACA CONNECTION & GUIDED SETUP -->
+            <div id="tabContentAlpaca" style="display:none; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <label style="font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Broker Setup Guide</label>
+                    <a href="https://app.alpaca.markets" target="_blank" style="font-size:11px; color:#ffd400; text-decoration:none; font-weight:700;">Open Alpaca Dashboard ↗</a>
+                </div>
+
+                <!-- Mode Toggle (With Live Warning Prompt) -->
+                <div style="display:flex; gap:16px;">
+                    <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                        <input type="radio" name="settingBrokerMode" value="paper" checked onchange="handleBrokerModeSwitch('paper')"> Paper Simulation (Practice)
+                    </label>
+                    <label style="font-size:12px; color:#fff; cursor:pointer; display:flex; align-items:center; gap:6px;">
+                        <input type="radio" name="settingBrokerMode" value="live" onchange="handleBrokerModeSwitch('live')"> Real Money (Live Trading)
+                    </label>
+                </div>
+
+                <!-- Stepper Box -->
+                <div id="alpacaGuideCard" style="background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:12px; font-size:11px; line-height:1.5;"></div>
+
+                <!-- API Credentials Inputs -->
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div>
+                        <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">API Key ID</label>
+                        <input type="text" id="settingApiKey" placeholder="Paste Key ID here" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
+                    </div>
+                    <div>
+                        <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Secret Key</label>
+                        <input type="text" id="settingApiSecret" placeholder="Paste Secret Key here" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
                     </div>
                 </div>
 
-                <!-- ACTIONS -->
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; border-top:1px solid #262b36; padding-top:12px;">
-                    <button type="button" class="btn-control" style="border-color:#ff5364; color:#ff5364; background:transparent;" onclick="disconnectBroker()">Disconnect Alpaca</button>
-                    <div style="display:flex; gap:8px;">
-                        <button type="button" class="btn-control" style="border-color:#262b36; color:#e1e3e6;" onclick="closeSettingsModal()">Cancel</button>
-                        <button type="button" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 16px; font-weight:800;" onclick="saveUserSettings()">Save & Launch Engine</button>
-                    </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px;">
+                    <button type="button" class="btn-control" style="border-color:#ff5364; color:#ff5364;" onclick="disconnectBroker()">Disconnect Alpaca</button>
+                    <button type="button" class="btn-control" style="border-color:#ffd400; color:#ffd400;" onclick="triggerTestAlpacaOrder()">Verify Connection</button>
                 </div>
+            </div>
+
+            <!-- TAB 3: PHONE ALERTS & PORTAL -->
+            <div id="tabContentAlerts" style="display:none; flex-direction:column; gap:14px;">
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:bold;">Lock-Screen Notifications</span>
+                            <span id="settingsAlertBadge" style="font-size:9px; font-weight:800; padding:1px 6px; border-radius:3px; background:#262b36; color:#8a8a9e;">OFF</span>
+                        </div>
+                        <div style="font-size:11px; color:#8a8a9e; margin-top:3px;" id="settingsAlertDesc">Alerts sent instantly on buys, sells, and stops</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="togglePhoneAlertsSetting" onchange="onTogglePhoneAlerts(this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div>
+                    <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Alpaca Portal URL</label>
+                    <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                    <button type="button" class="btn-control" style="border-color:#ffd400; color:#ffd400;" onclick="triggerTestAlert()">Send Test Alert</button>
+                </div>
+            </div>
+
+            <!-- Bottom Save / Cancel Actions -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; border-top:1px solid #262b36; padding-top:12px;">
+                <button type="button" class="btn-control" onclick="closeSettingsModal()">Close</button>
+                <button type="button" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 20px; font-weight:800;" onclick="saveUserSettings()">Save & Launch Engine</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NON-BLOCKING ONBOARDING ASSISTANT (Allows clicking background website) -->
+    <div id="onboardingAssistant" style="display:none; position:fixed; bottom:20px; right:20px; z-index:900; width:380px; max-width:92vw; background:#171a21; border:2px solid #ffd400; border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,0.85); padding:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #262b36; padding-bottom:8px; margin-bottom:10px;">
+            <div style="font-size:12px; font-weight:800; color:#ffd400;" id="assistStepTitle">Quick Setup • Step 1 of 4</div>
+            <button type="button" onclick="dismissOnboardingGuide()" style="background:none; border:none; color:#8a8a9e; cursor:pointer; font-size:14px; font-weight:bold;">✕</button>
+        </div>
+
+        <div id="assistStepBody" style="font-size:11px; color:#e1e3e6; line-height:1.45; min-height:120px;"></div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; border-top:1px solid #262b36; padding-top:10px;">
+            <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px;" onclick="dismissOnboardingGuide()">Do This Later</button>
+            <div style="display:flex; gap:6px;">
+                <button type="button" id="btnAssistBack" class="btn-control" style="padding:4px 8px; font-size:11px; display:none;" onclick="prevAssistStep()">Back</button>
+                <button type="button" id="btnAssistNext" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:5px 12px; font-size:11px; font-weight:800;" onclick="nextAssistStep()">Next ➔</button>
             </div>
         </div>
     </div>
@@ -3058,7 +3074,7 @@
         }
 
         async function submitAddCapital() {
-            let activeProf = document.getElementById('userSelect')?.value || '';
+            let activeProf = targetCapitalProfile || document.getElementById('userSelect')?.value || 'Vector Hybrid';
             let amount = parseFloat(document.getElementById('addCapAmount').value);
             if (isNaN(amount) || amount === 0) {
                 alert("Please enter a valid adjustment amount (positive or negative).");
@@ -4855,33 +4871,155 @@
             if (m) m.style.display = 'none';
         }
         
+        let currentAssistStep = 1;
+
+        function startOnboardingGuide() {
+            currentAssistStep = 1;
+            renderAssistStep();
+            document.getElementById('onboardingAssistant').style.display = 'block';
+        }
+
+        function dismissOnboardingGuide() {
+            document.getElementById('onboardingAssistant').style.display = 'none';
+            localStorage.setItem('idc_guide_dismissed', 'true');
+        }
+
+        function renderAssistStep() {
+            let title = document.getElementById('assistStepTitle');
+            let body = document.getElementById('assistStepBody');
+            let btnBack = document.getElementById('btnAssistBack');
+            let btnNext = document.getElementById('btnAssistNext');
+
+            btnBack.style.display = currentAssistStep > 1 ? 'inline-flex' : 'none';
+
+            if (currentAssistStep === 1) {
+                title.innerText = "Setup Guide • Step 1: Mode";
+                body.innerHTML = `
+                    <div style="margin-bottom:8px;">Choose how you want to run IDC Trading:</div>
+                    <label style="display:flex; align-items:center; gap:6px; margin-bottom:6px; cursor:pointer;">
+                        <input type="radio" name="guideMode" value="paper" checked style="accent-color:#ffd400;">
+                        <span><b>Paper Trading</b> (Risk-free practice account)</span>
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                        <input type="radio" name="guideMode" value="live" style="accent-color:#ffd400;">
+                        <span><b>Live Trading</b> (Real money capital)</span>
+                    </label>
+                `;
+                btnNext.innerText = "Next ➔";
+            } else if (currentAssistStep === 2) {
+                let m = document.querySelector('input[name="guideMode"]:checked')?.value || 'paper';
+                title.innerText = "Setup Guide • Step 2: Alpaca Keys";
+                body.innerHTML = `
+                    <div>1. Open <a href="https://app.alpaca.markets" target="_blank" style="color:#ffd400;">app.alpaca.markets ↗</a></div>
+                    <div>2. Set dropdown to <b>${m === 'paper' ? 'Paper Trading' : 'Live Trading'}</b>.</div>
+                    <div>3. Generate API Keys and paste them here:</div>
+                    <input type="text" id="guideApiKey" placeholder="API Key ID (${m === 'paper' ? 'PK...' : 'AK...'})" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:11px; margin-top:6px;">
+                    <input type="text" id="guideApiSecret" placeholder="Secret Key" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:11px; margin-top:6px;">
+                `;
+                btnNext.innerText = "Next ➔";
+            } else if (currentAssistStep === 3) {
+                title.innerText = "Setup Guide • Step 3: Strategy";
+                body.innerHTML = `
+                    <div style="margin-bottom:8px;">Choose your starting strategy:</div>
+                    <div style="display:flex; flex-direction:column; gap:6px;">
+                        <label style="background:#0f1115; border:1px solid #ffd400; padding:6px; border-radius:4px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="radio" name="guideStrat" value="Vector Hybrid" checked style="accent-color:#ffd400;">
+                            <span><b>Vector Hybrid</b> (+1.31%/day disciplined momentum)</span>
+                        </label>
+                        <label style="background:#0f1115; border:1px solid #262b36; padding:6px; border-radius:4px; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="radio" name="guideStrat" value="Dual Axis" style="accent-color:#ffd400;">
+                            <span><b>Dual Axis</b> (All-weather long/short switcher)</span>
+                        </label>
+                    </div>
+                `;
+                btnNext.innerText = "Next ➔";
+            } else if (currentAssistStep === 4) {
+                title.innerText = "Setup Guide • Step 4: Capital";
+                body.innerHTML = `
+                    <div>Assign your initial trading capital:</div>
+                    <input type="number" id="guideCapital" value="500.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#ffd400; font-size:16px; font-weight:800; padding:8px; border-radius:4px; margin-top:6px;">
+                    <div style="font-size:10px; color:#ffd400; margin-top:6px;">[IMPORTANT]: Make sure this amount is deposited into your Alpaca account.</div>
+                `;
+                btnNext.innerText = "Finish & Launch";
+            }
+        }
+
+        function nextAssistStep() {
+            if (currentAssistStep === 2) {
+                let k = document.getElementById('guideApiKey')?.value.trim();
+                let s = document.getElementById('guideApiSecret')?.value.trim();
+                let m = document.querySelector('input[name="guideMode"]:checked')?.value || 'paper';
+                if (k) localStorage.setItem('alpaca_api_key', k);
+                if (s) localStorage.setItem('alpaca_api_secret', s);
+                fetch('/api/client/settings', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ broker_mode: m, api_key: k, secret_key: s })
+                }).catch(() => {});
+            }
+
+            if (currentAssistStep === 4) {
+                dismissOnboardingGuide();
+                fetchData(false);
+                return;
+            }
+            currentAssistStep++;
+            renderAssistStep();
+        }
+
+        function prevAssistStep() {
+            if (currentAssistStep > 1) {
+                currentAssistStep--;
+                renderAssistStep();
+            }
+        }
+
+        function switchSettingsTab(tab) {
+            ['bots', 'alpaca', 'alerts'].forEach(t => {
+                let cap = t.charAt(0).toUpperCase() + t.slice(1);
+                let btn = document.getElementById(`tabBtn${cap}`);
+                let content = document.getElementById(`tabContent${cap}`);
+                let isMatch = (t === tab);
+                if (btn) btn.classList.toggle('active', isMatch);
+                if (content) content.style.display = isMatch ? 'flex' : 'none';
+            });
+        }
+
+        function handleBrokerModeSwitch(targetMode) {
+            if (targetMode === 'live') {
+                if (!confirm("SWITCHING TO REAL MONEY (LIVE TRADING):\n\n1. Ensure you generate LIVE API keys (starts with AK...).\n2. Ensure you have deposited settled cash into your Alpaca account.\n\nProceed?")) {
+                    document.querySelector('input[name="settingBrokerMode"][value="paper"]').checked = true;
+                    updateAlpacaInstructions('paper');
+                    return;
+                }
+            }
+            updateAlpacaInstructions(targetMode);
+        }
+
         function updateAlpacaInstructions(mode) {
             let guide = document.getElementById('alpacaGuideCard');
             if (!guide) return;
 
             if (mode === 'paper') {
                 guide.innerHTML = `
-                    <div style="color:#ffd400; font-weight:800; margin-bottom:6px;">[GUIDE] How to Get Your Paper (Practice) Keys:</div>
+                    <div style="color:#ffd400; font-weight:800; margin-bottom:6px;">[GUIDE] Paper (Practice) Account Setup:</div>
                     <div style="color:#e1e3e6;">
-                        <div><b>[STEP 1]</b> Log into your account at <a href="https://app.alpaca.markets" target="_blank" style="color:#ffd400;">app.alpaca.markets</a>.</div>
-                        <div><b>[STEP 2]</b> In the top-left dropdown of Alpaca, confirm it is set to <b>Paper Trading</b>.</div>
-                        <div><b>[STEP 3]</b> On the right-hand side of your overview screen, find the box labeled <b>Your API Keys</b> and click <b>Generate API Key</b>.</div>
-                        <div><b>[STEP 4]</b> Copy the <b>Key ID</b> (starts with <span style="color:#ffd400; font-family:monospace;">PK...</span>) and <b>Secret Key</b>, then paste them below.</div>
-                    </div>
-                    <div style="color:#8a8a9e; font-size:10px; margin-top:6px; border-top:1px dashed #262b36; padding-top:4px;">
-                        [NOTICE]: Paper trading uses simulated virtual funds with zero financial risk.
+                        <div><b>[STEP 1]</b> Log into your account at <a href="https://app.alpaca.markets" target="_blank" style="color:#ffd400;">app.alpaca.markets ↗</a>.</div>
+                        <div><b>[STEP 2]</b> In the top-left dropdown, select <b>Paper Trading</b>.</div>
+                        <div><b>[STEP 3]</b> On the overview page under <b>Your API Keys</b>, click <b>Generate API Key</b>.</div>
+                        <div><b>[STEP 4]</b> Copy the <b>Key ID</b> (starts with <span style="color:#ffd400; font-family:monospace;">PK...</span>) and <b>Secret Key</b>, then paste below.</div>
                     </div>
                 `;
                 let keyInput = document.getElementById('settingApiKey');
                 if (keyInput) keyInput.placeholder = "Paper Key ID (starts with PK...)";
             } else {
                 guide.innerHTML = `
-                    <div style="color:#0ecb81; font-weight:800; margin-bottom:6px;">[GUIDE] How to Get Your Real Money (Live) Keys:</div>
+                    <div style="color:#ffd400; font-weight:800; margin-bottom:6px;">[GUIDE] Real Money (Live Trading) Setup:</div>
                     <div style="color:#e1e3e6;">
-                        <div><b>[STEP 1]</b> Log into your account at <a href="https://app.alpaca.markets" target="_blank" style="color:#0ecb81;">app.alpaca.markets</a>.</div>
-                        <div><b>[STEP 2]</b> In the top-left dropdown of Alpaca, switch to <b>Live Trading</b> (requires completed identity verification and funded balance).</div>
-                        <div><b>[STEP 3]</b> On the right-hand side under <b>Live API Keys</b>, click <b>Generate API Key</b>.</div>
-                        <div><b>[STEP 4]</b> Copy the <b>Key ID</b> (starts with <span style="color:#0ecb81; font-family:monospace;">AK...</span>) and <b>Secret Key</b>, then paste them below.</div>
+                        <div><b>[STEP 1]</b> Log into your account at <a href="https://app.alpaca.markets" target="_blank" style="color:#ffd400;">app.alpaca.markets ↗</a>.</div>
+                        <div><b>[STEP 2]</b> In the top-left dropdown, switch to <b>Live Trading</b>.</div>
+                        <div><b>[STEP 3]</b> On the right under <b>Live API Keys</b>, click <b>Generate API Key</b>.</div>
+                        <div><b>[STEP 4]</b> Copy the <b>Key ID</b> (starts with <span style="color:#ffd400; font-family:monospace;">AK...</span>) and <b>Secret Key</b>, then paste below.</div>
                     </div>
                     <div style="color:#ff9900; font-size:10px; font-weight:700; margin-top:6px; border-top:1px dashed #262b36; padding-top:4px;">
                         [IMPORTANT]: Ensure you have deposited settled cash into your Alpaca account before starting live automation.
@@ -4892,9 +5030,25 @@
             }
         }
 
+        let targetCapitalProfile = 'Vector Hybrid';
+
+        function openCapitalModalFor(profileName) {
+            targetCapitalProfile = profileName;
+            document.getElementById('addCapProfileName').innerText = profileName;
+            let curBudget = 500.0;
+            if (Array.isArray(latestLeaderboardData)) {
+                let found = latestLeaderboardData.find(l => l.user.toLowerCase().includes(profileName.toLowerCase()));
+                if (found) curBudget = found.budget || 500.0;
+            }
+            document.getElementById('addCapCurrentEq').innerText = `Current Allocation: £${curBudget.toFixed(2)}`;
+            document.getElementById('addCapAmount').value = '';
+            document.getElementById('addCapitalModal').style.display = 'flex';
+        }
+
         function openSettingsModal() {
+            switchSettingsTab('bots');
             let currentMode = document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
-            if (typeof updateAlpacaInstructions === 'function') updateAlpacaInstructions(currentMode);
+            updateAlpacaInstructions(currentMode);
             fetchBrokerStatus();
             syncAlertStateUI();
             let keyInput = document.getElementById('settingApiKey');
@@ -4911,41 +5065,40 @@
 
             let allocs = window._activeAllocations || {};
             
-            // Check Vector Hybrid (checked by default, supports legacy or new key)
+            function getBotBudget(nameSnippet, fallback) {
+                if (Array.isArray(latestLeaderboardData)) {
+                    let f = latestLeaderboardData.find(l => l.user.toLowerCase().includes(nameSnippet.toLowerCase()));
+                    if (f && f.budget) return parseFloat(f.budget).toFixed(2);
+                }
+                return fallback.toFixed(2);
+            }
+
+            // Vector Hybrid
             let vActive = document.getElementById('alloc_tqm_active');
-            let vVal = document.getElementById('alloc_tqm_val');
+            let vBadge = document.getElementById('alloc_vector_display');
             if (vActive) {
                 let vEntry = allocs['vector hybrid'] || allocs['vector'] || allocs['test tqm'];
                 vActive.checked = vEntry ? !!vEntry.enabled : true;
             }
-            if (vVal) {
-                let vEntry = allocs['vector hybrid'] || allocs['vector'] || allocs['test tqm'];
-                vVal.value = vEntry?.budget || getProfileCurrentEquity('vector', 500.00);
-            }
+            if (vBadge) vBadge.innerText = `£${getBotBudget('vector', 500.0)}`;
 
             // Dual Axis
             let dActive = document.getElementById('alloc_tq_active');
-            let dVal = document.getElementById('alloc_tq_val');
+            let dBadge = document.getElementById('alloc_dual_display');
             if (dActive) {
                 let dEntry = allocs['dual axis'] || allocs['dual'] || allocs['test tq'];
                 dActive.checked = dEntry ? !!dEntry.enabled : false;
             }
-            if (dVal) {
-                let dEntry = allocs['dual axis'] || allocs['dual'] || allocs['test tq'];
-                dVal.value = dEntry?.budget || getProfileCurrentEquity('dual', 500.00);
-            }
+            if (dBadge) dBadge.innerText = `£${getBotBudget('dual', 500.0)}`;
 
             // Velocity Pulse
             let sActive = document.getElementById('alloc_s_active');
-            let sVal = document.getElementById('alloc_s_val');
+            let sBadge = document.getElementById('alloc_pulse_display');
             if (sActive) {
                 let sEntry = allocs['velocity pulse'] || allocs['velocity'] || allocs['test s'];
                 sActive.checked = sEntry ? !!sEntry.enabled : false;
             }
-            if (sVal) {
-                let sEntry = allocs['velocity pulse'] || allocs['velocity'] || allocs['test s'];
-                sVal.value = sEntry?.budget || getProfileCurrentEquity('velocity', 500.00);
-            }
+            if (sBadge) sBadge.innerText = `£${getBotBudget('velocity', 500.0)}`;
 
             document.getElementById('settingsModal').style.display = 'flex';
         }
@@ -4985,15 +5138,15 @@
             let allocations = {
                 'vector hybrid': { 
                     enabled: document.getElementById('alloc_tqm_active')?.checked || false, 
-                    budget: parseFloat(document.getElementById('alloc_tqm_val')?.value) || 500.0 
+                    budget: parseFloat((document.getElementById('alloc_vector_display')?.innerText || '500').replace(/[^0-9.]/g, '')) || 500.0 
                 },
                 'dual axis': { 
                     enabled: document.getElementById('alloc_tq_active')?.checked || false, 
-                    budget: parseFloat(document.getElementById('alloc_tq_val')?.value) || 500.0 
+                    budget: parseFloat((document.getElementById('alloc_dual_display')?.innerText || '500').replace(/[^0-9.]/g, '')) || 500.0 
                 },
                 'velocity pulse': { 
                     enabled: document.getElementById('alloc_s_active')?.checked || false, 
-                    budget: parseFloat(document.getElementById('alloc_s_val')?.value) || 500.0 
+                    budget: parseFloat((document.getElementById('alloc_pulse_display')?.innerText || '500').replace(/[^0-9.]/g, '')) || 500.0 
                 }
             };
 
