@@ -1782,28 +1782,38 @@ def index():
 def api_client_settings():
     portfolio_store.reload()
     data = request.get_json() or {}
-    
+    is_client = (session.get('role') != 'admin')
+    client_name = session.get('user', 'Client')
+
     b_mode = data.get('broker_mode', 'paper')
     api_key = data.get('api_key', '').strip()
     secret_key = data.get('secret_key', '').strip()
     allocations = data.get('allocations') or {}
-    
-    # Save into the global broker store so Test TQM, Test S, etc. can all execute
+
+    if is_client:
+        c_store = portfolio_store.get_client_store(client_name)
+        c_broker = c_store.setdefault('broker', {})
+        c_broker['mode'] = b_mode
+        c_broker['api_key'] = api_key
+        c_broker['secret_key'] = secret_key
+        c_broker['allocations'] = allocations
+        c_store['is_configured'] = True
+        portfolio_store.save_client_store(client_name, c_store)
+        return jsonify({'status': 'ok', 'message': 'Account settings saved.'})
+
     broker = portfolio_store.data.setdefault('broker', {})
     broker['mode'] = b_mode
     if api_key: broker['api_key'] = api_key
     if secret_key: broker['secret_key'] = secret_key
     broker['allocations'] = allocations
-    
-    # Dynamically update the capital for each enabled bot
+
     for prof, pdata in portfolio_store.data.get('users', {}).items():
         for s_key, s_cfg in allocations.items():
             if s_key in prof.lower():
-                new_budget = float(s_cfg.get('budget', 500.0))
-                pdata['master_budget'] = new_budget
+                pdata['master_budget'] = float(s_cfg.get('budget', 500.0))
 
     portfolio_store.save_data(portfolio_store.data)
-    return jsonify({'status': 'ok', 'message': 'Broker configuration and bot allocations updated.'})
+    return jsonify({'status': 'ok', 'message': 'Broker configuration updated.'})
 
 @app.route('/api/users', methods=['GET'])
 @login_required
@@ -2236,11 +2246,15 @@ def get_data():
 
         if is_client:
             ud = portfolio_store.get_client_store(client_name)
+            mb = float(ud.get('master_budget', 0.0))
+            is_configured = bool(ud.get('is_configured', False))
         else:
             portfolio_store.reload()
             if req_user and req_user in portfolio_store.data.get('users', {}):
                 portfolio_store.data['active_user'] = req_user
             ud = portfolio_store.user_data(req_user if req_user else None)
+            mb = float(ud.get('master_budget', 500.0))
+            is_configured = True
 
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
@@ -2250,7 +2264,6 @@ def get_data():
 
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
-        mb = ud.get('master_budget', 5000.0)
         active_holds = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker')) > 0]))
 
         # Never enter empty ALL_SHARES mode: default to active hold if present, or top watchlist stock (TQQQ)
@@ -3007,16 +3020,14 @@ def export_forensic_report():
 @app.route('/api/broker/status', methods=['GET'])
 def get_broker_status():
     portfolio_store.reload()
-    broker = portfolio_store.data.get('broker') or {}
-    
-    # Fallback to user-level broker keys if top-level dictionary is empty
-    if not broker.get('api_key') or not broker.get('secret_key'):
-        for u in portfolio_store.data.get('users', {}).values():
-            if isinstance(u, dict) and u.get('broker', {}).get('api_key') and u.get('broker', {}).get('secret_key'):
-                broker.update(u['broker'])
-                portfolio_store.data['broker'] = broker
-                portfolio_store.save_data(portfolio_store.data)
-                break
+    is_client = (session.get('role') != 'admin')
+    client_name = session.get('user', 'Client')
+
+    if is_client:
+        c_store = portfolio_store.get_client_store(client_name)
+        broker = c_store.get('broker') or {}
+    else:
+        broker = portfolio_store.data.get('broker') or {}
 
     api_key = str(broker.get('api_key', '')).strip()
     secret_key = str(broker.get('secret_key', '')).strip()

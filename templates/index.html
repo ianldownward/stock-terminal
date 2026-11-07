@@ -2428,7 +2428,7 @@
 
     <div class="right-drawer" id="leaderboardCol" style="width: 280px; min-width: 200px; max-width: 650px;">
         <details class="drawer-details" open>
-            <summary>Active Profiles Leaderboard</summary>
+            <summary>Profiles</summary>
             <div class="segmented-control" style="margin-top:8px;">
                 <input type="radio" name="lb_sort" id="lb_sort_all" value="all" checked onchange="fetchData(false)">
                 <label for="lb_sort_all">All Time</label>
@@ -3346,16 +3346,15 @@
 
             // Update trigger label with stacked rows, arrow inside window, and dynamic ticker in brackets
             if (triggerLabel) {
-                const activeLb = lbMap[activeProf] || { user: activeProf, equity: 500, daily_pnl: 0 };
-                const shortName = getShortProfileName(activeProf || 'Select Profile');
+                const activeLb = lbMap[activeProf] || { user: activeProf, equity: 0, daily_pnl: 0 };
+                const shortName = (activeProf && activeProf.includes('@')) ? 'No Profile Active' : getShortProfileName(activeProf || 'No Profile Active');
                 const isHeldActive = Boolean(activeLb.has_active_holds || activeLb.has_holding || activeLb.held_ticker || (activeLb.active_holds && activeLb.active_holds.length > 0));
                 
-                // Extract exact held ticker (e.g., NVDA, SQQQ, TQQQ)
                 const activeHoldsList = activeLb.active_holds || [];
                 const activeHeldTicker = activeHoldsList.length > 0 ? activeHoldsList[0] : (activeLb.held_ticker || activeLb.holding || '');
                 const heldTagActive = (isHeldActive && activeHeldTicker) ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(${activeHeldTicker})</span>` : '';
 
-                const eqVal = (parseFloat(activeLb.equity) || 500).toFixed(2);
+                const eqVal = activeLb.equity !== undefined ? parseFloat(activeLb.equity).toFixed(2) : '0.00';
                 const dVal = parseFloat(activeLb.daily_pnl) || 0;
                 const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
                 const col = dVal > 0 ? '#0ecb81' : (dVal < 0 ? '#ff5364' : '#8a8a9e');
@@ -3565,6 +3564,14 @@
             let activeProf = document.getElementById('userSelect') ? document.getElementById('userSelect').value : '';
             let sortMode = document.querySelector('input[name="lb_sort"]:checked') ? document.querySelector('input[name="lb_sort"]:checked').value : 'all';
             let lbData = Array.isArray(leaderboard) ? [...leaderboard] : [];
+
+            if (sortMode === 'all') {
+                lbData.sort((a, b) => b.equity - a.equity);
+            } else {
+                lbData.sort((a, b) => (b.daily_pnl || 0) - (a.daily_pnl || 0));
+            }
+
+            let lbHtml = lbData.map(lb => {
 
             if (sortMode === 'all') {
                 lbData.sort((a, b) => b.equity - a.equity);
@@ -4004,9 +4011,14 @@
                     worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
                 }
                 
-                // Update Total Portfolio Equity & Separate Cash/Shares rows
-                let totEqVal = (p.metrics ? (p.metrics.total_equity !== undefined ? p.metrics.total_equity : 500) : 500).toFixed(2);
-                let cashAmt = (p.metrics ? (p.metrics.budget_remaining !== undefined ? p.metrics.budget_remaining : 500) : 500).toFixed(2);
+                // Auto-launch onboarding wizard if this is a fresh, unconfigured account
+                if (p.portfolio && p.portfolio.is_configured === false && localStorage.getItem('idc_guide_dismissed') !== 'true') {
+                    startOnboardingGuide();
+                }
+
+                // Update Total Portfolio Equity & Separate Cash/Shares rows (Default 0.00 for clean slate)
+                let totEqVal = (p.metrics && p.metrics.total_equity !== undefined) ? parseFloat(p.metrics.total_equity).toFixed(2) : '0.00';
+                let cashAmt = (p.metrics && p.metrics.budget_remaining !== undefined) ? parseFloat(p.metrics.budget_remaining).toFixed(2) : '0.00';
                 let sharesAmt = (p.metrics ? p.metrics.total_portfolio_owned || 0 : 0).toFixed(2);
 
                 let eqValEl = document.getElementById('mTotalSharesHeldVal');
