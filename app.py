@@ -1907,9 +1907,21 @@ def add_user_v2():
     if not prof_name:
         return jsonify({'status': 'error', 'message': 'Profile name required'}), 400
 
+    is_client = (session.get('role') != 'admin')
+    client_name = session.get('user', 'Client')
+
+    if is_client:
+        c_store = portfolio_store.get_client_store(client_name)
+        c_store['master_budget'] = capital
+        c_store['active_user'] = prof_name
+        c_store['is_configured'] = True
+        c_store['strategy_name'] = prof_name
+        c_store['method'] = method
+        portfolio_store.save_client_store(client_name, c_store)
+        return jsonify({'status': 'ok', 'profile': prof_name})
+
     portfolio_store.reload()
     users = portfolio_store.data.setdefault('users', {})
-    
     if prof_name in users:
         return jsonify({'status': 'error', 'message': 'A profile with this name already exists'}), 400
 
@@ -1919,7 +1931,6 @@ def add_user_v2():
     users[prof_name] = state
     portfolio_store.data['active_user'] = prof_name
     portfolio_store.save_data(portfolio_store.data)
-
     return jsonify({'status': 'ok', 'profile': prof_name})
 
 @app.route('/api/portfolio/add_capital', methods=['POST'])
