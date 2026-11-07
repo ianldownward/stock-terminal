@@ -447,11 +447,11 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Clean out all retired prototype profiles (starts with Test or legacy names)
+            # Aggressive Purge of all legacy prototype profiles
             existing_users = list(self.data['users'].keys())
             for u in existing_users:
                 u_clean = u.strip().lower()
-                if u.startswith('Test ') or any(x in u_clean for x in ['test tqm', 'test tq', 'test e25', 'test s', 'test r', 'test e']):
+                if 'test ' in u_clean or 'ian' in u_clean:
                     del self.data['users'][u]
                     needs_save = True
 
@@ -459,10 +459,6 @@ class PortfolioManager:
                 if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
                     self.data['users'][p] = self.default_user_state(p)
                     needs_save = True
-                else:
-                    if self.data['users'][p].get('master_budget') != 500.0:
-                        self.data['users'][p]['master_budget'] = 500.0
-                        needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
                 self.data['active_user'] = 'Vector Hybrid'
@@ -1847,29 +1843,17 @@ def add_user_v2():
 def add_capital_route():
     data = request.get_json() or {}
     username = data.get('username') or portfolio_store.active_username()
+    # Allow negative amounts so users can subtract/bank capital
     amount = float(data.get('amount', 0.0))
 
-    if amount <= 0:
-        return jsonify({'status': 'error', 'message': 'Invalid deposit amount'}), 400
+    if amount == 0:
+        return jsonify({'status': 'error', 'message': 'Invalid adjustment amount'}), 400
 
     portfolio_store.reload()
     ud = portfolio_store.user_data(username)
     
+    # Directly adjust the master baseline budget without logging a fake trade
     ud['master_budget'] = float(ud.get('master_budget', 500.0)) + amount
-    
-    now_lon = pd.Timestamp.now(tz='Europe/London')
-    ud.setdefault('history', []).insert(0, {
-        'id': str(int(time.time() * 1000)),
-        'ticker': 'CAPITAL_INJECTION',
-        'trade_type': 'DEPOSIT',
-        'action': 'BUY',
-        'shares': 0,
-        'price': amount,
-        'amount': amount,
-        'time': now_lon.strftime('%d %b %H:%M'),
-        'date_str': now_lon.strftime('%Y-%m-%d'),
-        'timestamp': int(now_lon.timestamp())
-    })
     
     portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok', 'new_budget': ud['master_budget']})

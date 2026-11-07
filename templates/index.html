@@ -348,17 +348,17 @@
             .btn-bot-liquidate {
                 padding: 3px 8px;
                 font-size: 10px;
-                font-weight: 700;
-                border: 1px solid #ff5364;
-                background: rgba(255, 83, 100, 0.12);
-                color: #ff5364;
+                font-weight: 800;
+                border: 1px solid #ffd400;
+                background: rgba(255, 212, 0, 0.12);
+                color: #ffd400;
                 border-radius: 4px;
                 cursor: pointer;
                 transition: background 0.2s;
             }
             .btn-bot-liquidate:hover {
-                background: #ff5364;
-                color: #fff;
+                background: #ffd400;
+                color: #000;
             }
             .desktop-only-profile-box {
                 display: none !important;
@@ -1366,23 +1366,19 @@
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; letter-spacing:0.4px;">Profile Management & Capital</label>
                         <div style="display:flex; gap:6px;">
-                            <button type="button" onclick="openStrategyWizard()" class="btn-control" style="padding:3px 8px; font-size:11px; border-color:#ffd400; color:#ffd400;">+ New Profile</button>
-                            <button type="button" onclick="openAddCapitalModal()" class="btn-control" style="padding:3px 8px; font-size:11px; border-color:#0ecb81; color:#0ecb81;">+ Add Capital</button>
-                            <button type="button" onclick="deleteUserPrompt()" class="btn-control" style="padding:3px 8px; font-size:11px; border-color:#ff5364; color:#ff5364;">Delete</button>
+                            <button type="button" onclick="openStrategyWizard()" class="btn-control" style="padding:4px 10px; font-size:11px; border-color:#ffd400; color:#000; background:#ffd400;">+ New Profile</button>
+                            <button type="button" onclick="openAddCapitalModal()" class="btn-control" style="padding:4px 10px; font-size:11px; border-color:#ffd400; color:#ffd400; background:transparent;">Manage Capital</button>
+                            <button type="button" onclick="deleteUserPrompt()" class="btn-control" style="padding:4px 10px; font-size:11px; border-color:#ff5364; color:#ff5364; background:rgba(255,83,100,0.1);">Delete</button>
                         </div>
-                    </div>
-                    <div style="display:flex; gap:8px; margin-top:8px;">
-                        <button type="button" class="btn-control" style="flex:1; font-size:11px;" onclick="closeSettingsModal(); openResetModal();">Reset Active Profile</button>
-                        <button type="button" class="btn-control" style="flex:1; font-size:11px; border-color:#ff5364; color:#ff5364;" onclick="closeSettingsModal(); openResetAllModal();">Batch Reset All</button>
                     </div>
                 </div>
 
                 <!-- ACTIONS -->
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; border-top:1px solid #262b36; padding-top:12px;">
-                    <button type="button" class="btn-control" style="border-color:#ff5364; color:#ff5364;" onclick="disconnectBroker()">Disconnect</button>
+                    <button type="button" class="btn-control" style="border-color:#ff5364; color:#ff5364; background:transparent;" onclick="disconnectBroker()">Disconnect Alpaca</button>
                     <div style="display:flex; gap:8px;">
-                        <button type="button" class="btn-control" onclick="closeSettingsModal()">Cancel</button>
-                        <button type="button" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 16px;" onclick="saveUserSettings()">Save & Launch Engine</button>
+                        <button type="button" class="btn-control" style="border-color:#262b36; color:#e1e3e6;" onclick="closeSettingsModal()">Cancel</button>
+                        <button type="button" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 16px; font-weight:800;" onclick="saveUserSettings()">Save & Launch Engine</button>
                     </div>
                 </div>
             </div>
@@ -1904,11 +1900,11 @@
         </div>
     </div>
 
-    <!-- 3. LIVE CAPITAL INJECTION MODAL (+£200 TOP-UP) -->
+    <!-- 3. CAPITAL ADJUSTMENT MODAL (ADD / SUBTRACT) -->
     <div class="modal-overlay" id="addCapitalModal" style="display:none;">
         <div class="modal" style="width: 440px; max-width: 95vw;">
             <h2>
-                <span>Add Capital to Profile</span>
+                <span>Manage Profile Capital</span>
                 <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeAddCapitalModal()">✕</button>
             </h2>
             <div style="margin-top:14px; display:flex; flex-direction:column; gap:12px;">
@@ -1918,19 +1914,19 @@
                     <div id="addCapCurrentEq" style="font-size:12px; color:#8a8a9e; margin-top:4px;">Current Balance: £561.00</div>
                 </div>
 
-                <!-- Alpaca Deposit Reminder -->
+                <!-- Layman Explanation -->
                 <div style="background:#0f1115; border:1px dashed #ffd400; border-radius:6px; padding:10px; font-size:11px; color:#e1e3e6; line-height:1.4;">
-                    <b style="color:#ffd400;">[NOTICE]:</b> Make sure you have transferred this deposit to your Alpaca account so buying power matches.
+                    Use this to add new cash, or type a negative number (e.g., <b style="color:#ff5364;">-500</b>) to bank profits and reduce your exposure on Alpaca.
                 </div>
 
                 <div>
-                    <label style="font-size:11px; color:#ffd400; font-weight:800; text-transform:uppercase; display:block; margin-bottom:5px;">Deposit Amount (£)</label>
-                    <input type="number" id="addCapAmount" step="25" placeholder="e.g. 200.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:15px; font-weight:800;">
+                    <label style="font-size:11px; color:#ffd400; font-weight:800; text-transform:uppercase; display:block; margin-bottom:5px;">Adjustment Amount (£)</label>
+                    <input type="number" id="addCapAmount" step="10" placeholder="e.g. 200.00 or -500.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:15px; font-weight:800;">
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:6px;">
                     <button class="btn-control" onclick="closeAddCapitalModal()">Cancel</button>
-                    <button class="btn-control" style="background:#0ecb81; color:#000; border:none; padding:8px 18px; font-weight:800;" onclick="submitAddCapital()">Confirm Deposit</button>
+                    <button class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 18px; font-weight:800;" onclick="submitAddCapital()">Confirm Adjustment</button>
                 </div>
             </div>
         </div>
@@ -3064,8 +3060,8 @@
         async function submitAddCapital() {
             let activeProf = document.getElementById('userSelect')?.value || '';
             let amount = parseFloat(document.getElementById('addCapAmount').value);
-            if (isNaN(amount) || amount <= 0) {
-                alert("Please enter a valid deposit amount.");
+            if (isNaN(amount) || amount === 0) {
+                alert("Please enter a valid adjustment amount (positive or negative).");
                 return;
             }
             closeAddCapitalModal();
@@ -3078,7 +3074,7 @@
             if (d.status === 'ok') {
                 await fetchData(false);
             } else {
-                alert(d.message || "Failed to add capital.");
+                alert(d.message || "Failed to adjust capital.");
             }
         }
 
