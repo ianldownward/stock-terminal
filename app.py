@@ -452,11 +452,11 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Aggressive Purge of all legacy prototype profiles
+            # Aggressive Purge of all legacy prototype profiles and leaked emails
             existing_users = list(self.data['users'].keys())
             for u in existing_users:
                 u_clean = u.strip().lower()
-                if 'test ' in u_clean or 'ian' in u_clean:
+                if 'test ' in u_clean or 'ian' in u_clean or '@' in u_clean:
                     del self.data['users'][u]
                     needs_save = True
 
@@ -1963,10 +1963,20 @@ def add_capital_route():
 @app.route('/api/users/delete', methods=['POST'])
 @login_required
 def delete_user():
+    data = request.get_json() or {}
+    target_user = data.get('username', '').strip()
     if session.get('role') == 'admin':
         portfolio_store.reload()
-        return jsonify({'status': 'ok' if portfolio_store.delete_user((request.get_json() or {}).get('username', '')) else 'error'})
-    return jsonify({'status': 'error'})
+        success = portfolio_store.delete_user(target_user)
+        return jsonify({'status': 'ok' if success else 'error'})
+    else:
+        client_name = session.get('user')
+        c_store = portfolio_store.get_client_store(client_name)
+        c_store['strategy_name'] = ''
+        c_store['is_configured'] = False
+        c_store['master_budget'] = 0.0
+        portfolio_store.save_client_store(client_name, c_store)
+        return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio', methods=['GET'])
 @login_required
@@ -3192,7 +3202,10 @@ def get_watchlist_scanner():
 
     # MOBILE SCOPE: Scan ONLY the active profile's own watchlist
     if scope in ['active', 'local', 'profile']:
-        ud = portfolio_store.user_data(active_profile)
+        if session.get('role') != 'admin':
+            ud = portfolio_store.get_client_store(session.get('user', 'Client'))
+        else:
+            ud = portfolio_store.user_data(active_profile)
         prof_wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
         holds = ud.get('holdings') or {}
         hist = ud.get('history') or []

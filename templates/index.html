@@ -1531,20 +1531,22 @@
         </div>
     </div>
 
-    <!-- NON-BLOCKING ONBOARDING ASSISTANT (Allows clicking background website) -->
-    <div id="onboardingAssistant" style="display:none; position:fixed; bottom:20px; right:20px; z-index:900; width:380px; max-width:92vw; background:#171a21; border:2px solid #ffd400; border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,0.85); padding:16px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #262b36; padding-bottom:8px; margin-bottom:10px;">
-            <div style="font-size:12px; font-weight:800; color:#ffd400;" id="assistStepTitle">Quick Setup • Step 1 of 4</div>
-            <button type="button" onclick="dismissOnboardingGuide()" style="background:none; border:none; color:#8a8a9e; cursor:pointer; font-size:14px; font-weight:bold;">✕</button>
-        </div>
+    <!-- CENTERED STEP-BY-STEP ONBOARDING MODAL -->
+    <div class="modal-overlay" id="onboardingAssistant" style="display:none; z-index:1500;">
+        <div class="modal" style="width: 480px; max-width: 95vw; border: 2px solid #ffd400; box-shadow: 0 16px 50px rgba(0,0,0,0.9);">
+            <h2>
+                <span id="assistStepTitle" style="color:#ffd400; font-size:15px;">Setup Guide • Step 1 of 4</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="dismissOnboardingGuide()">✕</button>
+            </h2>
 
-        <div id="assistStepBody" style="font-size:11px; color:#e1e3e6; line-height:1.45; min-height:120px;"></div>
+            <div id="assistStepBody" style="font-size:12px; color:#e1e3e6; line-height:1.5; margin-top:14px; min-height:130px;"></div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; border-top:1px solid #262b36; padding-top:10px;">
-            <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px;" onclick="dismissOnboardingGuide()">Do This Later</button>
-            <div style="display:flex; gap:6px;">
-                <button type="button" id="btnAssistBack" class="btn-control" style="padding:4px 8px; font-size:11px; display:none;" onclick="prevAssistStep()">Back</button>
-                <button type="button" id="btnAssistNext" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:5px 12px; font-size:11px; font-weight:800;" onclick="nextAssistStep()">Next ➔</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; border-top:1px solid #262b36; padding-top:12px;">
+                <button type="button" class="btn-control" style="padding:6px 12px; font-size:11px;" onclick="dismissOnboardingGuide()">Skip Setup</button>
+                <div style="display:flex; gap:8px;">
+                    <button type="button" id="btnAssistBack" class="btn-control" style="padding:6px 12px; font-size:11px; display:none;" onclick="prevAssistStep()">Back</button>
+                    <button type="button" id="btnAssistNext" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:6px 16px; font-size:12px; font-weight:800;" onclick="nextAssistStep()">Next ➔</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1875,7 +1877,7 @@
                 <span class="status-dot online" id="headerBrokerDot"></span>
                 <span id="headerBrokerText">Alpaca: Active</span>
             </div>
-            <span class="header-user-badge" id="topHeaderUser">{{ current_user or 'Ian' }}</span>
+            <span class="header-user-badge" id="topHeaderUser">{{ current_user }}</span>
             <div class="header-icons">
                 <!-- Fleet Performance & 5-Year Compounding Analytics (Graph Icon) -->
                 <button class="header-icon-btn" onclick="openCompoundingModal()" title="Fleet Analytics & 5-Year Compounding Trajectory">
@@ -3931,7 +3933,7 @@
 
                 // Dynamic header username update
                 if (document.getElementById('topHeaderUser')) {
-                    let un = (p.portfolio && p.portfolio.username) ? p.portfolio.username : (p.portfolio && p.portfolio.active_user ? p.portfolio.active_user : 'Ian');
+                    let un = (p.portfolio && p.portfolio.username) ? p.portfolio.username : "{{ current_user }}";
                     document.getElementById('topHeaderUser').innerText = un;
                 }
 
@@ -5056,7 +5058,24 @@
         function startOnboardingGuide() {
             currentAssistStep = 1;
             renderAssistStep();
-            document.getElementById('onboardingAssistant').style.display = 'block';
+            document.getElementById('onboardingAssistant').style.display = 'flex';
+        }
+
+        async function deleteProfileFromList(profName) {
+            if (!confirm(`Are you sure you want to delete profile "${profName}"?`)) return;
+            let res = await fetch('/api/users/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: profName })
+            });
+            let d = await res.json();
+            if (d.status === 'ok') {
+                await fetchUsers();
+                await fetchData(false);
+                openSettingsModal();
+            } else {
+                alert("Failed to delete profile.");
+            }
         }
 
         function dismissOnboardingGuide() {
@@ -5267,10 +5286,11 @@
                                     <input type="checkbox" class="dyn-alloc-chk" data-prof="${pName}" ${isEnabled ? 'checked' : ''} style="accent-color:#ffd400;">
                                     <span style="font-weight:700; color:#ffd400;">${pName}</span>
                                 </label>
-                                <div style="display:flex; align-items:center; gap:8px;">
+                                <div style="display:flex; align-items:center; gap:6px;">
                                     <span style="font-size:12px; font-weight:800; color:#fff; background:#0f1115; border:1px solid #262b36; padding:4px 8px; border-radius:4px;">£${curEq}</span>
-                                    <button type="button" onclick="openCapitalModalFor('${pName.replace(/'/g, "\\'")}')" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400; background:transparent;">+ / - Capital</button>
+                                    <button type="button" onclick="openCapitalModalFor('${pName.replace(/'/g, "\\'")}')" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400; background:transparent;">+ / -</button>
                                     <button type="button" onclick="liquidateSpecificBot('${pKey.replace(/'/g, "\\'")}')" class="btn-bot-liquidate">Liquidate</button>
+                                    <button type="button" onclick="deleteProfileFromList('${pName.replace(/'/g, "\\'")}')" class="btn-control" style="border-color:#ff5364; color:#ff5364; padding:3px 6px; font-size:10px;" title="Delete Profile">✕</button>
                                 </div>
                             </div>
                         `;
