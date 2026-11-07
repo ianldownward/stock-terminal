@@ -3535,7 +3535,7 @@
                     uiEl.innerHTML = `
                         <div style="text-align:center; padding:18px 10px; color:#8a8a9e; font-size:11px;">
                             <div>No active profiles yet.</div>
-                            <button type="button" class="btn-control" style="margin-top:10px; font-size:10px;" onclick="openStrategyWizard()">+ Create First Profile</button>
+                            <button type="button" class="btn-control" style="margin-top:10px; font-size:10px;" onclick="startOnboardingGuide()">+ Create First Profile</button>
                         </div>`;
                 }
                 renderCustomProfileDropdown(leaderboard);
@@ -3980,12 +3980,15 @@
                     worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
                 }
                 
-               // Auto-launch non-blocking step-by-step setup guide for any new unconfigured account
-                if (p.portfolio && p.portfolio.is_configured === false && !window._guideAutoOpened) {
+               // Auto-launch non-blocking step-by-step setup guide for any client without an active strategy
+                const isClientUser = ("{{ user_role }}" !== 'admin');
+                const isUnconfigured = !p.portfolio || p.portfolio.is_configured !== true || !p.portfolio.strategy_name;
+
+                if (isClientUser && isUnconfigured && !window._guideAutoOpened) {
                     window._guideAutoOpened = true;
                     setTimeout(() => {
                         startOnboardingGuide();
-                    }, 400);
+                    }, 300);
                 }
 
                 // Update Total Portfolio Equity & Separate Cash/Shares rows (Default 0.00 for clean slate)
@@ -4193,6 +4196,14 @@
             await fetchData(false); 
             setupAutoRefresh();
             checkMobileLayout();
+
+            // Direct trigger: Pops up the setup guide immediately if account has no active profile
+            const isClient = ("{{ user_role }}" !== 'admin');
+            const needsSetup = (("{{ is_configured }}" === "False") || ("{{ is_configured }}" === "false") || !globalPortfolioData || globalPortfolioData.is_configured !== true);
+            if (isClient && needsSetup && !window._guideAutoOpened) {
+                window._guideAutoOpened = true;
+                setTimeout(startOnboardingGuide, 400);
+            }
         }
 
         setTimeout(() => { 

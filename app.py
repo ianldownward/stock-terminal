@@ -397,7 +397,11 @@ class PortfolioManager:
         if self.client:
             try:
                 doc = self.client['stock_terminal']['accounts'].find_one({"_id": doc_id})
-                if doc and 'portfolio' in doc: return doc['portfolio']
+                if doc and 'portfolio' in doc:
+                    p = doc['portfolio']
+                    if 'is_configured' not in p:
+                        p['is_configured'] = False
+                    return p
             except Exception: pass
         return self.blank_client_state(username)
 
@@ -1829,7 +1833,17 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    return render_template('index.html', user_role=session.get('role', 'client'), current_user=session.get('user', 'Ian'))
+    is_client = (session.get('role') != 'admin')
+    is_configured = True
+    if is_client:
+        c_store = portfolio_store.get_client_store(session.get('user'))
+        is_configured = bool(c_store and c_store.get('is_configured', False))
+    return render_template(
+        'index.html',
+        user_role=session.get('role', 'client'),
+        current_user=session.get('user', 'Ian'),
+        is_configured=is_configured
+    )
 
 @app.route('/api/client/settings', methods=['POST'])
 @login_required
