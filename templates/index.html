@@ -4016,8 +4016,8 @@
                     worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
                 }
                 
-                // Auto-launch onboarding wizard if this is a fresh, unconfigured account
-                if (p.portfolio && p.portfolio.is_configured === false && localStorage.getItem('idc_guide_dismissed') !== 'true') {
+                // Auto-launch onboarding walkthrough immediately if this account is unconfigured
+                if (p.portfolio && p.portfolio.is_configured === false) {
                     startOnboardingGuide();
                 }
 
@@ -5164,8 +5164,8 @@
                 let k = document.getElementById('guideApiKey')?.value.trim();
                 let s = document.getElementById('guideApiSecret')?.value.trim();
                 let m = document.querySelector('input[name="guideMode"]:checked')?.value || 'paper';
-                if (k) localStorage.setItem('alpaca_api_key', k);
-                if (s) localStorage.setItem('alpaca_api_secret', s);
+                localStorage.removeItem('alpaca_api_key');
+                localStorage.removeItem('alpaca_api_secret');
                 fetch('/api/client/settings', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -5267,54 +5267,56 @@
             updateAlpacaInstructions(currentMode);
             fetchBrokerStatus();
             syncAlertStateUI();
+
             let keyInput = document.getElementById('settingApiKey');
             let secretInput = document.getElementById('settingApiSecret');
             let urlInput = document.getElementById('settingBrokerUrl');
             if (urlInput) urlInput.value = localStorage.getItem('user_broker_url') || 'https://app.alpaca.markets';
 
-            if (keyInput) {
-                keyInput.value = window._savedApiKey || localStorage.getItem('alpaca_api_key') || '';
-            }
-            if (secretInput) {
-                secretInput.value = window._savedSecretKey || localStorage.getItem('alpaca_api_secret') || '';
-            }
+            // Strictly use server-provided credentials — NEVER pull stale keys from browser localStorage
+            if (keyInput) keyInput.value = window._savedApiKey || '';
+            if (secretInput) secretInput.value = window._savedSecretKey || '';
 
             let allocs = window._activeAllocations || {};
-            
-            function getBotBudget(nameSnippet, fallback) {
+            const isAdmin = ("{{ user_role }}" === 'admin');
+
+            function getBotBudget(nameSnippet) {
                 if (Array.isArray(latestLeaderboardData)) {
-                    let f = latestLeaderboardData.find(l => l.user.toLowerCase().includes(nameSnippet.toLowerCase()));
-                    if (f && f.budget) return parseFloat(f.budget).toFixed(2);
+                    let f = latestLeaderboardData.find(l => l.user && l.user.toLowerCase().includes(nameSnippet.toLowerCase()));
+                    if (f && f.budget !== undefined) return parseFloat(f.budget).toFixed(2);
                 }
-                return fallback.toFixed(2);
+                return isAdmin ? '500.00' : '0.00';
             }
 
             // Vector Hybrid
             let vActive = document.getElementById('alloc_tqm_active');
             let vBadge = document.getElementById('alloc_vector_display');
-            if (vActive) {
-                let vEntry = allocs['vector hybrid'] || allocs['vector'] || allocs['test tqm'];
-                vActive.checked = vEntry ? !!vEntry.enabled : true;
+            let vEntry = allocs['vector hybrid'] || allocs['vector'] || allocs['test tqm'];
+            if (vActive) vActive.checked = vEntry ? !!vEntry.enabled : (isAdmin ? true : false);
+            if (vBadge) {
+                let bVal = vEntry && vEntry.budget !== undefined ? parseFloat(vEntry.budget).toFixed(2) : getBotBudget('vector');
+                vBadge.innerText = `£${bVal}`;
             }
-            if (vBadge) vBadge.innerText = `£${getBotBudget('vector', 500.0)}`;
 
             // Dual Axis
             let dActive = document.getElementById('alloc_tq_active');
             let dBadge = document.getElementById('alloc_dual_display');
-            if (dActive) {
-                let dEntry = allocs['dual axis'] || allocs['dual'] || allocs['test tq'];
-                dActive.checked = dEntry ? !!dEntry.enabled : false;
+            let dEntry = allocs['dual axis'] || allocs['dual'] || allocs['test tq'];
+            if (dActive) dActive.checked = dEntry ? !!dEntry.enabled : false;
+            if (dBadge) {
+                let bVal = dEntry && dEntry.budget !== undefined ? parseFloat(dEntry.budget).toFixed(2) : getBotBudget('dual');
+                dBadge.innerText = `£${bVal}`;
             }
-            if (dBadge) dBadge.innerText = `£${getBotBudget('dual', 500.0)}`;
 
             // Velocity Pulse
             let sActive = document.getElementById('alloc_s_active');
             let sBadge = document.getElementById('alloc_pulse_display');
-            if (sActive) {
-                let sEntry = allocs['velocity pulse'] || allocs['velocity'] || allocs['test s'];
-                sActive.checked = sEntry ? !!sEntry.enabled : false;
+            let sEntry = allocs['velocity pulse'] || allocs['velocity'] || allocs['test s'];
+            if (sActive) sActive.checked = sEntry ? !!sEntry.enabled : false;
+            if (sBadge) {
+                let bVal = sEntry && sEntry.budget !== undefined ? parseFloat(sEntry.budget).toFixed(2) : getBotBudget('velocity');
+                sBadge.innerText = `£${bVal}`;
             }
-            if (sBadge) sBadge.innerText = `£${getBotBudget('velocity', 500.0)}`;
 
             document.getElementById('settingsModal').style.display = 'flex';
         }
@@ -5348,8 +5350,9 @@
             let apiSecret = document.getElementById('settingApiSecret').value.trim();
             let brokerUrl = document.getElementById('settingBrokerUrl')?.value.trim() || 'https://app.alpaca.markets';
             localStorage.setItem('user_broker_url', brokerUrl);
-            if (apiKey) localStorage.setItem('alpaca_api_key', apiKey);
-            if (apiSecret) localStorage.setItem('alpaca_api_secret', apiSecret);
+            // Purge any old keys from browser localStorage
+            localStorage.removeItem('alpaca_api_key');
+            localStorage.removeItem('alpaca_api_secret');
 
             let allocations = {
                 'vector hybrid': { 
