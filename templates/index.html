@@ -1531,21 +1531,21 @@
         </div>
     </div>
 
-    <!-- CENTERED STEP-BY-STEP ONBOARDING MODAL -->
-    <div class="modal-overlay" id="onboardingAssistant" style="display:none; z-index:1500;">
-        <div class="modal" style="width: 480px; max-width: 95vw; border: 2px solid #ffd400; box-shadow: 0 16px 50px rgba(0,0,0,0.9);">
-            <h2>
-                <span id="assistStepTitle" style="color:#ffd400; font-size:15px;">Setup Guide • Step 1 of 4</span>
-                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="dismissOnboardingGuide()">✕</button>
-            </h2>
+    <!-- NON-BLOCKING CENTERED ONBOARDING POP-UP -->
+    <div id="onboardingAssistant" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; pointer-events:none; z-index:2000; justify-content:center; align-items:center;">
+        <div style="pointer-events:auto; width:480px; max-width:92vw; background:#14171f; border:2px solid #ffd400; border-radius:12px; box-shadow:0 16px 50px rgba(0,0,0,0.9); padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #262b36; padding-bottom:10px; margin-bottom:14px;">
+                <div style="font-size:13px; font-weight:800; color:#ffd400;" id="assistStepTitle">Account Setup • Step 1 of 6</div>
+                <button type="button" onclick="dismissOnboardingGuide()" style="background:none; border:none; color:#8a8a9e; cursor:pointer; font-size:16px; font-weight:bold;">✕</button>
+            </div>
 
-            <div id="assistStepBody" style="font-size:12px; color:#e1e3e6; line-height:1.5; margin-top:14px; min-height:130px;"></div>
+            <div id="assistStepBody" style="font-size:13px; color:#e1e3e6; line-height:1.6; min-height:140px;"></div>
 
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; border-top:1px solid #262b36; padding-top:12px;">
-                <button type="button" class="btn-control" style="padding:6px 12px; font-size:11px;" onclick="dismissOnboardingGuide()">Skip Setup</button>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; border-top:1px solid #262b36; padding-top:14px;">
+                <button type="button" class="btn-control" style="padding:6px 14px; font-size:11px;" onclick="dismissOnboardingGuide()">Set Up Later</button>
                 <div style="display:flex; gap:8px;">
-                    <button type="button" id="btnAssistBack" class="btn-control" style="padding:6px 12px; font-size:11px; display:none;" onclick="prevAssistStep()">Back</button>
-                    <button type="button" id="btnAssistNext" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:6px 16px; font-size:12px; font-weight:800;" onclick="nextAssistStep()">Next ➔</button>
+                    <button type="button" id="btnAssistBack" class="btn-control" style="padding:6px 14px; font-size:11px; display:none;" onclick="prevAssistStep()">Back</button>
+                    <button type="button" id="btnAssistNext" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:7px 18px; font-size:12px; font-weight:800;" onclick="nextAssistStep()">Next ➔</button>
                 </div>
             </div>
         </div>
@@ -3980,11 +3980,11 @@
                     worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
                 }
                 
-               // Auto-launch Strategy Setup Wizard in center screen for any fresh/unconfigured account
-                if (p.portfolio && p.portfolio.is_configured === false && !window._wizardAutoOpened) {
-                    window._wizardAutoOpened = true;
+               // Auto-launch non-blocking step-by-step setup guide for any new unconfigured account
+                if (p.portfolio && p.portfolio.is_configured === false && !window._guideAutoOpened) {
+                    window._guideAutoOpened = true;
                     setTimeout(() => {
-                        openStrategyWizard();
+                        startOnboardingGuide();
                     }, 400);
                 }
 
@@ -5054,11 +5054,18 @@
         }
         
         let currentAssistStep = 1;
+        let guideState = { mode: 'paper', apiKey: '', apiSecret: '', strategy: 'Vector Hybrid', capital: 500.0 };
 
         function startOnboardingGuide() {
             currentAssistStep = 1;
             renderAssistStep();
-            document.getElementById('onboardingAssistant').style.display = 'flex';
+            let el = document.getElementById('onboardingAssistant');
+            if (el) el.style.display = 'flex';
+        }
+
+        function dismissOnboardingGuide() {
+            let el = document.getElementById('onboardingAssistant');
+            if (el) el.style.display = 'none';
         }
 
         async function deleteProfileFromList(profName) {
@@ -5078,11 +5085,6 @@
             }
         }
 
-        function dismissOnboardingGuide() {
-            document.getElementById('onboardingAssistant').style.display = 'none';
-            localStorage.setItem('idc_guide_dismissed', 'true');
-        }
-
         function renderAssistStep() {
             let title = document.getElementById('assistStepTitle');
             let body = document.getElementById('assistStepBody');
@@ -5090,78 +5092,137 @@
             let btnNext = document.getElementById('btnAssistNext');
 
             btnBack.style.display = currentAssistStep > 1 ? 'inline-flex' : 'none';
+            btnNext.innerText = currentAssistStep === 6 ? "Finish & Launch" : "Next ➔";
 
             if (currentAssistStep === 1) {
-                title.innerText = "Setup Guide • Step 1: Mode";
+                title.innerText = "Step 1 of 6 • Choose Trading Mode";
                 body.innerHTML = `
-                    <div style="margin-bottom:8px;">Choose how you want to run IDC Trading:</div>
-                    <label style="display:flex; align-items:center; gap:6px; margin-bottom:6px; cursor:pointer;">
-                        <input type="radio" name="guideMode" value="paper" checked style="accent-color:#ffd400;">
-                        <span><b>Paper Trading</b> (Risk-free practice account)</span>
-                    </label>
-                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                        <input type="radio" name="guideMode" value="live" style="accent-color:#ffd400;">
-                        <span><b>Live Trading</b> (Real money capital)</span>
-                    </label>
-                `;
-                btnNext.innerText = "Next ➔";
-            } else if (currentAssistStep === 2) {
-                let m = document.querySelector('input[name="guideMode"]:checked')?.value || 'paper';
-                title.innerText = "Setup Guide • Step 2: Alpaca Keys";
-                body.innerHTML = `
-                    <div>1. Open <a href="https://app.alpaca.markets" target="_blank" style="color:#ffd400;">app.alpaca.markets ↗</a></div>
-                    <div>2. Set dropdown to <b>${m === 'paper' ? 'Paper Trading' : 'Live Trading'}</b>.</div>
-                    <div>3. Generate API Keys and paste them here:</div>
-                    <input type="text" id="guideApiKey" placeholder="API Key ID (${m === 'paper' ? 'PK...' : 'AK...'})" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:11px; margin-top:6px;">
-                    <input type="text" id="guideApiSecret" placeholder="Secret Key" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:11px; margin-top:6px;">
-                `;
-                btnNext.innerText = "Next ➔";
-            } else if (currentAssistStep === 3) {
-                title.innerText = "Setup Guide • Step 3: Strategy";
-                body.innerHTML = `
-                    <div style="margin-bottom:8px;">Choose your starting strategy:</div>
-                    <div style="display:flex; flex-direction:column; gap:6px;">
-                        <label style="background:#0f1115; border:1px solid #ffd400; padding:6px; border-radius:4px; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                            <input type="radio" name="guideStrat" value="Vector Hybrid" checked style="accent-color:#ffd400;">
-                            <span><b>Vector Hybrid</b> (+1.31%/day disciplined momentum)</span>
+                    <div style="font-size:13px; margin-bottom:12px; color:#fff;">Select how you want to run your trading engine:</div>
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        <label style="background:#0f1115; border:1px solid #ffd400; border-radius:8px; padding:12px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                            <input type="radio" name="guideMode" value="paper" ${guideState.mode === 'paper' ? 'checked' : ''} style="accent-color:#ffd400; width:16px; height:16px;">
+                            <div>
+                                <div style="font-weight:800; color:#ffd400;">Paper Simulation (Practice)</div>
+                                <div style="font-size:11px; color:#8a8a9e; margin-top:2px;">Test strategies with virtual funds. Completely risk-free.</div>
+                            </div>
                         </label>
-                        <label style="background:#0f1115; border:1px solid #262b36; padding:6px; border-radius:4px; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                            <input type="radio" name="guideStrat" value="Dual Axis" style="accent-color:#ffd400;">
-                            <span><b>Dual Axis</b> (All-weather long/short switcher)</span>
+                        <label style="background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:12px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                            <input type="radio" name="guideMode" value="live" ${guideState.mode === 'live' ? 'checked' : ''} style="accent-color:#ffd400; width:16px; height:16px;">
+                            <div>
+                                <div style="font-weight:800; color:#fff;">Real Money (Live Trading)</div>
+                                <div style="font-size:11px; color:#8a8a9e; margin-top:2px;">Executes orders directly on your live Alpaca brokerage account.</div>
+                            </div>
                         </label>
                     </div>
                 `;
-                btnNext.innerText = "Next ➔";
-            } else if (currentAssistStep === 4) {
-                title.innerText = "Setup Guide • Step 4: Capital";
+            } else if (currentAssistStep === 2) {
+                let m = guideState.mode;
+                title.innerText = "Step 2 of 6 • Open Alpaca Dashboard";
                 body.innerHTML = `
-                    <div>Assign your initial trading capital:</div>
-                    <input type="number" id="guideCapital" value="500.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#ffd400; font-size:16px; font-weight:800; padding:8px; border-radius:4px; margin-top:6px;">
-                    <div style="font-size:10px; color:#ffd400; margin-top:6px;">[IMPORTANT]: Make sure this amount is deposited into your Alpaca account.</div>
+                    <div style="font-size:13px; color:#fff; margin-bottom:10px;">Open Alpaca to generate your API keys:</div>
+                    <div style="background:#0f1115; border:1px dashed #ffd400; border-radius:8px; padding:14px; line-height:1.6;">
+                        1. Open <a href="https://app.alpaca.markets" target="_blank" style="color:#ffd400; font-weight:800; text-decoration:underline;">app.alpaca.markets ↗</a>.<br>
+                        2. In the top-left dropdown, select <b>${m === 'paper' ? 'Paper Trading' : 'Live Trading'}</b>.<br>
+                        3. Click <b>Generate API Key</b> under <b>Your API Keys</b>.
+                    </div>
+                    <div style="font-size:11px; color:#8a8a9e; margin-top:8px;">You can click on the terminal behind this window at any time while following this guide.</div>
                 `;
-                btnNext.innerText = "Finish & Launch";
+            } else if (currentAssistStep === 3) {
+                let m = guideState.mode;
+                let prefix = m === 'paper' ? 'PK...' : 'AK...';
+                title.innerText = "Step 3 of 6 • Paste API Key ID";
+                body.innerHTML = `
+                    <div style="font-size:13px; color:#fff; margin-bottom:8px;">Paste your Alpaca <b>API Key ID</b>:</div>
+                    <input type="text" id="guideApiKey" value="${guideState.apiKey}" placeholder="e.g. ${prefix}" style="width:100%; background:#0f1115; border:1px solid #ffd400; color:#fff; padding:10px; border-radius:6px; font-size:13px; font-family:monospace; margin-top:6px;">
+                    <span style="font-size:11px; color:#8a8a9e; margin-top:6px; display:block;">Starts with <b>${prefix}</b>.</span>
+                `;
+            } else if (currentAssistStep === 4) {
+                title.innerText = "Step 4 of 6 • Paste Secret Key";
+                body.innerHTML = `
+                    <div style="font-size:13px; color:#fff; margin-bottom:8px;">Paste your Alpaca <b>Secret Key</b>:</div>
+                    <input type="text" id="guideApiSecret" value="${guideState.apiSecret}" placeholder="Paste Secret Key here" style="width:100%; background:#0f1115; border:1px solid #ffd400; color:#fff; padding:10px; border-radius:6px; font-size:13px; font-family:monospace; margin-top:6px;">
+                    <span style="font-size:11px; color:#8a8a9e; margin-top:6px; display:block;">Stored exclusively in your isolated account.</span>
+                `;
+            } else if (currentAssistStep === 5) {
+                title.innerText = "Step 5 of 6 • Select Your Bot Strategy";
+                body.innerHTML = `
+                    <div style="font-size:13px; color:#fff; margin-bottom:10px;">Select your automated strategy:</div>
+                    <div style="display:flex; flex-direction:column; gap:8px;">
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Vector Hybrid' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                            <input type="radio" name="guideStrat" value="Vector Hybrid" ${guideState.strategy === 'Vector Hybrid' ? 'checked' : ''} style="accent-color:#ffd400;">
+                            <div>
+                                <span style="font-weight:800; color:#ffd400;">Vector Hybrid</span>
+                                <div style="font-size:11px; color:#8a8a9e;">Disciplined ETF momentum. Banks daily profits at +2.20% and holds 100% cash overnight.</div>
+                            </div>
+                        </label>
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Dual Axis' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                            <input type="radio" name="guideStrat" value="Dual Axis" ${guideState.strategy === 'Dual Axis' ? 'checked' : ''} style="accent-color:#ffd400;">
+                            <div>
+                                <span style="font-weight:800; color:#fff;">Dual Axis</span>
+                                <div style="font-size:11px; color:#8a8a9e;">All-weather engine. Trades long tech in bull trends and flips to SQQQ during sell-offs.</div>
+                            </div>
+                        </label>
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Velocity Pulse' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                            <input type="radio" name="guideStrat" value="Velocity Pulse" ${guideState.strategy === 'Velocity Pulse' ? 'checked' : ''} style="accent-color:#ffd400;">
+                            <div>
+                                <span style="font-weight:800; color:#fff;">Velocity Pulse</span>
+                                <div style="font-size:11px; color:#8a8a9e;">Rapid index scalper. Captures quick +1.20% bursts and returns to cash.</div>
+                            </div>
+                        </label>
+                    </div>
+                `;
+            } else if (currentAssistStep === 6) {
+                title.innerText = "Step 6 of 6 • Assign Trading Capital";
+                body.innerHTML = `
+                    <div style="font-size:13px; color:#fff; margin-bottom:8px;">Assign initial capital for <b>${guideState.strategy}</b>:</div>
+                    <input type="number" id="guideCapital" value="${guideState.capital}" step="50" style="width:100%; background:#0f1115; border:1px solid #ffd400; color:#ffd400; font-size:18px; font-weight:800; padding:10px; border-radius:6px; margin-top:6px;">
+                    <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:10px; font-size:11px; color:#8a8a9e; margin-top:10px; line-height:1.45;">
+                        <b style="color:#ffd400;">[IMPORTANT]:</b> Ensure your Alpaca balance has at least this amount deposited so your bot can place orders.
+                    </div>
+                `;
             }
         }
 
-        function nextAssistStep() {
-            if (currentAssistStep === 2) {
-                let k = document.getElementById('guideApiKey')?.value.trim();
-                let s = document.getElementById('guideApiSecret')?.value.trim();
-                let m = document.querySelector('input[name="guideMode"]:checked')?.value || 'paper';
-                localStorage.removeItem('alpaca_api_key');
-                localStorage.removeItem('alpaca_api_secret');
-                fetch('/api/client/settings', {
+        async function nextAssistStep() {
+            if (currentAssistStep === 1) {
+                guideState.mode = document.querySelector('input[name="guideMode"]:checked')?.value || 'paper';
+            } else if (currentAssistStep === 3) {
+                guideState.apiKey = document.getElementById('guideApiKey')?.value.trim() || '';
+            } else if (currentAssistStep === 4) {
+                guideState.apiSecret = document.getElementById('guideApiSecret')?.value.trim() || '';
+            } else if (currentAssistStep === 5) {
+                guideState.strategy = document.querySelector('input[name="guideStrat"]:checked')?.value || 'Vector Hybrid';
+            } else if (currentAssistStep === 6) {
+                guideState.capital = parseFloat(document.getElementById('guideCapital')?.value) || 500.0;
+                dismissOnboardingGuide();
+
+                // Save credentials for isolated user
+                await fetch('/api/client/settings', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ broker_mode: m, api_key: k, secret_key: s })
-                }).catch(() => {});
-            }
+                    body: JSON.stringify({
+                        broker_mode: guideState.mode,
+                        api_key: guideState.apiKey,
+                        secret_key: guideState.apiSecret
+                    })
+                });
 
-            if (currentAssistStep === 4) {
-                dismissOnboardingGuide();
-                fetchData(false);
+                // Launch strategy
+                await fetch('/api/users/add_v2', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        profile_name: guideState.strategy,
+                        method: guideState.strategy,
+                        capital: guideState.capital
+                    })
+                });
+
+                await fetchUsers();
+                await fetchData(false);
                 return;
             }
+
             currentAssistStep++;
             renderAssistStep();
         }
