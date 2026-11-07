@@ -900,9 +900,9 @@
             gap: 6px;
         }
         .btn-control:hover, .btn-control.active { 
-            background: #ffd400; 
-            color: #000; 
-            border-color: #ffd400; 
+            background: #ffd400 !important; 
+            color: #000000 !important; 
+            border-color: #ffd400 !important; 
         }
 
         /* DEDICATED SYNC BUTTON (Yellow outline, invert on hover/click) */
@@ -1371,7 +1371,7 @@
                         <div style="font-size:11px; color:#8a8a9e; margin-top:2px;">Desktop banners and sound effects on trade fills</div>
                     </div>
                     <div style="display:flex; align-items:center; gap:10px;">
-                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px; border-color:#ffd400; color:#ffd400;" onclick="triggerTestMacAlert()">Test Mac Alert</button>
+                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px;" onclick="triggerTestMacAlert()">Test Mac Alert</button>
                         <label class="toggle-switch" title="Toggle Mac Notifications">
                             <input type="checkbox" id="toggleMacAlertsSetting" onchange="onToggleMacAlerts(this.checked)">
                             <span class="toggle-slider"></span>
@@ -1386,7 +1386,7 @@
                         <div style="font-size:11px; color:#8a8a9e; margin-top:2px;" id="settingsAlertDesc">Lock-screen alerts for iOS & Android</div>
                     </div>
                     <div style="display:flex; align-items:center; gap:10px;">
-                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px; border-color:#ffd400; color:#ffd400;" onclick="triggerTestPhoneAlert()">Test Phone Alert</button>
+                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px;" onclick="triggerTestPhoneAlert()">Test Phone Alert</button>
                         <label class="toggle-switch" title="Toggle Phone Notifications">
                             <input type="checkbox" id="togglePhoneAlertsSetting" onchange="onTogglePhoneAlerts(this.checked)">
                             <span class="toggle-slider"></span>
@@ -5579,7 +5579,7 @@
             const statusEl = document.getElementById('pushStatusText');
             if (statusEl) statusEl.innerHTML = "<span style='color:#ffd400;'>Sending test alert to phone...</span>";
             try {
-                let testRes = await fetch('/api/push/test', { method: 'POST' });
+                let testRes = await fetch('/api/push/test?target=phone', { method: 'POST' });
                 let testData = await testRes.json();
                 if (testData.status === 'ok') {
                     if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81; font-weight:700;'>✓ Alert sent! Check your phone lock-screen.</span>";

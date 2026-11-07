@@ -104,7 +104,7 @@ def get_vapid_keypair():
     print(f"[VAPID READY] Saved fresh VAPID key file to {VAPID_KEY_FILE}")
     return VAPID_KEY_FILE, pub_b64
 
-def send_native_web_push(title, message):
+def send_native_web_push(title, message, target_device=None):
     """Sends native Apple / Web Push notifications with full APNs priority headers."""
     try:
         from pywebpush import webpush, WebPushException
@@ -114,7 +114,12 @@ def send_native_web_push(title, message):
 
     portfolio_store.reload()
     subs = portfolio_store.data.get('push_subscriptions') or []
-    print(f"[PUSH ATTEMPT] {title} | Subscribed devices: {len(subs)}")
+
+    # If testing phone alerts, filter out any Mac desktop browsers that previously subscribed
+    if target_device == 'phone':
+        subs = [s for s in subs if s.get('device') != 'mac']
+
+    print(f"[PUSH ATTEMPT] {title} | Subscribed devices ({target_device or 'all'}): {len(subs)}")
     if not subs:
         print("[PUSH ALERT NOTICE] No devices registered in database. Tap Setup Alerts on iPhone.")
         return {'status': 'error', 'message': 'No registered devices in database. Tap Re-Sync Device on iPhone.'}
@@ -1593,11 +1598,16 @@ def save_push_subscription():
     if not sub or not sub.get('endpoint'):
         return jsonify({'status': 'error', 'message': 'Invalid subscription'}), 400
     
+    ua = request.headers.get('User-Agent', '').lower()
+    is_mobile = any(m in ua for m in ['mobile', 'iphone', 'ipad', 'android'])
+    sub['device'] = 'phone' if is_mobile else 'mac'
+
     portfolio_store.reload()
     subs = portfolio_store.data.setdefault('push_subscriptions', [])
-    if not any(s.get('endpoint') == sub.get('endpoint') for s in subs):
-        subs.append(sub)
-        portfolio_store.save_data(portfolio_store.data)
+    subs = [s for s in subs if s.get('endpoint') != sub.get('endpoint')]
+    subs.append(sub)
+    portfolio_store.data['push_subscriptions'] = subs
+    portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok'})
 
 @app.route('/api/push/unsubscribe', methods=['POST'])
@@ -1613,9 +1623,11 @@ def remove_push_subscription():
 
 @app.route('/api/push/test', methods=['POST'])
 def test_push_notification():
+    target = request.args.get('target', 'all')
     res = send_native_web_push(
-        title="Test R - Sell 10 - SQQQ",
-        message="£47.33 (Total £473.35)\n▲ +£10.22 (+2.3%)"
+        title="IDC Trading Alert",
+        message="Test Trade: Bought 10 TQQQ @ £52.25",
+        target_device=target
     )
     return jsonify(res or {'status': 'ok'})
 
