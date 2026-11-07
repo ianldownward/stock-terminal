@@ -2186,19 +2186,19 @@
                         <div class="equity-header-row">
                             <label class="desktop-equity-title">TOTAL PORTFOLIO EQUITY</label>
                             <div class="equity-top-row">
-                                <div id="mTotalSharesHeldVal" class="equity-main-val">£508.40</div>
-                                <span id="mobCombinedProfileName" class="mob-profile-name">Select Profile</span>
+                                <div id="mTotalSharesHeldVal" class="equity-main-val">£0.00</div>
+                                <span id="mobCombinedProfileName" class="mob-profile-name">No Profile Active</span>
                             </div>
                         </div>
                         
                         <div class="equity-stats-grid">
                             <!-- Row 1: Cash on left, TODAY on right -->
                             <div class="equity-stat-row">
-                                <span id="mCashVal" class="stat-left">Cash: £508.40</span>
+                                <span id="mCashVal" class="stat-left">Cash: £0.00</span>
                                 <div class="stat-right">
                                     <span class="stat-label">TODAY</span>
-                                    <span id="mEquityTodayVal" class="stat-val">-£2.24</span>
-                                    <span id="mEquityTodayPct" class="stat-pct">(-0.44%)</span>
+                                    <span id="mEquityTodayVal" class="stat-val">£0.00</span>
+                                    <span id="mEquityTodayPct" class="stat-pct">(0.00%)</span>
                                 </div>
                             </div>
                             
@@ -2207,7 +2207,7 @@
                                 <span id="mSharesVal" class="stat-left">Shares: £0.00</span>
                                 <div class="stat-right">
                                     <span class="stat-label">DAILY AVG</span>
-                                    <span id="mEquityDailyAvg" class="stat-val">+0.84%</span>
+                                    <span id="mEquityDailyAvg" class="stat-val">0.00%</span>
                                 </div>
                             </div>
                         </div>
@@ -3565,13 +3565,18 @@
             let sortMode = document.querySelector('input[name="lb_sort"]:checked') ? document.querySelector('input[name="lb_sort"]:checked').value : 'all';
             let lbData = Array.isArray(leaderboard) ? [...leaderboard] : [];
 
-            if (sortMode === 'all') {
-                lbData.sort((a, b) => b.equity - a.equity);
-            } else {
-                lbData.sort((a, b) => (b.daily_pnl || 0) - (a.daily_pnl || 0));
+            if (lbData.length === 0) {
+                let uiEl = document.getElementById('leaderboardUI');
+                if (uiEl) {
+                    uiEl.innerHTML = `
+                        <div style="text-align:center; padding:18px 10px; color:#8a8a9e; font-size:11px;">
+                            <div>No active profiles yet.</div>
+                            <button type="button" class="btn-control" style="margin-top:10px; font-size:10px;" onclick="openStrategyWizard()">+ Create First Profile</button>
+                        </div>`;
+                }
+                renderCustomProfileDropdown(leaderboard);
+                return;
             }
-
-            let lbHtml = lbData.map(lb => {
 
             if (sortMode === 'all') {
                 lbData.sort((a, b) => b.equity - a.equity);

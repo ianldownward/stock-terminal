@@ -1738,34 +1738,92 @@ def api_register():
 @app.route('/admin/users_log')
 @login_required
 def view_admin_users_log():
-    """Admin-only portal to view all registered usernames and passwords."""
+    """Admin-only portal to view and delete registered client accounts."""
     if session.get('role') != 'admin':
         return "Unauthorized", 403
     
-    entries = []
-    # Check MongoDB database
+    html_rows = []
     if portfolio_store.client:
         try:
             accounts_col = portfolio_store.client['stock_terminal']['accounts']
             for doc in accounts_col.find():
                 u = doc.get('username')
-                pw = doc.get('plain_password') or "(Pre-update hash)"
+                pw = doc.get('plain_password') or "(hash)"
                 dt = doc.get('registered_at') or "Prior Session"
-                entries.append(f"[{dt}] Username: {u:<16} | Password: {pw}")
+                html_rows.append(f"""
+                    <tr style='border-bottom:1px solid #262b36;'>
+                        <td style='padding:10px;'>{dt}</td>
+                        <td style='padding:10px; font-weight:bold; color:#ffd400;'>{u}</td>
+                        <td style='padding:10px; font-family:monospace;'>{pw}</td>
+                        <td style='padding:10px; text-align:right;'>
+                            <form method='POST' action='/api/admin/delete_account' onsubmit='return confirm("Permanently delete account {u}?");' style='margin:0;'>
+                                <input type='hidden' name='username' value='{u}'>
+                                <button type='submit' style='background:#ff5364; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold;'>Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                """)
         except Exception: pass
 
-    # Check local text file
-    if os.path.exists('user_signups.txt'):
+    table_body = "".join(html_rows) if html_rows else "<tr><td colspan='4' style='padding:20px; text-align:center; color:#8a8a9e;'>No user signups recorded yet.</td></tr>"
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head><title>User Access Directory</title></head>
+    <body style='background:#0f1115; color:#e1e3e6; font-family:-apple-system, sans-serif; padding:30px;'>
+        <div style='max-width:850px; margin:0 auto; background:#171a21; border:1px solid #262b36; border-radius:8px; padding:20px;'>
+            <div style='display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #262b36; padding-bottom:12px; margin-bottom:15px;'>
+                <h2 style='color:#ffd400; margin:0;'>Registered Client Accounts</h2>
+                <a href='/' style='color:#0ecb81; text-decoration:none; font-weight:bold;'>← Return to Terminal</a>
+            </div>
+            <table style='width:100%; border-collapse:collapse; font-size:13px;'>
+                <thead>
+                    <tr style='background:#14171f; color:#8a8a9e; text-align:left; text-transform:uppercase; font-size:11px;'>
+                        <th style='padding:10px;'>Registered At</th>
+                        <th style='padding:10px;'>Username</th>
+                        <th style='padding:10px;'>Password</th>
+                        <th style='padding:10px; text-align:right;'>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {table_body}
+                </tbody>
+            </table>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.route('/api/admin/delete_account', methods=['POST'])
+@login_required
+def api_admin_delete_account():
+    """Deletes a registered user from MongoDB and the local signup log."""
+    if session.get('role') != 'admin':
+        return "Unauthorized", 403
+    username = request.form.get('username', '').strip().lower()
+    if not username:
+        return redirect('/admin/users_log')
+
+    if portfolio_store.client:
         try:
+            accounts_col = portfolio_store.client['stock_terminal']['accounts']
+            accounts_col.delete_one({"_id": f"client_{username}"})
+            accounts_col.delete_one({"username": username})
+        except Exception as e:
+            print(f"[ACCOUNT DELETE ERROR]: {e}")
+
+    try:
+        if os.path.exists('user_signups.txt'):
             with open('user_signups.txt', 'r') as f:
-                entries.append("\n--- Local Text File Log ---")
-                entries.extend([l.strip() for l in f.readlines() if l.strip()])
-        except Exception: pass
+                lines = f.readlines()
+            with open('user_signups.txt', 'w') as f:
+                for line in lines:
+                    if f"Username: {username} " not in line:
+                        f.write(line)
+    except Exception: pass
 
-    if not entries:
-        return "<pre style='font-family:monospace; padding:20px;'>No user signups recorded yet.</pre>"
-
-    return f"<pre style='font-family:monospace; background:#0f1115; color:#0ecb81; padding:24px; font-size:13px; line-height:1.6;'>IDC TRADING - USER ACCESS DIRECTORY\n======================================================\n" + "\n".join(entries) + "</pre>"
+    return redirect('/admin/users_log')
 
 @app.route('/logout')
 def logout():
@@ -2247,14 +2305,12 @@ def get_data():
         if is_client:
             ud = portfolio_store.get_client_store(client_name)
             mb = float(ud.get('master_budget', 0.0))
-            is_configured = bool(ud.get('is_configured', False))
         else:
             portfolio_store.reload()
             if req_user and req_user in portfolio_store.data.get('users', {}):
                 portfolio_store.data['active_user'] = req_user
             ud = portfolio_store.user_data(req_user if req_user else None)
             mb = float(ud.get('master_budget', 500.0))
-            is_configured = True
 
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
