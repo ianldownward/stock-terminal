@@ -1240,7 +1240,7 @@
             </h2>
 
             <!-- Top Tab Switcher -->
-            <div style="display:flex; gap:6px; margin: 14px 0 12px 0; border-bottom: 1px solid #262b36; padding-bottom: 8px;">
+            <div style="display:flex; gap:6px; margin: 14px 0 14px 0; border-bottom: 1px solid #262b36; padding-bottom: 8px;">
                 <button type="button" id="tabBtnBots" class="btn-control active" onclick="switchSettingsTab('bots')" style="padding:6px 12px; font-size:11px;">Active Bots & Capital</button>
                 <button type="button" id="tabBtnAlpaca" class="btn-control" onclick="switchSettingsTab('alpaca')" style="padding:6px 12px; font-size:11px;">Alpaca Connection</button>
                 <button type="button" id="tabBtnAlerts" class="btn-control" onclick="switchSettingsTab('alerts')" style="padding:6px 12px; font-size:11px;">Notifications</button>
@@ -1313,7 +1313,8 @@
                     </div>
                 </div>
 
-                <div style="display:flex; justify-content:space-between; align-items:center; padding-top:4px;">
+                <!-- Clean Profile Action Row (Separated with generous 14px margin) -->
+                <div style="display:flex; justify-content:space-between; align-items:center; padding-top:14px; margin-top:6px; border-top:1px solid #1f2430;">
                     <button type="button" onclick="openStrategyWizard()" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 14px; font-weight:800;">+ New Strategy Profile</button>
                     <button type="button" onclick="deleteUserPrompt()" class="btn-control" style="border-color:#262b36; color:#8a8a9e; padding:8px 12px;">Delete Active Profile</button>
                 </div>
@@ -1349,6 +1350,10 @@
                         <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Secret Key</label>
                         <input type="text" id="settingApiSecret" placeholder="Paste Secret Key here" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px; font-family:monospace;">
                     </div>
+                    <div>
+                        <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Alpaca Portal URL</label>
+                        <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                    </div>
                 </div>
 
                 <div style="display:flex; justify-content:space-between; align-items:center; padding-top:6px;">
@@ -1357,50 +1362,47 @@
                 </div>
             </div>
 
-            <!-- TAB 3: NOTIFICATIONS (MAC & PHONE) -->
-            <div id="tabContentAlerts" style="display:none; flex-direction:column; gap:14px;">
-                <!-- Mac Notification Switch -->
-                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+            <!-- TAB 3: NOTIFICATIONS (DEDICATED MAC & PHONE CONTROLS) -->
+            <div id="tabContentAlerts" style="display:none; flex-direction:column; gap:12px;">
+                <!-- Card 1: Mac Desktop Notifications with Dedicated Test Button -->
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
                     <div>
-                        <div style="font-size:12px; font-weight:800; color:#fff;">Mac Notifications</div>
-                        <div style="font-size:11px; color:#8a8a9e; margin-top:2px;">Desktop banners and sounds on trade fills</div>
+                        <div style="font-size:13px; font-weight:800; color:#fff;">Mac Notifications</div>
+                        <div style="font-size:11px; color:#8a8a9e; margin-top:2px;">Desktop banners and sound effects on trade fills</div>
                     </div>
-                    <label class="toggle-switch" title="Toggle Mac Notifications">
-                        <input type="checkbox" id="toggleMacAlertsSetting" onchange="onToggleMacAlerts(this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px; border-color:#ffd400; color:#ffd400;" onclick="triggerTestMacAlert()">Test Mac Alert</button>
+                        <label class="toggle-switch" title="Toggle Mac Notifications">
+                            <input type="checkbox" id="toggleMacAlertsSetting" onchange="onToggleMacAlerts(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
 
-                <!-- Phone Notification Switch -->
-                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+                <!-- Card 2: Phone Push Notifications with Dedicated Test Button -->
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
                     <div>
-                        <div style="font-size:12px; font-weight:800; color:#fff;">Phone Notifications</div>
+                        <div style="font-size:13px; font-weight:800; color:#fff;">Phone Notifications</div>
                         <div style="font-size:11px; color:#8a8a9e; margin-top:2px;" id="settingsAlertDesc">Lock-screen alerts for iOS & Android</div>
                     </div>
-                    <label class="toggle-switch" title="Toggle Phone Notifications">
-                        <input type="checkbox" id="togglePhoneAlertsSetting" onchange="onTogglePhoneAlerts(this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px; border-color:#ffd400; color:#ffd400;" onclick="triggerTestPhoneAlert()">Test Phone Alert</button>
+                        <label class="toggle-switch" title="Toggle Phone Notifications">
+                            <input type="checkbox" id="togglePhoneAlertsSetting" onchange="onTogglePhoneAlerts(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
 
-                <div>
-                    <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Alpaca Portal URL</label>
-                    <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
+                <!-- Informative Guidance Card -->
+                <div style="background:#0f1115; border:1px dashed #ffd400; border-radius:6px; padding:10px; font-size:11px; color:#e1e3e6; line-height:1.45; margin-top:2px;">
+                    <b style="color:#ffd400;">Notification Setup Tips:</b><br>
+                    • <b>Mac:</b> Allow notifications in Mac System Settings -> Notifications.<br>
+                    • <b>Phone:</b> Launch IDC Trading from your <b>Home Screen icon</b> (iOS 16.4+) to receive background alerts.
                 </div>
 
-                <div style="display:flex; justify-content:flex-end; gap:8px;">
-                    <button type="button" class="btn-control" style="border-color:#ffd400; color:#ffd400;" onclick="triggerTestAlert()">Send Test Alert</button>
-                </div>
-            </div>
-
-                <div>
-                    <label style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:700; display:block; margin-bottom:3px;">Alpaca Portal URL</label>
-                    <input type="url" id="settingBrokerUrl" placeholder="https://app.alpaca.markets" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
-                </div>
-
-                <div style="display:flex; justify-content:flex-end; gap:8px;">
-                    <button type="button" class="btn-control" style="border-color:#ffd400; color:#ffd400;" onclick="triggerTestAlert()">Send Test Alert</button>
-                </div>
+                <!-- Status Feedback Label -->
+                <div id="pushStatusText" style="font-size:11px; color:#8a8a9e; text-align:center; min-height:16px;"></div>
             </div>
 
             <!-- Bottom Save / Cancel Actions -->
@@ -5549,25 +5551,49 @@
             syncAlertStateUI();
         }
 
-        async function triggerTestAlert() {
-            // Also trigger desktop notification if Mac toggle is active
-            if (localStorage.getItem('mac_alerts_enabled') === 'true' && Notification.permission === 'granted') {
-                new Notification('IDC Trading', { body: 'Test Trade: Bought 10 TQQQ @ £52.25' });
-            }
-
+        async function triggerTestMacAlert() {
             const statusEl = document.getElementById('pushStatusText');
-            if (statusEl) statusEl.innerHTML = "<span style='color:#ffd400;'>Sending test alert...</span>";
+            if (!('Notification' in window)) {
+                alert('Desktop notifications are not supported in this browser.');
+                return;
+            }
+            if (Notification.permission !== 'granted') {
+                const perm = await Notification.requestPermission();
+                if (perm !== 'granted') {
+                    alert('Mac notifications are blocked. Allow notifications in Mac System Settings -> Notifications.');
+                    return;
+                }
+            }
+            try {
+                new Notification('IDC Trading • Mac Alert', {
+                    body: 'Mac desktop banners are active! Trade fill: Bought 10 TQQQ @ £52.25',
+                    icon: '/static/apple-touch-icon.png'
+                });
+                if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81; font-weight:700;'>✓ Mac notification banner fired!</span>";
+            } catch (err) {
+                if (statusEl) statusEl.innerHTML = `<span style='color:#ff5364;'>Mac alert error: ${err.message}</span>`;
+            }
+        }
+
+        async function triggerTestPhoneAlert() {
+            const statusEl = document.getElementById('pushStatusText');
+            if (statusEl) statusEl.innerHTML = "<span style='color:#ffd400;'>Sending test alert to phone...</span>";
             try {
                 let testRes = await fetch('/api/push/test', { method: 'POST' });
                 let testData = await testRes.json();
                 if (testData.status === 'ok') {
-                    if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81; font-weight:700;'>Alert sent to screen!</span>";
+                    if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81; font-weight:700;'>✓ Alert sent! Check your phone lock-screen.</span>";
                 } else {
-                    if (statusEl) statusEl.innerHTML = `<span style='color:#ff5364; font-weight:700;'>${testData.message || 'Error sending alert'}</span>`;
+                    if (statusEl) statusEl.innerHTML = `<span style='color:#ff5364; font-weight:700;'>${testData.message || 'Error sending alert to phone'}</span>`;
                 }
             } catch(e) {
                 if (statusEl) statusEl.innerHTML = "<span style='color:#ff5364; font-weight:700;'>Failed to reach server</span>";
             }
+        }
+
+        async function triggerTestAlert() {
+            await triggerTestMacAlert();
+            await triggerTestPhoneAlert();
         }
 
         async function forceReSyncPush() {
