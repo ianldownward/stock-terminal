@@ -4016,7 +4016,7 @@
                     worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
                 }
                 
-                // Auto-launch onboarding walkthrough immediately if this account is unconfigured
+                // Auto-launch onboarding wizard immediately for any unconfigured account
                 if (p.portfolio && p.portfolio.is_configured === false) {
                     startOnboardingGuide();
                 }
@@ -5282,7 +5282,7 @@
 
             function getBotBudget(nameSnippet) {
                 if (Array.isArray(latestLeaderboardData)) {
-                    let f = latestLeaderboardData.find(l => l.user && l.user.toLowerCase().includes(nameSnippet.toLowerCase()));
+                    let f = latestLeaderboardData.find(l => l.user.toLowerCase().includes(nameSnippet.toLowerCase()));
                     if (f && f.budget !== undefined) return parseFloat(f.budget).toFixed(2);
                 }
                 return isAdmin ? '500.00' : '0.00';

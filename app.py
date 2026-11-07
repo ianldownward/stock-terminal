@@ -664,16 +664,12 @@ class PortfolioManager:
             else: ud['holdings'].pop(ticker, None)
             
             self.save_data(self.data)
-            # Multi-Bot Broker Dispatch Engine
-            global_broker = self.data.get('broker') or {}
-            
-            # Fallback to user credentials if top-level store is missing keys
-            if not global_broker.get('api_key') or not global_broker.get('secret_key'):
-                for u in self.data.get('users', {}).values():
-                    if isinstance(u, dict) and u.get('broker', {}).get('api_key'):
-                        global_broker.update(u['broker'])
-                        self.data['broker'] = global_broker
-                        break
+            # Multi-Bot Broker Dispatch Engine (Strictly Isolated Per Account)
+            if username and username.strip().lower() not in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
+                c_store = self.get_client_store(username) or {}
+                global_broker = c_store.get('broker') or {}
+            else:
+                global_broker = self.data.get('broker') or {}
 
             is_paused = global_broker.get('paused', False)
             allocations = global_broker.get('allocations') or {}
@@ -2377,9 +2373,10 @@ def get_data():
             for tick, cur_pnd, start_pnd in ex.map(fetch_lb_price, all_user_holds): prices[tick] = {'cur': cur_pnd, 'start': start_pnd}
 
         leaderboard = []
-        for u, u_data in portfolio_store.data.get('users', {}).items():
+        source_users = {client_name: ud} if is_client else portfolio_store.data.get('users', {})
+        for u, u_data in source_users.items():
             if not isinstance(u_data, dict): continue
-            mb_lb = u_data.get('master_budget', 500.0)
+            mb_lb = float(u_data.get('master_budget', 0.0 if is_client else 500.0))
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
             
