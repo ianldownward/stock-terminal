@@ -1441,9 +1441,9 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
+                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">4.55 (Elite)</b></div>
+                                <div>• Win Rate: <b style="color:#fff;">7 out of 10 wins (70.0%)</b></div>
                                 <div>• Avg Daily Pace: <b style="color:#0ecb81;">+1.31% / Day</b></div>
-                                <div>• Win Rate: <b style="color:#fff;">7 out of 10 wins (61.5%)</b></div>
-                                <div>• Profit Factor: <b style="color:#fff;">3.55 (Low Drawdown)</b></div>
                                 <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
                             </div>
                         </div>
@@ -1463,7 +1463,7 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Avg Daily Pace: <b style="color:#0ecb81;">+0.88% / Day</b></div>
+                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">2.07 (Strong)</b></div>
                                 <div>• Win Rate: <b style="color:#fff;">5 out of 10 wins (50.0%)</b></div>
                                 <div>• Shorting Success: <b style="color:#fff;">80% on SQQQ</b></div>
                                 <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
@@ -1485,7 +1485,7 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Execution: <b style="color:#0ecb81;">High Speed Scalping</b></div>
+                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">1.20 (Quick Scalp)</b></div>
                                 <div>• Target Burst: <b style="color:#fff;">+1.20% Take Profit</b></div>
                                 <div>• Assets: <b style="color:#fff;">TQQQ, SOXL, SQQQ</b></div>
                                 <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
@@ -5470,6 +5470,19 @@
                 }
             } else {
                 localStorage.setItem('mac_alerts_enabled', 'false');
+                // Unregister Mac from push server so background worker never receives mobile alerts
+                if ('serviceWorker' in navigator && 'PushManager' in window && !/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+                    navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription()).then(sub => {
+                        if (sub) {
+                            fetch('/api/push/unsubscribe', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ endpoint: sub.endpoint })
+                            }).catch(() => {});
+                            sub.unsubscribe().catch(() => {});
+                        }
+                    }).catch(() => {});
+                }
             }
             syncAlertStateUI();
         }

@@ -115,9 +115,9 @@ def send_native_web_push(title, message, target_device=None):
     portfolio_store.reload()
     subs = portfolio_store.data.get('push_subscriptions') or []
 
-    # If testing phone alerts, filter out any Mac desktop browsers that previously subscribed
+    # Strictly send phone alerts only to devices registered as phone
     if target_device == 'phone':
-        subs = [s for s in subs if s.get('device') != 'mac']
+        subs = [s for s in subs if s.get('device') == 'phone']
 
     print(f"[PUSH ATTEMPT] {title} | Subscribed devices ({target_device or 'all'}): {len(subs)}")
     if not subs:
@@ -1405,11 +1405,7 @@ def reconcile_alpaca_positions_and_orders():
         "Content-Type": "application/json"
     }
 
-    auto_profiles = [
-        'Vector Hybrid',
-        'Dual Axis',
-        'Velocity Pulse'
-    ]
+    auto_profiles = list(portfolio_store.data.get('users', {}).keys())
 
     # 1. Reconcile Closed Orders (Native Trailing Stops & Exact Fill Prices)
     try:
@@ -1550,9 +1546,14 @@ SW_JAVASCRIPT = """
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(clients.claim()); });
 self.addEventListener('push', (e) => {
-    let d = { title: 'IDC Trading Alert', body: 'New trade executed.', url: '/' };
+    let d = { title: 'IDC Trading Alert', body: 'New trade executed.', url: '/', target: 'all' };
     if (e.data) {
         try { d = e.data.json(); } catch(err) { d.body = e.data.text(); }
+    }
+    // Drop phone-targeted alerts if running on a desktop Mac/PC
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (!isMobile && d.target === 'phone') {
+        return;
     }
     const opts = {
         body: d.body,
