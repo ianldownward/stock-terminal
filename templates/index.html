@@ -1411,8 +1411,8 @@
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
                                 <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">4.55 (Elite)</b></div>
                                 <div>• Win Rate: <b style="color:#fff;">7 out of 10 wins (70.0%)</b></div>
-                                <div>• Avg Daily Pace: <b style="color:#0ecb81;">+1.31% / Day</b></div>
-                                <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
+                                <div>• Daily Pace: <b style="color:#0ecb81;">+1.31% / Day Target</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
                     </div>
@@ -1433,8 +1433,8 @@
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
                                 <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">2.07 (Strong)</b></div>
                                 <div>• Win Rate: <b style="color:#fff;">5 out of 10 wins (50.0%)</b></div>
-                                <div>• Shorting Success: <b style="color:#fff;">80% on SQQQ</b></div>
-                                <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
+                                <div>• Daily Pace: <b style="color:#0ecb81;">+0.88% / Day Target</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
                     </div>
@@ -1454,9 +1454,9 @@
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
                                 <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">1.20 (Quick Scalp)</b></div>
-                                <div>• Target Burst: <b style="color:#fff;">+1.20% Take Profit</b></div>
-                                <div>• Assets: <b style="color:#fff;">TQQQ, SOXL, SQQQ</b></div>
-                                <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
+                                <div>• Win Rate: <b style="color:#fff;">6 out of 10 wins (60.0%)</b></div>
+                                <div>• Daily Pace: <b style="color:#0ecb81;">+1.20% / Burst Target</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
                     </div>
@@ -1495,6 +1495,26 @@
                     <label style="font-size:11px; color:#8a8a9e; font-weight:800; text-transform:uppercase; display:block; margin-bottom:5px;">Version / Identifier Tag (Optional)</label>
                     <input type="text" id="wizardVersionTag" placeholder="e.g. v2, Main Fund, Test 2" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
                     <span style="font-size:10px; color:#8a8a9e; margin-top:3px; display:block;">Allows running multiple versions of the same strategy cleanly.</span>
+                </div>
+
+                <!-- OVERNIGHT CASH SWEEP CHECKBOX (OPTION 3) -->
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="wizardOvernightSweep" checked style="accent-color:#ffd400; width:16px; height:16px;">
+                        <span style="font-size:12px; font-weight:800; color:#ffd400;">Enable Overnight Cash Sweep (Liquidate at 20:50 BST)</span>
+                    </label>
+                    <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin-top:8px;">
+                        <b>The Analogy:</b> <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px; font-size:10px; line-height:1.4;">
+                        <div style="background:#14171f; padding:6px 8px; border-radius:6px; border-left:2px solid #0ecb81;">
+                            <b style="color:#0ecb81;">PROS:</b> Guaranteed peace of mind. Profits made today are secured in cash and cannot be wiped out by overnight bad news or gap-down crashes.
+                        </div>
+                        <div style="background:#14171f; padding:6px 8px; border-radius:6px; border-left:2px solid #ff9900;">
+                            <b style="color:#ff9900;">CONS:</b> You miss overnight gap-ups. If positive news causes the market to open higher tomorrow, you won't be holding shares to capture it.
+                        </div>
+                    </div>
+                    <span style="font-size:10px; color:#8a8a9e; margin-top:6px; display:block;">You can toggle this on or off at any time in Settings.</span>
                 </div>
 
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
@@ -3193,13 +3213,19 @@
             let method = selectedWizardMethod;
             let tag = document.getElementById('wizardVersionTag').value.trim();
             let capital = parseFloat(document.getElementById('wizardCapitalInput').value) || 500.0;
+            let sweepVal = document.getElementById('wizardOvernightSweep')?.checked ?? true;
             let finalName = tag ? `${method} (${tag})` : method;
 
             closeStrategyFundingModal();
             let res = await fetch('/api/users/add_v2', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ profile_name: finalName, method: method, capital: capital })
+                body: JSON.stringify({
+                    profile_name: finalName,
+                    method: method,
+                    capital: capital,
+                    overnight_sweep: sweepVal
+                })
             });
             let d = await res.json();
             if (d.status === 'ok') {
@@ -5110,6 +5136,15 @@
             }
         }
 
+        async function toggleProfileSweep(profName, isEnabled) {
+            await fetch('/api/profile/toggle_sweep', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profile: profName, overnight_sweep: isEnabled })
+            });
+            await fetchData(true);
+        }
+
         function renderAssistStep() {
             let title = document.getElementById('assistStepTitle');
             let body = document.getElementById('assistStepBody');
@@ -5197,12 +5232,27 @@
                     </div>
                 `;
             } else if (currentAssistStep === 6) {
-                title.innerText = "Step 6 of 6 • Assign Trading Capital";
+                title.innerText = "Step 6 of 6 • Assign Capital & Overnight Sweep";
                 body.innerHTML = `
-                    <div style="font-size:13px; color:#fff; margin-bottom:8px;">Assign initial capital for <b>${guideState.strategy}</b>:</div>
-                    <input type="number" id="guideCapital" value="${guideState.capital}" step="50" style="width:100%; background:#0f1115; border:1px solid #ffd400; color:#ffd400; font-size:18px; font-weight:800; padding:10px; border-radius:6px; margin-top:6px;">
-                    <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:10px; font-size:11px; color:#8a8a9e; margin-top:10px; line-height:1.45;">
-                        <b style="color:#ffd400;">[IMPORTANT]:</b> Ensure your Alpaca balance has at least this amount deposited so your bot can place orders.
+                    <div style="font-size:13px; color:#fff; margin-bottom:6px;">Assign initial capital for <b>${guideState.strategy}</b>:</div>
+                    <input type="number" id="guideCapital" value="${guideState.capital}" step="50" style="width:100%; background:#0f1115; border:1px solid #ffd400; color:#ffd400; font-size:18px; font-weight:800; padding:8px; border-radius:6px;">
+
+                    <div style="background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:10px; margin-top:10px;">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox" id="guideOvernightSweep" checked style="accent-color:#ffd400; width:15px; height:15px;">
+                            <span style="font-size:11px; font-weight:800; color:#ffd400;">Enable Overnight Cash Sweep (Liquidate at 20:50 BST)</span>
+                        </label>
+                        <div style="font-size:10px; color:#e1e3e6; line-height:1.4; margin-top:6px;">
+                            <b>The Analogy:</b> <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
+                        </div>
+                        <div style="display:flex; gap:6px; margin-top:6px; font-size:9px; line-height:1.35;">
+                            <div style="flex:1; background:#14171f; padding:4px 6px; border-radius:4px; border-left:2px solid #0ecb81;">
+                                <b style="color:#0ecb81;">PROS:</b> Complete peace of mind. Profits made today are secured in cash and cannot be wiped out by overnight bad news or gap-down crashes.
+                            </div>
+                            <div style="flex:1; background:#14171f; padding:4px 6px; border-radius:4px; border-left:2px solid #ff9900;">
+                                <b style="color:#ff9900;">CONS:</b> You miss overnight gap-ups. If positive news causes the market to open higher tomorrow, you won't be holding shares to capture it.
+                            </div>
+                        </div>
                     </div>
                 `;
             }
@@ -5219,6 +5269,7 @@
                 guideState.strategy = document.querySelector('input[name="guideStrat"]:checked')?.value || 'Vector Hybrid';
             } else if (currentAssistStep === 6) {
                 guideState.capital = parseFloat(document.getElementById('guideCapital')?.value) || 500.0;
+                let sweepVal = document.getElementById('guideOvernightSweep')?.checked ?? true;
                 dismissOnboardingGuide();
 
                 // Save credentials for isolated user
@@ -5232,14 +5283,15 @@
                     })
                 });
 
-                // Launch strategy
+                // Launch strategy with selected overnight sweep setting
                 await fetch('/api/users/add_v2', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         profile_name: guideState.strategy,
                         method: guideState.strategy,
-                        capital: guideState.capital
+                        capital: guideState.capital,
+                        overnight_sweep: sweepVal
                     })
                 });
 
@@ -5377,17 +5429,28 @@
                         let curEq = (p.equity !== undefined) ? parseFloat(p.equity).toFixed(2) : parseFloat(p.budget || 0).toFixed(2);
                         let isLast = (idx === profiles.length - 1);
 
+                        let isSweep = (p.overnight_sweep !== undefined) ? p.overnight_sweep : ((aEntry.overnight_sweep !== undefined) ? aEntry.overnight_sweep : true);
+
                         return `
-                            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; ${isLast ? '' : 'border-bottom:1px solid #1a1e28;'}">
-                                <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                    <input type="checkbox" class="dyn-alloc-chk" data-prof="${pName}" ${isEnabled ? 'checked' : ''} style="accent-color:#ffd400;">
-                                    <span style="font-weight:700; color:#ffd400;">${pName}</span>
-                                </label>
-                                <div style="display:flex; align-items:center; gap:6px;">
-                                    <span style="font-size:12px; font-weight:800; color:#fff; background:#0f1115; border:1px solid #262b36; padding:4px 8px; border-radius:4px;">£${curEq}</span>
-                                    <button type="button" onclick="openCapitalModalFor('${pName.replace(/'/g, "\\'")}')" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400; background:transparent;">+ / -</button>
-                                    <button type="button" onclick="liquidateSpecificBot('${pKey.replace(/'/g, "\\'")}')" class="btn-bot-liquidate">Liquidate</button>
-                                    <button type="button" onclick="deleteProfileFromList('${pName.replace(/'/g, "\\'")}')" class="btn-control" style="border-color:#ff5364; color:#ff5364; padding:3px 6px; font-size:10px;" title="Delete Profile">✕</button>
+                            <div style="display:flex; flex-direction:column; gap:6px; padding:10px 0; ${isLast ? '' : 'border-bottom:1px solid #1a1e28;'}">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <label style="font-size:12px; color:#fff; display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                        <input type="checkbox" class="dyn-alloc-chk" data-prof="${pName}" ${isEnabled ? 'checked' : ''} style="accent-color:#ffd400;">
+                                        <span style="font-weight:700; color:#ffd400;">${pName}</span>
+                                    </label>
+                                    <div style="display:flex; align-items:center; gap:6px;">
+                                        <span style="font-size:12px; font-weight:800; color:#fff; background:#0f1115; border:1px solid #262b36; padding:4px 8px; border-radius:4px;">£${curEq}</span>
+                                        <button type="button" onclick="openCapitalModalFor('${pName.replace(/'/g, "\\'")}')" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400; background:transparent;">+ / -</button>
+                                        <button type="button" onclick="liquidateSpecificBot('${pKey.replace(/'/g, "\\'")}')" class="btn-bot-liquidate">Liquidate</button>
+                                        <button type="button" onclick="deleteProfileFromList('${pName.replace(/'/g, "\\'")}')" class="btn-control" style="border-color:#ff5364; color:#ff5364; padding:3px 6px; font-size:10px;" title="Delete Profile">✕</button>
+                                    </div>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; align-items:center; background:#0f1115; padding:6px 10px; border-radius:6px;">
+                                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:#8a8a9e;">
+                                        <input type="checkbox" onchange="toggleProfileSweep('${pName.replace(/'/g, "\\'")}', this.checked)" ${isSweep ? 'checked' : ''} style="accent-color:#ffd400;">
+                                        <span>Overnight Cash Sweep (20:50 BST)</span>
+                                    </label>
+                                    <span style="font-size:10px; font-weight:700; color:${isSweep ? '#0ecb81' : '#ff9900'};">${isSweep ? '100% Cash' : 'Holding Overnight'}</span>
                                 </div>
                             </div>
                         `;

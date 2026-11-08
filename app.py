@@ -347,11 +347,12 @@ class PortfolioManager:
 
         return {
             'master_budget': 500.0,
-            'watchlist': wl, 
+            'watchlist': wl,
+            'overnight_sweep': True,
             'initial_positions': {}, 
             'holdings': {}, 
             'history': [], 
-            'drawings': {},
+            'drawings': {}, 
             'notified_signals': {},
             'settings': {
                 'period': '1d', 
@@ -465,19 +466,18 @@ class PortfolioManager:
             allowed_profiles = [
                 'Vector Hybrid',
                 'Dual Axis',
-                'Velocity Pulse',
-                'Sovereign Core'
+                'Velocity Pulse'
             ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
                 self.data['users'] = {}
                 needs_save = True
 
-            # Aggressive Purge of all legacy prototype profiles and leaked emails
+            # Purge obsolete manual profiles, prototype profiles, and leaked emails
             existing_users = list(self.data['users'].keys())
             for u in existing_users:
                 u_clean = u.strip().lower()
-                if 'test ' in u_clean or 'ian' in u_clean or '@' in u_clean:
+                if 'test ' in u_clean or 'ian' in u_clean or '@' in u_clean or 'sovereign' in u_clean:
                     del self.data['users'][u]
                     needs_save = True
 
@@ -1018,12 +1018,13 @@ class MarketScoringEngine:
         if any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']) and now_uk.hour >= 20 and avg_buy_price == 0:
             return {'type': 'EOD Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "LATE-DAY CURFEW: No new entries permitted after 20:00 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
-        # OVERRIDE: EOD SWEEP RULE FOR ROTATORS (SWEEPS ALL ROTATORS TO 100% CASH AT 20:50 BST)
-        if any(x in prof for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm']) and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: OVERNIGHT CASH SWEEP (Checks each profile's individual overnight_sweep setting)
+        sweep_setting = bool(ud.get('overnight_sweep', True)) if isinstance(ud, dict) else True
+        if sweep_setting and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "EOD ROTATOR SWEEP: Liquidating to 100% cash.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Cash Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(EOD Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Forced EOD Sell'}
-            return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "EOD ROTATOR SWEEP: Blocking new entries.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
+                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "OVERNIGHT SWEEP: Liquidating to 100% cash to eliminate overnight gap risk.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
+            return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "OVERNIGHT SWEEP: Blocking new entries before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
         # OVERRIDE: QUICK 1.2% TARGET FOR TIGHT TARGET PROFILES ONLY (EXCLUDES S2 WHICH USES VELOCITY RATCHET)
         if any(x in prof for x in ['test u', 'test s']) and 'test s2' not in prof and is_3x_etf and avg_buy_price > 0:
@@ -1581,9 +1582,9 @@ def reconcile_alpaca_positions_and_orders():
 
                 total_local_shares_claimed = sum(portfolio_store.get_shares(tk, prof) for prof in auto_profiles)
 
-                # If after 20:50 sweep OR no bot owns these shares, auto-liquidate on Alpaca
-                if is_post_sweep or total_local_shares_claimed == 0:
-                    print(f"[ORPHAN SWEEP] Liquidating unowned/overnight position on Alpaca: {qty} {tk} (Local claimed: {total_local_shares_claimed})")
+                # Only liquidate orphaned shares that no local active bot claims. If a bot has overnight_sweep turned OFF, total_local_shares_claimed > 0, preserving the overnight position.
+                if total_local_shares_claimed == 0:
+                    print(f"[ORPHAN SWEEP] Liquidating unowned position on Alpaca: {qty} {tk} (Local claimed: {total_local_shares_claimed})")
                     try:
                         req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
                         with urllib.request.urlopen(req_del, timeout=5):
@@ -1992,6 +1993,7 @@ def add_user_v2():
     prof_name = data.get('profile_name', '').strip()
     method = data.get('method', 'Vector Hybrid').strip()
     capital = float(data.get('capital', 500.0))
+    sweep_enabled = bool(data.get('overnight_sweep', True))
 
     if not prof_name:
         return jsonify({'status': 'error', 'message': 'Profile name required'}), 400
@@ -2008,13 +2010,15 @@ def add_user_v2():
         state = portfolio_store.default_user_state(method)
         state['master_budget'] = capital
         state['method'] = method
+        state['overnight_sweep'] = sweep_enabled
         users[prof_name] = state
         c_store['active_user'] = prof_name
         c_store['is_configured'] = True
         c_broker = c_store.setdefault('broker', {})
         c_broker.setdefault('allocations', {})[prof_name.lower()] = {
             'enabled': True,
-            'budget': capital
+            'budget': capital,
+            'overnight_sweep': sweep_enabled
         }
         portfolio_store.save_client_store(client_name, c_store)
         return jsonify({'status': 'ok', 'profile': prof_name})
@@ -2027,10 +2031,52 @@ def add_user_v2():
     state = portfolio_store.default_user_state(method)
     state['master_budget'] = capital
     state['method'] = method
+    state['overnight_sweep'] = sweep_enabled
     users[prof_name] = state
     portfolio_store.data['active_user'] = prof_name
+    broker = portfolio_store.data.setdefault('broker', {})
+    broker.setdefault('allocations', {})[prof_name.lower()] = {
+        'enabled': True,
+        'budget': capital,
+        'overnight_sweep': sweep_enabled
+    }
     portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok', 'profile': prof_name})
+
+@app.route('/api/profile/toggle_sweep', methods=['POST'])
+@login_required
+def toggle_profile_sweep():
+    data = request.get_json() or {}
+    prof_name = data.get('profile', '').strip()
+    sweep_val = bool(data.get('overnight_sweep', True))
+
+    is_client = (session.get('role') != 'admin')
+    if is_client:
+        c_store = portfolio_store.get_client_store(session.get('user'))
+        users = c_store.setdefault('users', {})
+        if prof_name in users:
+            users[prof_name]['overnight_sweep'] = sweep_val
+            c_broker = c_store.setdefault('broker', {})
+            allocs = c_broker.setdefault('allocations', {})
+            for k in allocs:
+                if k in prof_name.lower() or prof_name.lower() in k:
+                    allocs[k]['overnight_sweep'] = sweep_val
+            portfolio_store.save_client_store(session.get('user'), c_store)
+            return jsonify({'status': 'ok', 'overnight_sweep': sweep_val})
+        return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
+
+    portfolio_store.reload()
+    users = portfolio_store.data.setdefault('users', {})
+    if prof_name in users:
+        users[prof_name]['overnight_sweep'] = sweep_val
+        broker = portfolio_store.data.setdefault('broker', {})
+        allocs = broker.setdefault('allocations', {})
+        for k in allocs:
+            if k in prof_name.lower() or prof_name.lower() in k:
+                allocs[k]['overnight_sweep'] = sweep_val
+        portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'status': 'ok', 'overnight_sweep': sweep_val})
+    return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
 
 @app.route('/api/portfolio/add_capital', methods=['POST'])
 @login_required
@@ -2625,6 +2671,7 @@ def get_data():
                 'user': u, 
                 'equity': round(tot_eq_now, 2), 
                 'budget': mb_lb, 
+                'overnight_sweep': bool(u_data.get('overnight_sweep', True)),
                 'daily_pnl': day_diff,
                 'daily_pct': day_pct,
                 'daily_color': day_col,
