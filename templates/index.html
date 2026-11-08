@@ -3538,6 +3538,21 @@
             let sortMode = document.querySelector('input[name="lb_sort"]:checked') ? document.querySelector('input[name="lb_sort"]:checked').value : 'all';
             let lbData = Array.isArray(leaderboard) ? [...leaderboard] : [];
 
+            // Client Account Direct Fallback: Prevent empty right drawer if client strategy is configured
+            if (lbData.length === 0 && globalPortfolioData && (globalPortfolioData.strategy_name || globalPortfolioData.active_user)) {
+                let sName = globalPortfolioData.strategy_name || globalPortfolioData.active_user;
+                let bVal = parseFloat(globalPortfolioData.master_budget || 500.0);
+                lbData = [{
+                    user: sName,
+                    equity: bVal,
+                    budget: bVal,
+                    daily_pnl: 0.0,
+                    daily_pct: 0.0,
+                    days_active: 1,
+                    active_holds: []
+                }];
+            }
+
             if (lbData.length === 0) {
                 let uiEl = document.getElementById('leaderboardUI');
                 if (uiEl) {
@@ -3603,21 +3618,11 @@
                 let mainColor = sortMode === 'today' ? dailyColor : equityColor;
                 let subColor = sortMode === 'today' ? equityColor : dailyColor;
 
-                let liveTag = '';
-                if (window._activeAllocations) {
-                    for (let [k, v] of Object.entries(window._activeAllocations)) {
-                        if (lb.user.toLowerCase().includes(k) && v.enabled) {
-                            liveTag = `<span class="alpaca-live-tag">LIVE £${v.budget}</span>`;
-                            break;
-                        }
-                    }
-                }
-
                 let cardInner = `
                     <div class="lb-header">
                         <div style="display:flex; flex-direction:column; align-items:flex-start;">
                             <div>
-                                <span>${lb.user}${liveTag}</span>
+                                <span>${lb.user}</span>
                                 <span class="info-icon" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
                             </div>
                             ${tickerUnderName}
@@ -5343,7 +5348,18 @@
 
             let allocs = window._activeAllocations || {};
             let container = document.getElementById('dynamicStrategyAllocationsList');
-            let profiles = Array.isArray(latestLeaderboardData) ? latestLeaderboardData : [];
+            let profiles = (Array.isArray(latestLeaderboardData) && latestLeaderboardData.length > 0) ? latestLeaderboardData : [];
+
+            // Client Account Direct Fallback: Read active strategy directly if leaderboard has not populated
+            if (profiles.length === 0 && globalPortfolioData && (globalPortfolioData.strategy_name || globalPortfolioData.active_user)) {
+                let sName = globalPortfolioData.strategy_name || globalPortfolioData.active_user;
+                let bVal = parseFloat(globalPortfolioData.master_budget || 500.0);
+                profiles = [{
+                    user: sName,
+                    equity: bVal,
+                    budget: bVal
+                }];
+            }
 
             if (container) {
                 if (profiles.length === 0) {

@@ -1898,11 +1898,19 @@ def get_users():
 @app.route('/api/users/select', methods=['POST'])
 @login_required
 def select_user():
+    target_user = (request.get_json() or {}).get('username', '').strip()
     if session.get('role') == 'admin':
         portfolio_store.reload()
-        portfolio_store.switch_user((request.get_json() or {}).get('username', ''))
+        portfolio_store.switch_user(target_user)
         return jsonify({'status': 'ok'})
-    return jsonify({'status': 'ok'})
+    else:
+        client_name = session.get('user')
+        c_store = portfolio_store.get_client_store(client_name)
+        if c_store and target_user:
+            c_store['active_user'] = target_user
+            c_store['strategy_name'] = target_user
+            portfolio_store.save_client_store(client_name, c_store)
+        return jsonify({'status': 'ok'})
 
 @app.route('/api/users/add', methods=['POST'])
 @login_required
@@ -1995,8 +2003,12 @@ def delete_user():
         client_name = session.get('user')
         c_store = portfolio_store.get_client_store(client_name)
         c_store['strategy_name'] = ''
+        c_store['active_user'] = ''
         c_store['is_configured'] = False
         c_store['master_budget'] = 0.0
+        c_broker = c_store.setdefault('broker', {})
+        if 'allocations' in c_broker:
+            c_broker['allocations'] = {}
         portfolio_store.save_client_store(client_name, c_store)
         return jsonify({'status': 'ok'})
 
@@ -2353,20 +2365,29 @@ def get_data():
 
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
-        active_profile = (req_user or portfolio_store.active_username()).strip().lower() if not is_client else client_name.lower()
+        strat_display_name = ud.get('strategy_name') or ud.get('active_user') or 'Vector Hybrid'
+        active_profile = strat_display_name.strip().lower() if is_client else (req_user or portfolio_store.active_username()).strip().lower()
         is_momentum = any(x in active_profile for x in ['vector', 'dual', 'velocity', 'pulse', 'hybrid', 'axis', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         is_rotator = is_momentum
 
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
-        active_holds = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker')) > 0]))
+
+        def resolve_shares(tk):
+            if is_client:
+                i_sh = (init_pos.get(tk) or {}).get('shares', 0)
+                n_sh = sum(tr.get('shares', 0) if tr.get('action') == 'BUY' else -tr.get('shares', 0) for tr in hist if tr.get('ticker') == tk)
+                return max(0, i_sh + n_sh)
+            return portfolio_store.get_shares(tk)
+
+        active_holds = list(set([tr.get('ticker') for tr in hist if resolve_shares(tr.get('ticker')) > 0]))
 
         # Never enter empty ALL_SHARES mode: default to active hold if present, or top watchlist stock (TQQQ)
         if not t or t == 'ALL_SHARES':
             t = active_holds[0] if active_holds else (wl[0] if wl else 'TQQQ')
         if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
         for tk in active_holds:
-            sh_cnt = portfolio_store.get_shares(tk)
+            sh_cnt = resolve_shares(tk)
             if sh_cnt > 0:
                 if tk not in ud['holdings']: ud['holdings'][tk] = {}
                 ud['holdings'][tk]['shares'] = sh_cnt
@@ -2381,7 +2402,18 @@ def get_data():
         net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist)
         init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values())
         cash_balance = mb + net_history - init_manual
-        tot_own = portfolio_store.get_total_portfolio_value()
+
+        if is_client:
+            tot_own = 0.0
+            for tk in active_holds:
+                sh_c = resolve_shares(tk)
+                df_c = pnl_dfs_5m.get(tk)
+                if df_c is not None and not df_c.empty:
+                    cur_p = df_c['Close'].iloc[-1]
+                    div = 100.0 if tk.endswith('.L') and cur_p > 100 else 1.0
+                    tot_own += round(sh_c * (cur_p / div), 2)
+        else:
+            tot_own = portfolio_store.get_total_portfolio_value(req_user if req_user else None)
         total_equity = cash_balance + tot_own
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
