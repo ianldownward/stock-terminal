@@ -645,23 +645,39 @@ class PortfolioManager:
         self.save_data(self.data)
         return curr_tot
 
-    def execute_trade(self, ticker, action_type, shares, price, username=None, metadata=None):
+    def execute_trade(self, ticker, action_type, shares, price, username=None, metadata=None, client_email=None):
         with self.trade_lock:
             self.reload()
             if not ticker or shares <= 0: return None
-            ud = self.user_data(username)
+            
+            is_client = bool(client_email and client_email.strip().lower() not in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()])
+            if is_client:
+                c_store = self.get_client_store(client_email)
+                users = c_store.setdefault('users', {})
+                prof_target = username if (username and username in users) else c_store.get('active_user', '')
+                if not prof_target and users: prof_target = list(users.keys())[0]
+                ud = users.setdefault(prof_target, self.default_user_state(prof_target))
+                global_broker = c_store.get('broker') or {}
+            else:
+                ud = self.user_data(username)
+                global_broker = self.data.get('broker') or {}
+
             action = 'BUY' if 'BUY' in action_type.upper() else 'SELL'
             cost_per_sh = price / 100.0 if ticker.endswith('.L') and price > 100 else price
             
+            # Resolve current holdings for this specific profile
+            init_pos = ud.get('initial_positions') or {}
+            i_sh = (init_pos.get(ticker) or {}).get('shares', 0)
+            n_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in ud.get('history', []) if t.get('ticker') == ticker)
+            curr_tot = max(0, i_sh + n_sh)
+
             if action == 'SELL':
-                curr_tot = self.get_shares(ticker, username)
                 if curr_tot < shares: shares = curr_tot
                 if shares <= 0: return None
                 
             if action == 'BUY':
-                mb = ud.get('master_budget', 500.0)
+                mb = float(ud.get('master_budget', 500.0))
                 hist = ud.get('history') or []
-                init_pos = ud.get('initial_positions') or {}
                 net_hist = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist)
                 init_man = sum(pos.get('manual_val', 0.0) for pos in init_pos.values())
                 avail_cash = mb + net_hist - init_man
@@ -677,20 +693,19 @@ class PortfolioManager:
             if 'history' not in ud: ud['history'] = []
             ud['history'].insert(0, entry)
 
-            curr_tot = self.get_shares(ticker, username)
+            # Re-calculate position
+            n_sh_post = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in ud.get('history', []) if t.get('ticker') == ticker)
+            curr_tot_post = max(0, i_sh + n_sh_post)
             if 'holdings' not in ud: ud['holdings'] = {}
-            if curr_tot > 0: 
+            if curr_tot_post > 0: 
                 hw = (ud['holdings'].get(ticker) or {}).get('high_water', price)
-                ud['holdings'][ticker] = {'shares': curr_tot, 'manual_val': round(curr_tot * cost_per_sh, 2), 'high_water': max(hw, price)}
+                ud['holdings'][ticker] = {'shares': curr_tot_post, 'manual_val': round(curr_tot_post * cost_per_sh, 2), 'high_water': max(hw, price)}
             else: ud['holdings'].pop(ticker, None)
             
-            self.save_data(self.data)
-            # Multi-Bot Broker Dispatch Engine (Strictly Isolated Per Account)
-            if username and username.strip().lower() not in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
-                c_store = self.get_client_store(username) or {}
-                global_broker = c_store.get('broker') or {}
+            if is_client:
+                self.save_client_store(client_email, c_store)
             else:
-                global_broker = self.data.get('broker') or {}
+                self.save_data(self.data)
 
             is_paused = global_broker.get('paused', False)
             allocations = global_broker.get('allocations') or {}
@@ -1118,9 +1133,17 @@ class MarketScoringEngine:
 
 portfolio_store = PortfolioManager()
 
-def process_auto_profile(prof_name):
+def process_auto_profile(prof_name, client_email=None):
     try:
-        ud = portfolio_store.user_data(prof_name)
+        is_client = bool(client_email and client_email.strip().lower() not in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()])
+        if is_client:
+            c_store = portfolio_store.get_client_store(client_email)
+            users = c_store.get('users', {})
+            if prof_name not in users: return
+            ud = users[prof_name]
+        else:
+            ud = portfolio_store.user_data(prof_name)
+
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
@@ -1355,7 +1378,11 @@ def process_auto_profile(prof_name):
 
         for d in dirs:
             if d['shares'] > 0:
-                portfolio_store.execute_trade(d['ticker'], d['action'], d['shares'], d['price'], prof_name, metadata={'status': d.get('status', 'Manual/EOD'), 'reason': d.get('reason', ''), 'highest_price': d.get('highest_price', 0.0)})
+                portfolio_store.execute_trade(
+                    d['ticker'], d['action'], d['shares'], d['price'], prof_name,
+                    metadata={'status': d.get('status', 'Manual/EOD'), 'reason': d.get('reason', ''), 'highest_price': d.get('highest_price', 0.0)},
+                    client_email=client_email
+                )
                 # Stamp 15-minute cooldown on stop-outs to avoid whipsaw chop
                 if d['action'] == 'SELL':
                     if 'cooldowns' not in ud or not isinstance(ud['cooldowns'], dict):
@@ -1377,11 +1404,29 @@ def global_background_worker():
                 list(ex.map(prefetch, set(bot_tickers)))
 
             portfolio_store.reload()
-            # Scan active profiles dynamically
+            
+            # 1. Process Admin Profiles
             for prof_name in list(portfolio_store.data.get('users', {}).keys()):
                 p_lower = prof_name.lower()
                 if any(k in p_lower for k in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
-                    process_auto_profile(prof_name)
+                    process_auto_profile(prof_name, client_email=None)
+
+            # 2. Process All Registered Client Accounts & Their Respective Multi-Profiles
+            if portfolio_store.client:
+                try:
+                    accounts_col = portfolio_store.client['stock_terminal']['accounts']
+                    for acc in accounts_col.find({"role": "client"}):
+                        c_email = acc.get('username')
+                        c_store = acc.get('portfolio') or {}
+                        if not c_store.get('is_configured'): continue
+                        users_dict = c_store.get('users') or {}
+                        for p_name in list(users_dict.keys()):
+                            p_low = p_name.lower()
+                            if any(k in p_low for k in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
+                                process_auto_profile(p_name, client_email=c_email)
+                except Exception as ex_c:
+                    print(f"Client Background Scan Error: {ex_c}")
+
         except Exception as e: 
             print(f"Background Loop Error: {e}")
         time.sleep(20) # 20-second high-speed cycle
@@ -2238,15 +2283,47 @@ def update_budget():
     return jsonify({'status': 'ok'})
 
 @app.route('/api/watchlist/add', methods=['POST'])
+@login_required
 def add_watchlist():
-    portfolio_store.reload()
-    portfolio_store.add_watchlist((request.get_json() or {}).get('ticker', ''))
+    ticker = (request.get_json() or {}).get('ticker', '').strip().upper()
+    if not ticker: return jsonify({'status': 'ok'})
+    if session.get('role') == 'admin':
+        portfolio_store.reload()
+        portfolio_store.add_watchlist(ticker)
+    else:
+        client_name = session.get('user')
+        c_store = portfolio_store.get_client_store(client_name)
+        users = c_store.setdefault('users', {})
+        active = c_store.get('active_user')
+        if active in users:
+            wl = users[active].setdefault('watchlist', [])
+            if ticker not in wl: wl.append(ticker)
+        else:
+            wl = c_store.setdefault('watchlist', [])
+            if ticker not in wl: wl.append(ticker)
+        portfolio_store.save_client_store(client_name, c_store)
     return jsonify({'status': 'ok'})
 
 @app.route('/api/watchlist/delete', methods=['POST'])
+@login_required
 def delete_watchlist():
-    portfolio_store.reload()
-    portfolio_store.remove_watchlist((request.get_json() or {}).get('ticker', ''))
+    ticker = (request.get_json() or {}).get('ticker', '').strip().upper()
+    if not ticker: return jsonify({'status': 'ok'})
+    if session.get('role') == 'admin':
+        portfolio_store.reload()
+        portfolio_store.remove_watchlist(ticker)
+    else:
+        client_name = session.get('user')
+        c_store = portfolio_store.get_client_store(client_name)
+        users = c_store.setdefault('users', {})
+        active = c_store.get('active_user')
+        if active in users:
+            wl = users[active].get('watchlist', [])
+            if ticker in wl: wl.remove(ticker)
+        else:
+            wl = c_store.get('watchlist', [])
+            if ticker in wl: wl.remove(ticker)
+        portfolio_store.save_client_store(client_name, c_store)
     return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/holding', methods=['POST'])
