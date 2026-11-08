@@ -3524,10 +3524,27 @@
         }
 
         async function deleteUserPrompt() {
-            let au = document.getElementById('userSelect').value;
-            if (confirm(`Delete profile ${au}?`)) {
-                await fetch('/api/users/delete', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username: au})});
-                await fetchUsers(); await fetchData(false);
+            let au = document.getElementById('userSelect')?.value;
+            if (!au) return;
+            if (confirm(`Delete active profile "${au}"?`)) {
+                let res = await fetch('/api/users/delete', { 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({username: au})
+                });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    if (Array.isArray(latestLeaderboardData)) {
+                        latestLeaderboardData = latestLeaderboardData.filter(l => l.user !== au);
+                    }
+                    await fetchUsers(); 
+                    await fetchData(false);
+                    if (document.getElementById('settingsModal').style.display === 'flex') {
+                        openSettingsModal();
+                    }
+                } else {
+                    alert("Cannot delete the last remaining active profile.");
+                }
             }
         }
 
@@ -5148,11 +5165,15 @@
             });
             let d = await res.json();
             if (d.status === 'ok') {
+                // Instantly remove profile from local leaderboard cache
+                if (Array.isArray(latestLeaderboardData)) {
+                    latestLeaderboardData = latestLeaderboardData.filter(l => l.user !== profName);
+                }
                 await fetchUsers();
                 await fetchData(false);
                 openSettingsModal();
             } else {
-                alert("Failed to delete profile.");
+                alert("Cannot delete the last remaining active profile.");
             }
         }
 

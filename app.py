@@ -479,11 +479,6 @@ class PortfolioManager:
 
     def _ensure_default_user(self):
         try:
-            allowed_profiles = [
-                'Vector Hybrid',
-                'Dual Axis',
-                'Velocity Pulse'
-            ]
             needs_save = False
             if 'users' not in self.data or not isinstance(self.data['users'], dict):
                 self.data['users'] = {}
@@ -497,20 +492,14 @@ class PortfolioManager:
                     del self.data['users'][u]
                     needs_save = True
 
-            for p in allowed_profiles:
-                if p not in self.data['users'] or not self.data['users'][p].get('watchlist'):
-                    self.data['users'][p] = self.default_user_state(p)
-                    needs_save = True
-                else:
-                    # Clean out any old fake CAPITAL_INJECTION trades from database history
-                    u_hist = self.data['users'][p].get('history', [])
-                    clean_hist = [h for h in u_hist if h.get('ticker') != 'CAPITAL_INJECTION']
-                    if len(clean_hist) != len(u_hist):
-                        self.data['users'][p]['history'] = clean_hist
-                        needs_save = True
+            # If no profiles exist at all, initialize with one clean default profile
+            if not self.data['users']:
+                self.data['users']['Vector Hybrid'] = self.default_user_state('Vector Hybrid')
+                self.data['active_user'] = 'Vector Hybrid'
+                needs_save = True
 
             if self.data.get('active_user') not in self.data['users']:
-                self.data['active_user'] = 'Vector Hybrid'
+                self.data['active_user'] = list(self.data['users'].keys())[0] if self.data['users'] else 'Vector Hybrid'
                 needs_save = True
                 
             if needs_save: self.save_data(self.data)
@@ -1913,13 +1902,14 @@ def logout():
 def index():
     is_client = (session.get('role') != 'admin')
     is_configured = True
+    display_user = session.get('email') or session.get('user') or (ADMIN_USER if not is_client else 'Client')
     if is_client:
         c_store = portfolio_store.get_client_store(session.get('user'))
         is_configured = bool(c_store and c_store.get('is_configured', False))
     return render_template(
         'index.html',
         user_role=session.get('role', 'client'),
-        current_user=session.get('user', 'Ian'),
+        current_user=display_user,
         is_configured=is_configured
     )
 
@@ -2143,9 +2133,13 @@ def delete_user():
     if session.get('role') == 'admin':
         portfolio_store.reload()
         success = portfolio_store.delete_user(target_user)
+        broker = portfolio_store.data.setdefault('broker', {})
+        allocs = broker.setdefault('allocations', {})
+        allocs.pop(target_user.lower(), None)
+        portfolio_store.save_data(portfolio_store.data)
         return jsonify({'status': 'ok' if success else 'error'})
     else:
-        client_name = session.get('user')
+        client_name = session.get('email') or session.get('user')
         c_store = portfolio_store.get_client_store(client_name)
         users = c_store.setdefault('users', {})
         if target_user in users:
@@ -2553,7 +2547,7 @@ def get_data():
             if req_user and req_user in portfolio_store.data.get('users', {}):
                 portfolio_store.data['active_user'] = req_user
             ud = portfolio_store.user_data(req_user if req_user else None)
-            ud['account_username'] = 'Ian'
+            ud['account_username'] = session.get('email') or ADMIN_USER
             mb = float(ud.get('master_budget', 500.0))
             active_profile = (req_user or portfolio_store.active_username()).strip().lower()
 
