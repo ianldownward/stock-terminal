@@ -234,6 +234,12 @@
         #mobileBottomControls { display: none; }
 
         @media (max-width: 900px) {
+            .modal {
+                padding: 16px !important;
+                width: 95vw !important;
+                max-height: 88vh !important;
+            }
+            .modal h2 { font-size: 15px !important; }
             body { 
                 flex-direction: column !important; 
                 height: 100vh !important; 
@@ -1326,33 +1332,33 @@
 
             <!-- TAB 3: NOTIFICATIONS (DEDICATED MAC & PHONE CONTROLS) -->
             <div id="tabContentAlerts" style="display:none; flex-direction:column; gap:12px;">
-                <!-- Card 1: Mac Desktop Notifications with Dedicated Test Button -->
+                <!-- Card 1: Mac Desktop Notifications -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
-                    <div>
+                    <div style="flex:1;">
                         <div style="font-size:13px; font-weight:800; color:#fff;">Mac Notifications</div>
-                        <div style="font-size:11px; color:#8a8a9e; margin-top:2px;">Desktop banners and sound effects on trade fills</div>
+                        <div style="font-size:11px; color:#8a8a9e; margin-top:2px; padding-right:8px;">Desktop banners and sound effects on trade fills</div>
                     </div>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px;" onclick="triggerTestMacAlert()">Test Mac Alert</button>
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
                         <label class="toggle-switch" title="Toggle Mac Notifications">
                             <input type="checkbox" id="toggleMacAlertsSetting" onchange="onToggleMacAlerts(this.checked)">
                             <span class="toggle-slider"></span>
                         </label>
+                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400;" onclick="triggerTestMacAlert()">Test Alert</button>
                     </div>
                 </div>
 
-                <!-- Card 2: Phone Push Notifications with Dedicated Test Button -->
+                <!-- Card 2: Phone Push Notifications -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
-                    <div>
+                    <div style="flex:1;">
                         <div style="font-size:13px; font-weight:800; color:#fff;">Phone Notifications</div>
-                        <div style="font-size:11px; color:#8a8a9e; margin-top:2px;" id="settingsAlertDesc">Lock-screen alerts for iOS & Android</div>
+                        <div style="font-size:11px; color:#8a8a9e; margin-top:2px; padding-right:8px;" id="settingsAlertDesc">Lock-screen alerts for iOS & Android</div>
                     </div>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:11px;" onclick="triggerTestPhoneAlert()">Test Phone Alert</button>
+                    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
                         <label class="toggle-switch" title="Toggle Phone Notifications">
                             <input type="checkbox" id="togglePhoneAlertsSetting" onchange="onTogglePhoneAlerts(this.checked)">
                             <span class="toggle-slider"></span>
                         </label>
+                        <button type="button" class="btn-control" style="padding:4px 8px; font-size:10px; border-color:#ffd400; color:#ffd400;" onclick="triggerTestPhoneAlert()">Test Alert</button>
                     </div>
                 </div>
 
@@ -5159,24 +5165,24 @@
                 body.innerHTML = `
                     <div style="font-size:13px; color:#fff; margin-bottom:10px;">Select your automated strategy:</div>
                     <div style="display:flex; flex-direction:column; gap:8px;">
-                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Vector Hybrid' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Vector Hybrid' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Vector Hybrid'; renderAssistStep();">
                             <input type="radio" name="guideStrat" value="Vector Hybrid" ${guideState.strategy === 'Vector Hybrid' ? 'checked' : ''} style="accent-color:#ffd400;">
                             <div>
-                                <span style="font-weight:800; color:#ffd400;">Vector Hybrid</span>
+                                <span style="font-weight:800; color:${guideState.strategy === 'Vector Hybrid' ? '#ffd400' : '#fff'};">Vector Hybrid</span>
                                 <div style="font-size:11px; color:#8a8a9e;">Disciplined ETF momentum. Banks daily profits at +2.20% and holds 100% cash overnight.</div>
                             </div>
                         </label>
-                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Dual Axis' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Dual Axis' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Dual Axis'; renderAssistStep();">
                             <input type="radio" name="guideStrat" value="Dual Axis" ${guideState.strategy === 'Dual Axis' ? 'checked' : ''} style="accent-color:#ffd400;">
                             <div>
-                                <span style="font-weight:800; color:#fff;">Dual Axis</span>
+                                <span style="font-weight:800; color:${guideState.strategy === 'Dual Axis' ? '#ffd400' : '#fff'};">Dual Axis</span>
                                 <div style="font-size:11px; color:#8a8a9e;">All-weather engine. Trades long tech in bull trends and flips to SQQQ during sell-offs.</div>
                             </div>
                         </label>
-                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Velocity Pulse' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;">
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Velocity Pulse' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Velocity Pulse'; renderAssistStep();">
                             <input type="radio" name="guideStrat" value="Velocity Pulse" ${guideState.strategy === 'Velocity Pulse' ? 'checked' : ''} style="accent-color:#ffd400;">
                             <div>
-                                <span style="font-weight:800; color:#fff;">Velocity Pulse</span>
+                                <span style="font-weight:800; color:${guideState.strategy === 'Velocity Pulse' ? '#ffd400' : '#fff'};">Velocity Pulse</span>
                                 <div style="font-size:11px; color:#8a8a9e;">Rapid index scalper. Captures quick +1.20% bursts and returns to cash.</div>
                             </div>
                         </label>
