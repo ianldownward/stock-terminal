@@ -399,8 +399,25 @@ class PortfolioManager:
                 doc = self.client['stock_terminal']['accounts'].find_one({"_id": doc_id})
                 if doc and 'portfolio' in doc:
                     p = doc['portfolio']
+                    # Automatic migration: ensure 'users' multi-profile dictionary exists
+                    if 'users' not in p or not isinstance(p['users'], dict):
+                        p['users'] = {}
+                        old_strat = p.get('strategy_name') or p.get('active_user')
+                        if old_strat and old_strat.strip():
+                            p['users'][old_strat.strip()] = {
+                                'master_budget': float(p.get('master_budget', 500.0)),
+                                'method': p.get('method', old_strat.strip()),
+                                'watchlist': p.get('watchlist', ['TQQQ', 'SOXL', 'SQQQ']),
+                                'initial_positions': p.get('initial_positions', {}),
+                                'holdings': p.get('holdings', {}),
+                                'history': p.get('history', []),
+                                'drawings': p.get('drawings', {}),
+                                'notified_signals': p.get('notified_signals', {}),
+                                'settings': p.get('settings', {'period': '1d', 'interval': '5m', 'style': 'candlestick', 'refresh': '15000'})
+                            }
+                            p['active_user'] = old_strat.strip()
                     if 'is_configured' not in p:
-                        p['is_configured'] = False
+                        p['is_configured'] = bool(p['users'])
                     return p
             except Exception: pass
         return self.blank_client_state(username)
@@ -1891,9 +1908,12 @@ def get_users():
         return jsonify({'users': list(portfolio_store.data.get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
     client_name = session.get('user', 'Client')
     c_store = portfolio_store.get_client_store(client_name)
-    strat = c_store.get('strategy_name') if (c_store and c_store.get('is_configured')) else None
-    user_list = [strat] if strat else []
-    return jsonify({'users': user_list, 'active_user': strat or ''})
+    users_dict = c_store.get('users', {})
+    user_list = list(users_dict.keys())
+    active = c_store.get('active_user')
+    if not active and user_list:
+        active = user_list[0]
+    return jsonify({'users': user_list, 'active_user': active or ''})
 
 @app.route('/api/users/select', methods=['POST'])
 @login_required
@@ -1906,9 +1926,8 @@ def select_user():
     else:
         client_name = session.get('user')
         c_store = portfolio_store.get_client_store(client_name)
-        if c_store and target_user:
+        if c_store and target_user in c_store.get('users', {}):
             c_store['active_user'] = target_user
-            c_store['strategy_name'] = target_user
             portfolio_store.save_client_store(client_name, c_store)
         return jsonify({'status': 'ok'})
 
@@ -1937,11 +1956,16 @@ def add_user_v2():
 
     if is_client:
         c_store = portfolio_store.get_client_store(client_name)
-        c_store['master_budget'] = capital
+        users = c_store.setdefault('users', {})
+        if prof_name in users:
+            return jsonify({'status': 'error', 'message': 'A profile with this name already exists'}), 400
+
+        state = portfolio_store.default_user_state(method)
+        state['master_budget'] = capital
+        state['method'] = method
+        users[prof_name] = state
         c_store['active_user'] = prof_name
         c_store['is_configured'] = True
-        c_store['strategy_name'] = prof_name
-        c_store['method'] = method
         c_broker = c_store.setdefault('broker', {})
         c_broker.setdefault('allocations', {})[prof_name.lower()] = {
             'enabled': True,
@@ -1973,20 +1997,35 @@ def add_capital_route():
     if amount == 0:
         return jsonify({'status': 'error', 'message': 'Invalid adjustment amount'}), 400
 
+    is_client = (session.get('role') != 'admin')
+    client_name = session.get('user', 'Client')
+
+    if is_client:
+        c_store = portfolio_store.get_client_store(client_name)
+        users = c_store.setdefault('users', {})
+        target = username if username in users else c_store.get('active_user', '')
+        if target in users:
+            ud = users[target]
+            new_budget = max(50.0, round(float(ud.get('master_budget', 500.0)) + amount, 2))
+            ud['master_budget'] = new_budget
+            c_broker = c_store.setdefault('broker', {})
+            allocs = c_broker.setdefault('allocations', {})
+            for k in allocs:
+                if k in target.lower() or target.lower() in k:
+                    allocs[k]['budget'] = new_budget
+            portfolio_store.save_client_store(client_name, c_store)
+            return jsonify({'status': 'ok', 'new_budget': new_budget})
+        return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
+
     portfolio_store.reload()
     ud = portfolio_store.user_data(username)
-    
-    # Cleanly add or subtract capital directly without deducting cash
     new_budget = max(50.0, round(float(ud.get('master_budget', 500.0)) + amount, 2))
     ud['master_budget'] = new_budget
-    
-    # Keep broker allocation for Alpaca automatically in sync
     broker = portfolio_store.data.setdefault('broker', {})
     allocs = broker.setdefault('allocations', {})
     for k in allocs:
         if k in username.lower() or username.lower() in k:
             allocs[k]['budget'] = new_budget
-
     portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok', 'new_budget': new_budget})
 
@@ -2002,14 +2041,16 @@ def delete_user():
     else:
         client_name = session.get('user')
         c_store = portfolio_store.get_client_store(client_name)
-        c_store['strategy_name'] = ''
-        c_store['active_user'] = ''
-        c_store['is_configured'] = False
-        c_store['master_budget'] = 0.0
-        c_broker = c_store.setdefault('broker', {})
-        if 'allocations' in c_broker:
-            c_broker['allocations'] = {}
-        portfolio_store.save_client_store(client_name, c_store)
+        users = c_store.setdefault('users', {})
+        if target_user in users:
+            del users[target_user]
+            c_broker = c_store.setdefault('broker', {})
+            allocs = c_broker.setdefault('allocations', {})
+            allocs.pop(target_user.lower(), None)
+            if c_store.get('active_user') == target_user:
+                c_store['active_user'] = list(users.keys())[0] if users else ''
+            c_store['is_configured'] = bool(users)
+            portfolio_store.save_client_store(client_name, c_store)
         return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio', methods=['GET'])
@@ -2354,40 +2395,43 @@ def get_data():
         req_user = request.args.get('user', '').strip()
 
         if is_client:
-            ud = portfolio_store.get_client_store(client_name)
-            mb = float(ud.get('master_budget', 0.0))
+            c_store = portfolio_store.get_client_store(client_name)
+            users_dict = c_store.get('users', {})
+            active_name = req_user if (req_user and req_user in users_dict) else c_store.get('active_user', '')
+            if not active_name and users_dict:
+                active_name = list(users_dict.keys())[0]
+            ud = users_dict.get(active_name) if active_name in users_dict else c_store
+            mb = float(ud.get('master_budget', 500.0 if users_dict else 0.0))
+            active_profile = active_name.strip().lower()
         else:
             portfolio_store.reload()
             if req_user and req_user in portfolio_store.data.get('users', {}):
                 portfolio_store.data['active_user'] = req_user
             ud = portfolio_store.user_data(req_user if req_user else None)
             mb = float(ud.get('master_budget', 500.0))
+            active_profile = (req_user or portfolio_store.active_username()).strip().lower()
 
         wl = ud.get('watchlist') or []
         t = request.args.get('t', '').upper().strip()
-        strat_display_name = ud.get('strategy_name') or ud.get('active_user') or 'Vector Hybrid'
-        active_profile = strat_display_name.strip().lower() if is_client else (req_user or portfolio_store.active_username()).strip().lower()
         is_momentum = any(x in active_profile for x in ['vector', 'dual', 'velocity', 'pulse', 'hybrid', 'axis', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         is_rotator = is_momentum
 
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
 
-        def resolve_shares(tk):
-            if is_client:
-                i_sh = (init_pos.get(tk) or {}).get('shares', 0)
-                n_sh = sum(tr.get('shares', 0) if tr.get('action') == 'BUY' else -tr.get('shares', 0) for tr in hist if tr.get('ticker') == tk)
-                return max(0, i_sh + n_sh)
-            return portfolio_store.get_shares(tk)
+        def resolve_profile_shares(profile_ud, tk):
+            i_sh = (profile_ud.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
+            n_sh = sum(tr.get('shares', 0) if tr.get('action') == 'BUY' else -tr.get('shares', 0) for tr in profile_ud.get('history', []) if tr.get('ticker') == tk)
+            return max(0, i_sh + n_sh)
 
-        active_holds = list(set([tr.get('ticker') for tr in hist if resolve_shares(tr.get('ticker')) > 0]))
+        active_holds = list(set([tr.get('ticker') for tr in hist if resolve_profile_shares(ud, tr.get('ticker')) > 0]))
 
         # Never enter empty ALL_SHARES mode: default to active hold if present, or top watchlist stock (TQQQ)
         if not t or t == 'ALL_SHARES':
             t = active_holds[0] if active_holds else (wl[0] if wl else 'TQQQ')
         if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
         for tk in active_holds:
-            sh_cnt = resolve_shares(tk)
+            sh_cnt = resolve_profile_shares(ud, tk)
             if sh_cnt > 0:
                 if tk not in ud['holdings']: ud['holdings'][tk] = {}
                 ud['holdings'][tk]['shares'] = sh_cnt
@@ -2403,17 +2447,14 @@ def get_data():
         init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values())
         cash_balance = mb + net_history - init_manual
 
-        if is_client:
-            tot_own = 0.0
-            for tk in active_holds:
-                sh_c = resolve_shares(tk)
-                df_c = pnl_dfs_5m.get(tk)
-                if df_c is not None and not df_c.empty:
-                    cur_p = df_c['Close'].iloc[-1]
-                    div = 100.0 if tk.endswith('.L') and cur_p > 100 else 1.0
-                    tot_own += round(sh_c * (cur_p / div), 2)
-        else:
-            tot_own = portfolio_store.get_total_portfolio_value(req_user if req_user else None)
+        tot_own = 0.0
+        for tk in active_holds:
+            sh_c = resolve_profile_shares(ud, tk)
+            df_c = pnl_dfs_5m.get(tk)
+            if df_c is not None and not df_c.empty:
+                cur_p = df_c['Close'].iloc[-1]
+                div = 100.0 if tk.endswith('.L') and cur_p > 100 else 1.0
+                tot_own += round(sh_c * (cur_p / div), 2)
         total_equity = cash_balance + tot_own
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
@@ -2448,18 +2489,11 @@ def get_data():
             for tick, cur_pnd, start_pnd in ex.map(fetch_lb_price, all_user_holds): prices[tick] = {'cur': cur_pnd, 'start': start_pnd}
 
         leaderboard = []
-        if is_client:
-            strat_name = ud.get('strategy_name') or ud.get('active_user')
-            if ud.get('is_configured') and strat_name:
-                source_users = {strat_name: ud}
-            else:
-                source_users = {}
-        else:
-            source_users = portfolio_store.data.get('users', {})
+        source_users = c_store.get('users', {}) if is_client else portfolio_store.data.get('users', {})
 
         for u, u_data in source_users.items():
             if not isinstance(u_data, dict): continue
-            mb_lb = float(u_data.get('master_budget', 0.0 if is_client else 500.0))
+            mb_lb = float(u_data.get('master_budget', 500.0))
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
             
@@ -2475,7 +2509,8 @@ def get_data():
             shares_now_map = {}
             for tr in hist_lb:
                 tk = tr.get('ticker')
-                if tk not in shares_now_map: shares_now_map[tk] = portfolio_store.get_shares(tk, u)
+                if tk not in shares_now_map:
+                    shares_now_map[tk] = resolve_profile_shares(u_data, tk)
                 
             for tk, sh_now in shares_now_map.items():
                 if sh_now <= 0 and not any(tr.get('ticker') == tk for tr in trades_today): continue
