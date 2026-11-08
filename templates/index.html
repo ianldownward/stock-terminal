@@ -3205,6 +3205,9 @@
             if (d.status === 'ok') {
                 await fetchUsers();
                 await onUserChange(finalName);
+                if (document.getElementById('settingsModal').style.display === 'flex') {
+                    openSettingsModal();
+                }
             } else {
                 alert(d.message || "Failed to create profile.");
             }

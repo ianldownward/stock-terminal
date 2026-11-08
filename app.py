@@ -1889,8 +1889,11 @@ def get_users():
     if session.get('role') == 'admin':
         portfolio_store.reload()
         return jsonify({'users': list(portfolio_store.data.get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
-    u = session.get('user', 'Client')
-    return jsonify({'users': [u], 'active_user': u})
+    client_name = session.get('user', 'Client')
+    c_store = portfolio_store.get_client_store(client_name)
+    strat = c_store.get('strategy_name') if (c_store and c_store.get('is_configured')) else None
+    user_list = [strat] if strat else []
+    return jsonify({'users': user_list, 'active_user': strat or ''})
 
 @app.route('/api/users/select', methods=['POST'])
 @login_required
@@ -1931,6 +1934,11 @@ def add_user_v2():
         c_store['is_configured'] = True
         c_store['strategy_name'] = prof_name
         c_store['method'] = method
+        c_broker = c_store.setdefault('broker', {})
+        c_broker.setdefault('allocations', {})[prof_name.lower()] = {
+            'enabled': True,
+            'budget': capital
+        }
         portfolio_store.save_client_store(client_name, c_store)
         return jsonify({'status': 'ok', 'profile': prof_name})
 
@@ -2408,7 +2416,15 @@ def get_data():
             for tick, cur_pnd, start_pnd in ex.map(fetch_lb_price, all_user_holds): prices[tick] = {'cur': cur_pnd, 'start': start_pnd}
 
         leaderboard = []
-        source_users = {client_name: ud} if is_client else portfolio_store.data.get('users', {})
+        if is_client:
+            strat_name = ud.get('strategy_name') or ud.get('active_user')
+            if ud.get('is_configured') and strat_name:
+                source_users = {strat_name: ud}
+            else:
+                source_users = {}
+        else:
+            source_users = portfolio_store.data.get('users', {})
+
         for u, u_data in source_users.items():
             if not isinstance(u_data, dict): continue
             mb_lb = float(u_data.get('master_budget', 0.0 if is_client else 500.0))
