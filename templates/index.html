@@ -1504,7 +1504,7 @@
                         <span style="font-size:12px; font-weight:800; color:#ffd400;">Enable Overnight Cash Sweep (Liquidate at 20:50 BST)</span>
                     </label>
                     <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin-top:8px;">
-                        <b>The Analogy:</b> <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
+                        <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px; font-size:10px; line-height:1.4;">
                         <div style="background:#14171f; padding:6px 8px; border-radius:6px; border-left:2px solid #0ecb81;">
@@ -4020,11 +4020,11 @@
                     worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
                 }
                 
-               // Auto-launch non-blocking step-by-step setup guide for any client without an active strategy
+               // Auto-launch walkthrough only if the account genuinely has zero profiles configured
                 const isClientUser = ("{{ user_role }}" !== 'admin');
-                const isUnconfigured = !p.portfolio || p.portfolio.is_configured !== true || !p.portfolio.strategy_name;
+                const hasProfiles = (Array.isArray(p.leaderboard) && p.leaderboard.length > 0) || (p.portfolio && p.portfolio.is_configured === true);
 
-                if (isClientUser && isUnconfigured && !window._guideAutoOpened) {
+                if (isClientUser && !hasProfiles && !window._guideAutoOpened) {
                     window._guideAutoOpened = true;
                     setTimeout(() => {
                         startOnboardingGuide();
@@ -4237,10 +4237,10 @@
             setupAutoRefresh();
             checkMobileLayout();
 
-            // Direct trigger: Pops up the setup guide immediately if account has no active profile
+            // Direct trigger: Only pop up if there are genuinely zero active strategy profiles
             const isClient = ("{{ user_role }}" !== 'admin');
-            const needsSetup = (("{{ is_configured }}" === "False") || ("{{ is_configured }}" === "false") || !globalPortfolioData || globalPortfolioData.is_configured !== true);
-            if (isClient && needsSetup && !window._guideAutoOpened) {
+            const hasExisting = (latestLeaderboardData && latestLeaderboardData.length > 0) || (globalPortfolioData && globalPortfolioData.is_configured === true);
+            if (isClient && !hasExisting && !window._guideAutoOpened) {
                 window._guideAutoOpened = true;
                 setTimeout(startOnboardingGuide, 400);
             }
@@ -5243,7 +5243,7 @@
                             <span style="font-size:11px; font-weight:800; color:#ffd400;">Enable Overnight Cash Sweep (Liquidate at 20:50 BST)</span>
                         </label>
                         <div style="font-size:10px; color:#e1e3e6; line-height:1.4; margin-top:6px;">
-                            <b>The Analogy:</b> <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
+                            <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
                         </div>
                         <div style="display:flex; gap:6px; margin-top:6px; font-size:9px; line-height:1.35;">
                             <div style="flex:1; background:#14171f; padding:4px 6px; border-radius:4px; border-left:2px solid #0ecb81;">
