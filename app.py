@@ -1175,16 +1175,29 @@ def process_auto_profile(prof_name, client_email=None):
             return
 
         scan_list = ud.get('watchlist') or []
-        mb = ud.get('master_budget', 5000.0)
+        mb = float(ud.get('master_budget', 500.0))
         hist = ud.get('history') or []
         init_pos = ud.get('initial_positions') or {}
+
+        def resolve_shares(tk):
+            i_sh = (init_pos.get(tk) or {}).get('shares', 0)
+            n_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
+            return max(0, i_sh + n_sh)
 
         net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
         init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values())
         cash_balance = mb + net_history - init_manual
         rem_cash = max(0, cash_balance)
 
-        tot_own = portfolio_store.get_total_portfolio_value(prof_name)
+        # Isolated total equity calculation (never touches admin database)
+        tot_own = 0.0
+        for h_tk in list(set([tr.get('ticker') for tr in hist if resolve_shares(tr.get('ticker')) > 0])):
+            sh_c = resolve_shares(h_tk)
+            cur_df = fetch_yf_data(h_tk, "1d", "1m")
+            if not cur_df.empty:
+                cp = cur_df['Close'].iloc[-1]
+                div = 100.0 if h_tk.endswith('.L') and cp > 100 else 1.0
+                tot_own += round(sh_c * (cp / div), 2)
         total_equity = cash_balance + tot_own
 
         # DYNAMIC PERCENTAGE CIRCUIT BREAKER (SCALABLE TO ANY CAPITAL SIZE)
@@ -1270,7 +1283,7 @@ def process_auto_profile(prof_name, client_email=None):
                 if df is None or df.empty: continue
                 df.name = t
                 cur = df['Close'].iloc[-1]
-                sh = portfolio_store.get_shares(t, prof_name)
+                sh = resolve_shares(t)
                 cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
                 vo = sh * cps
 
@@ -1393,7 +1406,10 @@ def process_auto_profile(prof_name, client_email=None):
                     if 'cooldowns' not in ud or not isinstance(ud['cooldowns'], dict):
                         ud['cooldowns'] = {}
                     ud['cooldowns'][d['ticker']] = int(time.time()) + 900
-                    portfolio_store.save_data(portfolio_store.data)
+                    if is_client:
+                        portfolio_store.save_client_store(client_email, c_store)
+                    else:
+                        portfolio_store.save_data(portfolio_store.data)
     except Exception: pass
 
 def global_background_worker():
@@ -1455,148 +1471,203 @@ def match_bot_from_order_id(client_order_id, profiles):
     return None
 
 def reconcile_alpaca_positions_and_orders():
-    """Two-way sync loop: reconciles Alpaca fills, trailing stops, and positions with local state."""
+    """Two-way sync loop: reconciles Alpaca fills, trailing stops, and positions with local state for all accounts."""
     portfolio_store.reload()
-    broker = portfolio_store.data.get('broker') or {}
-    api_key = str(broker.get('api_key', '')).strip()
-    secret_key = str(broker.get('secret_key', '')).strip()
-    mode = broker.get('mode', 'paper')
-    
-    if not api_key or not secret_key:
-        return
 
-    base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
-    headers = {
-        "APCA-API-KEY-ID": api_key,
-        "APCA-API-SECRET-KEY": secret_key,
-        "Content-Type": "application/json"
-    }
+    # Collect broker accounts: Admin + any registered clients with valid Alpaca keys
+    account_targets = []
+    admin_broker = portfolio_store.data.get('broker') or {}
+    if admin_broker.get('api_key') and admin_broker.get('secret_key'):
+        account_targets.append({
+            'client_email': None,
+            'broker': admin_broker,
+            'profiles': list(portfolio_store.data.get('users', {}).keys())
+        })
 
-    auto_profiles = list(portfolio_store.data.get('users', {}).keys())
+    if portfolio_store.client:
+        try:
+            for acc in portfolio_store.client['stock_terminal']['accounts'].find({"role": "client"}):
+                c_p = acc.get('portfolio') or {}
+                c_b = c_p.get('broker') or {}
+                if c_b.get('api_key') and c_b.get('secret_key'):
+                    account_targets.append({
+                        'client_email': acc.get('username'),
+                        'broker': c_b,
+                        'profiles': list((c_p.get('users') or {}).keys())
+                    })
+        except Exception: pass
 
-    # 1. Reconcile Closed Orders (Native Trailing Stops & Exact Fill Prices)
-    try:
-        req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=30&direction=desc", headers=headers)
-        with urllib.request.urlopen(req_orders, timeout=5) as resp:
-            closed_orders = json.loads(resp.read().decode('utf-8'))
-            
-            for o in closed_orders:
-                if o.get('status') != 'filled':
-                    continue
-                coid = o.get('client_order_id') or ''
-                side = (o.get('side') or '').lower()
-                symbol = (o.get('symbol') or '').upper()
-                filled_qty = int(o.get('filled_qty') or 0)
-                filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
-                order_id = o.get('id')
+    for target in account_targets:
+        broker = target['broker']
+        api_key = str(broker.get('api_key', '')).strip()
+        secret_key = str(broker.get('secret_key', '')).strip()
+        mode = broker.get('mode', 'paper')
+        c_email = target['client_email']
+        auto_profiles = target['profiles']
+
+        if not api_key or not secret_key or not auto_profiles:
+            continue
+
+        base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
+        headers = {
+            "APCA-API-KEY-ID": api_key,
+            "APCA-API-SECRET-KEY": secret_key,
+            "Content-Type": "application/json"
+        }
+
+        # 1. Reconcile Closed Orders (Native Trailing Stops & Exact Fill Prices)
+        try:
+            req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=30&direction=desc", headers=headers)
+            with urllib.request.urlopen(req_orders, timeout=5) as resp:
+                closed_orders = json.loads(resp.read().decode('utf-8'))
                 
-                if not coid or filled_qty <= 0 or filled_price <= 0:
-                    continue
+                for o in closed_orders:
+                    if o.get('status') != 'filled':
+                        continue
+                    coid = o.get('client_order_id') or ''
+                    side = (o.get('side') or '').lower()
+                    symbol = (o.get('symbol') or '').upper()
+                    filled_qty = int(o.get('filled_qty') or 0)
+                    filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
+                    order_id = o.get('id')
                     
-                matched_prof = match_bot_from_order_id(coid, auto_profiles)
-                if not matched_prof:
-                    continue
-                    
-                ud = portfolio_store.user_data(matched_prof)
-                hist = ud.get('history') or []
-                
-                # Check for Trailing Stop SELLs executed on Alpaca
-                if side == 'sell':
-                    current_shares = portfolio_store.get_shares(symbol, matched_prof)
-                    already_logged = any(h.get('alpaca_order_id') == order_id for h in hist)
-                    if current_shares > 0 and not already_logged:
-                        print(f"[RECONCILE SYNC] Detected Alpaca filled SELL for {matched_prof}: {filled_qty} {symbol} @ £{filled_price:.2f}")
-                        portfolio_store.execute_trade(
-                            ticker=symbol,
-                            action_type='SELL',
-                            shares=min(current_shares, filled_qty),
-                            price=filled_price,
-                            username=matched_prof,
-                            metadata={
-                                'status': 'Alpaca Stop Filled',
-                                'reason': f"Native {o.get('order_type', 'stop').title()} Executed on Alpaca",
-                                'alpaca_order_id': order_id,
-                                'source': 'alpaca_sync'
-                            }
-                        )
-                # Reconcile BUY fill prices to exact Alpaca execution price
-                elif side == 'buy':
-                    for h in hist:
-                        if h.get('action') == 'BUY' and h.get('ticker') == symbol and not h.get('price_reconciled'):
-                            if abs(h.get('timestamp', 0) - int(time.time())) < 900:
-                                old_p = h.get('price', filled_price)
-                                if abs(old_p - filled_price) > 0.005:
-                                    h['price'] = round(filled_price, 2)
-                                    cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
-                                    h['amount'] = round(h['shares'] * cps, 2)
-                                    h['price_reconciled'] = True
-                                    h['alpaca_order_id'] = order_id
-                                    portfolio_store.save_data(portfolio_store.data)
-                                    print(f"[RECONCILE BUY PRICE] Updated {matched_prof} {symbol} to exact fill: £{filled_price:.2f}")
-                            break
-    except Exception as e:
-        pass
+                    if not coid or filled_qty <= 0 or filled_price <= 0:
+                        continue
+                        
+                    matched_prof = match_bot_from_order_id(coid, auto_profiles)
+                    if not matched_prof:
+                        continue
 
-    # 2. True Two-Way Reconciliation & Overnight Orphan Sweep
-    try:
-        req_pos = urllib.request.Request(f"{base_url}/v2/positions", headers=headers)
-        with urllib.request.urlopen(req_pos, timeout=5) as resp:
-            live_pos = json.loads(resp.read().decode('utf-8'))
-            alpaca_holdings = {p['symbol'].upper(): int(p.get('qty', 0)) for p in live_pos}
-            allocations = broker.get('allocations') or {}
-            
-            # Step 2A: Clear local positions if Alpaca already sold them
-            for prof in auto_profiles:
-                is_enabled = any(s_key in prof.lower() and s_data.get('enabled') for s_key, s_data in allocations.items())
-                if not is_enabled:
-                    continue
-                    
-                ud = portfolio_store.user_data(prof)
-                hist = ud.get('history') or []
-                active_tickers = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker'), prof) > 0]))
-                
-                for tk in active_tickers:
-                    if alpaca_holdings.get(tk, 0) == 0:
-                        local_sh = portfolio_store.get_shares(tk, prof)
-                        if local_sh > 0:
-                            df_p = fetch_yf_data(tk, "1d", "1m")
-                            cur_p = df_p['Close'].iloc[-1] if not df_p.empty else 1.0
-                            print(f"[RECONCILE SYNC] Clearing orphan local position for {prof}: {local_sh} {tk} (Alpaca balance = 0)")
+                    if c_email:
+                        c_s = portfolio_store.get_client_store(c_email)
+                        ud = (c_s.get('users') or {}).get(matched_prof, {})
+                    else:
+                        ud = portfolio_store.user_data(matched_prof)
+
+                    hist = ud.get('history') or []
+                    init_pos = ud.get('initial_positions') or {}
+
+                    def get_prof_shares(tk):
+                        i_sh = (init_pos.get(tk) or {}).get('shares', 0)
+                        n_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
+                        return max(0, i_sh + n_sh)
+
+                    # Check for Trailing Stop SELLs executed on Alpaca
+                    if side == 'sell':
+                        current_shares = get_prof_shares(symbol)
+                        already_logged = any(h.get('alpaca_order_id') == order_id for h in hist)
+                        if current_shares > 0 and not already_logged:
                             portfolio_store.execute_trade(
-                                ticker=tk,
+                                ticker=symbol,
                                 action_type='SELL',
-                                shares=local_sh,
-                                price=cur_p,
-                                username=prof,
+                                shares=min(current_shares, filled_qty),
+                                price=filled_price,
+                                username=matched_prof,
                                 metadata={
-                                    'status': 'Alpaca Reconciled Flat',
-                                    'reason': 'Alpaca confirmed 0 shares',
+                                    'status': 'Alpaca Stop Filled',
+                                    'reason': f"Native {o.get('order_type', 'stop').title()} Executed on Alpaca",
+                                    'alpaca_order_id': order_id,
                                     'source': 'alpaca_sync'
-                                }
+                                },
+                                client_email=c_email
                             )
+                    # Reconcile BUY fill prices to exact Alpaca execution price
+                    elif side == 'buy':
+                        for h in hist:
+                            if h.get('action') == 'BUY' and h.get('ticker') == symbol and not h.get('price_reconciled'):
+                                if abs(h.get('timestamp', 0) - int(time.time())) < 900:
+                                    old_p = h.get('price', filled_price)
+                                    if abs(old_p - filled_price) > 0.005:
+                                        h['price'] = round(filled_price, 2)
+                                        cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
+                                        h['amount'] = round(h['shares'] * cps, 2)
+                                        h['price_reconciled'] = True
+                                        h['alpaca_order_id'] = order_id
+                                        if c_email:
+                                            portfolio_store.save_client_store(c_email, c_s)
+                                        else:
+                                            portfolio_store.save_data(portfolio_store.data)
+                                break
+        except Exception:
+            pass
 
-            # Step 2B: Check the REVERSE — Alpaca holds shares that NO bot claims or after 20:50 sweep
-            now_uk = pd.Timestamp.now(tz='Europe/London')
-            is_post_sweep = (now_uk.hour == 20 and now_uk.minute >= 50) or (now_uk.hour >= 21) or (now_uk.hour < 14)
-            
-            for p in live_pos:
-                tk = p['symbol'].upper()
-                qty = int(p.get('qty', 0))
-                if qty <= 0: continue
+        # 2. True Two-Way Reconciliation & Overnight Orphan Sweep
+        try:
+            req_pos = urllib.request.Request(f"{base_url}/v2/positions", headers=headers)
+            with urllib.request.urlopen(req_pos, timeout=5) as resp:
+                live_pos = json.loads(resp.read().decode('utf-8'))
+                alpaca_holdings = {p['symbol'].upper(): int(p.get('qty', 0)) for p in live_pos}
+                allocations = broker.get('allocations') or {}
 
-                total_local_shares_claimed = sum(portfolio_store.get_shares(tk, prof) for prof in auto_profiles)
+                # Step 2A: Clear local positions if Alpaca already sold them
+                for prof in auto_profiles:
+                    is_enabled = any(s_key in prof.lower() and s_data.get('enabled') for s_key, s_data in allocations.items())
+                    if not is_enabled:
+                        continue
 
-                # Only sweep unowned shares where local claimed is 0. If a bot chose to hold overnight, total_local_shares_claimed > 0, preserving its position.
-                if total_local_shares_claimed == 0:
-                    print(f"[ORPHAN SWEEP] Liquidating unowned/overnight position on Alpaca: {qty} {tk} (Local claimed: {total_local_shares_claimed})")
-                    try:
-                        req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
-                        with urllib.request.urlopen(req_del, timeout=5):
-                            print(f"[ORPHAN SWEEP SUCCESS] Flattened {tk} on Alpaca.")
-                    except Exception as e_del:
-                        print(f"[ORPHAN SWEEP ERROR]: {e_del}")
-    except Exception as e:
-        pass
+                    if c_email:
+                        c_s = portfolio_store.get_client_store(c_email)
+                        u_data = (c_s.get('users') or {}).get(prof, {})
+                    else:
+                        u_data = portfolio_store.user_data(prof)
+
+                    h_list = u_data.get('history') or []
+                    i_pos = u_data.get('initial_positions') or {}
+
+                    def chk_shares(tk):
+                        i_s = (i_pos.get(tk) or {}).get('shares', 0)
+                        n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in h_list if t.get('ticker') == tk)
+                        return max(0, i_s + n_s)
+
+                    active_tickers = list(set([tr.get('ticker') for tr in h_list if chk_shares(tr.get('ticker')) > 0]))
+
+                    for tk in active_tickers:
+                        if alpaca_holdings.get(tk, 0) == 0:
+                            local_sh = chk_shares(tk)
+                            if local_sh > 0:
+                                df_p = fetch_yf_data(tk, "1d", "1m")
+                                cur_p = df_p['Close'].iloc[-1] if not df_p.empty else 1.0
+                                portfolio_store.execute_trade(
+                                    ticker=tk,
+                                    action_type='SELL',
+                                    shares=local_sh,
+                                    price=cur_p,
+                                    username=prof,
+                                    metadata={
+                                        'status': 'Alpaca Reconciled Flat',
+                                        'reason': 'Alpaca confirmed 0 shares',
+                                        'source': 'alpaca_sync'
+                                    },
+                                    client_email=c_email
+                                )
+
+                # Step 2B: Liquidate unowned orphan positions on Alpaca
+                for p in live_pos:
+                    tk = p['symbol'].upper()
+                    qty = int(p.get('qty', 0))
+                    if qty <= 0:
+                        continue
+
+                    total_local_claimed = 0
+                    if c_email:
+                        c_s = portfolio_store.get_client_store(c_email)
+                        for u_n, u_d in (c_s.get('users') or {}).items():
+                            i_s = (u_d.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
+                            n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_d.get('history', []) if t.get('ticker') == tk)
+                            total_local_claimed += max(0, i_s + n_s)
+                    else:
+                        for u_n, u_d in portfolio_store.data.get('users', {}).items():
+                            i_s = (u_d.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
+                            n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_d.get('history', []) if t.get('ticker') == tk)
+                            total_local_claimed += max(0, i_s + n_s)
+
+                    if total_local_claimed == 0:
+                        try:
+                            req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
+                            with urllib.request.urlopen(req_del, timeout=5): pass
+                        except Exception: pass
+        except Exception:
+            pass
 
 def alpaca_reconciliation_worker():
     time.sleep(5)
@@ -1703,7 +1774,12 @@ def test_push_notification():
 @login_required
 def test_alpaca_order():
     portfolio_store.reload()
-    broker = portfolio_store.data.get('broker') or {}
+    is_client = (session.get('role') != 'admin')
+    if is_client:
+        c_store = portfolio_store.get_client_store(session.get('email') or session.get('user'))
+        broker = c_store.get('broker') or {}
+    else:
+        broker = portfolio_store.data.get('broker') or {}
     api_k = str(broker.get('api_key', '')).strip()
     sec_k = str(broker.get('secret_key', '')).strip()
     b_mode = broker.get('mode', 'paper')
@@ -3578,64 +3654,99 @@ def get_watchlist_scanner():
     return jsonify({'items': results})
 
 @app.route('/api/broker/pause', methods=['POST'])
+@login_required
 def toggle_broker_pause():
     portfolio_store.reload()
-    broker = portfolio_store.data.setdefault('broker', {})
-    broker['paused'] = not broker.get('paused', False)
-    portfolio_store.save_data(portfolio_store.data)
-    return jsonify({'status': 'ok', 'paused': broker['paused']})
+    is_client = (session.get('role') != 'admin')
+    if is_client:
+        user_id = session.get('email') or session.get('user')
+        c_store = portfolio_store.get_client_store(user_id)
+        broker = c_store.setdefault('broker', {})
+        broker['paused'] = not broker.get('paused', False)
+        portfolio_store.save_client_store(user_id, c_store)
+        return jsonify({'status': 'ok', 'paused': broker['paused']})
+    else:
+        broker = portfolio_store.data.setdefault('broker', {})
+        broker['paused'] = not broker.get('paused', False)
+        portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'status': 'ok', 'paused': broker['paused']})
 
 @app.route('/api/broker/liquidate', methods=['POST'])
+@login_required
 def handle_broker_liquidate():
     portfolio_store.reload()
-    broker = portfolio_store.data.get('broker') or {}
+    is_client = (session.get('role') != 'admin')
+    if is_client:
+        c_store = portfolio_store.get_client_store(session.get('email') or session.get('user'))
+        broker = c_store.get('broker') or {}
+    else:
+        broker = portfolio_store.data.get('broker') or {}
     res = alpaca_cancel_and_liquidate(broker.get('api_key'), broker.get('secret_key'), broker.get('mode', 'paper'))
     return jsonify(res)
 
 @app.route('/api/broker/liquidate_bot', methods=['POST'])
+@login_required
 def handle_bot_liquidate():
     """Emergency individual strategy liquidator: closes open positions for one specific bot."""
     portfolio_store.reload()
     req = request.get_json() or {}
     strat_key = req.get('strategy', '').strip().lower()
-    broker = portfolio_store.data.get('broker') or {}
-    api_k = broker.get('api_key', '').strip()
-    sec_k = broker.get('secret_key', '').strip()
-    b_mode = broker.get('mode', 'paper')
+    is_client = (session.get('role') != 'admin')
+    user_id = session.get('email') or session.get('user')
 
-    matched_profile = None
-    for p in portfolio_store.data.get('users', {}):
-        if strat_key in p.lower():
-            matched_profile = p
-            break
+    if is_client:
+        c_store = portfolio_store.get_client_store(user_id)
+        users = c_store.get('users', {})
+        matched_profile = next((p for p in users if strat_key in p.lower() or p.lower() in strat_key), None)
+        if not matched_profile:
+            return jsonify({'status': 'error', 'message': f'Profile matching {strat_key} not found.'}), 404
+        ud = users[matched_profile]
+    else:
+        matched_profile = next((p for p in portfolio_store.data.get('users', {}) if strat_key in p.lower() or p.lower() in strat_key), None)
+        if not matched_profile:
+            return jsonify({'status': 'error', 'message': f'Profile matching {strat_key} not found.'}), 404
+        ud = portfolio_store.data['users'][matched_profile]
 
-    if not matched_profile:
-        return jsonify({'status': 'error', 'message': f'Profile matching {strat_key} not found.'}), 404
-
-    ud = portfolio_store.data['users'][matched_profile]
     hist = ud.get('history') or []
-    active_tickers = list(set([tr.get('ticker') for tr in hist if portfolio_store.get_shares(tr.get('ticker'), matched_profile) > 0]))
+    init_pos = ud.get('initial_positions') or {}
+    
+    def r_sh(tk):
+        i_s = (init_pos.get(tk) or {}).get('shares', 0)
+        n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
+        return max(0, i_s + n_s)
 
+    active_tickers = list(set([tr.get('ticker') for tr in hist if r_sh(tr.get('ticker')) > 0]))
     if not active_tickers:
         return jsonify({'status': 'ok', 'message': f'{matched_profile} has no open positions to liquidate.'})
 
     for tick in active_tickers:
-        sh = portfolio_store.get_shares(tick, matched_profile)
+        sh = r_sh(tick)
         if sh > 0:
             df = fetch_yf_data(tick, '1d', '1m')
             cur_p = df['Close'].iloc[-1] if not df.empty else 1.0
-            # execute_trade already dispatches the sell to Alpaca internally; no duplicate call needed
-            portfolio_store.execute_trade(tick, 'SELL', sh, cur_p, matched_profile, metadata={'status': 'Manual Liquidation', 'reason': 'Individual Bot Liquidate Triggered'})
+            portfolio_store.execute_trade(
+                tick, 'SELL', sh, cur_p, matched_profile,
+                metadata={'status': 'Manual Liquidation', 'reason': 'Individual Bot Liquidate Triggered'},
+                client_email=user_id if is_client else None
+            )
 
-    portfolio_store.save_data(portfolio_store.data)
     return jsonify({'status': 'ok', 'message': f'Successfully liquidated {len(active_tickers)} position(s) for {matched_profile}.'})
 
 @app.route('/api/broker/disconnect', methods=['POST'])
+@login_required
 def handle_broker_disconnect():
     portfolio_store.reload()
-    portfolio_store.data['broker'] = {'paused': False, 'allocations': {}}
-    portfolio_store.save_data(portfolio_store.data)
-    return jsonify({'status': 'ok'})
+    is_client = (session.get('role') != 'admin')
+    if is_client:
+        user_id = session.get('email') or session.get('user')
+        c_store = portfolio_store.get_client_store(user_id)
+        c_store['broker'] = {'paused': False, 'allocations': {}, 'connected': False, 'mode': 'paper', 'api_key': '', 'secret_key': ''}
+        portfolio_store.save_client_store(user_id, c_store)
+        return jsonify({'status': 'ok'})
+    else:
+        portfolio_store.data['broker'] = {'paused': False, 'allocations': {}, 'connected': False, 'mode': 'paper', 'api_key': '', 'secret_key': ''}
+        portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'status': 'ok'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8095))
