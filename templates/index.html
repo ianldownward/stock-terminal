@@ -1996,10 +1996,10 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Avg Daily Pace: <b style="color:#0ecb81;">+1.31% / Day</b></div>
-                                <div>• Win Rate: <b style="color:#fff;">7 out of 10 wins (61.5%)</b></div>
-                                <div>• Profit Factor: <b style="color:#fff;">3.55 (Low Drawdown)</b></div>
-                                <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
+                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">4.55 (Elite)</b></div>
+                                <div>• Win Rate: <b style="color:#fff;">7 out of 10 wins (70.0%)</b></div>
+                                <div>• Daily Pace: <b style="color:#0ecb81;">+1.31% / Day Target</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
                     </div>
@@ -2018,10 +2018,10 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Avg Daily Pace: <b style="color:#0ecb81;">+0.88% / Day</b></div>
+                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">2.07 (Strong)</b></div>
                                 <div>• Win Rate: <b style="color:#fff;">5 out of 10 wins (50.0%)</b></div>
-                                <div>• Shorting Success: <b style="color:#fff;">80% on SQQQ</b></div>
-                                <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
+                                <div>• Daily Pace: <b style="color:#0ecb81;">+0.88% / Day Target</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
                     </div>
@@ -2040,10 +2040,10 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Execution: <b style="color:#0ecb81;">High Speed Scalping</b></div>
-                                <div>• Target Burst: <b style="color:#fff;">+1.20% Take Profit</b></div>
-                                <div>• Assets: <b style="color:#fff;">TQQQ, SOXL, SQQQ</b></div>
-                                <div>• Overnight Risk: <b style="color:#ffd400;">None (100% Cash)</b></div>
+                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">1.20 (Quick Scalp)</b></div>
+                                <div>• Win Rate: <b style="color:#fff;">6 out of 10 wins (60.0%)</b></div>
+                                <div>• Daily Pace: <b style="color:#0ecb81;">+1.20% / Burst Target</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
                     </div>
@@ -2082,6 +2082,26 @@
                     <label style="font-size:11px; color:#8a8a9e; font-weight:800; text-transform:uppercase; display:block; margin-bottom:5px;">Version / Identifier Tag (Optional)</label>
                     <input type="text" id="wizardVersionTag" placeholder="e.g. v2, Main Fund, Test 2" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
                     <span style="font-size:10px; color:#8a8a9e; margin-top:3px; display:block;">Allows running multiple versions of the same strategy cleanly.</span>
+                </div>
+
+                <!-- OVERNIGHT CASH SWEEP CHECKBOX (SAFE ANALOGY) -->
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <input type="checkbox" id="wizardOvernightSweep" checked style="accent-color:#ffd400; width:16px; height:16px;">
+                        <span style="font-size:12px; font-weight:800; color:#ffd400;">Enable Overnight Cash Sweep (Liquidate at 20:50 BST)</span>
+                    </label>
+                    <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin-top:8px;">
+                        <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px; font-size:10px; line-height:1.4;">
+                        <div style="background:#14171f; padding:6px 8px; border-radius:6px; border-left:2px solid #0ecb81;">
+                            <b style="color:#0ecb81;">PROS:</b> Guaranteed peace of mind. Profits made today are secured in cash and cannot be wiped out by overnight bad news or gap-down crashes.
+                        </div>
+                        <div style="background:#14171f; padding:6px 8px; border-radius:6px; border-left:2px solid #ff9900;">
+                            <b style="color:#ff9900;">CONS:</b> You miss overnight gap-ups. If positive news causes the market to open higher tomorrow, you won't be holding shares to capture it.
+                        </div>
+                    </div>
+                    <span style="font-size:10px; color:#8a8a9e; margin-top:6px; display:block;">You can toggle this on or off at any time in Settings.</span>
                 </div>
 
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
@@ -4020,11 +4040,11 @@
                     worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
                 }
                 
-               // Auto-launch walkthrough only if the account genuinely has zero profiles configured
+               // Auto-launch setup guide only if the account genuinely has zero profiles
                 const isClientUser = ("{{ user_role }}" !== 'admin');
-                const hasProfiles = (Array.isArray(p.leaderboard) && p.leaderboard.length > 0) || (p.portfolio && p.portfolio.is_configured === true);
+                const hasExistingProfiles = (Array.isArray(p.leaderboard) && p.leaderboard.length > 0) || (p.portfolio && p.portfolio.is_configured === true);
 
-                if (isClientUser && !hasProfiles && !window._guideAutoOpened) {
+                if (isClientUser && !hasExistingProfiles && !window._guideAutoOpened) {
                     window._guideAutoOpened = true;
                     setTimeout(() => {
                         startOnboardingGuide();
@@ -5243,7 +5263,7 @@
                             <span style="font-size:11px; font-weight:800; color:#ffd400;">Enable Overnight Cash Sweep (Liquidate at 20:50 BST)</span>
                         </label>
                         <div style="font-size:10px; color:#e1e3e6; line-height:1.4; margin-top:6px;">
-                            <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
+                            <b>The Analogy:</b> <i>"Locking today’s winnings in the safe at closing time versus letting your stake ride overnight."</i>
                         </div>
                         <div style="display:flex; gap:6px; margin-top:6px; font-size:9px; line-height:1.35;">
                             <div style="flex:1; background:#14171f; padding:4px 6px; border-radius:4px; border-left:2px solid #0ecb81;">
@@ -5283,7 +5303,7 @@
                     })
                 });
 
-                // Launch strategy with selected overnight sweep setting
+                // Launch strategy with chosen overnight sweep setting
                 await fetch('/api/users/add_v2', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},

@@ -891,7 +891,7 @@ class MarketScoringEngine:
         except Exception: pass
         return {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
 
-    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test e', regime=None):
+    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test e', regime=None, overnight_sweep=True):
         if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         ticker = getattr(df_5m, 'name', '')
         is_inverse = ticker in ['SQQQ', '3SUS.L']
@@ -1018,9 +1018,8 @@ class MarketScoringEngine:
         if any(x in prof for x in ['test e', 'test s', 'test u', 'test w', 'test x']) and now_uk.hour >= 20 and avg_buy_price == 0:
             return {'type': 'EOD Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "LATE-DAY CURFEW: No new entries permitted after 20:00 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
-        # OVERRIDE: OVERNIGHT CASH SWEEP (Checks each profile's individual overnight_sweep setting)
-        sweep_setting = bool(ud.get('overnight_sweep', True)) if isinstance(ud, dict) else True
-        if sweep_setting and now_uk.hour == 20 and now_uk.minute >= 50:
+        # OVERRIDE: OVERNIGHT CASH SWEEP (Checks profile's overnight_sweep setting)
+        if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
             if avg_buy_price > 0:
                 pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "OVERNIGHT SWEEP: Liquidating to 100% cash to eliminate overnight gap risk.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
@@ -1313,7 +1312,7 @@ def process_auto_profile(prof_name, client_email=None):
                     v_r = (df['Volume'].iloc[-1] / avg_v) if avg_v > 0 else 1.0
                     st = engine.score_nav_asset(t, cur, v_r) if t in engine.nav_bases else engine.score_equity(df, cur)
                 else:
-                    st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=eff_profile, regime=regime)
+                    st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=eff_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
 
                 if sh > 0:
                     held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
@@ -1582,9 +1581,9 @@ def reconcile_alpaca_positions_and_orders():
 
                 total_local_shares_claimed = sum(portfolio_store.get_shares(tk, prof) for prof in auto_profiles)
 
-                # Only liquidate orphaned shares that no local active bot claims. If a bot has overnight_sweep turned OFF, total_local_shares_claimed > 0, preserving the overnight position.
+                # Only sweep unowned shares where local claimed is 0. If a bot chose to hold overnight, total_local_shares_claimed > 0, preserving its position.
                 if total_local_shares_claimed == 0:
-                    print(f"[ORPHAN SWEEP] Liquidating unowned position on Alpaca: {qty} {tk} (Local claimed: {total_local_shares_claimed})")
+                    print(f"[ORPHAN SWEEP] Liquidating unowned/overnight position on Alpaca: {qty} {tk} (Local claimed: {total_local_shares_claimed})")
                     try:
                         req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
                         with urllib.request.urlopen(req_del, timeout=5):
@@ -2517,15 +2516,21 @@ def get_data():
         client_name = session.get('user', 'Client')
         req_user = request.args.get('user', '').strip()
 
+        c_store = None
         if is_client:
             c_store = portfolio_store.get_client_store(client_name)
             users_dict = c_store.get('users', {})
             active_name = req_user if (req_user and req_user in users_dict) else c_store.get('active_user', '')
             if not active_name and users_dict:
                 active_name = list(users_dict.keys())[0]
-            ud = users_dict.get(active_name) if active_name in users_dict else c_store
+            raw_ud = users_dict.get(active_name) if active_name in users_dict else dict(c_store)
+            ud = dict(raw_ud)
+            ud['is_configured'] = bool(users_dict)
+            ud['strategy_name'] = active_name or 'Vector Hybrid'
+            ud['active_user'] = active_name or 'Vector Hybrid'
+            ud['username'] = active_name or client_name
             mb = float(ud.get('master_budget', 500.0 if users_dict else 0.0))
-            active_profile = active_name.strip().lower()
+            active_profile = active_name.strip().lower() if active_name else 'vector hybrid'
         else:
             portfolio_store.reload()
             if req_user and req_user in portfolio_store.data.get('users', {}):
@@ -2586,8 +2591,10 @@ def get_data():
         today_str = now_lon.strftime('%Y-%m-%d')
         
         all_user_holds = set()
-        for u, u_data in portfolio_store.data.get('users', {}).items():
-            for tr in u_data.get('history', []): all_user_holds.add(tr.get('ticker'))
+        source_for_holds = (c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})
+        for u, u_data in source_for_holds.items():
+            if isinstance(u_data, dict):
+                for tr in u_data.get('history', []): all_user_holds.add(tr.get('ticker'))
                 
         prices = {}
         def fetch_lb_price(tick):
@@ -2612,7 +2619,7 @@ def get_data():
             for tick, cur_pnd, start_pnd in ex.map(fetch_lb_price, all_user_holds): prices[tick] = {'cur': cur_pnd, 'start': start_pnd}
 
         leaderboard = []
-        source_users = c_store.get('users', {}) if is_client else portfolio_store.data.get('users', {})
+        source_users = (c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})
 
         for u, u_data in source_users.items():
             if not isinstance(u_data, dict): continue
@@ -2870,7 +2877,7 @@ def get_data():
         if is_momentum:
             df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
             if df_score is None or df_score.empty: df_score = df
-            st = engine.score_momentum(df_score, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime)
+            st = engine.score_momentum(df_score, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
