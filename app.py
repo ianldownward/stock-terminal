@@ -392,15 +392,19 @@ class PortfolioManager:
         }
 
     def get_client_store(self, username):
-        if not username or username.strip().lower() in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
+        clean_user = (username or '').strip().lower()
+        if not clean_user or clean_user in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
             return None
-        doc_id = f"client_{username.strip().lower()}"
+        doc_id = f"client_{clean_user}"
         if self.client:
             try:
-                doc = self.client['stock_terminal']['accounts'].find_one({"_id": doc_id})
+                accounts_col = self.client['stock_terminal']['accounts']
+                # Search by custom _id first, then fallback to username field
+                doc = accounts_col.find_one({"_id": doc_id})
+                if not doc:
+                    doc = accounts_col.find_one({"username": clean_user})
                 if doc and 'portfolio' in doc:
                     p = doc['portfolio']
-                    # Automatic migration: ensure 'users' multi-profile dictionary exists
                     if 'users' not in p or not isinstance(p['users'], dict):
                         p['users'] = {}
                         old_strat = p.get('strategy_name') or p.get('active_user')
@@ -408,6 +412,7 @@ class PortfolioManager:
                             p['users'][old_strat.strip()] = {
                                 'master_budget': float(p.get('master_budget', 500.0)),
                                 'method': p.get('method', old_strat.strip()),
+                                'overnight_sweep': True,
                                 'watchlist': p.get('watchlist', ['TQQQ', 'SOXL', 'SQQQ']),
                                 'initial_positions': p.get('initial_positions', {}),
                                 'holdings': p.get('holdings', {}),
@@ -420,21 +425,32 @@ class PortfolioManager:
                     if 'is_configured' not in p:
                         p['is_configured'] = bool(p['users'])
                     return p
-            except Exception: pass
-        return self.blank_client_state(username)
+            except Exception as e:
+                print(f"[GET CLIENT STORE ERROR]: {e}")
+        return self.blank_client_state(clean_user)
 
     def save_client_store(self, username, client_portfolio):
-        if not username or username.strip().lower() in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
+        clean_user = (username or '').strip().lower()
+        if not clean_user or clean_user in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()]:
             return
-        doc_id = f"client_{username.strip().lower()}"
+        doc_id = f"client_{clean_user}"
         if self.client:
             try:
-                self.client['stock_terminal']['accounts'].update_one(
+                accounts_col = self.client['stock_terminal']['accounts']
+                # Try updating by _id first; if not found, update by username
+                res = accounts_col.update_one(
                     {"_id": doc_id},
                     {"$set": {"portfolio": client_portfolio}},
-                    upsert=True
+                    upsert=False
                 )
-            except Exception: pass
+                if res.matched_count == 0:
+                    accounts_col.update_one(
+                        {"username": clean_user},
+                        {"$set": {"portfolio": client_portfolio}},
+                        upsert=True
+                    )
+            except Exception as e:
+                print(f"[SAVE CLIENT STORE ERROR]: {e}")
 
     def load(self):
         if self.client:
@@ -2021,26 +2037,26 @@ def add_user_v2():
         }
         portfolio_store.save_client_store(client_name, c_store)
         return jsonify({'status': 'ok', 'profile': prof_name})
+    else:
+        portfolio_store.reload()
+        users = portfolio_store.data.setdefault('users', {})
+        if prof_name in users:
+            return jsonify({'status': 'error', 'message': 'A profile with this name already exists'}), 400
 
-    portfolio_store.reload()
-    users = portfolio_store.data.setdefault('users', {})
-    if prof_name in users:
-        return jsonify({'status': 'error', 'message': 'A profile with this name already exists'}), 400
-
-    state = portfolio_store.default_user_state(method)
-    state['master_budget'] = capital
-    state['method'] = method
-    state['overnight_sweep'] = sweep_enabled
-    users[prof_name] = state
-    portfolio_store.data['active_user'] = prof_name
-    broker = portfolio_store.data.setdefault('broker', {})
-    broker.setdefault('allocations', {})[prof_name.lower()] = {
-        'enabled': True,
-        'budget': capital,
-        'overnight_sweep': sweep_enabled
-    }
-    portfolio_store.save_data(portfolio_store.data)
-    return jsonify({'status': 'ok', 'profile': prof_name})
+        state = portfolio_store.default_user_state(method)
+        state['master_budget'] = capital
+        state['method'] = method
+        state['overnight_sweep'] = sweep_enabled
+        users[prof_name] = state
+        portfolio_store.data['active_user'] = prof_name
+        broker = portfolio_store.data.setdefault('broker', {})
+        broker.setdefault('allocations', {})[prof_name.lower()] = {
+            'enabled': True,
+            'budget': capital,
+            'overnight_sweep': sweep_enabled
+        }
+        portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'status': 'ok', 'profile': prof_name})
 
 @app.route('/api/profile/toggle_sweep', methods=['POST'])
 @login_required
@@ -2528,7 +2544,8 @@ def get_data():
             ud['is_configured'] = bool(users_dict)
             ud['strategy_name'] = active_name or 'Vector Hybrid'
             ud['active_user'] = active_name or 'Vector Hybrid'
-            ud['username'] = active_name or client_name
+            # Do NOT overwrite username with strategy name
+            ud['account_username'] = client_name
             mb = float(ud.get('master_budget', 500.0 if users_dict else 0.0))
             active_profile = active_name.strip().lower() if active_name else 'vector hybrid'
         else:
@@ -2536,6 +2553,7 @@ def get_data():
             if req_user and req_user in portfolio_store.data.get('users', {}):
                 portfolio_store.data['active_user'] = req_user
             ud = portfolio_store.user_data(req_user if req_user else None)
+            ud['account_username'] = 'Ian'
             mb = float(ud.get('master_budget', 500.0))
             active_profile = (req_user or portfolio_store.active_username()).strip().lower()
 

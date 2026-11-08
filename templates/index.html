@@ -3991,9 +3991,9 @@
                 masterData = p.ohlc || [];
                 globalPortfolioData = p.portfolio || {};
 
-                // Dynamic header username update
+                // Preserve account identity in the header
                 if (document.getElementById('topHeaderUser')) {
-                    let un = (p.portfolio && p.portfolio.username) ? p.portfolio.username : "{{ current_user }}";
+                    let un = (p.portfolio && p.portfolio.account_username) ? p.portfolio.account_username : "{{ current_user }}";
                     document.getElementById('topHeaderUser').innerText = un;
                 }
 
