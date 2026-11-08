@@ -1323,7 +1323,10 @@ def process_auto_profile(prof_name, client_email=None):
                     if t not in ud['holdings']: ud['holdings'][t] = {}
                     if highest_p > stored_hw:
                         ud['holdings'][t]['high_water'] = highest_p
-                        portfolio_store.save_data(portfolio_store.data)
+                        if is_client:
+                            portfolio_store.save_client_store(client_email, c_store)
+                        else:
+                            portfolio_store.save_data(portfolio_store.data)
 
                 # Determine effective scoring profile based on active mode
                 eff_profile = active_profile
