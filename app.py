@@ -484,11 +484,12 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Purge obsolete manual profiles, prototype profiles, and leaked emails
+            # Purge only exact legacy prototype names and leaked emails (preserves user-created tags)
+            legacy_prototypes = {'test e', 'test s', 'test r', 'test tqm', 'test m', 'test u', 'test w', 'test x', 'test p', 'test t', 'ian', 'sovereign core'}
             existing_users = list(self.data['users'].keys())
             for u in existing_users:
                 u_clean = u.strip().lower()
-                if 'test ' in u_clean or 'ian' in u_clean or '@' in u_clean or 'sovereign' in u_clean:
+                if u_clean in legacy_prototypes or '@' in u_clean:
                     del self.data['users'][u]
                     needs_save = True
 
@@ -716,14 +717,18 @@ class PortfolioManager:
             allocations = global_broker.get('allocations') or {}
             current_profile = str(username or self.active_username()).lower()
 
-            # Strictly obey user allocations: If a bot is unchecked, DO NOT route to Alpaca
+            # Strictly obey user allocations: Exact match first to avoid (v2) tag collisions
             matched_alloc = None
             should_route_alpaca = False
-            for s_key, s_data in allocations.items():
-                if s_key in current_profile:
-                    matched_alloc = s_data
-                    should_route_alpaca = bool(s_data.get('enabled', False))
-                    break
+            if current_profile in allocations:
+                matched_alloc = allocations[current_profile]
+                should_route_alpaca = bool(matched_alloc.get('enabled', False))
+            else:
+                for s_key, s_data in allocations.items():
+                    if s_key == current_profile or s_key in current_profile or current_profile in s_key:
+                        matched_alloc = s_data
+                        should_route_alpaca = bool(s_data.get('enabled', False))
+                        break
 
             if should_route_alpaca and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
                 strat_prof = str(current_profile).lower()
@@ -1995,7 +2000,7 @@ def api_client_settings():
     portfolio_store.reload()
     data = request.get_json() or {}
     is_client = (session.get('role') != 'admin')
-    client_name = session.get('user', 'Client')
+    client_name = session.get('email') or session.get('user', 'Client')
 
     b_mode = data.get('broker_mode', 'paper')
     api_key = data.get('api_key', '').strip()
@@ -2051,7 +2056,7 @@ def select_user():
         portfolio_store.switch_user(target_user)
         return jsonify({'status': 'ok'})
     else:
-        client_name = session.get('user')
+        client_name = session.get('email') or session.get('user')
         c_store = portfolio_store.get_client_store(client_name)
         if c_store and target_user in c_store.get('users', {}):
             c_store['active_user'] = target_user
@@ -2080,7 +2085,7 @@ def add_user_v2():
         return jsonify({'status': 'error', 'message': 'Profile name required'}), 400
 
     is_client = (session.get('role') != 'admin')
-    client_name = session.get('user', 'Client')
+    client_name = session.get('email') or session.get('user', 'Client')
 
     if is_client:
         c_store = portfolio_store.get_client_store(client_name)
@@ -2465,15 +2470,35 @@ def update_holding():
     return jsonify({'status': 'ok', 'shares': shares})
 
 @app.route('/api/trade/execute', methods=['POST'])
+@login_required
 def execute_trade():
     portfolio_store.reload()
     b = request.get_json() or {}
-    return jsonify({'status': 'ok', 'entry': portfolio_store.execute_trade(b.get('ticker'), b.get('action'), b.get('shares'), b.get('price'), b.get('username'))})
+    is_client = (session.get('role') != 'admin')
+    client_email = session.get('email') or session.get('user') if is_client else None
+    return jsonify({'status': 'ok', 'entry': portfolio_store.execute_trade(
+        b.get('ticker'), b.get('action'), b.get('shares'), b.get('price'), b.get('username'),
+        client_email=client_email
+    )})
 
 @app.route('/api/trade/undo', methods=['POST'])
+@login_required
 def undo_trade(): 
     portfolio_store.reload()
-    return jsonify({'status': 'ok' if portfolio_store.undo_trade((request.get_json() or {}).get('id')) else 'error'})
+    is_client = (session.get('role') != 'admin')
+    client_email = session.get('email') or session.get('user') if is_client else None
+    t_id = (request.get_json() or {}).get('id')
+    if is_client and client_email:
+        c_store = portfolio_store.get_client_store(client_email)
+        for u_name, u_d in (c_store.get('users') or {}).items():
+            hist = u_d.get('history') or []
+            match = next((t for t in hist if t.get('id') == str(t_id)), None)
+            if match:
+                hist.remove(match)
+                portfolio_store.save_client_store(client_email, c_store)
+                return jsonify({'status': 'ok'})
+        return jsonify({'status': 'error'})
+    return jsonify({'status': 'ok' if portfolio_store.undo_trade(t_id) else 'error'})
 
 @app.route('/api/score', methods=['GET'])
 def get_score():
@@ -2599,7 +2624,7 @@ def get_recommendations():
 def get_data():
     try:
         is_client = (session.get('role') != 'admin')
-        client_name = session.get('user', 'Client')
+        client_name = session.get('email') or session.get('user', 'Client')
         req_user = request.args.get('user', '').strip()
 
         c_store = None
