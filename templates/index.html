@@ -221,24 +221,65 @@
             background: #d8dce6 !important;
         }
 
-        /* 8. Engine Session Timeline & Safeguards HUD */
+        /* 8. Engine Session Timeline, Countdown, Safeguards & Macro HUDs */
         body.light-mode #sessionTimelineContainer,
-        body.light-mode #safeguardsHudContainer {
+        body.light-mode #safeguardsHudContainer,
+        body.light-mode #botKpiDrawer > div {
             background: #f8f9fb !important;
             border-radius: 6px;
         }
         body.light-mode #sessionTimelineContainer span {
             color: #262b36 !important;
         }
-        body.light-mode #safeguardsHudContainer > div {
+        body.light-mode #sessionCountdownBadge {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #sessionCountdownBadge span[style*="color:#8a8a9e"] {
+            color: #555e6d !important;
+        }
+        body.light-mode #safeguardsHudContainer > div,
+        body.light-mode #botKpiDrawer > div > div {
             border-bottom-color: #e4e8f0 !important;
         }
-        body.light-mode #safeguardsHudContainer span[style*="color:#8a8a9e"] {
+        body.light-mode #safeguardsHudContainer span[style*="color:#8a8a9e"],
+        body.light-mode #botKpiDrawer span[style*="color:#8a8a9e"] {
             color: #555e6d !important;
         }
         body.light-mode #safeguardsHudContainer span[style*="color:#fff"],
-        body.light-mode #safeguardsHudContainer span[style*="color: #fff"] {
+        body.light-mode #safeguardsHudContainer span[style*="color: #fff"],
+        body.light-mode #sideKpiProfitFactor {
             color: #131722 !important;
+        }
+        body.light-mode #safeguardsHudContainer div[style*="background:#262b36"],
+        body.light-mode #safeguardsHudContainer div[style*="background: #262b36"] {
+            background: #d8dce6 !important;
+        }
+
+        /* 8b. Macro Radar Cards */
+        body.light-mode #macroRadarDrawer > div > div {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #macroRadarDrawer div[style*="color:#8a8a9e"] {
+            color: #555e6d !important;
+        }
+
+        /* 8c. Live Wire Ticker Tape */
+        body.light-mode #tickerTapeContainer {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #tickerTapeContainer > div:first-child {
+            background: #f4f6fa !important;
+            border-right-color: #d8dce6 !important;
+        }
+        body.light-mode #scrollingTickerContent a,
+        body.light-mode #scrollingTickerContent span {
+            color: #131722 !important;
+        }
+        body.light-mode #scrollingTickerContent .tape-detail {
+            color: #555e6d !important;
         }
 
         /* 9. Bottom Left Alpaca Box: Completely Wipe Black */
