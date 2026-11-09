@@ -2779,22 +2779,21 @@
         <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-top:auto; display:flex; flex-direction:column; gap:6px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:6px;">
-                    <span class="status-dot online" id="alpacaCardDot"></span>
+                    <span class="status-dot offline" id="alpacaCardDot"></span>
                     <span style="font-size:10px; font-weight:800; color:#ffb700; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
                 </div>
-                <button id="btnAlpacaSync" class="btn-sync-action" onclick="syncWithAlpaca(this)" title="Sync Alpaca with bot state">
-                    Sync
+                <button id="btnAlpacaSync" class="btn-sync-action" onclick="openSettingsModal()" title="Configure Alpaca API credentials">
+                    Connect
                 </button>
             </div>
 
             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:2px;">
                 <span style="font-size:11px; color:#8a8a9e;">Account Val:</span>
-                <span id="alpacaCardValue" style="font-size:12px; font-weight:800; color:#fff;">$0.00</span>
+                <span id="alpacaCardValue" style="font-size:12px; font-weight:800; color:#8a8a9e;">Disconnected</span>
             </div>
 
-            <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 8px; display:flex; align-items:center; justify-content:center; gap:6px;">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ecb81" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                <span>100% Flat (Cash)</span>
+            <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#8a8a9e; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 8px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                <span>No API Keys Connected</span>
             </div>
         </div>
     </div>
@@ -5270,6 +5269,36 @@
                     if (dot) { dot.className = 'status-dot offline'; }
                     if (txt) { txt.style.color = '#8a8a9e'; txt.innerText = 'Broker Offline'; }
                     if (modalTxt) { modalTxt.innerHTML = `<span style="color:#8a8a9e;">Disconnected</span>`; }
+
+                    // Explicitly update Desktop & Mobile Monitor cards to Disconnected
+                    let valEl = document.getElementById('alpacaCardValue');
+                    let expBox = document.getElementById('alpacaExposureBox');
+                    let cDot = document.getElementById('alpacaCardDot');
+                    let deskBtn = document.getElementById('btnAlpacaSync');
+                    let mobVal = document.getElementById('mobAlpacaVal');
+                    let mobBP = document.getElementById('mobAlpacaBP');
+                    let mobExp = document.getElementById('mobAlpacaExposureBox');
+                    let mobDot = document.getElementById('mobAlpacaModalDot');
+                    let mobBtn = document.getElementById('btnMobAlpacaSync');
+
+                    if (cDot) cDot.className = 'status-dot offline';
+                    if (mobDot) mobDot.className = 'status-dot offline';
+
+                    if (valEl) { valEl.innerText = 'Disconnected'; valEl.style.color = '#8a8a9e'; }
+                    if (mobVal) { mobVal.innerText = 'Disconnected'; mobVal.style.color = '#8a8a9e'; }
+                    if (mobBP) mobBP.innerText = '$0.00';
+
+                    let offlineHtml = `<span style="color:#8a8a9e; font-size:11px; font-weight:700;">No API Keys Connected</span>`;
+                    if (expBox) { expBox.style.borderColor = '#262b36'; expBox.innerHTML = offlineHtml; }
+                    if (mobExp) { mobExp.style.borderColor = '#262b36'; mobExp.innerHTML = offlineHtml; }
+
+                    [deskBtn, mobBtn].filter(Boolean).forEach(b => {
+                        b.disabled = false;
+                        b.innerText = 'Connect';
+                        b.style.borderColor = '#ffd400';
+                        b.style.color = '#ffd400';
+                        b.onclick = () => openSettingsModal();
+                    });
                 }
             } catch(e) {}
         }
