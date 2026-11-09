@@ -24,15 +24,42 @@
             overflow: hidden; 
         }
 
-       /* DAY / LIGHT MODE PALETTE */
+       /* DAY / LIGHT MODE PALETTE (COMPREHENSIVE INVERSION) */
         body.light-mode {
             background: #f0f2f5 !important;
             color: #1a1e28 !important;
         }
+        
+        /* 1. Header & Logo Inversion */
         body.light-mode .top-header-bar {
             background: #ffffff !important;
             border-bottom: 1px solid #d8dce6 !important;
         }
+        body.light-mode #headerLogo {
+            filter: invert(1) hue-rotate(180deg) brightness(0.2) contrast(1.2);
+        }
+        body.light-mode .header-user-badge {
+            background: #f4f6fa !important;
+            border-color: #d8dce6 !important;
+            color: #b37d00 !important;
+        }
+        body.light-mode .header-icon-btn {
+            background: #f8f9fb !important;
+            border-color: #d8dce6 !important;
+            color: #4a5265 !important;
+        }
+        body.light-mode .header-icon-btn:hover {
+            background: #eef2f8 !important;
+            border-color: #b37d00 !important;
+            color: #b37d00 !important;
+        }
+        body.light-mode .header-broker-pill {
+            background: #f8f9fb !important;
+            border-color: #d8dce6 !important;
+            color: #4a5265 !important;
+        }
+
+        /* 2. Main Containers, Drawers & Cards */
         body.light-mode .sidebar,
         body.light-mode .right-drawer,
         body.light-mode .chart-container,
@@ -47,49 +74,154 @@
         body.light-mode .lb-item,
         body.light-mode #desktopAlpacaMonitor,
         body.light-mode .custom-select-trigger,
-        body.light-mode .custom-select-menu,
-        body.light-mode .header-icon-btn,
         body.light-mode select,
         body.light-mode .btn-control {
             background: #f8f9fb !important;
             border-color: #d8dce6 !important;
             color: #1a1e28 !important;
         }
-        body.light-mode .lb-item:hover,
-        body.light-mode .lb-item.active-profile-card {
-            background: #eef2f8 !important;
-            border-color: #c88a00 !important;
+        body.light-mode .drawer-details summary {
+            color: #b37d00 !important;
         }
-        body.light-mode .header-icon-btn:hover {
-            background: #e4e8f0 !important;
-            border-color: #c88a00 !important;
-            color: #c88a00 !important;
-        }
+
+        /* 3. Typography & Numerical Figures */
         body.light-mode .equity-main-val,
         body.light-mode #activeTitle,
-        body.light-mode .lb-header,
-        body.light-mode .modal h2 {
+        body.light-mode .modal h2,
+        body.light-mode .lb-header > div > div > span:first-child,
+        body.light-mode .custom-select-item span {
             color: #131722 !important;
         }
         body.light-mode .stat-left,
         body.light-mode .stat-label,
         body.light-mode .card h3,
-        body.light-mode .controls label {
-            color: #606877 !important;
+        body.light-mode .controls label,
+        body.light-mode #marketClocks span:last-child {
+            color: #555e6d !important;
         }
-        body.light-mode #alpacaExposureBox,
+        body.light-mode #mHoldingShares,
+        body.light-mode #mPrice {
+            color: #b37d00 !important;
+        }
+        body.light-mode #rotatorHealthStatus,
+        body.light-mode #sentimentScore,
+        body.light-mode #alpacaCardValue {
+            color: #131722 !important;
+        }
+        body.light-mode #rotatorHealthSubtext,
+        body.light-mode #thermoText {
+            color: #555e6d !important;
+        }
+
+        /* 4. Strategy Readiness Ticker Cards */
+        body.light-mode #readinessUI > div {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #readinessUI > div span {
+            color: #131722 !important;
+        }
+        body.light-mode #readinessUI > div span[style*="#ffd400"] {
+            color: #b37d00 !important;
+        }
+        body.light-mode #readinessUI div[style*="background:#1e222d"] {
+            background: #e4e8f0 !important;
+        }
+
+        /* 5. Engine Session Timeline & Safeguards HUD */
         body.light-mode #sessionTimelineContainer,
         body.light-mode #safeguardsHudContainer {
-            background: #f4f6fa !important;
+            background: #f8f9fb !important;
+            border-radius: 6px;
+        }
+        body.light-mode #sessionTimelineContainer span {
+            color: #262b36 !important;
+        }
+        body.light-mode #sessionTimelineContainer div[style*="background:#262b36"] {
+            background: #cbd2e1 !important;
+        }
+        body.light-mode #safeguardsHudContainer > div {
+            border-bottom-color: #e4e8f0 !important;
+        }
+        body.light-mode #safeguardsHudContainer span[style*="color:#8a8a9e"] {
+            color: #555e6d !important;
+        }
+        body.light-mode #safeguardsHudContainer span[style*="color:#fff"] {
+            color: #131722 !important;
+        }
+
+        /* 6. Alpaca Monitor & Bottom Left */
+        body.light-mode #alpacaExposureBox {
+            background: #ffffff !important;
             border-color: #d8dce6 !important;
         }
-        body.light-mode .drawer-details summary {
-            color: #c88a00 !important;
-        }
-        body.light-mode .header-user-badge {
-            background: #f4f6fa !important;
+
+        /* 7. Leaderboard & Tabs */
+        body.light-mode .segmented-control {
+            background: #eef2f8 !important;
             border-color: #d8dce6 !important;
-            color: #c88a00 !important;
+        }
+        body.light-mode .segmented-control label {
+            color: #606877 !important;
+            border-right-color: #d8dce6 !important;
+        }
+        body.light-mode .segmented-control input[type="radio"]:checked + label {
+            background: #ffffff !important;
+            color: #b37d00 !important;
+        }
+        body.light-mode .lb-item {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .lb-item:hover,
+        body.light-mode .lb-item.active-profile-card {
+            background: #f4f7fc !important;
+            border-color: #b37d00 !important;
+        }
+        body.light-mode .lb-desc {
+            border-top-color: #e4e8f0 !important;
+            color: #555e6d !important;
+        }
+
+        /* 8. Settings Modal Internal Inversion */
+        body.light-mode .modal div[style*="background:#13161c"],
+        body.light-mode .modal div[style*="background: #13161c"],
+        body.light-mode .modal div[style*="background:#0f1115"],
+        body.light-mode .modal div[style*="background: #0f1115"] {
+            background: #f8f9fb !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .modal input[type="text"],
+        body.light-mode .modal input[type="number"],
+        body.light-mode .modal input[type="url"] {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+            color: #131722 !important;
+        }
+        body.light-mode .modal span[style*="color:#fff"],
+        body.light-mode .modal div[style*="color:#fff"],
+        body.light-mode .modal span[style*="color:#e1e3e6"],
+        body.light-mode .modal div[style*="color:#e1e3e6"],
+        body.light-mode .modal label[style*="color:#fff"] {
+            color: #131722 !important;
+        }
+        body.light-mode .modal span[style*="color:#8a8a9e"],
+        body.light-mode .modal div[style*="color:#8a8a9e"],
+        body.light-mode .modal label[style*="color:#8a8a9e"] {
+            color: #555e6d !important;
+        }
+        body.light-mode .custom-select-menu {
+            background: #ffffff !important;
+            border-color: #b37d00 !important;
+        }
+        body.light-mode .custom-select-item {
+            border-bottom-color: #edf0f5 !important;
+        }
+        body.light-mode .custom-select-item:hover {
+            background: #f4f7fc !important;
+        }
+        body.light-mode .custom-select-item.selected {
+            background: #eef2f8 !important;
         }
 
        /* TOP GLOBAL HEADER BAR (DEEPER & REFINED) */
