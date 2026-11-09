@@ -1406,12 +1406,24 @@
         .fused-col p { font-size: 15px; font-weight: bold; margin: 0; color: #fff; }
         .fused-divider { width: 1px; height: 32px; background: #262b36; }
 
+        @-webkit-keyframes scrollTicker {
+            0%   { -webkit-transform: translate3d(0, 0, 0); }
+            100% { -webkit-transform: translate3d(-50%, 0, 0); }
+        }
         @keyframes scrollTicker {
             0%   { transform: translate3d(0, 0, 0); }
-            100% { transform: translate3d(-100%, 0, 0); }
+            100% { transform: translate3d(-50%, 0, 0); }
         }
         #tickerTapeContainer:hover #scrollingTickerContent {
+            -webkit-animation-play-state: paused;
             animation-play-state: paused;
+        }
+        body.light-mode #scrollingTickerContent a,
+        body.light-mode #scrollingTickerContent .tape-title {
+            color: #131722 !important;
+        }
+        body.light-mode #scrollingTickerContent .tape-detail {
+            color: #555e6d !important;
         }
         body.light-mode #tickerTapeContainer {
             background: #ffffff !important;
@@ -2604,7 +2616,7 @@
 
             <!-- Scrolling News & Event Track -->
             <div style="flex:1; overflow:hidden; position:relative; height:100%; display:flex; align-items:center;">
-                <div id="scrollingTickerContent" style="display:inline-block; white-space:nowrap; padding-left:100%; animation: scrollTicker 130s linear infinite;">
+                <div id="scrollingTickerContent" style="display:inline-flex; align-items:center; white-space:nowrap; width:max-content; will-change:transform; -webkit-transform:translate3d(0,0,0); transform:translate3d(0,0,0); -webkit-animation:scrollTicker 70s linear infinite; animation:scrollTicker 70s linear infinite;">
                     <span style="color:#8a8a9e; font-size:11px; font-weight:700;">Connecting to Global Financial Wire & Macro Feed...</span>
                 </div>
             </div>
@@ -6413,7 +6425,7 @@
 
                 let html = items.map(it => {
                     let badge = `<span style="border:1px solid ${it.tag_color}; color:${it.tag_color}; background:rgba(255,255,255,0.06); font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; letter-spacing:0.4px; margin-right:6px;">${it.tag}</span>`;
-                    let title = `<span style="font-weight:700; color:#ffffff;">${it.title}</span>`;
+                    let title = `<span class="tape-title" style="font-weight:700; color:#ffffff;">${it.title}</span>`;
                     let detail = it.detail ? `<span class="tape-detail" style="color:#8a8a9e; font-size:10px; margin-left:4px;">• ${it.detail}</span>` : '';
                     let link = `<a href="${it.link || '#'}" target="_blank" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center;">${badge}${title}${detail}</a>`;
                     return `<span style="display:inline-flex; align-items:center; margin-right:45px; font-size:11.5px;">${link}</span>`;
