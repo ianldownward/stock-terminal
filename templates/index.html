@@ -6010,7 +6010,7 @@
                 let pData = (latestLeaderboardData || []).find(l => l.user === profName) || {};
                 allocations[profKey] = {
                     enabled: chk.checked,
-                    budget: parseFloat(pData.equity || pData.budget || 500.0)
+                    budget: parseFloat(pData.budget || 500.0)
                 };
             });
 
