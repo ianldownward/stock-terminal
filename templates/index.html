@@ -2782,7 +2782,7 @@
                     <span class="status-dot offline" id="alpacaCardDot"></span>
                     <span style="font-size:10px; font-weight:800; color:#ffb700; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
                 </div>
-                <button id="btnAlpacaSync" class="btn-sync-action" onclick="openSettingsModal()" title="Configure Alpaca API credentials">
+                <button id="btnAlpacaSync" class="btn-sync-action" onclick="openSettingsModal('alpaca')" title="Configure Alpaca API credentials">
                     Connect
                 </button>
             </div>
@@ -5297,7 +5297,7 @@
                         b.innerText = 'Connect';
                         b.style.borderColor = '#ffd400';
                         b.style.color = '#ffd400';
-                        b.onclick = () => openSettingsModal();
+                        b.onclick = () => openSettingsModal('alpaca');
                     });
                 }
             } catch(e) {}
@@ -5996,8 +5996,8 @@
             document.getElementById('addCapitalModal').style.display = 'flex';
         }
 
-        function openSettingsModal() {
-            switchSettingsTab('bots');
+        function openSettingsModal(targetTab = 'bots') {
+            switchSettingsTab(targetTab || 'bots');
             let currentMode = document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
             updateAlpacaInstructions(currentMode);
             fetchBrokerStatus();
