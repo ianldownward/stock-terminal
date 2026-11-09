@@ -2345,19 +2345,17 @@
     </header>
 
     <div class="app-body-container">
-    <div class="sidebar">
-        <div class="sidebar-top" style="padding-bottom: 15px;">
+    <!-- LEFT SIDEBAR: PROFILE & LEADERBOARD MANAGEMENT -->
+    <div class="sidebar" style="width: 300px; min-width: 240px;">
+        <div class="sidebar-top" style="padding-bottom: 15px; overflow-y: auto;">
+            <!-- 1. ACTIVE PROFILE SELECTOR & TOTAL PORTFOLIO EQUITY -->
             <div class="user-profile-box">
-                <!-- Native select hidden to preserve compatibility with all existing modal scripts -->
                 <select id="userSelect" onchange="onUserChange(this.value)" style="display:none;"></select>
-                <!-- Wide Custom Dropdown (Stacked Price & Inside Arrow) -->
                 <div class="custom-select-wrapper">
-                    <!-- Desktop-Only Dropdown Trigger -->
                     <div id="customSelectTrigger" class="custom-select-trigger desktop-only-profile-box" onclick="toggleCustomProfileDropdown(event)" style="padding: 8px 12px; min-height: 52px; display: flex; align-items: center;">
                         <div id="customSelectLabel" style="width:100%;"><span>Select Profile</span></div>
                     </div>
                     
-                    <!-- TOTAL PORTFOLIO EQUITY BOX (Combined Profile & Equity on Mobile) -->
                     <div class="total-shares-box" onclick="if(window.innerWidth<=900)toggleCustomProfileDropdown(event)">
                         <div class="equity-header-row">
                             <label class="desktop-equity-title">TOTAL PORTFOLIO EQUITY</label>
@@ -2368,7 +2366,6 @@
                         </div>
                         
                         <div class="equity-stats-grid">
-                            <!-- Row 1: Cash on left, TODAY on right -->
                             <div class="equity-stat-row">
                                 <span id="mCashVal" class="stat-left">Cash: £0.00</span>
                                 <div class="stat-right">
@@ -2378,7 +2375,6 @@
                                 </div>
                             </div>
                             
-                            <!-- Row 2: Shares on left, DAILY AVERAGE on right -->
                             <div class="equity-stat-row">
                                 <span id="mSharesVal" class="stat-left">Shares: £0.00</span>
                                 <div class="stat-right">
@@ -2393,67 +2389,31 @@
                 </div>
             </div>
             
-            <!-- 1. 3-ASSET STRATEGY READINESS -->
-            <details class="drawer-details" id="watchlistDrawer" open>
-                <summary>Strategy Readiness (3x Universe)</summary>
-                <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
-                    <div id="readinessUI" style="display:flex; flex-direction:column; gap:6px;">
-                        <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning strategy tickers...</div>
-                    </div>
-                    <!-- Hidden reference to preserve script compatibility -->
-                    <ul class="watchlist" id="watchlistUI" style="display:none;"></ul>
-                    <input type="hidden" id="addTickerInput">
+            <!-- 2. ALL BOT PROFILES (LEADERBOARD) -->
+            <details class="drawer-details" open style="margin-bottom:8px;">
+                <summary>Profiles</summary>
+                <div class="segmented-control" style="margin-top:8px;">
+                    <input type="radio" name="lb_sort" id="lb_sort_all" value="all" checked onchange="fetchData(false)">
+                    <label for="lb_sort_all">All Time</label>
+                    <input type="radio" name="lb_sort" id="lb_sort_today" value="today" onchange="fetchData(false)">
+                    <label for="lb_sort_today">Today</label>
                 </div>
+                <div id="leaderboardUI" style="margin-top:8px;"></div>
             </details>
-
-            <!-- 2. DAILY ENGINE SESSION TIMELINE -->
-            <details class="drawer-details" id="timelineDrawer" open>
-                <summary>Engine Session Timeline</summary>
-                <div id="sessionTimelineContainer" style="margin-top:8px; display:flex; flex-direction:column; gap:7px; padding:2px 4px; font-size:11px;">
-                    <!-- Real-time timeline populated by JS -->
-                </div>
+            
+            <!-- 3. TRADE HISTORY -->
+            <details class="drawer-details" id="tradeHistoryDrawer" open style="margin-bottom:0;">
+                <summary>Trade History</summary>
+                <ul class="history-list" id="allHistoryUI" style="margin-top:8px; max-height:220px;"></ul>
             </details>
-
-            <!-- 3. STRATEGY SAFEGUARDS HUD -->
-            <details class="drawer-details" id="safeguardsDrawer" open>
-                <summary>Strategy Safeguards HUD</summary>
-                <div id="safeguardsHudContainer" style="margin-top:8px; display:flex; flex-direction:column; gap:5px; padding:2px 4px; font-size:11px;">
-                    <!-- Dynamic HUD populated by JS based on active profile -->
-                </div>
-            </details>
-
-            <!-- DEDICATED BOTTOM-LEFT ALPACA LIVE MONITOR -->
-            <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-top:10px; display:flex; flex-direction:column; gap:6px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        <span class="status-dot online" id="alpacaCardDot"></span>
-                        <span style="font-size:10px; font-weight:800; color:#ffd400; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
-                    </div>
-                    <button id="btnAlpacaSync" class="btn-sync-action" onclick="syncWithAlpaca(this)" title="Sync Alpaca with bot state">
-                        Sync
-                    </button>
-                </div>
-
-                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:2px;">
-                    <span style="font-size:11px; color:#8a8a9e;">Account Val:</span>
-                    <span id="alpacaCardValue" style="font-size:12px; font-weight:800; color:#fff;">$0.00</span>
-                </div>
-
-                <!-- EXPANDABLE EXPOSURE BOX -->
-                <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 8px; display:flex; align-items:center; justify-content:center; gap:6px;">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ecb81" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    <span>100% Flat (Cash)</span>
-                </div>
-            </div>
-
         </div>
     </div>
     
+    <!-- CENTER MAIN VIEW: CHART & TIME CONTROLS -->
     <div class="main-content">
         <!-- MOBILE DASHBOARD CONTAINER -->
         <div id="mobileDashboardStack">
             <div id="mobLeaderboardCard" class="lb-item active-profile-card"></div>
-            <!-- Permanent Chart Header Bar with Watchlist Scanner Burger -->
             <div id="mobHeldShareCard" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:6px 12px; display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:8px;">
                     <span id="mobChartStockSymbol" style="font-weight:800; font-size:15px; color:#fff;">TQQQ</span>
@@ -2466,7 +2426,6 @@
                     </button>
                 </div>
             </div>
-            <!-- Dynamic 3-In-A-Row Readiness Row -->
             <div id="mobReadinessRow"></div>
         </div>
 
@@ -2476,7 +2435,6 @@
                     <div style="display:flex; align-items:center; gap:8px;">
                         <h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2>
                     </div>
-                    <!-- UNIFORM REFRESH-STYLE ACTION BUTTONS -->
                     <div class="action-buttons">
                         <button id="btnShowTrades" class="btn-control active" onclick="toggleShowTrades()">Trades</button>
                         <button id="btnShowMath" class="btn-control" onclick="toggleShowMath()">Math Overlay</button>
@@ -2524,19 +2482,168 @@
         
         <div id="metricsDrawer">
             <div class="metrics-grid">
-                <!-- 1. LIVE PRICE -->
                 <div class="card" style="flex: 0.45; min-width: 85px; padding: 10px 8px;">
                     <h3>Live Price</h3>
                     <p id="mPrice" class="val-highlight" style="font-size: 18px; font-weight: 800;">--</p>
                     <span style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Live Quote</span>
                 </div>
                 
-                <!-- 2. POSITION HELD -->
                 <div class="card" style="flex: 0.45; min-width: 90px; padding: 10px 8px;">
                     <h3>Position Held</h3>
                     <p id="mHoldingShares" class="val-highlight" style="font-size: 18px; font-weight: 800;">0 Shares</p>
                     <span id="mHoldingWorth" style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Worth: £0.00</span>
                 </div>
+                
+                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.55; min-width: 230px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                        <h3 id="rotatorHealthHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buy Setup Readiness</h3>
+                        <span id="rotatorHealthStatus" style="font-size:12px; font-weight:800; color:#fff;">10 / 65 Target</span>
+                    </div>
+                    <div style="width:100%; height: 13px; background: linear-gradient(90deg, #ff5364 0%, #ff9900 50%, #0ecb81 100%); border-radius: 7px; position: relative; overflow: visible;">
+                        <div id="rotatorBuyTriggerLine" style="position: absolute; top: -4px; left: 65%; width: 2px; height: 21px; background: #ffd400; border-radius: 1px; box-shadow: 0 0 6px rgba(255, 212, 0, 0.9); z-index: 2;" title="Buy Trigger (65)"></div>
+                        <div id="rotatorHealthMarker" style="position: absolute; top: -3px; left: 10%; width: 4px; height: 19px; background: #ffffff; border-radius: 2px; box-shadow: 0 0 6px #ffffff; transition: left 0.4s ease; z-index: 3;"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:10px; font-weight:700;">
+                        <span id="rotatorStopPrice" style="color:#ff5364;"></span>
+                        <span id="rotatorHealthSubtext" style="color:#8a8a9e; font-size:10px; flex:1; text-align:center;">Awaiting fast EMA crossover surge.</span>
+                        <span id="rotatorPeakPrice" style="color:#0ecb81;"></span>
+                    </div>
+                </div>
+
+                <div class="card" id="sentimentCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.55; min-width: 230px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                        <h3 id="sentimentHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Market Sentiment ⓘ</h3>
+                        <span id="sentimentScore" style="font-size:12px; font-weight:800; color:#fff;">--/100</span>
+                    </div>
+                    <div style="width:100%; height: 13px; background: #262b36; border-radius: 7px; position: relative; overflow: hidden;">
+                        <div id="thermoFill" style="height: 100%; width: 50%; background: #0ecb81; border-radius: 7px; transition: width 0.4s ease, background-color 0.4s ease;"></div>
+                    </div>
+                    <div style="display:flex; justify-content:center; align-items:center; margin-top:6px; font-size:10px; font-weight:700;">
+                        <span id="thermoText" style="color:#8a8a9e; font-size:10px; text-align:center;">Room Temp</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div id="chartLegend" style="position: absolute; top: 15px; left: 15px; z-index: 8; display: flex; flex-direction: column; gap: 4px; pointer-events: none;"></div>
+            <div id="loader">Fetching...</div>
+            <div id="tvChart"></div>
+            <canvas id="chartCanvas"></canvas>
+        </div>
+
+        <div id="mobileBottomControls">
+            <div class="mobile-ctrl-group">
+                <span class="mobile-ctrl-label">Range</span>
+                <div class="mobile-ctrl-pill">
+                    <button class="m-btn active" id="mRange1D" onclick="setMobileRange('1d', this)">1D</button>
+                    <button class="m-btn" id="mRange5D" onclick="setMobileRange('5d', this)">5D</button>
+                    <button class="m-btn" id="mRange1M" onclick="setMobileRange('1mo', this)">1M</button>
+                </div>
+            </div>
+            <div class="mobile-ctrl-group">
+                <span class="mobile-ctrl-label">Interval</span>
+                <div class="mobile-ctrl-pill">
+                    <button class="m-btn" id="mInt1M" onclick="setMobileInterval('1m', this)">1M</button>
+                    <button class="m-btn active" id="mInt5M" onclick="setMobileInterval('5m', this)">5M</button>
+                    <button class="m-btn" id="mInt15M" onclick="setMobileInterval('15m', this)">15M</button>
+                </div>
+            </div>
+            <div class="mobile-ctrl-group">
+                <span class="mobile-ctrl-label">Chart</span>
+                <div class="mobile-ctrl-pill">
+                    <button class="m-btn active" id="mStyleCandle" onclick="setMobileStyle('candlestick', this)" title="Candlestick">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="9" y1="2" x2="9" y2="22"></line><rect x="6" y="6" width="6" height="10" fill="currentColor"></rect><line x1="17" y1="4" x2="17" y2="20"></line><rect x="14" y="9" width="6" height="8" fill="currentColor"></rect></svg>
+                    </button>
+                    <button class="m-btn" id="mStyleLine" onclick="setMobileStyle('line', this)" title="Line">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 17 9 11 13 15 21 7"></polyline></svg>
+                    </button>
+                    <button class="m-btn" id="mStyleArea" onclick="setMobileStyle('area', this)" title="Area">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8v12H3z" fill="currentColor" fill-opacity="0.25"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- DRAGGABLE RESIZER HANDLE -->
+    <div id="colResizer" style="width: 6px; cursor: col-resize; background: #161920; transition: background 0.2s; position: relative; z-index: 20;" title="Drag to resize tactical HUD"></div>
+
+    <!-- RIGHT DRAWER: TACTICAL EXECUTION ENGINE & BROKER HUD -->
+    <div class="right-drawer" id="leaderboardCol" style="width: 310px; min-width: 250px; max-width: 500px; padding: 15px; overflow-y: auto;">
+        <!-- 1. 3-ASSET STRATEGY READINESS -->
+        <details class="drawer-details" id="watchlistDrawer" open style="margin-bottom:8px;">
+            <summary>Strategy Readiness (3x Universe)</summary>
+            <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                <div id="readinessUI" style="display:flex; flex-direction:column; gap:6px;">
+                    <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning strategy tickers...</div>
+                </div>
+                <ul class="watchlist" id="watchlistUI" style="display:none;"></ul>
+                <input type="hidden" id="addTickerInput">
+            </div>
+        </details>
+
+        <!-- 2. DAILY ENGINE SESSION TIMELINE & COUNTDOWN -->
+        <details class="drawer-details" id="timelineDrawer" open style="margin-bottom:8px;">
+            <summary>Engine Session Timeline</summary>
+            <div id="sessionCountdownBadge" style="margin-top:6px; display:flex; justify-content:space-between; align-items:center; background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:4px 8px; font-size:10px; font-weight:800;">
+                <span style="color:#8a8a9e; letter-spacing:0.4px;">NEXT EVENT</span>
+                <span id="liveNextEventText" style="color:#0ecb81; font-family:monospace; font-size:11px;">14:30 OPEN IN --:--:--</span>
+            </div>
+            <div id="sessionTimelineContainer" style="margin-top:8px; display:flex; flex-direction:column; gap:5px; padding:2px 2px; font-size:10.5px;">
+            </div>
+        </details>
+
+        <!-- 3. STRATEGY SAFEGUARDS HUD (TIGHTENED WITH LOSS CUSHION) -->
+        <details class="drawer-details" id="safeguardsDrawer" open style="margin-bottom:8px;">
+            <summary>Strategy Safeguards HUD</summary>
+            <div id="safeguardsHudContainer" style="margin-top:6px; display:flex; flex-direction:column; gap:3px; padding:2px 2px; font-size:10.5px;">
+            </div>
+        </details>
+
+        <!-- 4. MACRO RADAR & FUTURES PULSE (NQ / ES / VIX) -->
+        <details class="drawer-details" id="macroRadarDrawer" open style="margin-bottom:8px;">
+            <summary>Macro Radar & Futures Pulse</summary>
+            <div style="margin-top:8px; display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; text-align:center;">
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 2px;">
+                    <div style="font-size:9px; color:#8a8a9e; font-weight:700;">NQ (Nasdaq)</div>
+                    <div id="macroNqVal" style="font-size:11px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.42% ▲</div>
+                </div>
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 2px;">
+                    <div style="font-size:9px; color:#8a8a9e; font-weight:700;">ES (S&P 500)</div>
+                    <div id="macroEsVal" style="font-size:11px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.28% ▲</div>
+                </div>
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 2px;">
+                    <div style="font-size:9px; color:#8a8a9e; font-weight:700;">VIX Index</div>
+                    <div id="macroVixVal" style="font-size:11px; font-weight:800; color:#ffb700; margin-top:2px;">14.85 Calm</div>
+                </div>
+            </div>
+        </details>
+
+        <!-- 5. ALPACA LIVE SYNC (PINNED AT BOTTOM RIGHT) -->
+        <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-top:auto; display:flex; flex-direction:column; gap:6px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="status-dot online" id="alpacaCardDot"></span>
+                    <span style="font-size:10px; font-weight:800; color:#ffb700; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
+                </div>
+                <button id="btnAlpacaSync" class="btn-sync-action" onclick="syncWithAlpaca(this)" title="Sync Alpaca with bot state">
+                    Sync
+                </button>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:2px;">
+                <span style="font-size:11px; color:#8a8a9e;">Account Val:</span>
+                <span id="alpacaCardValue" style="font-size:12px; font-weight:800; color:#fff;">$0.00</span>
+            </div>
+
+            <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#0ecb81; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 8px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ecb81" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <span>100% Flat (Cash)</span>
+            </div>
+        </div>
+    </div>
+    </div> <!-- END app-body-container -->
                 
                 <!-- 3. BUY SETUP READINESS / RISK THERMOMETER -->
                 <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.55; min-width: 230px;">
@@ -2635,43 +2742,55 @@
     <script>
         function updateSessionTimeline() {
             let d = new Date();
-            let opts = { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short' };
+            let opts = { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, weekday: 'short' };
             let formatter = new Intl.DateTimeFormat('en-GB', opts);
             let parts = formatter.formatToParts(d);
-            let hour = 0, minute = 0, weekday = '';
+            let hour = 0, minute = 0, second = 0, weekday = '';
             parts.forEach(p => {
                 if (p.type === 'hour') hour = parseInt(p.value);
                 if (p.type === 'minute') minute = parseInt(p.value);
+                if (p.type === 'second') second = parseInt(p.value);
                 if (p.type === 'weekday') weekday = p.value;
             });
             
             let isWeekend = (weekday === 'Sat' || weekday === 'Sun');
+            let curSecs = hour * 3600 + minute * 60 + second;
             let curMins = hour * 60 + minute;
             
             let timeline = [
-                { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Data Prep & Warmup" },
-                { start: 14*60 + 30, end: 14*60 + 50, label: "14:30 – 14:50 • Opening Moratorium" },
-                { start: 14*60 + 50, end: 20*60, label: "14:50 – 20:00 • Hunting & Harvest" },
-                { start: 20*60, end: 20*60 + 50, label: "20:00 – 20:50 • Late-Day Curfew" },
-                { start: 20*60 + 50, end: 21*60, label: "20:50 • Overnight Sweep" },
-                { start: 21*60, end: 24*60, label: "21:00 • US Market Close" }
+                { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Data Prep & Warmup", nextTarget: 14*3600 + 30*60, nextLabel: "14:30 OPEN IN" },
+                { start: 14*60 + 30, end: 14*60 + 50, label: "14:30 – 14:50 • Opening Moratorium", nextTarget: 14*3600 + 50*60, nextLabel: "HUNTING WINDOW IN" },
+                { start: 14*60 + 50, end: 20*60, label: "14:50 – 20:00 • Hunting & Harvest", nextTarget: 20*3600, nextLabel: "CURFEW IN" },
+                { start: 20*60, end: 20*60 + 50, label: "20:00 – 20:50 • Late-Day Curfew", nextTarget: 20*3600 + 50*60, nextLabel: "OVERNIGHT SWEEP IN" },
+                { start: 20*60 + 50, end: 21*60, label: "20:50 • Overnight Sweep", nextTarget: 21*3600, nextLabel: "US CLOSE IN" },
+                { start: 21*60, end: 24*60, label: "21:00 • US Market Close", nextTarget: 24*3600 + 8*3600, nextLabel: "WARMUP IN" }
             ];
 
             let html = '';
+            let nextText = "MARKET CLOSED";
+            
             for (let step of timeline) {
                 let isActive = !isWeekend && (curMins >= step.start && curMins < step.end);
                 let isPast = !isWeekend && (curMins >= step.end);
                 
-                let dotColor = isActive ? '#0ecb81' : (isPast ? '#ffd400' : '#262b36');
+                let dotColor = isActive ? '#0ecb81' : (isPast ? '#ffb700' : '#262b36');
                 let textColor = isActive ? '#ffffff' : (isPast ? '#8a8a9e' : '#5a5f70');
                 let weight = isActive ? '800' : '600';
                 let shadow = isActive ? 'box-shadow: 0 0 8px rgba(14, 203, 129, 0.7);' : '';
                 let activeTag = isActive ? '<span style="font-size:9px; background:rgba(14,203,129,0.15); color:#0ecb81; border:1px solid #0ecb81; padding:0 4px; border-radius:3px; margin-left:auto; font-weight:800;">ACTIVE</span>' : '';
                 
+                if (isActive) {
+                    let diff = Math.max(0, step.nextTarget - curSecs);
+                    let hRem = String(Math.floor(diff / 3600)).padStart(2, '0');
+                    let mRem = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+                    let sRem = String(diff % 60).padStart(2, '0');
+                    nextText = `${step.nextLabel} ${hRem}:${mRem}:${sRem}`;
+                }
+
                 html += `
                     <div style="display:flex; align-items:center; gap:8px;">
                         <div style="width:7px; height:7px; border-radius:50%; background:${dotColor}; ${shadow} flex-shrink:0;"></div>
-                        <span style="color:${textColor}; font-weight:${weight}; font-size:10.5px;">${step.label}</span>
+                        <span style="color:${textColor}; font-weight:${weight}; font-size:10px;">${step.label}</span>
                         ${activeTag}
                     </div>
                 `;
@@ -2679,6 +2798,9 @@
             
             let container = document.getElementById('sessionTimelineContainer');
             if (container) container.innerHTML = html;
+
+            let cdBadge = document.getElementById('liveNextEventText');
+            if (cdBadge) cdBadge.innerText = nextText;
         }
 
         function updateSafeguardsHUD(profName, metrics) {
@@ -2712,26 +2834,44 @@
             }
             sweep = isSweepEnabled ? '20:50 BST (100% Cash)' : '<span style="color:#ff5364; font-weight:800;">Holding Overnight (Risk)</span>';
 
+            // Calculate dynamic Loss Buffer
+            let activeLb = (latestLeaderboardData || []).find(l => l.user && l.user.toLowerCase().includes(profName)) || {};
+            let budget = activeLb.budget || 500.0;
+            let dayPnl = activeLb.daily_pnl || 0.0;
+            let maxLoss = budget * 0.025; // 2.50% circuit breaker
+            let lossUsed = Math.max(0, -dayPnl);
+            let cushionLeft = Math.max(0, maxLoss - lossUsed);
+            let cushionPct = Math.max(0, Math.min(100, (cushionLeft / maxLoss) * 100));
+
             container.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:4px;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:3px;">
                     <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Target Harvest:</span>
                     <span style="color:#0ecb81; font-weight:800; text-align:right; margin-left:auto;">${target}</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:4px; margin-top:4px;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:3px; margin-top:2px;">
                     <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Trailing Stop:</span>
-                    <span style="color:#ffd400; font-weight:800; text-align:right; margin-left:auto;">${trail}</span>
+                    <span style="color:#ffb700; font-weight:800; text-align:right; margin-left:auto;">${trail}</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:4px; margin-top:4px;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:3px; margin-top:2px;">
                     <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Breakeven Floor:</span>
                     <span style="color:#0ecb81; font-weight:800; text-align:right; margin-left:auto;">${ratchet}</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:4px; margin-top:4px;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:3px; margin-top:2px;">
                     <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Circuit Breaker:</span>
                     <span style="color:#ff5364; font-weight:800; text-align:right; margin-left:auto;">${circuit}</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-top:4px;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; border-bottom:1px solid #1a1e28; padding-bottom:3px; margin-top:2px;">
                     <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Overnight Sweep:</span>
                     <span style="color:#fff; font-weight:800; text-align:right; margin-left:auto;">${sweep}</span>
+                </div>
+                <div style="margin-top:4px; padding-top:2px; display:flex; flex-direction:column; gap:2px;">
+                    <div style="display:flex; justify-content:space-between; font-size:9px; font-weight:800;">
+                        <span style="color:#8a8a9e;">LOSS BUFFER REMAINING</span>
+                        <span style="color:#0ecb81;">£${cushionLeft.toFixed(2)} (${cushionPct.toFixed(0)}%)</span>
+                    </div>
+                    <div style="width:100%; height:4px; background:#262b36; border-radius:2px; overflow:hidden;">
+                        <div style="width:${cushionPct}%; height:100%; background:#0ecb81;"></div>
+                    </div>
                 </div>
             `;
         }
