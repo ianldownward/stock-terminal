@@ -1408,34 +1408,33 @@
 
         @-webkit-keyframes scrollTicker {
             0%   { -webkit-transform: translate3d(0, 0, 0); }
-            100% { -webkit-transform: translate3d(-50%, 0, 0); }
+            100% { -webkit-transform: translate3d(-100%, 0, 0); }
         }
         @keyframes scrollTicker {
             0%   { transform: translate3d(0, 0, 0); }
-            100% { transform: translate3d(-50%, 0, 0); }
+            100% { transform: translate3d(-100%, 0, 0); }
         }
         .ticker-track-safari {
             display: inline-flex !important;
             align-items: center !important;
             white-space: nowrap !important;
-            width: max-content !important;
+            flex-shrink: 0 !important;
             will-change: transform !important;
-            -webkit-backface-visibility: hidden !important;
-            backface-visibility: hidden !important;
-            -webkit-transform: translate3d(0, 0, 0) !important;
-            transform: translate3d(0, 0, 0) !important;
-            -webkit-animation: scrollTicker 38s linear infinite !important;
-            animation: scrollTicker 38s linear infinite !important;
+            -webkit-transform: translate3d(0, 0, 0);
+            transform: translate3d(0, 0, 0);
+            /* 40s is a very comfortable, readable pace */
+            -webkit-animation: scrollTicker 40s linear infinite !important;
+            animation: scrollTicker 40s linear infinite !important;
         }
         #tickerTapeContainer:hover .ticker-track-safari {
             -webkit-animation-play-state: paused !important;
             animation-play-state: paused !important;
         }
-        body.light-mode #scrollingTickerContent a,
-        body.light-mode #scrollingTickerContent .tape-title {
+        body.light-mode .ticker-track-safari a,
+        body.light-mode .ticker-track-safari .tape-title {
             color: #131722 !important;
         }
-        body.light-mode #scrollingTickerContent .tape-detail {
+        body.light-mode .ticker-track-safari .tape-detail {
             color: #555e6d !important;
         }
         body.light-mode #tickerTapeContainer {
@@ -2627,11 +2626,12 @@
                 <span style="font-size:10px; font-weight:800; color:#ffb700; letter-spacing:0.5px; white-space:nowrap;">LIVE WIRE</span>
             </div>
 
-            <!-- Safari-Constrained Viewport (min-width:0 prevents WebKit flex blowout) -->
+            <!-- Safari-Bulletproof Dual-Track Marquee -->
             <div style="flex:1; min-width:0; overflow:hidden; height:100%; display:flex; align-items:center; position:relative;">
                 <div id="scrollingTickerContent" class="ticker-track-safari">
                     <span style="color:#8a8a9e; font-size:11px; font-weight:700; padding-left:15px;">Connecting to Global Financial Wire & Macro Feed...</span>
                 </div>
+                <div id="scrollingTickerContent2" class="ticker-track-safari" aria-hidden="true"></div>
             </div>
         </div>
 
@@ -6434,6 +6434,7 @@
                 let d = await res.json();
                 let items = d.items || [];
                 let tapeEl = document.getElementById('scrollingTickerContent');
+                let tapeEl2 = document.getElementById('scrollingTickerContent2');
                 if (!tapeEl || items.length === 0) return;
 
                 let html = items.map(it => {
@@ -6444,10 +6445,9 @@
                     return `<span style="display:inline-flex; align-items:center; margin-right:35px; font-size:11px; flex-shrink:0;">${link}</span>`;
                 }).join('');
 
-                // Ensure the string is long enough to cover large widescreen monitors before duplicating
-                let fullTrack = html;
-                if (items.length < 6) fullTrack = html + html;
-                tapeEl.innerHTML = fullTrack + fullTrack;
+                // Feed exact same data into both tracks so they chase each other seamlessly
+                tapeEl.innerHTML = html;
+                if (tapeEl2) tapeEl2.innerHTML = html;
             } catch(e) {}
         }
 
