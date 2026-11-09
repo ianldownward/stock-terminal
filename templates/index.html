@@ -5381,7 +5381,7 @@
             document.getElementById('insightBudget').innerText = `£${budget.toFixed(2)}`;
             
             // True Daily Average Return across active days
-            let daysActive = Math.max(1, lb.days_active || 5);
+            let daysActive = Math.max(1, lb.days_active || 1);
             let dailyRunRate = retPct / daysActive;
             document.getElementById('insightDailyTarget').innerText = `${dailyRunRate >= 0 ? '+' : ''}${dailyRunRate.toFixed(2)}% / Day`;
 
@@ -5439,8 +5439,8 @@
             else if (horizon === '1Y') totalHorizonDays = 252;
             else if (horizon === '5Y') totalHorizonDays = 1260;
 
-            // 2. Compute Actual Daily Average Rate r_avg
-            let daysActive = Math.max(1, lb.days_active || 5);
+            // 2. Compute Actual Daily Average Rate r_avg (Starts strictly from profile creation date)
+            let daysActive = Math.max(1, lb.days_active || 1);
             let r_avg = (currentEq > 0 && budget > 0) ? (Math.pow(currentEq / budget, 1 / daysActive) - 1) : 0.01;
             if (r_avg < -0.05) r_avg = -0.05;
 
@@ -5454,14 +5454,14 @@
             let targetRate = (window._customTargetRate || 1.0) / 100.0;
             let steps = 40;
 
-            // Target Curve: FV = budget * (1 + targetRate)^d
+            // Target Curve: Starts at Day 0 (Creation Budget) and compounds forward
             let targetPoints = [];
             for (let i = 0; i <= steps; i++) {
                 let d = (i / steps) * totalHorizonDays;
                 targetPoints.push({ day: d, val: budget * Math.pow(1 + targetRate, d) });
             }
 
-            // Projected Curve: FV = currentEq * (1 + r_avg)^(d - daysActive)
+            // Projected Curve: Follows inception path to Today, then projects future compounding
             let projectedPoints = [];
             for (let i = 0; i <= steps; i++) {
                 let d = (i / steps) * totalHorizonDays;
@@ -5469,23 +5469,11 @@
                 projectedPoints.push({ day: d, val: val });
             }
 
-            // Actual Points up to daysActive
-            let actualPoints = [];
-            if (horizon === '5D') {
-                actualPoints = [
-                    { day: 0, val: budget },
-                    { day: 1, val: budget },
-                    { day: 2, val: budget * 1.008 },
-                    { day: 3, val: budget * 1.025 },
-                    { day: 4, val: budget * 1.050 },
-                    { day: 5, val: currentEq }
-                ];
-            } else {
-                actualPoints = [
-                    { day: 0, val: budget },
-                    { day: daysActive, val: currentEq }
-                ];
-            }
+            // Actual Points: Strictly starts from creation Day 0 (£500) to Today (£508.43)
+            let actualPoints = [
+                { day: 0, val: budget },
+                { day: daysActive, val: currentEq }
+            ];
 
             // 4. Scaling (Preserves exponential curve without crushing initial data)
             let maxVal = Math.max(targetPoints[targetPoints.length - 1].val, projectedPoints[projectedPoints.length - 1].val);
@@ -5581,7 +5569,10 @@
             ctx.fillStyle = '#8a8a9e';
             ctx.font = `10px ${appFont}`;
             if (horizon === '5D') {
-                ['Start', 'D+1', 'D+2', 'D+3', 'D+4', 'Today'].forEach((lbl, idx) => {
+                let labels = daysActive <= 1 
+                    ? ['Start', 'Today', 'D+1', 'D+2', 'D+3', 'D+4']
+                    : ['Start', 'D+1', 'D+2', 'D+3', 'D+4', 'Today'];
+                labels.forEach((lbl, idx) => {
                     ctx.fillText(lbl, getX(idx) - 8, h - 10);
                 });
             } else if (horizon === '1M') {
