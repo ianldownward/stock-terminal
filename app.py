@@ -522,10 +522,13 @@ class PortfolioManager:
     def user_data(self, username=None):
         au = username if username else self.active_username()
         if 'users' not in self.data: self.data['users'] = {}
-        if au not in self.data['users'] or not self.data['users'][au].get('watchlist'):
+        if au in self.data['users']:
+            return self.data['users'][au]
+        if username is None or au in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian']:
             self.data['users'][au] = self.default_user_state(au)
             self.save_data(self.data)
-        return self.data['users'][au]
+            return self.data['users'][au]
+        return self.default_user_state(au)
 
     def add_user(self, username):
         if not username.strip(): return
@@ -2838,7 +2841,7 @@ def get_data():
         now_utc = pd.Timestamp.now(tz='UTC')
         
         for tk in active_holds:
-            sh_h = portfolio_store.get_shares(tk)
+            sh_h = resolve_profile_shares(ud, tk)
             if sh_h <= 0: continue
             t_buys_today = [tr for tr in hist if tr.get('ticker') == tk and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
             df_5m = pnl_dfs_5m.get(tk)
@@ -2935,7 +2938,7 @@ def get_data():
                 'price': 0, 'price_display': f"Normalized %", 'discount': '--', 'buy_score': '--', 'tranches': 0,
                 'status': regime['state'], 'color': regime['color'], 'reason': f"Sentiment Thermometer: {regime['score']}/100 ({regime['state']}).",
                 'action_main': '--', 'action_sub': '', 'action_color': '#8a8a9e',
-                'shares_owned': sum(portfolio_store.get_shares(tk) for tk in active_holds), 'value_owned': tot_own, 
+                'shares_owned': sum(resolve_profile_shares(ud, tk) for tk in active_holds), 'value_owned': tot_own, 
                 'pnl_display': master_pnl_data['all']['val'], 'pnl_color': master_pnl_data['all']['color'], 'pnl_data': master_pnl_data,
                 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
                 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime,
@@ -2959,7 +2962,7 @@ def get_data():
         seen = set(); data = [x for x in data if x['time'] not in seen and not seen.add(x['time'])]
         last_p = round(data[-1]['close'], 2) if data else 0
 
-        sh_own = portfolio_store.get_shares(t)
+        sh_own = resolve_profile_shares(ud, t)
         cps = last_p / 100.0 if t.endswith('.L') and last_p > 100 else last_p
         val_own = round(sh_own * cps, 2)
 
@@ -2988,7 +2991,10 @@ def get_data():
                 if 'holdings' not in ud: ud['holdings'] = {}
                 if t not in ud['holdings']: ud['holdings'][t] = {}
                 ud['holdings'][t]['high_water'] = highest_p
-                portfolio_store.save_data(portfolio_store.data)
+                if is_client:
+                    portfolio_store.save_client_store(client_name, c_store)
+                else:
+                    portfolio_store.save_data(portfolio_store.data)
 
         if is_momentum:
             df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
@@ -3535,21 +3541,35 @@ def get_broker_status():
         })
 
 @app.route('/api/watchlist/scan_all', methods=['GET'])
+@login_required
 def get_watchlist_scanner():
     portfolio_store.reload()
+    is_client = (session.get('role') != 'admin')
+    client_name = session.get('email') or session.get('user', 'Client')
     scope = request.args.get('scope', '').strip().lower()
     req_user = request.args.get('user', '').strip()
-    active_profile = (req_user or portfolio_store.active_username()).strip()
     engine = MarketScoringEngine()
     regime = engine.check_market_regime()
-    users_dict = portfolio_store.data.get('users', {})
+
+    if is_client:
+        c_store = portfolio_store.get_client_store(client_name)
+        users_dict = c_store.get('users', {})
+        active_profile = req_user if (req_user and req_user in users_dict) else c_store.get('active_user', '')
+        if not active_profile and users_dict:
+            active_profile = list(users_dict.keys())[0]
+        ud = users_dict.get(active_profile, {})
+    else:
+        users_dict = portfolio_store.data.get('users', {})
+        active_profile = (req_user or portfolio_store.active_username()).strip()
+        ud = portfolio_store.user_data(active_profile)
+
+    def resolve_scanner_shares(u_dict, tk):
+        i_s = (u_dict.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
+        n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_dict.get('history', []) if t.get('ticker') == tk)
+        return max(0, i_s + n_s)
 
     # MOBILE SCOPE: Scan ONLY the active profile's own watchlist
     if scope in ['active', 'local', 'profile']:
-        if session.get('role') != 'admin':
-            ud = portfolio_store.get_client_store(session.get('user', 'Client'))
-        else:
-            ud = portfolio_store.user_data(active_profile)
         prof_wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
         holds = ud.get('holdings') or {}
         hist = ud.get('history') or []
@@ -3562,7 +3582,7 @@ def get_watchlist_scanner():
                 df = fetch_yf_data(tick, "5d", "5m")
                 if df.empty: continue
                 cur = df['Close'].iloc[-1]
-                sh = portfolio_store.get_shares(tick, active_profile)
+                sh = resolve_scanner_shares(ud, tick)
                 is_held = (sh > 0)
                 
                 avg_p, high_p = 0.0, cur
@@ -3606,7 +3626,7 @@ def get_watchlist_scanner():
         for tr in u_data.get('history', []):
             tk = tr.get('ticker', '').upper()
             if not tk or tk == 'CALIBRATION': continue
-            sh = portfolio_store.get_shares(tk, u)
+            sh = resolve_scanner_shares(u_data, tk)
             if sh > 0 and not any(p['ticker'] == tk and p['user'] == u for p in held_positions):
                 buys = [b for b in u_data.get('history', []) if b.get('ticker') == tk and b.get('action') == 'BUY']
                 avg_p = buys[0].get('price', 0.0) if buys else 0.0
