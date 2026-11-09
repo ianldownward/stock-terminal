@@ -1369,11 +1369,23 @@
             0%   { transform: translate3d(0, 0, 0); }
             100% { transform: translate3d(-100%, 0, 0); }
         }
-        body.light-mode #scrollingTickerContent span {
-            color: #1a1e28 !important;
+        #tickerTapeContainer:hover #scrollingTickerContent {
+            animation-play-state: paused;
         }
-        body.light-mode #scrollingTickerContent span.t-score {
-            color: #ffb700 !important;
+        body.light-mode #tickerTapeContainer {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #tickerTapeContainer > div:first-child {
+            background: #f4f6fa !important;
+            border-right-color: #d8dce6 !important;
+        }
+        body.light-mode #scrollingTickerContent a,
+        body.light-mode #scrollingTickerContent span {
+            color: #131722 !important;
+        }
+        body.light-mode #scrollingTickerContent .tape-detail {
+            color: #555e6d !important;
         }
         
         .thermo-container { 
@@ -2541,10 +2553,19 @@
             <canvas id="chartCanvas"></canvas>
         </div>
 
-        <!-- SCROLLING TICKER TAPE -->
-        <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; overflow:hidden; white-space:nowrap; padding:6px 0; margin-top:8px; display:flex; align-items:center; flex-shrink:0;">
-            <div id="scrollingTickerContent" style="display:inline-block; padding-left:100%; animation: scrollTicker 35s linear infinite;">
-                <span style="color:#8a8a9e; font-size:11px; font-weight:700;">Loading Watchlist Quotes...</span>
+        <!-- LIVE FINANCIAL WIRE & MACRO CALENDAR TAPE -->
+        <div id="tickerTapeContainer" style="background:#0f1115; border:1px solid #262b36; border-radius:6px; overflow:hidden; white-space:nowrap; height:32px; margin-top:8px; display:flex; align-items:center; flex-shrink:0; position:relative;">
+            <!-- Stationary Lead Badge (Flat Symbol, No Emoji) -->
+            <div style="background:#171a21; border-right:1px solid #262b36; padding:0 12px; height:100%; display:flex; align-items:center; gap:6px; flex-shrink:0; z-index:5;">
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ff5364; box-shadow:0 0 6px rgba(255,83,100,0.8);"></span>
+                <span style="font-size:10px; font-weight:800; color:#ffb700; letter-spacing:0.5px;">LIVE WIRE</span>
+            </div>
+
+            <!-- Scrolling News & Event Track -->
+            <div style="flex:1; overflow:hidden; position:relative; height:100%; display:flex; align-items:center;">
+                <div id="scrollingTickerContent" style="display:inline-block; white-space:nowrap; padding-left:100%; animation: scrollTicker 65s linear infinite;">
+                    <span style="color:#8a8a9e; font-size:11px; font-weight:700;">Connecting to Global Financial Wire & Macro Feed...</span>
+                </div>
             </div>
         </div>
 
@@ -6338,30 +6359,32 @@
                     }).join('');
                 }
 
-                // Render Scrolling Watchlist Ticker Tape below the chart
-                let tickerTape = document.getElementById('scrollingTickerContent');
-                if (tickerTape) {
-                    let tapeHtml = items.map(it => {
-                        let isHeld = it.is_held;
-                        let valPct = isHeld ? it.health_pct : it.score;
-                        let isReady = !isHeld && valPct >= 65;
-                        let color = isHeld ? (valPct >= 70 ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#ff5364')) : (isReady ? '#0ecb81' : '#ffd400');
-                        let badge = isHeld ? `<span style="background:#ffd400; color:#000; font-size:9px; padding:1px 4px; border-radius:3px; font-weight:900; margin-left:4px;">HELD</span>` : '';
-                        
-                        return `
-                            <span style="display:inline-flex; align-items:center; gap:8px; margin-right:45px; font-size:12px; font-weight:800; color:#fff; cursor:pointer;" onclick="selectStock('${it.ticker}')">
-                                <span>${it.ticker}${badge}</span>
-                                <span style="color:#0ecb81;">£${it.price.toFixed(2)}</span>
-                                <span class="t-score" style="color:${color}; font-size:10px;">• Score: ${valPct}</span>
-                            </span>
-                        `;
-                    }).join('');
-                    
-                    // Duplicate tape content to make the scrolling loop continuous
-                    tickerTape.innerHTML = tapeHtml + tapeHtml;
-                }
+                } catch(e) {}
+        }
+
+        async function fetchMarketNewsFeed() {
+            try {
+                let res = await fetch('/api/news/feed');
+                let d = await res.json();
+                let items = d.items || [];
+                let tapeEl = document.getElementById('scrollingTickerContent');
+                if (!tapeEl || items.length === 0) return;
+
+                let html = items.map(it => {
+                    let badge = `<span style="border:1px solid ${it.tag_color}; color:${it.tag_color}; background:rgba(255,255,255,0.06); font-size:9px; font-weight:800; padding:1px 5px; border-radius:3px; letter-spacing:0.4px; margin-right:6px;">${it.tag}</span>`;
+                    let title = `<span style="font-weight:700; color:#ffffff;">${it.title}</span>`;
+                    let detail = it.detail ? `<span class="tape-detail" style="color:#8a8a9e; font-size:10px; margin-left:4px;">• ${it.detail}</span>` : '';
+                    let link = `<a href="${it.link || '#'}" target="_blank" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center;">${badge}${title}${detail}</a>`;
+                    return `<span style="display:inline-flex; align-items:center; margin-right:45px; font-size:11.5px;">${link}</span>`;
+                }).join('');
+
+                tapeEl.innerHTML = html + html;
             } catch(e) {}
         }
+
+        // Fetch live wire on startup and update every 3 minutes
+        fetchMarketNewsFeed();
+        setInterval(fetchMarketNewsFeed, 180000);
 
         // Poll broker status every 15 seconds
         setInterval(fetchBrokerStatus, 15000);
