@@ -620,28 +620,18 @@
                 text-align: left; 
             }
         }
-        /* Merged Single Watchlist & Readiness Drawer */
-        #watchlistDrawer[open] {
-            flex: 1 1 0;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-            margin-bottom: 0 !important;
-            overflow: hidden;
+        /* Clean Sidebar Flow & Responsive Drawer Sizing */
+        .sidebar-top {
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
         }
-        #watchlistDrawer[open] > div {
-            display: flex;
-            flex-direction: column;
-            flex: 1;
-            min-height: 0;
-            overflow: hidden;
+        #watchlistDrawer, #timelineDrawer, #safeguardsDrawer {
+            margin-bottom: 8px !important;
         }
         #watchlistDrawer[open] #readinessUI {
-            flex: 1 1 0;
-            overflow-y: auto !important;
-            min-height: 0;
-            padding-right: 4px;
-            -webkit-overflow-scrolling: touch;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
 
         /* Desktop Equity Grid: Clean Alignment With No Overlapping */
@@ -2051,18 +2041,32 @@
                 </div>
             </div>
             
+            <!-- 1. 3-ASSET STRATEGY READINESS -->
             <details class="drawer-details" id="watchlistDrawer" open>
-                <summary>Live Watchlist & Readiness</summary>
-                <div style="margin-top:10px; display:flex; flex-direction:column; min-height:0; flex:1; overflow:hidden;">
-                    <div class="search-box">
-                        <input type="text" id="addTickerInput" placeholder="Add Symbol..." onkeydown="if(event.key==='Enter')addWatchlistTicker()">
-                        <button id="addBtn" onclick="addWatchlistTicker()">+</button>
-                    </div>
-                    <div id="readinessUI" style="display:flex; flex-direction:column; gap:6px; flex:1; min-height:0; overflow-y:auto; padding-right:4px;">
+                <summary>Strategy Readiness (3x Universe)</summary>
+                <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+                    <div id="readinessUI" style="display:flex; flex-direction:column; gap:6px;">
                         <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning strategy tickers...</div>
                     </div>
                     <!-- Hidden reference to preserve script compatibility -->
                     <ul class="watchlist" id="watchlistUI" style="display:none;"></ul>
+                    <input type="hidden" id="addTickerInput">
+                </div>
+            </details>
+
+            <!-- 2. DAILY ENGINE SESSION TIMELINE -->
+            <details class="drawer-details" id="timelineDrawer" open>
+                <summary>Engine Session Timeline</summary>
+                <div id="sessionTimelineContainer" style="margin-top:8px; display:flex; flex-direction:column; gap:7px; padding:2px 4px; font-size:11px;">
+                    <!-- Real-time timeline populated by JS -->
+                </div>
+            </details>
+
+            <!-- 3. STRATEGY SAFEGUARDS HUD -->
+            <details class="drawer-details" id="safeguardsDrawer" open>
+                <summary>Strategy Safeguards HUD</summary>
+                <div id="safeguardsHudContainer" style="margin-top:8px; display:flex; flex-direction:column; gap:5px; padding:2px 4px; font-size:11px;">
+                    <!-- Dynamic HUD populated by JS based on active profile -->
                 </div>
             </details>
 
@@ -2277,6 +2281,109 @@
     </div> <!-- END app-body-container -->
 
     <script>
+        function updateSessionTimeline() {
+            let d = new Date();
+            let opts = { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short' };
+            let formatter = new Intl.DateTimeFormat('en-GB', opts);
+            let parts = formatter.formatToParts(d);
+            let hour = 0, minute = 0, weekday = '';
+            parts.forEach(p => {
+                if (p.type === 'hour') hour = parseInt(p.value);
+                if (p.type === 'minute') minute = parseInt(p.value);
+                if (p.type === 'weekday') weekday = p.value;
+            });
+            
+            let isWeekend = (weekday === 'Sat' || weekday === 'Sun');
+            let curMins = hour * 60 + minute;
+            
+            let timeline = [
+                { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Data Prep & Warmup" },
+                { start: 14*60 + 30, end: 14*60 + 50, label: "14:30 – 14:50 • Opening Moratorium" },
+                { start: 14*60 + 50, end: 20*60, label: "14:50 – 20:00 • Hunting & Harvest" },
+                { start: 20*60, end: 20*60 + 50, label: "20:00 – 20:50 • Late-Day Curfew" },
+                { start: 20*60 + 50, end: 21*60, label: "20:50 • Overnight Sweep" },
+                { start: 21*60, end: 24*60, label: "21:00 • US Market Close" }
+            ];
+
+            let html = '';
+            for (let step of timeline) {
+                let isActive = !isWeekend && (curMins >= step.start && curMins < step.end);
+                let isPast = !isWeekend && (curMins >= step.end);
+                
+                let dotColor = isActive ? '#0ecb81' : (isPast ? '#ffd400' : '#262b36');
+                let textColor = isActive ? '#ffffff' : (isPast ? '#8a8a9e' : '#5a5f70');
+                let weight = isActive ? '800' : '600';
+                let shadow = isActive ? 'box-shadow: 0 0 8px rgba(14, 203, 129, 0.7);' : '';
+                let activeTag = isActive ? '<span style="font-size:9px; background:rgba(14,203,129,0.15); color:#0ecb81; border:1px solid #0ecb81; padding:0 4px; border-radius:3px; margin-left:auto; font-weight:800;">ACTIVE</span>' : '';
+                
+                html += `
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <div style="width:7px; height:7px; border-radius:50%; background:${dotColor}; ${shadow} flex-shrink:0;"></div>
+                        <span style="color:${textColor}; font-weight:${weight}; font-size:10.5px;">${step.label}</span>
+                        ${activeTag}
+                    </div>
+                `;
+            }
+            
+            let container = document.getElementById('sessionTimelineContainer');
+            if (container) container.innerHTML = html;
+        }
+
+        function updateSafeguardsHUD(profName, metrics) {
+            let container = document.getElementById('safeguardsHudContainer');
+            if (!container) return;
+            
+            profName = (profName || '').toLowerCase();
+            if (!profName) {
+                container.innerHTML = '<div style="color:#8a8a9e;">No profile selected.</div>';
+                return;
+            }
+
+            let target = '+2.20% Bank & Walk';
+            let trail = '-0.75%';
+            let ratchet = '+0.18% (Locked at +0.50%)';
+            let circuit = '-2.50% (Hard Halt)';
+            let sweep = '20:50 BST (Active)';
+
+            if (profName.includes('velocity') || profName.includes('pulse') || profName.includes('test s')) {
+                target = '+3.00% Take Profit';
+                trail = '-0.50% (Chokes to 0.40%)';
+                ratchet = '+1.00% (Locked at +1.20%)';
+            }
+
+            let isSweepEnabled = true;
+            if (globalPortfolioData && globalPortfolioData.users && globalPortfolioData.users[profName]) {
+                let uData = globalPortfolioData.users[profName];
+                if (uData.overnight_sweep !== undefined) isSweepEnabled = uData.overnight_sweep;
+            } else if (globalPortfolioData && globalPortfolioData.overnight_sweep !== undefined) {
+                isSweepEnabled = globalPortfolioData.overnight_sweep;
+            }
+            sweep = isSweepEnabled ? '20:50 BST (100% Cash)' : '<span style="color:#ff5364; font-weight:800;">Holding Overnight (Risk)</span>';
+
+            container.innerHTML = `
+                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1a1e28; padding-bottom:4px;">
+                    <span style="color:#8a8a9e;">Target Harvest:</span>
+                    <span style="color:#0ecb81; font-weight:800;">${target}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1a1e28; padding-bottom:4px; margin-top:4px;">
+                    <span style="color:#8a8a9e;">Trailing Stop:</span>
+                    <span style="color:#ffd400; font-weight:800;">${trail}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1a1e28; padding-bottom:4px; margin-top:4px;">
+                    <span style="color:#8a8a9e;">Breakeven Floor:</span>
+                    <span style="color:#0ecb81; font-weight:800;">${ratchet}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #1a1e28; padding-bottom:4px; margin-top:4px;">
+                    <span style="color:#8a8a9e;">Circuit Breaker:</span>
+                    <span style="color:#ff5364; font-weight:800;">${circuit}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-top:4px;">
+                    <span style="color:#8a8a9e;">Overnight Sweep:</span>
+                    <span style="color:#fff; font-weight:800;">${sweep}</span>
+                </div>
+            `;
+        }
+
         let currentTicker = null;
         let tvChart = null;
         let tvSeries = null;
@@ -3864,6 +3971,8 @@
                 if (mobHeld) mobHeld.style.display = isCurrHeld ? 'inline-block' : 'none';
 
                 if (typeof checkMobileLayout === 'function') checkMobileLayout();
+                if (typeof updateSafeguardsHUD === 'function') updateSafeguardsHUD(activeProf, p.metrics);
+                if (typeof updateSessionTimeline === 'function') updateSessionTimeline();
                 renderLeaderboard(p.leaderboard);
                 renderHistory(globalPortfolioData.history);
                 
@@ -5742,8 +5851,10 @@
         // Poll broker status every 15 seconds
         setInterval(fetchBrokerStatus, 15000);
         setInterval(fetchReadinessScanner, 15000);
+        setInterval(updateSessionTimeline, 15000);
         setTimeout(fetchBrokerStatus, 1000);
         setTimeout(fetchReadinessScanner, 1500);
+        setTimeout(updateSessionTimeline, 500);
     </script>
 </body>
 </html>
