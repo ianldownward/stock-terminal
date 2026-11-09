@@ -24,7 +24,7 @@
             overflow: hidden; 
         }
 
-       /* DAY / LIGHT MODE PALETTE (HIGH-CONTRAST INVERSION) */
+       /* DAY / LIGHT MODE PALETTE (UNIFIED #ffb700 GOLD) */
         body.light-mode {
             background: #f0f2f5 !important;
             color: #1a1e28 !important;
@@ -41,7 +41,8 @@
         body.light-mode .header-user-badge {
             background: #f4f6fa !important;
             border-color: #d8dce6 !important;
-            color: #946300 !important;
+            color: #ffb700 !important;
+            font-weight: 700 !important;
         }
         body.light-mode .header-icon-btn,
         body.light-mode .header-broker-pill {
@@ -51,8 +52,8 @@
         }
         body.light-mode .header-icon-btn:hover {
             background: #eef2f8 !important;
-            border-color: #b37d00 !important;
-            color: #b37d00 !important;
+            border-color: #ffb700 !important;
+            color: #ffb700 !important;
         }
 
         /* 2. Seamless Top Controls (NO White Box) */
@@ -79,40 +80,82 @@
         body.light-mode .lb-item,
         body.light-mode #desktopAlpacaMonitor,
         body.light-mode .custom-select-trigger,
-        body.light-mode select,
-        body.light-mode .btn-control {
+        body.light-mode select {
             background: #f8f9fb !important;
             border-color: #d8dce6 !important;
             color: #1a1e28 !important;
         }
-        body.light-mode .drawer-details summary {
-            color: #946300 !important;
-        }
 
-        /* 4. Deeper Amber Yellows Throughout Day Mode */
+        /* 4. ALL HEADERS & ACCENTS UNIFIED TO #ffb700 */
+        body.light-mode .drawer-details summary {
+            color: #ffb700 !important;
+        }
+        body.light-mode .equity-header-row label,
+        body.light-mode .desktop-equity-title,
+        body.light-mode .mobile-ctrl-label {
+            color: #ffb700 !important;
+        }
+        body.light-mode #rotatorHealthHeader,
+        body.light-mode #sentimentHeader,
+        body.light-mode .card h3 {
+            color: #ffb700 !important;
+        }
+        body.light-mode .val-highlight,
+        body.light-mode #mHoldingShares,
+        body.light-mode #mPrice {
+            color: #ffb700 !important;
+        }
+        body.light-mode .custom-select-trigger span,
+        body.light-mode .mob-profile-name {
+            color: #ffb700 !important;
+        }
+        body.light-mode #desktopAlpacaMonitor span[style*="color:#ffd400"],
+        body.light-mode #desktopAlpacaMonitor span[style*="color: #ffd400"] {
+            color: #ffb700 !important;
+        }
+        body.light-mode .info-icon {
+            color: #ffb700 !important;
+        }
+        body.light-mode .lb-ticker-pill {
+            background: rgba(255, 183, 0, 0.12) !important;
+            border: 1px solid #ffb700 !important;
+            color: #ffb700 !important;
+        }
+        body.light-mode .btn-sync-action {
+            border: 1px solid #ffb700 !important;
+            color: #ffb700 !important;
+        }
         body.light-mode .btn-control {
-            border-color: #b37d00 !important;
-            color: #946300 !important;
+            background: #ffffff !important;
+            border: 1px solid #ffb700 !important;
+            color: #ffb700 !important;
         }
         body.light-mode .btn-control:hover,
         body.light-mode .btn-control.active {
-            background: #b37d00 !important;
-            color: #ffffff !important;
-            border-color: #b37d00 !important;
+            background: #ffb700 !important;
+            color: #000000 !important;
+            border-color: #ffb700 !important;
         }
-        body.light-mode .lb-ticker-pill {
-            background: rgba(179, 125, 0, 0.12) !important;
-            border-color: #b37d00 !important;
-            color: #946300 !important;
+        body.light-mode .lb-item.active-profile-card {
+            border-color: #ffb700 !important;
         }
-        body.light-mode .equity-header-row label {
-            color: #946300 !important;
+        body.light-mode .segmented-control input[type="radio"]:checked + label {
+            background: #ffffff !important;
+            color: #ffb700 !important;
         }
-        body.light-mode .val-highlight {
-            color: #946300 !important;
+        body.light-mode #safeguardsHudContainer span[style*="color:#ffd400"],
+        body.light-mode #safeguardsHudContainer span[style*="color: #ffd400"] {
+            color: #ffb700 !important;
+        }
+        body.light-mode #readinessUI > div span[style*="#ffd400"] {
+            color: #ffb700 !important;
+        }
+        body.light-mode #rotatorHealthStatus span[style*="color:#ffd400"],
+        body.light-mode #rotatorHealthStatus span[style*="color: #ffd400"] {
+            color: #ffb700 !important;
         }
 
-        /* 5. Typography & Visible Figures */
+        /* 5. Typography & High-Contrast Figures */
         body.light-mode .equity-main-val,
         body.light-mode #activeTitle,
         body.light-mode .modal h2,
@@ -123,147 +166,11 @@
         }
         body.light-mode .stat-left,
         body.light-mode .stat-label,
-        body.light-mode .card h3,
         body.light-mode .controls label,
         body.light-mode #marketClocks span:last-child {
             color: #555e6d !important;
         }
-        body.light-mode #mHoldingShares,
-        body.light-mode #mPrice {
-            color: #946300 !important;
-        }
-        body.light-mode #rotatorHealthStatus,
-        body.light-mode #sentimentScore,
-        body.light-mode #alpacaCardValue {
-            color: #131722 !important;
-        }
-        body.light-mode #rotatorHealthSubtext,
-        body.light-mode #thermoText {
-            color: #555e6d !important;
-        }
-
-        /* 6. Soft Grey Tracks (Replacing Black Bars) */
-        body.light-mode #marketClocks div[style*="background:#262b36"],
-        body.light-mode #marketClocks div[style*="background: #262b36"] {
-            background: #d8dce6 !important;
-        }
-        body.light-mode #sentimentCard div[style*="background: #262b36"],
-        body.light-mode #sentimentCard div[style*="background:#262b36"] {
-            background: #d8dce6 !important;
-        }
-        body.light-mode #sessionTimelineContainer div[style*="background:#262b36"] {
-            background: #d8dce6 !important;
-        }
-        body.light-mode #readinessUI div[style*="background:#1e222d"] {
-            background: #d8dce6 !important;
-        }
-
-        /* 7. Strategy Readiness Ticker Cards */
-        body.light-mode #readinessUI > div {
-            background: #ffffff !important;
-            border-color: #d8dce6 !important;
-        }
-        body.light-mode #readinessUI > div span {
-            color: #131722 !important;
-        }
-        body.light-mode #readinessUI > div span[style*="#ffd400"] {
-            color: #946300 !important;
-        }
-
-        /* 8. Engine Session Timeline & Safeguards HUD */
-        body.light-mode #sessionTimelineContainer,
-        body.light-mode #safeguardsHudContainer {
-            background: #f8f9fb !important;
-            border-radius: 6px;
-        }
-        body.light-mode #sessionTimelineContainer span {
-            color: #262b36 !important;
-        }
-        body.light-mode #safeguardsHudContainer > div {
-            border-bottom-color: #e4e8f0 !important;
-        }
-        body.light-mode #safeguardsHudContainer span[style*="color:#8a8a9e"] {
-            color: #555e6d !important;
-        }
-        body.light-mode #safeguardsHudContainer span[style*="color:#fff"],
-        body.light-mode #safeguardsHudContainer span[style*="color: #fff"] {
-            color: #131722 !important;
-        }
-
-        /* 9. Alpaca Monitor Bottom Left */
-        body.light-mode #alpacaExposureBox {
-            background: #ffffff !important;
-            border-color: #d8dce6 !important;
-        }
-
-        /* 10. Leaderboard & Tabs */
-        body.light-mode .segmented-control {
-            background: #eef2f8 !important;
-            border-color: #d8dce6 !important;
-        }
-        body.light-mode .segmented-control label {
-            color: #606877 !important;
-            border-right-color: #d8dce6 !important;
-        }
-        body.light-mode .segmented-control input[type="radio"]:checked + label {
-            background: #ffffff !important;
-            color: #946300 !important;
-        }
-        body.light-mode .lb-item {
-            background: #ffffff !important;
-            border-color: #d8dce6 !important;
-        }
-        body.light-mode .lb-item:hover,
-        body.light-mode .lb-item.active-profile-card {
-            background: #f4f7fc !important;
-            border-color: #b37d00 !important;
-        }
-        body.light-mode .lb-desc {
-            border-top-color: #e4e8f0 !important;
-            color: #555e6d !important;
-        }
-
-        /* 11. Modal Inversion & Fix Black Allocation Badges */
-        body.light-mode .modal div[style*="background:#13161c"],
-        body.light-mode .modal div[style*="background: #13161c"],
-        body.light-mode .modal div[style*="background:#0f1115"],
-        body.light-mode .modal div[style*="background: #0f1115"] {
-            background: #f8f9fb !important;
-            border-color: #d8dce6 !important;
-        }
-        body.light-mode .modal span[style*="background:#0f1115"],
-        body.light-mode .modal span[style*="background: #0f1115"] {
-            background: #ffffff !important;
-            border-color: #d8dce6 !important;
-            color: #131722 !important;
-        }
-        body.light-mode .modal input[type="text"],
-        body.light-mode .modal input[type="number"],
-        body.light-mode .modal input[type="url"] {
-            background: #ffffff !important;
-            border-color: #d8dce6 !important;
-            color: #131722 !important;
-        }
-        body.light-mode .modal span[style*="color:#ffd400"],
-        body.light-mode .modal span[style*="color: #ffd400"] {
-            color: #946300 !important;
-        }
-        body.light-mode .modal span[style*="color:#fff"],
-        body.light-mode .modal div[style*="color:#fff"],
-        body.light-mode .modal span[style*="color:#e1e3e6"],
-        body.light-mode .modal div[style*="color:#e1e3e6"],
-        body.light-mode .modal label[style*="color:#fff"] {
-            color: #131722 !important;
-        }
-        body.light-mode .modal span[style*="color:#8a8a9e"],
-        body.light-mode .modal div[style*="color:#8a8a9e"],
-        body.light-mode .modal label[style*="color:#8a8a9e"] {
-            color: #555e6d !important;
-        }
-        body.light-mode .custom-select-menu {
-            background: #ffffff !important;
-            border-color: #b37d00 !important;
-        }
+        body.light-mode #rotatorHealthStatus
         body.light-mode .custom-select-item {
             border-bottom-color: #edf0f5 !important;
         }
@@ -4112,7 +4019,7 @@
                 let curTk = currentTicker || 'TQQQ';
                 let legBg = isLight ? 'rgba(255,255,255,0.92)' : 'rgba(23,26,33,0.85)';
                 let legBorder = isLight ? '#d8dce6' : '#262b36';
-                let legText = isLight ? '#c88a00' : '#ffd400';
+                let legText = isLight ? '#ffb700' : '#ffd400';
                 lg.innerHTML = `<span style="background:${legBg}; border:1px solid ${legBorder}; color:${legText}; padding:3px 8px; border-radius:4px; font-weight:bold; font-size:11px;">${curTk} • 5m</span>`;
             }
             if (!tvChart) return;
