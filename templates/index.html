@@ -24,6 +24,74 @@
             overflow: hidden; 
         }
 
+       /* DAY / LIGHT MODE PALETTE */
+        body.light-mode {
+            background: #f0f2f5 !important;
+            color: #1a1e28 !important;
+        }
+        body.light-mode .top-header-bar {
+            background: #ffffff !important;
+            border-bottom: 1px solid #d8dce6 !important;
+        }
+        body.light-mode .sidebar,
+        body.light-mode .right-drawer,
+        body.light-mode .chart-container,
+        body.light-mode .top-nav,
+        body.light-mode .total-shares-box,
+        body.light-mode .modal {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .drawer-details,
+        body.light-mode .card,
+        body.light-mode .lb-item,
+        body.light-mode #desktopAlpacaMonitor,
+        body.light-mode .custom-select-trigger,
+        body.light-mode .custom-select-menu,
+        body.light-mode .header-icon-btn,
+        body.light-mode select,
+        body.light-mode .btn-control {
+            background: #f8f9fb !important;
+            border-color: #d8dce6 !important;
+            color: #1a1e28 !important;
+        }
+        body.light-mode .lb-item:hover,
+        body.light-mode .lb-item.active-profile-card {
+            background: #eef2f8 !important;
+            border-color: #c88a00 !important;
+        }
+        body.light-mode .header-icon-btn:hover {
+            background: #e4e8f0 !important;
+            border-color: #c88a00 !important;
+            color: #c88a00 !important;
+        }
+        body.light-mode .equity-main-val,
+        body.light-mode #activeTitle,
+        body.light-mode .lb-header,
+        body.light-mode .modal h2 {
+            color: #131722 !important;
+        }
+        body.light-mode .stat-left,
+        body.light-mode .stat-label,
+        body.light-mode .card h3,
+        body.light-mode .controls label {
+            color: #606877 !important;
+        }
+        body.light-mode #alpacaExposureBox,
+        body.light-mode #sessionTimelineContainer,
+        body.light-mode #safeguardsHudContainer {
+            background: #f4f6fa !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .drawer-details summary {
+            color: #c88a00 !important;
+        }
+        body.light-mode .header-user-badge {
+            background: #f4f6fa !important;
+            border-color: #d8dce6 !important;
+            color: #c88a00 !important;
+        }
+
        /* TOP GLOBAL HEADER BAR (DEEPER & REFINED) */
         .top-header-bar {
             height: 66px;
@@ -1924,6 +1992,23 @@
                         <line x1="12" y1="15" x2="12" y2="3"></line>
                     </svg>
                 </a>
+                <!-- Day / Night Mode Toggle -->
+                <button class="header-icon-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle Day / Night Mode">
+                    <svg id="themeIconSun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <svg id="themeIconMoon" style="display:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
                 <!-- Full Screen -->
                 <button class="header-icon-btn" onclick="toggleFullScreen()" title="Full Screen">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1980,6 +2065,10 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     <span>Export Data</span>
                 </a>
+                <button class="mobile-menu-item" onclick="toggleTheme(); toggleMobileBurgerMenu();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                    <span id="mobThemeLabel">Toggle Day / Night Mode</span>
+                </button>
                 <button class="mobile-menu-item" onclick="toggleFullScreen(); toggleMobileBurgerMenu();">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
                     <span>Full Screen</span>
@@ -2553,6 +2642,27 @@
             }); 
             if (Array.from(s.options).some(x => x.value === ci)) s.value = ci; 
             else s.value = s.options[0].value;
+        }
+
+        function toggleTheme() {
+            let isLight = document.body.classList.toggle('light-mode');
+            localStorage.setItem('idc_theme', isLight ? 'light' : 'dark');
+            syncThemeUI(isLight);
+            renderChart();
+        }
+
+        function syncThemeUI(isLight) {
+            let sun = document.getElementById('themeIconSun');
+            let moon = document.getElementById('themeIconMoon');
+            if (sun && moon) {
+                sun.style.display = isLight ? 'none' : 'block';
+                moon.style.display = isLight ? 'block' : 'none';
+            }
+        }
+
+        // Initialize saved theme immediately on load
+        if (localStorage.getItem('idc_theme') === 'light') {
+            document.body.classList.add('light-mode');
         }
 
         function toggleFullScreen() {
@@ -3814,11 +3924,28 @@
 
         function renderChart() {
             let lg = document.getElementById('chartLegend');
+            let isLight = document.body.classList.contains('light-mode');
             if (lg) {
                 let curTk = currentTicker || 'TQQQ';
-                lg.innerHTML = `<span style="background:rgba(23,26,33,0.85); border:1px solid #262b36; color:#ffd400; padding:3px 8px; border-radius:4px; font-weight:bold; font-size:11px;">${curTk} • 5m</span>`;
+                let legBg = isLight ? 'rgba(255,255,255,0.92)' : 'rgba(23,26,33,0.85)';
+                let legBorder = isLight ? '#d8dce6' : '#262b36';
+                let legText = isLight ? '#c88a00' : '#ffd400';
+                lg.innerHTML = `<span style="background:${legBg}; border:1px solid ${legBorder}; color:${legText}; padding:3px 8px; border-radius:4px; font-weight:bold; font-size:11px;">${curTk} • 5m</span>`;
             }
             if (!tvChart) return;
+
+            // Dynamically synchronize chart canvas background with Day/Night mode
+            tvChart.applyOptions({
+                layout: { 
+                    backgroundColor: isLight ? '#ffffff' : '#171a21',
+                    textColor: isLight ? '#606877' : '#787e8e'
+                },
+                grid: { 
+                    vertLines: { color: isLight ? '#edf0f5' : '#262b36' },
+                    horzLines: { color: isLight ? '#edf0f5' : '#262b36' }
+                },
+                timeScale: { borderColor: isLight ? '#d8dce6' : '#262b36' }
+            });
 
             if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
             
@@ -4201,8 +4328,9 @@
         }
 
         async function initTerminal() {
+            syncThemeUI(document.body.classList.contains('light-mode'));
             initChart(); 
-            await fetchUsers(); 
+            await fetchUsers();
             updateMarketClocks();
             await fetchData(false); 
             setupAutoRefresh();
