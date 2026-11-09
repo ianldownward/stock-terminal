@@ -1422,9 +1422,8 @@
             will-change: transform !important;
             -webkit-transform: translate3d(0, 0, 0);
             transform: translate3d(0, 0, 0);
-            /* 40s is a very comfortable, readable pace */
-            -webkit-animation: scrollTicker 40s linear infinite !important;
-            animation: scrollTicker 40s linear infinite !important;
+            -webkit-animation: scrollTicker 80s linear infinite !important;
+            animation: scrollTicker 80s linear infinite !important;
         }
         #tickerTapeContainer:hover .ticker-track-safari {
             -webkit-animation-play-state: paused !important;
@@ -6424,8 +6423,7 @@
                         `;
                     }).join('');
                 }
-
-                } catch(e) {}
+            } catch(e) {}
         }
 
         async function fetchMarketNewsFeed() {
