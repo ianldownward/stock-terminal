@@ -24,10 +24,20 @@
             overflow: hidden; 
         }
 
-       /* DAY / LIGHT MODE PALETTE (UNIFIED #ffb700 GOLD) */
+       /* DAY / LIGHT MODE PALETTE (CLEAN INVERSION & UNIFIED #ffb700) */
+        body {
+            --text-accent: #ffd400;
+        }
         body.light-mode {
+            --text-accent: #ffb700;
             background: #f0f2f5 !important;
             color: #1a1e28 !important;
+        }
+        .trigger-equity-val {
+            color: #ffffff;
+        }
+        body.light-mode .trigger-equity-val {
+            color: #131722 !important;
         }
         
         /* 1. Header & Logo Inversion */
@@ -56,7 +66,7 @@
             color: #ffb700 !important;
         }
 
-        /* 2. Seamless Top Controls (NO White Box) */
+        /* 2. Top Nav Controls (Transparent, NO White Box) */
         body.light-mode .top-nav {
             background: transparent !important;
             border: none !important;
@@ -70,8 +80,7 @@
         body.light-mode .sidebar,
         body.light-mode .right-drawer,
         body.light-mode .chart-container,
-        body.light-mode .total-shares-box,
-        body.light-mode .modal {
+        body.light-mode .total-shares-box {
             background: #ffffff !important;
             border-color: #d8dce6 !important;
         }
@@ -127,10 +136,14 @@
         }
         body.light-mode .btn-control {
             background: #ffffff !important;
-            border: 1px solid #ffb700 !important;
-            color: #ffb700 !important;
+            border: 1px solid #d8dce6 !important;
+            color: #1a1e28 !important;
         }
-        body.light-mode .btn-control:hover,
+        body.light-mode .btn-control:hover {
+            border-color: #ffb700 !important;
+            color: #ffb700 !important;
+            background: #f8f9fb !important;
+        }
         body.light-mode .btn-control.active {
             background: #ffb700 !important;
             color: #000000 !important;
@@ -139,15 +152,8 @@
         body.light-mode .lb-item.active-profile-card {
             border-color: #ffb700 !important;
         }
-        body.light-mode .segmented-control input[type="radio"]:checked + label {
-            background: #ffffff !important;
-            color: #ffb700 !important;
-        }
         body.light-mode #safeguardsHudContainer span[style*="color:#ffd400"],
         body.light-mode #safeguardsHudContainer span[style*="color: #ffd400"] {
-            color: #ffb700 !important;
-        }
-        body.light-mode #readinessUI > div span[style*="#ffd400"] {
             color: #ffb700 !important;
         }
         body.light-mode #rotatorHealthStatus span[style*="color:#ffd400"],
@@ -155,12 +161,30 @@
             color: #ffb700 !important;
         }
 
-        /* 5. Typography & High-Contrast Figures */
+        /* 5. Strategy Readiness: Completely Wipe Black Boxes */
+        body.light-mode #readinessUI div,
+        body.light-mode #readinessUI > div {
+            background: #f8f9fb !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #readinessUI div div {
+            background: transparent !important;
+        }
+        body.light-mode #readinessUI div span {
+            color: #131722 !important;
+        }
+        body.light-mode #readinessUI div span[style*="#ffd400"] {
+            color: #ffb700 !important;
+        }
+        body.light-mode #readinessUI div[style*="background:#1e222d"],
+        body.light-mode #readinessUI div[style*="background: #1e222d"] {
+            background: #d8dce6 !important;
+        }
+
+        /* 6. Typography & High-Contrast Figures */
         body.light-mode .equity-main-val,
         body.light-mode #activeTitle,
-        body.light-mode .modal h2,
         body.light-mode .lb-header > div > div > span:first-child,
-        body.light-mode .trigger-equity-val,
         body.light-mode .custom-select-item span {
             color: #131722 !important;
         }
@@ -170,7 +194,157 @@
         body.light-mode #marketClocks span:last-child {
             color: #555e6d !important;
         }
-        body.light-mode #rotatorHealthStatus
+        body.light-mode #rotatorHealthStatus,
+        body.light-mode #sentimentScore,
+        body.light-mode #alpacaCardValue {
+            color: #131722 !important;
+        }
+        body.light-mode #rotatorHealthSubtext,
+        body.light-mode #thermoText {
+            color: #555e6d !important;
+        }
+
+        /* 7. Soft Grey Tracks (Replacing Black Bars) */
+        body.light-mode #marketClocks div[style*="background:#262b36"],
+        body.light-mode #marketClocks div[style*="background: #262b36"],
+        body.light-mode #marketClocks div div {
+            background: #d8dce6 !important;
+        }
+        body.light-mode #marketClocks div div div {
+            background: #0ecb81 !important;
+        }
+        body.light-mode #sentimentCard div[style*="background: #262b36"],
+        body.light-mode #sentimentCard div[style*="background:#262b36"] {
+            background: #d8dce6 !important;
+        }
+        body.light-mode #sessionTimelineContainer div[style*="background:#262b36"] {
+            background: #d8dce6 !important;
+        }
+
+        /* 8. Engine Session Timeline & Safeguards HUD */
+        body.light-mode #sessionTimelineContainer,
+        body.light-mode #safeguardsHudContainer {
+            background: #f8f9fb !important;
+            border-radius: 6px;
+        }
+        body.light-mode #sessionTimelineContainer span {
+            color: #262b36 !important;
+        }
+        body.light-mode #safeguardsHudContainer > div {
+            border-bottom-color: #e4e8f0 !important;
+        }
+        body.light-mode #safeguardsHudContainer span[style*="color:#8a8a9e"] {
+            color: #555e6d !important;
+        }
+        body.light-mode #safeguardsHudContainer span[style*="color:#fff"],
+        body.light-mode #safeguardsHudContainer span[style*="color: #fff"] {
+            color: #131722 !important;
+        }
+
+        /* 9. Bottom Left Alpaca Box: Completely Wipe Black */
+        body.light-mode #desktopAlpacaMonitor,
+        body.light-mode #desktopAlpacaMonitor div,
+        body.light-mode #alpacaExposureBox,
+        body.light-mode #alpacaExposureBox * {
+            background: #f8f9fb !important;
+            border-color: #d8dce6 !important;
+        }
+
+        /* 10. Leaderboard Tabs: Fix Black "Today" Tab */
+        body.light-mode .segmented-control {
+            background: #eef2f8 !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .segmented-control label {
+            color: #606877 !important;
+            border-right-color: #d8dce6 !important;
+            background: transparent !important;
+        }
+        body.light-mode .segmented-control input[type="radio"]:checked+label,
+        body.light-mode .segmented-control input[type="radio"]:checked + label {
+            background: #ffffff !important;
+            color: #ffb700 !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+        }
+        body.light-mode .lb-item {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .lb-desc {
+            border-top-color: #e4e8f0 !important;
+            color: #555e6d !important;
+        }
+
+        /* 11. Modal: Completely Wipe Black Containers & Badges */
+        body.light-mode .modal {
+            background: #ffffff !important;
+            color: #131722 !important;
+        }
+        body.light-mode .modal h2 {
+            color: #131722 !important;
+            border-bottom-color: #d8dce6 !important;
+        }
+        body.light-mode .modal div {
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #tabContentBots > div,
+        body.light-mode #dynamicStrategyAllocationsList,
+        body.light-mode #dynamicStrategyAllocationsList > div,
+        body.light-mode #dynamicStrategyAllocationsList div,
+        body.light-mode #alpacaGuideCard,
+        body.light-mode #tabContentAlerts > div,
+        body.light-mode .modal div[style*="background:#13161c"],
+        body.light-mode .modal div[style*="background: #13161c"],
+        body.light-mode .modal div[style*="background:#0f1115"],
+        body.light-mode .modal div[style*="background: #0f1115"] {
+            background: #f8f9fb !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .modal span[style*="background:#0f1115"],
+        body.light-mode .modal span[style*="background: #0f1115"],
+        body.light-mode .modal #dynamicStrategyAllocationsList span[style*="background"] {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+            color: #131722 !important;
+        }
+        body.light-mode .modal input[type="text"],
+        body.light-mode .modal input[type="number"],
+        body.light-mode .modal input[type="url"] {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+            color: #131722 !important;
+        }
+        body.light-mode .modal span[style*="color:#ffd400"],
+        body.light-mode .modal span[style*="color: #ffd400"],
+        body.light-mode .modal #dynamicStrategyAllocationsList span[style*="color:#ffd400"] {
+            color: #ffb700 !important;
+        }
+        body.light-mode .modal span[style*="color:#fff"],
+        body.light-mode .modal div[style*="color:#fff"],
+        body.light-mode .modal span[style*="color:#e1e3e6"],
+        body.light-mode .modal div[style*="color:#e1e3e6"],
+        body.light-mode .modal label[style*="color:#fff"] {
+            color: #131722 !important;
+        }
+        body.light-mode .modal span[style*="color:#8a8a9e"],
+        body.light-mode .modal div[style*="color:#8a8a9e"],
+        body.light-mode .modal label[style*="color:#8a8a9e"] {
+            color: #555e6d !important;
+        }
+        body.light-mode .modal .btn-control {
+            background: #ffffff !important;
+            color: #131722 !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .modal .btn-control.active {
+            background: #ffb700 !important;
+            color: #000000 !important;
+            border-color: #ffb700 !important;
+        }
+        body.light-mode .custom-select-menu {
+            background: #ffffff !important;
+            border-color: #ffb700 !important;
+        }
         body.light-mode .custom-select-item {
             border-bottom-color: #edf0f5 !important;
         }
