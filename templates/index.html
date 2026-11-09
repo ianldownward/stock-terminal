@@ -397,16 +397,26 @@
         }
 
         /* 12. Trade History & Journey Modal Day Mode Inversion */
-        body.light-mode .history-item {
+        body.light-mode #tradeHistoryDrawer {
             background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode .history-item {
+            background: #f8f9fb !important;
             border-color: #d8dce6 !important;
             color: #131722 !important;
         }
         body.light-mode .history-item:hover {
-            background: #f4f7fc !important;
+            background: #eef2f8 !important;
             border-color: #ffb700 !important;
         }
         body.light-mode .history-item .h-meta {
+            color: #555e6d !important;
+        }
+        body.light-mode .history-item .h-action span {
+            color: #131722 !important;
+        }
+        body.light-mode #allHistoryUI li {
             color: #555e6d !important;
         }
         body.light-mode #journeyContent > div {
@@ -420,13 +430,36 @@
         body.light-mode #journeyContent > div div[style*="color:#8a8a9e"] {
             color: #555e6d !important;
         }
+        body.light-mode #journeyContent > div span[style*="#ffd400"],
+        body.light-mode #journeyContent > div span[style*="color:#ffd400"] {
+            color: #ffb700 !important;
+        }
+        body.light-mode #mobLeaderboardCard {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
         body.light-mode #mobLeaderboardCard div[style*="color:#fff"],
-        body.light-mode #mobLeaderboardCard span[style*="color:#fff"] {
+        body.light-mode #mobLeaderboardCard span[style*="color:#fff"],
+        body.light-mode #mobLeaderboardCard div[style*="color: #fff"],
+        body.light-mode #mobLeaderboardCard span[style*="color: #fff"] {
             color: #131722 !important;
+        }
+        body.light-mode #mobLeaderboardCard span[style*="#ffd400"],
+        body.light-mode #mobLeaderboardCard span[style*="color:#ffd400"],
+        body.light-mode #mobLeaderboardCard span[style*="color: #ffd400"] {
+            color: #ffb700 !important;
         }
         body.light-mode #mobLeaderboardCard span[style*="color:#8a8a9e"],
         body.light-mode #mobLeaderboardCard span[style*="color:#787e8e"] {
             color: #555e6d !important;
+        }
+        body.light-mode #mobHeldShareCard {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #mobHeldShareCard span[style*="color:#fff"],
+        body.light-mode #mobHeldShareCard span[style*="color: #fff"] {
+            color: #131722 !important;
         }
 
        /* TOP GLOBAL HEADER BAR (DEEPER & REFINED) */
@@ -1031,8 +1064,10 @@
         }
         /* Clean Sidebar Flow & Responsive Drawer Sizing */
         .sidebar-top {
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
+            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+            height: 100% !important;
         }
         #watchlistDrawer, #timelineDrawer, #safeguardsDrawer {
             margin-bottom: 8px !important;
@@ -1904,11 +1939,7 @@
                     <input type="number" id="wizardCapitalInput" value="500.00" step="50" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:15px; font-weight:800;">
                 </div>
 
-                <div>
-                    <label style="font-size:11px; color:#8a8a9e; font-weight:800; text-transform:uppercase; display:block; margin-bottom:5px;">Version / Identifier Tag (Optional)</label>
-                    <input type="text" id="wizardVersionTag" placeholder="e.g. v2, Main Fund, Test 2" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px 10px; border-radius:6px; font-size:12px;">
-                    <span style="font-size:10px; color:#8a8a9e; margin-top:3px; display:block;">Allows running multiple versions of the same strategy cleanly.</span>
-                </div>
+                <input type="hidden" id="wizardVersionTag" value="">
 
                 <!-- OVERNIGHT CASH SWEEP CHECKBOX (OPTION 3) -->
                 <div style="background:#0f1115; border:1px solid #262b36; border-radius:8px; padding:12px;">
@@ -2439,7 +2470,7 @@
     <div class="app-body-container">
     <!-- LEFT SIDEBAR: PROFILE & LEADERBOARD MANAGEMENT -->
     <div class="sidebar" style="width: 300px; min-width: 240px;">
-        <div class="sidebar-top" style="padding-bottom: 15px; overflow-y: auto;">
+        <div class="sidebar-top" style="padding: 15px 15px 15px 15px; height: 100%; display: flex; flex-direction: column; overflow: hidden;">
             <!-- 1. ACTIVE PROFILE SELECTOR & TOTAL PORTFOLIO EQUITY -->
             <div class="user-profile-box">
                 <select id="userSelect" onchange="onUserChange(this.value)" style="display:none;"></select>
@@ -3703,6 +3734,14 @@
         }
 
         function goToWizardStep2() {
+            // Check if strategy already exists on this account
+            let normTarget = selectedWizardMethod.toLowerCase().replace(/[^a-z]/g, '');
+            let alreadyExists = (latestLeaderboardData || []).some(p => (p.user || '').toLowerCase().replace(/[^a-z]/g, '').includes(normTarget));
+            if (alreadyExists) {
+                alert(`"${selectedWizardMethod}" already exists on your account.\n\nTo deploy additional capital, please use the [+ / -] button on your existing profile instead of creating duplicates.`);
+                return;
+            }
+
             closeStrategyWizard();
             document.getElementById('wizardStep2MethodTitle').innerText = selectedWizardMethod;
             document.getElementById('wizardCapitalInput').value = '500.00';
@@ -3723,10 +3762,9 @@
 
         async function submitWizardLaunch() {
             let method = selectedWizardMethod;
-            let tag = document.getElementById('wizardVersionTag').value.trim();
             let capital = parseFloat(document.getElementById('wizardCapitalInput').value) || 500.0;
             let sweepVal = document.getElementById('wizardOvernightSweep')?.checked ?? true;
-            let finalName = tag ? `${method} (${tag})` : method;
+            let finalName = method; // Name strictly matches official strategy
 
             closeStrategyFundingModal();
             let res = await fetch('/api/users/add_v2', {

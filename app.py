@@ -2081,14 +2081,20 @@ def add_user():
 @app.route('/api/users/add_v2', methods=['POST'])
 @login_required
 def add_user_v2():
+    import re
     data = request.get_json() or {}
-    prof_name = data.get('profile_name', '').strip()
     method = data.get('method', 'Vector Hybrid').strip()
     capital = float(data.get('capital', 500.0))
     sweep_enabled = bool(data.get('overnight_sweep', True))
 
-    if not prof_name:
-        return jsonify({'status': 'error', 'message': 'Profile name required'}), 400
+    # Lock name 1-to-1 to official strategy name (disables custom V2 variants)
+    prof_name = method
+
+    def norm(val):
+        return re.sub(r'[^a-z]', '', (val or '').lower())
+
+    norm_target = norm(method)
+    dup_err = f'"{method}" already exists on this account. To deploy more capital, please use [+ / - Capital] on your existing profile instead.'
 
     is_client = (session.get('role') != 'admin')
     client_name = session.get('email') or session.get('user', 'Client')
@@ -2096,8 +2102,9 @@ def add_user_v2():
     if is_client:
         c_store = portfolio_store.get_client_store(client_name)
         users = c_store.setdefault('users', {})
-        if prof_name in users:
-            return jsonify({'status': 'error', 'message': 'A profile with this name already exists'}), 400
+        for existing_name in users.keys():
+            if norm(existing_name) == norm_target or norm_target in norm(existing_name):
+                return jsonify({'status': 'error', 'message': dup_err}), 400
 
         state = portfolio_store.default_user_state(method)
         state['master_budget'] = capital
@@ -2117,8 +2124,9 @@ def add_user_v2():
     else:
         portfolio_store.reload()
         users = portfolio_store.data.setdefault('users', {})
-        if prof_name in users:
-            return jsonify({'status': 'error', 'message': 'A profile with this name already exists'}), 400
+        for existing_name in users.keys():
+            if norm(existing_name) == norm_target or norm_target in norm(existing_name):
+                return jsonify({'status': 'error', 'message': dup_err}), 400
 
         state = portfolio_store.default_user_state(method)
         state['master_budget'] = capital
