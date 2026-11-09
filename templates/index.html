@@ -396,6 +396,39 @@
             background: #eef2f8 !important;
         }
 
+        /* 12. Trade History & Journey Modal Day Mode Inversion */
+        body.light-mode .history-item {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+            color: #131722 !important;
+        }
+        body.light-mode .history-item:hover {
+            background: #f4f7fc !important;
+            border-color: #ffb700 !important;
+        }
+        body.light-mode .history-item .h-meta {
+            color: #555e6d !important;
+        }
+        body.light-mode #journeyContent > div {
+            background: #f8f9fb !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #journeyContent > div span[style*="color:#fff"],
+        body.light-mode #journeyContent > div span[style*="color: #fff"] {
+            color: #131722 !important;
+        }
+        body.light-mode #journeyContent > div div[style*="color:#8a8a9e"] {
+            color: #555e6d !important;
+        }
+        body.light-mode #mobLeaderboardCard div[style*="color:#fff"],
+        body.light-mode #mobLeaderboardCard span[style*="color:#fff"] {
+            color: #131722 !important;
+        }
+        body.light-mode #mobLeaderboardCard span[style*="color:#8a8a9e"],
+        body.light-mode #mobLeaderboardCard span[style*="color:#787e8e"] {
+            color: #555e6d !important;
+        }
+
        /* TOP GLOBAL HEADER BAR (DEEPER & REFINED) */
         .top-header-bar {
             height: 66px;
@@ -606,6 +639,9 @@
         #mobileBottomControls { display: none; }
 
         @media (max-width: 900px) {
+            #tickerTapeContainer {
+                display: none !important;
+            }
             .modal {
                 padding: 16px !important;
                 width: 95vw !important;
@@ -866,7 +902,8 @@
             display: flex; 
             flex-direction: column; 
             overflow: hidden; 
-            min-height: 0; 
+            min-height: 0;
+            height: 100%;
         }
         .sidebar-bottom { 
             padding: 15px; 
@@ -2456,10 +2493,10 @@
                 <div id="leaderboardUI" style="margin-top:8px;"></div>
             </details>
             
-            <!-- 3. TRADE HISTORY -->
-            <details class="drawer-details" id="tradeHistoryDrawer" open style="margin-bottom:0;">
+            <!-- 3. TRADE HISTORY (EXPANDS TO BOTTOM) -->
+            <details class="drawer-details" id="tradeHistoryDrawer" open style="margin-bottom:0; flex:1; display:flex; flex-direction:column; min-height:0;">
                 <summary>Trade History</summary>
-                <ul class="history-list" id="allHistoryUI" style="margin-top:8px; max-height:220px;"></ul>
+                <ul class="history-list" id="allHistoryUI" style="margin-top:8px; flex:1; min-height:0; overflow-y:auto;"></ul>
             </details>
         </div>
     </div>
