@@ -1406,36 +1406,6 @@
         .fused-col p { font-size: 15px; font-weight: bold; margin: 0; color: #fff; }
         .fused-divider { width: 1px; height: 32px; background: #262b36; }
 
-        @-webkit-keyframes scrollTicker {
-            0%   { -webkit-transform: translate3d(0, 0, 0); }
-            100% { -webkit-transform: translate3d(-100%, 0, 0); }
-        }
-        @keyframes scrollTicker {
-            0%   { transform: translate3d(0, 0, 0); }
-            100% { transform: translate3d(-100%, 0, 0); }
-        }
-        .ticker-track-safari {
-            display: inline-flex !important;
-            align-items: center !important;
-            white-space: nowrap !important;
-            flex-shrink: 0 !important;
-            will-change: transform !important;
-            -webkit-transform: translate3d(0, 0, 0);
-            transform: translate3d(0, 0, 0);
-            -webkit-animation: scrollTicker 80s linear infinite !important;
-            animation: scrollTicker 80s linear infinite !important;
-        }
-        #tickerTapeContainer:hover .ticker-track-safari {
-            -webkit-animation-play-state: paused !important;
-            animation-play-state: paused !important;
-        }
-        body.light-mode .ticker-track-safari a,
-        body.light-mode .ticker-track-safari .tape-title {
-            color: #131722 !important;
-        }
-        body.light-mode .ticker-track-safari .tape-detail {
-            color: #555e6d !important;
-        }
         body.light-mode #tickerTapeContainer {
             background: #ffffff !important;
             border-color: #d8dce6 !important;
@@ -1445,7 +1415,7 @@
             border-right-color: #d8dce6 !important;
         }
         body.light-mode #scrollingTickerContent a,
-        body.light-mode #scrollingTickerContent span {
+        body.light-mode #scrollingTickerContent .tape-title {
             color: #131722 !important;
         }
         body.light-mode #scrollingTickerContent .tape-detail {
@@ -2618,19 +2588,15 @@
         </div>
 
         <!-- LIVE FINANCIAL WIRE & MACRO CALENDAR TAPE -->
-        <div id="tickerTapeContainer" style="background:#0f1115; border:1px solid #262b36; border-radius:6px; overflow:hidden; height:32px; margin-top:8px; display:flex; align-items:center; flex-shrink:0; position:relative; width:100%;">
-            <!-- Stationary Lead Badge (Flat Symbol, No Emoji) -->
-            <div style="background:#171a21; border-right:1px solid #262b36; padding:0 12px; height:100%; display:flex; align-items:center; gap:6px; flex-shrink:0; z-index:5;">
+        <div id="tickerTapeContainer" style="background:#14171f; border:1px solid #262b36; border-radius:6px; overflow:hidden; height:32px; margin-top:8px; display:flex; align-items:center; flex-shrink:0; width:100%; position:relative;">
+            <div style="background:#1b202c; border-right:1px solid #262b36; padding:0 12px; height:100%; display:flex; align-items:center; gap:6px; flex-shrink:0; z-index:10;">
                 <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#ff5364; box-shadow:0 0 6px rgba(255,83,100,0.8);"></span>
                 <span style="font-size:10px; font-weight:800; color:#ffb700; letter-spacing:0.5px; white-space:nowrap;">LIVE WIRE</span>
             </div>
-
-            <!-- Safari-Bulletproof Dual-Track Marquee -->
-            <div style="flex:1; min-width:0; overflow:hidden; height:100%; display:flex; align-items:center; position:relative;">
-                <div id="scrollingTickerContent" class="ticker-track-safari">
+            <div id="tickerViewport" style="flex:1; min-width:0; overflow:hidden; height:100%; position:relative;">
+                <div id="scrollingTickerContent" style="position:absolute; left:0; top:0; height:100%; display:flex; align-items:center; white-space:nowrap; will-change:transform;">
                     <span style="color:#8a8a9e; font-size:11px; font-weight:700; padding-left:15px;">Connecting to Global Financial Wire & Macro Feed...</span>
                 </div>
-                <div id="scrollingTickerContent2" class="ticker-track-safari" aria-hidden="true"></div>
             </div>
         </div>
 
@@ -6426,13 +6392,30 @@
             } catch(e) {}
         }
 
+        let tickerPos = 0;
+        let isTickerHovered = false;
+        let tickerHalfWidth = 0;
+        let tickerAnimFrame = null;
+
+        function runTickerGlide() {
+            if (!isTickerHovered && tickerHalfWidth > 0) {
+                // 0.85px per frame = smooth, very readable cruising speed
+                tickerPos += 0.85; 
+                if (tickerPos >= tickerHalfWidth) {
+                    tickerPos -= tickerHalfWidth;
+                }
+                let el = document.getElementById('scrollingTickerContent');
+                if (el) el.style.transform = `translate3d(-${tickerPos.toFixed(2)}px, 0, 0)`;
+            }
+            tickerAnimFrame = requestAnimationFrame(runTickerGlide);
+        }
+
         async function fetchMarketNewsFeed() {
             try {
                 let res = await fetch('/api/news/feed');
                 let d = await res.json();
                 let items = d.items || [];
                 let tapeEl = document.getElementById('scrollingTickerContent');
-                let tapeEl2 = document.getElementById('scrollingTickerContent2');
                 if (!tapeEl || items.length === 0) return;
 
                 let html = items.map(it => {
@@ -6440,16 +6423,31 @@
                     let title = `<span class="tape-title" style="font-weight:700; color:#ffffff;">${it.title}</span>`;
                     let detail = it.detail ? `<span class="tape-detail" style="color:#8a8a9e; font-size:10px; margin-left:4px;">• ${it.detail}</span>` : '';
                     let link = `<a href="${it.link || '#'}" target="_blank" style="text-decoration:none; color:inherit; display:inline-flex; align-items:center;">${badge}${title}${detail}</a>`;
-                    return `<span style="display:inline-flex; align-items:center; margin-right:35px; font-size:11px; flex-shrink:0;">${link}</span>`;
+                    return `<span style="display:inline-flex; align-items:center; margin-right:45px; font-size:11.5px; flex-shrink:0;">${link}</span>`;
                 }).join('');
 
-                // Feed exact same data into both tracks so they chase each other seamlessly
-                tapeEl.innerHTML = html;
-                if (tapeEl2) tapeEl2.innerHTML = html;
+                tapeEl.innerHTML = html + html;
+
+                // Measure half-width for seamless infinite wrap
+                setTimeout(() => {
+                    tickerHalfWidth = tapeEl.scrollWidth / 2;
+                    if (!window._tickerLoopStarted) {
+                        window._tickerLoopStarted = true;
+                        requestAnimationFrame(runTickerGlide);
+                    }
+                }, 100);
             } catch(e) {}
         }
 
-        // Fetch live wire on startup and update every 3 minutes
+        // Hover listeners for pause & resume
+        document.addEventListener('DOMContentLoaded', () => {
+            let container = document.getElementById('tickerTapeContainer');
+            if (container) {
+                container.addEventListener('mouseenter', () => { isTickerHovered = true; });
+                container.addEventListener('mouseleave', () => { isTickerHovered = false; });
+            }
+        });
+
         fetchMarketNewsFeed();
         setInterval(fetchMarketNewsFeed, 180000);
 
