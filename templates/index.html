@@ -3971,7 +3971,8 @@
                 if (mobHeld) mobHeld.style.display = isCurrHeld ? 'inline-block' : 'none';
 
                 if (typeof checkMobileLayout === 'function') checkMobileLayout();
-                if (typeof updateSafeguardsHUD === 'function') updateSafeguardsHUD(activeProf, p.metrics);
+                let profForHud = (userSel && userSel.value) ? userSel.value : (p.portfolio ? p.portfolio.active_user : activeUser);
+                if (typeof updateSafeguardsHUD === 'function') updateSafeguardsHUD(profForHud, p.metrics);
                 if (typeof updateSessionTimeline === 'function') updateSessionTimeline();
                 renderLeaderboard(p.leaderboard);
                 renderHistory(globalPortfolioData.history);
