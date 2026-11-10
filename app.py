@@ -18,6 +18,10 @@ ADMIN_ALIAS = "ian"
 ADMIN_PW = "ild81!MKH"
 ADMIN_HASH = generate_password_hash(ADMIN_PW)
 
+def is_admin_session():
+    u = (session.get('email') or session.get('user') or '').strip().lower()
+    return (session.get('role') == 'admin') or (u in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian'])
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -2233,11 +2237,11 @@ def api_client_settings():
 @app.route('/api/users', methods=['GET'])
 @login_required
 def get_users(): 
-    if session.get('role') == 'admin':
+    if is_admin_session():
         portfolio_store.reload()
         return jsonify({'users': list(portfolio_store.data.get('users', {}).keys()), 'active_user': portfolio_store.active_username()})
     client_name = session.get('user', 'Client')
-    c_store = portfolio_store.get_client_store(client_name)
+    c_store = portfolio_store.get_client_store(client_name) or portfolio_store.blank_client_state(client_name)
     users_dict = c_store.get('users', {})
     user_list = list(users_dict.keys())
     active = c_store.get('active_user')
@@ -2829,9 +2833,9 @@ def get_recommendations():
 @login_required
 def get_data():
     try:
-        # 1. Unambiguous Admin vs Client Resolution (Prevents NoneType Crash)
-        user_identifier = (session.get('email') or session.get('user') or '').strip().lower()
-        is_admin = (session.get('role') == 'admin') or (user_identifier in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian'])
+        # Universal Admin Resolution: Treats your email or session as Admin
+        curr_u = (session.get('email') or session.get('user') or '').strip().lower()
+        is_admin = (session.get('role') == 'admin') or (curr_u in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian']) or ('ian' in curr_u)
         is_client = not is_admin
         client_name = session.get('email') or session.get('user', 'Client')
         req_user = request.args.get('user', '').strip()
@@ -3607,11 +3611,11 @@ def export_forensic_report():
 @app.route('/api/broker/status', methods=['GET'])
 def get_broker_status():
     portfolio_store.reload()
-    is_client = (session.get('role') != 'admin')
+    is_client = not is_admin_session()
     client_name = session.get('user', 'Client')
 
     if is_client:
-        c_store = portfolio_store.get_client_store(client_name)
+        c_store = portfolio_store.get_client_store(client_name) or portfolio_store.blank_client_state(client_name)
         broker = c_store.get('broker') or {}
     else:
         broker = portfolio_store.data.get('broker') or {}

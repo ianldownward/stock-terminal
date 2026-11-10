@@ -4714,7 +4714,7 @@
                 }
                 if (mobPnlEl) {
                     let arrow = dayVal > 0 ? '▲ ' : (dayVal < 0 ? '▼ ' : '');
-                    mobPnlEl.innerHTML = `<span style="color:${dayCol}; font-weight:800;">${arrow}${dayVal >= 0 ? '+' : '-'}£${Math.abs(dayVal).toFixed(2)} ${pctStr}</span>`;
+                    mobPnlEl.innerHTML = `<span style="color:${dayCol}; font-weight:800;">${arrow}${dayVal >= 0 ? '+' : '-'}S${Math.abs(dayVal).toFixed(2)} ${pctStr}</span>`;
                 }
 
                 if (p.metrics && p.metrics.regime) {
