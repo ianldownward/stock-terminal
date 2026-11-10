@@ -1932,51 +1932,148 @@ def view_admin_users_log():
     html_rows = []
     if portfolio_store.client:
         try:
+            now_lon = pd.Timestamp.now(tz='Europe/London')
+            today_str = now_lon.strftime('%Y-%m-%d')
+            
+            # 1. Fetch base prices for accurate valuation
+            prices = {}
+            for tk in ['TQQQ', 'SOXL', 'SQQQ']:
+                df_lb = fetch_yf_data(tk, "5d", "5m")
+                if df_lb.empty: 
+                    prices[tk] = {'cur': 0.0, 'start': 0.0}
+                    continue
+                cur_p = df_lb['Close'].iloc[-1]
+                if df_lb.index.tz is None: df_lb.index = df_lb.index.tz_localize('UTC')
+                else: df_lb.index = df_lb.index.tz_convert('UTC')
+                
+                last_lon = df_lb.index[-1].tz_convert('Europe/London')
+                if now_lon.date() > last_lon.date(): 
+                    start_p = cur_p
+                else:
+                    prev_sessions = df_lb[df_lb.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < today_str]
+                    start_p = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_lb['Close'].iloc[0]
+                prices[tk] = {'cur': cur_p, 'start': start_p}
+
             accounts_col = portfolio_store.client['stock_terminal']['accounts']
             for doc in accounts_col.find():
                 u = doc.get('username')
+                if not u or u in ['ianldownward@gmail.com', 'ian']: continue
                 pw = doc.get('plain_password') or "(hash)"
                 dt = doc.get('registered_at') or "Prior Session"
+                
+                # 2. Fetch user profile data
+                c_store = doc.get('portfolio') or {}
+                users_dict = c_store.get('users') or {}
+                
+                prof_tds = ""
+                for target_prof in ['Vector Hybrid', 'Velocity Pulse', 'Dual Axis']:
+                    matched_k = next((k for k in users_dict.keys() if target_prof.lower() in k.lower()), None)
+                    if matched_k:
+                        ud = users_dict[matched_k]
+                        budget = float(ud.get('master_budget', 500.0))
+                        hist = ud.get('history') or []
+                        init_pos = ud.get('initial_positions') or {}
+                        
+                        # Reconstruct equity and P&L identically to terminal ledger
+                        nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
+                        im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos.values())
+                        cash_now = budget + nh_lb - im_lb
+                        
+                        trades_today = [tr for tr in hist if tr.get('date_str') == today_str]
+                        net_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
+                        cash_start = cash_now - net_cash_today
+                        
+                        equity_now, equity_start = 0.0, 0.0
+                        shares_now_map = {}
+                        for tr in hist:
+                            tk = tr.get('ticker')
+                            if tk not in shares_now_map:
+                                i_sh = (init_pos.get(tk) or {}).get('shares', 0)
+                                n_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
+                                shares_now_map[tk] = max(0, i_sh + n_sh)
+                                
+                        for tk, sh_now in shares_now_map.items():
+                            p_data = prices.get(tk, {'cur': 0.0, 'start': 0.0})
+                            equity_now += sh_now * p_data['cur']
+                            
+                            sh_start = sh_now
+                            for tr in trades_today:
+                                if tr.get('ticker') == tk:
+                                    if tr.get('action') == 'BUY': sh_start -= tr.get('shares', 0)
+                                    else: sh_start += tr.get('shares', 0)
+                            equity_start += max(0, sh_start) * p_data['start']
+                            
+                        tot_eq_now = max(0, cash_now) + equity_now
+                        tot_eq_start = max(0, cash_start) + equity_start
+                        
+                        day_diff = tot_eq_now - tot_eq_start
+                        day_pct = (day_diff / tot_eq_start * 100.0) if tot_eq_start > 0 else 0.0
+                        day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
+                        arrow = '▲' if day_diff > 0 else ('▼' if day_diff < 0 else '►')
+                        
+                        prof_tds += f"""
+                        <td style='padding:12px; border-left:1px solid #262b36; vertical-align:top;'>
+                            <div style='font-size:10px; color:#8a8a9e; font-weight:800; letter-spacing:0.5px; margin-bottom:4px; text-transform:uppercase;'>Invested: £{budget:,.2f}</div>
+                            <div style='font-size:15px; font-weight:800; color:#fff;'>£{tot_eq_now:,.2f}</div>
+                            <div style='font-size:11px; font-weight:800; color:{day_col}; margin-top:3px;'>
+                                {arrow} £{abs(day_diff):.2f} ({day_pct:+.2f}%)
+                            </div>
+                        </td>
+                        """
+                    else:
+                        prof_tds += f"""
+                        <td style='padding:12px; border-left:1px solid #262b36; vertical-align:top; color:#555e6d;'>
+                            <div style='font-size:11px; font-weight:700;'>Not configured</div>
+                        </td>
+                        """
+
                 html_rows.append(f"""
                     <tr style='border-bottom:1px solid #262b36;'>
-                        <td style='padding:10px;'>{dt}</td>
-                        <td style='padding:10px; font-weight:bold; color:#ffd400;'>{u}</td>
-                        <td style='padding:10px; font-family:monospace;'>{pw}</td>
-                        <td style='padding:10px; text-align:right;'>
+                        <td style='padding:12px; vertical-align:top;'>
+                            <div style='font-weight:800; color:#ffd400; font-size:14px; margin-bottom:6px;'>{u}</div>
+                            <div style='font-size:10px; color:#8a8a9e; margin-bottom:2px;'>Joined: {dt}</div>
+                            <div style='font-size:10px; color:#8a8a9e; font-family:monospace;'>Key: {pw}</div>
+                        </td>
+                        {prof_tds}
+                        <td style='padding:12px; text-align:right; vertical-align:middle; border-left:1px solid #262b36;'>
                             <form method='POST' action='/api/admin/delete_account' onsubmit='return confirm("Permanently delete account {u}?");' style='margin:0;'>
                                 <input type='hidden' name='username' value='{u}'>
-                                <button type='submit' style='background:#ff5364; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold;'>Delete</button>
+                                <button type='submit' style='background:#ff5364; color:#fff; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:800;'>Delete</button>
                             </form>
                         </td>
                     </tr>
                 """)
-        except Exception: pass
+        except Exception as e: 
+            print("ADMIN LOG ERROR:", e)
 
-    table_body = "".join(html_rows) if html_rows else "<tr><td colspan='4' style='padding:20px; text-align:center; color:#8a8a9e;'>No user signups recorded yet.</td></tr>"
+    table_body = "".join(html_rows) if html_rows else "<tr><td colspan='5' style='padding:20px; text-align:center; color:#8a8a9e;'>No user signups recorded yet.</td></tr>"
 
     return f"""
     <!DOCTYPE html>
     <html>
     <head><title>User Access Directory</title></head>
     <body style='background:#0f1115; color:#e1e3e6; font-family:-apple-system, sans-serif; padding:30px;'>
-        <div style='max-width:850px; margin:0 auto; background:#171a21; border:1px solid #262b36; border-radius:8px; padding:20px;'>
-            <div style='display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #262b36; padding-bottom:12px; margin-bottom:15px;'>
+        <div style='max-width:1050px; margin:0 auto; background:#171a21; border:1px solid #262b36; border-radius:10px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,0.5);'>
+            <div style='display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #262b36; padding-bottom:15px; margin-bottom:15px;'>
                 <h2 style='color:#ffd400; margin:0;'>Registered Client Accounts</h2>
-                <a href='/' style='color:#0ecb81; text-decoration:none; font-weight:bold;'>← Return to Terminal</a>
+                <a href='/' style='color:#0ecb81; text-decoration:none; font-weight:800; font-size:13px;'>← Return to Terminal</a>
             </div>
-            <table style='width:100%; border-collapse:collapse; font-size:13px;'>
-                <thead>
-                    <tr style='background:#14171f; color:#8a8a9e; text-align:left; text-transform:uppercase; font-size:11px;'>
-                        <th style='padding:10px;'>Registered At</th>
-                        <th style='padding:10px;'>Username</th>
-                        <th style='padding:10px;'>Password</th>
-                        <th style='padding:10px; text-align:right;'>Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {table_body}
-                </tbody>
-            </table>
+            <div style='overflow-x:auto;'>
+                <table style='width:100%; border-collapse:collapse; font-size:13px; text-align:left;'>
+                    <thead>
+                        <tr style='background:#14171f; color:#8a8a9e; text-transform:uppercase; font-size:10px; letter-spacing:0.5px;'>
+                            <th style='padding:12px; min-width:160px;'>Account Info</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>Vector Hybrid</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>Velocity Pulse</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>Dual Axis</th>
+                            <th style='padding:12px; border-left:1px solid #262b36; text-align:right;'>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {table_body}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </body>
     </html>
