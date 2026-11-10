@@ -2833,7 +2833,7 @@ def get_recommendations():
 @login_required
 def get_data():
     try:
-        # Universal Admin Resolution: Treats your email or session as Admin
+        import traceback
         curr_u = (session.get('email') or session.get('user') or '').strip().lower()
         is_admin = (session.get('role') == 'admin') or (curr_u in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian']) or ('ian' in curr_u)
         is_client = not is_admin
@@ -2853,7 +2853,7 @@ def get_data():
             ud['strategy_name'] = active_name or 'Vector Hybrid'
             ud['active_user'] = active_name or 'Vector Hybrid'
             ud['account_username'] = client_name
-            mb = float(ud.get('master_budget', 500.0 if users_dict else 0.0))
+            mb = float(ud.get('master_budget') or 500.0)
             active_profile = active_name.strip().lower() if active_name else 'vector hybrid'
         else:
             portfolio_store.reload()
@@ -2861,7 +2861,7 @@ def get_data():
                 portfolio_store.data['active_user'] = req_user
             ud = portfolio_store.user_data(req_user if req_user else None)
             ud['account_username'] = session.get('email') or ADMIN_USER
-            mb = float(ud.get('master_budget', 500.0))
+            mb = float(ud.get('master_budget') or 500.0)
             active_profile = (req_user or portfolio_store.active_username()).strip().lower()
 
         wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
@@ -2873,8 +2873,9 @@ def get_data():
         init_pos = ud.get('initial_positions') or {}
 
         def resolve_profile_shares(profile_ud, tk):
-            i_sh = (profile_ud.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
-            n_sh = sum(tr.get('shares', 0) if tr.get('action') == 'BUY' else -tr.get('shares', 0) for tr in profile_ud.get('history', []) if tr.get('ticker') == tk)
+            i_sh = int((profile_ud.get('initial_positions', {}).get(tk) or {}).get('shares') or 0)
+            n_sh = sum(int(tr.get('shares') or 0) if tr.get('action') == 'BUY' else -int(tr.get('shares') or 0) 
+                       for tr in profile_ud.get('history', []) if tr.get('ticker') == tk)
             return max(0, i_sh + n_sh)
 
         active_holds = list(set([tr.get('ticker') for tr in hist if resolve_profile_shares(ud, tr.get('ticker')) > 0]))
@@ -2895,8 +2896,9 @@ def get_data():
             with ThreadPoolExecutor(max_workers=4) as ex:
                 for tick, df_5m in ex.map(fetch_pnl_data_5m, active_holds): pnl_dfs_5m[tick] = df_5m
 
-        net_history = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
-        init_manual = sum(pos.get('manual_val', 0.0) for pos in init_pos.values())
+        net_history = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
+                          for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
+        init_manual = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos.values())
         cash_balance = mb + net_history - init_manual
 
         tot_own = 0.0
@@ -2904,12 +2906,12 @@ def get_data():
             sh_c = resolve_profile_shares(ud, tk)
             df_c = pnl_dfs_5m.get(tk)
             if df_c is not None and not df_c.empty:
-                cur_p = df_c['Close'].iloc[-1]
+                cur_p = float(df_c['Close'].iloc[-1])
                 div = 100.0 if str(tk).endswith('.L') and cur_p > 100 else 1.0
                 tot_own += round(sh_c * (cur_p / div), 2)
         total_equity = cash_balance + tot_own
         master_pnl_val = total_equity - mb
-        master_pnl_pct = (master_pnl_val / mb) * 100.0 if mb > 0 else 0.0
+        master_pnl_pct = (master_pnl_val / mb * 100.0) if mb > 0 else 0.0
 
         now_lon = pd.Timestamp.now(tz='Europe/London')
         today_str = now_lon.strftime('%Y-%m-%d')
@@ -2930,18 +2932,19 @@ def get_data():
             try:
                 df_lb = fetch_yf_data(tick, "5d", "5m")
                 if df_lb.empty: return tick, 0.0, 0.0
-                cur_p = df_lb['Close'].iloc[-1]
+                cur_p = float(df_lb['Close'].iloc[-1])
                 div = 100.0 if str(tick).endswith('.L') and cur_p > 100 else 1.0
                 cur_dollars = cur_p / div
                 
-                if df_lb.index.tz is None: df_lb.index = df_lb.index.tz_localize('UTC')
-                else: df_lb.index = df_lb.index.tz_convert('UTC')
+                df_temp = df_lb.copy()
+                if df_temp.index.tz is None: df_temp.index = df_temp.index.tz_localize('UTC')
+                else: df_temp.index = df_temp.index.tz_convert('UTC')
                 
-                last_lon = df_lb.index[-1].tz_convert('Europe/London')
+                last_lon = df_temp.index[-1].tz_convert('Europe/London')
                 if now_lon.date() > last_lon.date(): start_dollars = cur_dollars
                 else:
-                    prev_sessions = df_lb[df_lb.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < today_str]
-                    start_p = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_lb['Close'].iloc[0]
+                    prev_sessions = df_temp[df_temp.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < today_str]
+                    start_p = float(prev_sessions['Close'].iloc[-1]) if not prev_sessions.empty else float(df_temp['Close'].iloc[0])
                     start_dollars = start_p / div
                 return tick, cur_dollars, start_dollars
             except Exception:
@@ -2951,43 +2954,33 @@ def get_data():
             for tick, cur_d, start_d in ex.map(fetch_lb_price, all_user_holds): 
                 prices[tick] = {'cur': cur_d, 'start': start_d}
 
-        # Live USD -> GBP Conversion Rate (default 0.7499)
         usd_gbp_rate = 0.7499
         try:
             df_fx = fetch_yf_data("GBPUSD=X", "5d", "5m")
             if not df_fx.empty:
                 gbp_per_usd = 1.0 / float(df_fx['Close'].iloc[-1])
-                if gbp_per_usd > 0:
-                    usd_gbp_rate = round(gbp_per_usd, 4)
-        except Exception:
-            pass
+                if gbp_per_usd > 0: usd_gbp_rate = round(gbp_per_usd, 4)
+        except Exception: pass
 
         leaderboard = []
-        # Robust user map retrieval ensuring admin profiles are always resolved
-        if is_client and c_store:
-            source_users = c_store.get('users', {})
-        else:
-            portfolio_store.reload()
+        source_users = (c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})
+        if not source_users:
             source_users = portfolio_store.data.get('users', {})
-            # Fallback: if data['users'] was wiped or reset, guarantee core production fleet exists
-            if not source_users:
-                for default_p in ['Vector Hybrid', 'Velocity Pulse', 'Dual Axis']:
-                    portfolio_store.data.setdefault('users', {})[default_p] = portfolio_store.default_user_state(default_p)
-                portfolio_store.save_data(portfolio_store.data)
-                source_users = portfolio_store.data.get('users', {})
 
         for u, u_data in source_users.items():
             if not isinstance(u_data, dict): continue
-            mb_lb = float(u_data.get('master_budget', 500.0))
+            mb_lb = float(u_data.get('master_budget') or 500.0)
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
             
-            nh_lb = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist_lb if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
-            im_lb = sum(pos.get('manual_val', 0.0) for pos in init_pos_lb.values())
+            nh_lb = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
+                        for tr in hist_lb if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
+            im_lb = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos_lb.values())
             cash_now = mb_lb + nh_lb - im_lb
             
             trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
-            net_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
+            net_cash_today = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
+                                 for tr in trades_today)
             cash_start = cash_now - net_cash_today
             
             equity_now, equity_start = 0.0, 0.0
@@ -3005,12 +2998,12 @@ def get_data():
                 sh_start = sh_now
                 for tr in trades_today:
                     if tr.get('ticker') == tk:
-                        if tr.get('action') == 'BUY': sh_start -= tr.get('shares', 0)
-                        else: sh_start += tr.get('shares', 0)
+                        if tr.get('action') == 'BUY': sh_start -= int(tr.get('shares') or 0)
+                        else: sh_start += int(tr.get('shares') or 0)
                 equity_start += max(0, sh_start) * p_data['start']
                 
-            tot_eq_now = max(0, cash_now) + equity_now
-            tot_eq_start = max(0, cash_start) + equity_start
+            tot_eq_now = max(0.0, cash_now) + equity_now
+            tot_eq_start = max(0.0, cash_start) + equity_start
 
             user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
             held_sym = user_holds[0] if user_holds else ''
@@ -3053,7 +3046,7 @@ def get_data():
         req_p = request.args.get('p')
         if not req_p or req_p == 'undefined': req_p = settings.get('period', '1d')
         req_i = request.args.get('i')
-        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '1m' if any(x in active_profile for x in ['test p', 'test t']) else '5m')
+        if not req_i or req_i == 'undefined': req_i = settings.get('interval', '5m')
 
         if req_p in ['1y', '5y', 'max'] and req_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: req_i = '1d'
         elif req_p in ['1mo', '3mo', '6mo'] and req_i in ['1m', '2m']: req_i = '5m'
@@ -3064,11 +3057,12 @@ def get_data():
                 try:
                     df_stat = fetch_yf_data(tick, "5d", "5m")
                     if df_stat.empty: return tick, 'closed'
-                    if df_stat.index.tz is not None: df_stat.index = df_stat.index.tz_convert('UTC')
-                    if (time.time() - df_stat.index[-1].timestamp()) > 1800: return tick, 'closed' 
-                    if len(df_stat) > 1:
-                        if df_stat['Close'].iloc[-1] > df_stat['Close'].iloc[-2]: return tick, 'up'
-                        elif df_stat['Close'].iloc[-1] < df_stat['Close'].iloc[-2]: return tick, 'down'
+                    df_temp = df_stat.copy()
+                    if df_temp.index.tz is not None: df_temp.index = df_temp.index.tz_convert('UTC')
+                    if (time.time() - df_temp.index[-1].timestamp()) > 1800: return tick, 'closed' 
+                    if len(df_temp) > 1:
+                        if df_temp['Close'].iloc[-1] > df_temp['Close'].iloc[-2]: return tick, 'up'
+                        elif df_temp['Close'].iloc[-1] < df_temp['Close'].iloc[-2]: return tick, 'down'
                     return tick, 'closed'
                 except Exception: return tick, 'closed'
 
@@ -3085,26 +3079,28 @@ def get_data():
                 t_buys_today = [tr for tr in hist if tr.get('ticker') == tk and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
                 df_5m = pnl_dfs_5m.get(tk)
                 if df_5m is not None and not df_5m.empty:
-                    cur_price = df_5m['Close'].iloc[-1]
+                    cur_price = float(df_5m['Close'].iloc[-1])
                     div = 100.0 if str(tk).endswith('.L') and cur_price > 100 else 1.0
                     cur_price_dollars = cur_price / div
                     
                     if t_buys_today: 
-                        p_today_base_dollars = sum(tr.get('amount', 0) for tr in t_buys_today) / sum(tr.get('shares', 1) for tr in t_buys_today)
+                        tot_shares_b = sum(int(tr.get('shares') or 1) for tr in t_buys_today)
+                        p_today_base_dollars = sum(float(tr.get('amount') or 0.0) for tr in t_buys_today) / (tot_shares_b if tot_shares_b > 0 else 1)
                     else:
                         last_date_str = now_lon.strftime('%Y-%m-%d')
-                        prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-                        p_today_mkt_pence = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                        p_today_base_dollars = p_today_mkt_pence / div
+                        df_temp = df_5m.copy()
+                        if df_temp.index.tz is None: df_temp.index = df_temp.index.tz_localize('UTC')
+                        else: df_temp.index = df_temp.index.tz_convert('UTC')
+                        prev_sessions = df_temp[df_temp.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
+                        p_today_mkt = float(prev_sessions['Close'].iloc[-1]) if not prev_sessions.empty else float(df_temp['Close'].iloc[0])
+                        p_today_base_dollars = p_today_mkt / div
 
                     target_ts = now_utc - pd.Timedelta(hours=1)
                     df_temp = df_5m.copy()
-                    if df_temp.index.tz is None:
-                        df_temp.index = df_temp.index.tz_localize('UTC')
-                    else:
-                        df_temp.index = df_temp.index.tz_convert('UTC')
+                    if df_temp.index.tz is None: df_temp.index = df_temp.index.tz_localize('UTC')
+                    else: df_temp.index = df_temp.index.tz_convert('UTC')
                     prior_df = df_temp[df_temp.index <= target_ts]
-                    p_1h_mkt = prior_df['Close'].iloc[-1] if not prior_df.empty else (df_temp['Close'].iloc[0] if not df_temp.empty else cur_price)
+                    p_1h_mkt = float(prior_df['Close'].iloc[-1]) if not prior_df.empty else (float(df_temp['Close'].iloc[0]) if not df_temp.empty else cur_price)
                     p_1h_base_dollars = p_1h_mkt / div
 
                     tot_today_diff += sh_h * (cur_price_dollars - p_today_base_dollars)
@@ -3137,11 +3133,14 @@ def get_data():
                 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '', 'is_rotator_profile': is_rotator
             }})
 
-        if df.index.tz is not None: df.index = df.index.tz_convert('UTC')
-        df.name = t
-        data = [{'time': i.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 'open': round(r['Open'],2), 'high': round(r['High'],2), 'low': round(r['Low'],2), 'close': round(r['Close'],2)} for i, r in df.iterrows()]
+        df_chart = df.copy()
+        if df_chart.index.tz is not None: df_chart.index = df_chart.index.tz_convert('UTC')
+        df_chart.name = t
+        data = [{'time': i.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 
+                 'open': round(float(r['Open']),2), 'high': round(float(r['High']),2), 'low': round(float(r['Low']),2), 'close': round(float(r['Close']),2)} 
+                for i, r in df_chart.iterrows()]
         seen = set(); data = [x for x in data if x['time'] not in seen and not seen.add(x['time'])]
-        last_p = round(data[-1]['close'], 2) if data else 0
+        last_p = round(data[-1]['close'], 2) if data else 0.0
 
         sh_own = resolve_profile_shares(ud, t)
         cps = last_p / 100.0 if str(t).endswith('.L') and last_p > 100 else last_p
@@ -3152,30 +3151,25 @@ def get_data():
         if sh_own > 0:
             t_buys = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
             if t_buys: 
-                avg_buy_p = t_buys[0].get('price', 0.0)
-                buy_ts = t_buys[0].get('timestamp', 0)
+                avg_buy_p = float(t_buys[0].get('price') or 0.0)
+                buy_ts = int(t_buys[0].get('timestamp') or 0)
                 df_check = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
                 if df_check is not None and not df_check.empty and 'High' in df_check.columns:
                     try:
                         post_buy_df = df_check[df_check.index.astype('int64') // 10**9 >= (buy_ts - 300)]
                         candle_high = float(post_buy_df['High'].max()) if not post_buy_df.empty else last_p
-                    except Exception:
-                        candle_high = last_p
-                else:
-                    candle_high = last_p
-            else:
-                candle_high = last_p
+                    except Exception: candle_high = last_p
+                else: candle_high = last_p
+            else: candle_high = last_p
 
-            stored_hw = (holds_dict.get(t) or {}).get('high_water', last_p)
+            stored_hw = float((holds_dict.get(t) or {}).get('high_water') or last_p)
             highest_p = max(stored_hw, candle_high, last_p)
             if highest_p > stored_hw:
                 if 'holdings' not in ud: ud['holdings'] = {}
                 if t not in ud['holdings']: ud['holdings'][t] = {}
                 ud['holdings'][t]['high_water'] = highest_p
-                if is_client:
-                    portfolio_store.save_client_store(client_name, c_store)
-                else:
-                    portfolio_store.save_data(portfolio_store.data)
+                if is_client: portfolio_store.save_client_store(client_name, c_store)
+                else: portfolio_store.save_data(portfolio_store.data)
 
         if is_momentum:
             df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
@@ -3185,7 +3179,7 @@ def get_data():
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
 
-        cb_t = (init_pos.get(t) or {}).get('manual_val', 0.0) + sum(tr.get('amount', 0) if tr.get('action')=='BUY' else -tr.get('amount', 0) for tr in hist if tr.get('ticker')==t)
+        cb_t = float((init_pos.get(t) or {}).get('manual_val') or 0.0) + sum(float(tr.get('amount') or 0.0) if tr.get('action')=='BUY' else -float(tr.get('amount') or 0.0) for tr in hist if tr.get('ticker')==t)
         
         ticker_pnl_data = {}
         if sh_own > 0 and cb_t > 0:
@@ -3195,33 +3189,35 @@ def get_data():
 
             df_5m = pnl_dfs_5m.get(t)
             if df_5m is not None and not df_5m.empty:
-                if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
-                else: df_5m.index = df_5m.index.tz_convert('UTC')
+                df_temp = df_5m.copy()
+                if df_temp.index.tz is None: df_temp.index = df_temp.index.tz_localize('UTC')
+                else: df_temp.index = df_temp.index.tz_convert('UTC')
                 
-                cur_p = df_5m['Close'].iloc[-1]
+                cur_p = float(df_temp['Close'].iloc[-1])
                 div = 100.0 if str(t).endswith('.L') and cur_p > 100 else 1.0
                 cur_p_dollars = cur_p / div
-                last_ts = df_5m.index[-1]
+                last_ts = df_temp.index[-1]
                 last_lon = last_ts.tz_convert('Europe/London')
                 
                 t_buys_today_t = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY' and tr.get('date_str') == now_lon.strftime('%Y-%m-%d')]
-                avg_b_today_t_dollars = (sum(tr.get('amount', 0) for tr in t_buys_today_t) / sum(tr.get('shares', 1) for tr in t_buys_today_t)) if t_buys_today_t else 0.0
+                tot_sh_today = sum(int(tr.get('shares') or 1) for tr in t_buys_today_t)
+                avg_b_today_t_dollars = (sum(float(tr.get('amount') or 0.0) for tr in t_buys_today_t) / (tot_sh_today if tot_sh_today > 0 else 1)) if t_buys_today_t else 0.0
 
                 if now_lon.date() > last_lon.date():
                     p_today_dollars = cur_p_dollars
                     p_1h_dollars = cur_p_dollars
                 else:
                     last_date_str = last_lon.strftime('%Y-%m-%d')
-                    prev_sessions = df_5m[df_5m.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
-                    p_today_mkt_pence = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_5m['Close'].iloc[0]
-                    p_today_dollars = avg_b_today_t_dollars if avg_b_today_t_dollars > 0 else (p_today_mkt_pence / div)
+                    prev_sessions = df_temp[df_temp.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < last_date_str]
+                    p_today_mkt = float(prev_sessions['Close'].iloc[-1]) if not prev_sessions.empty else float(df_temp['Close'].iloc[0])
+                    p_today_dollars = avg_b_today_t_dollars if avg_b_today_t_dollars > 0 else (p_today_mkt / div)
                     
                     if (now_utc - last_ts).total_seconds() > 4200: p_1h_dollars = cur_p_dollars
                     else:
                         target_ts = now_utc - pd.Timedelta(hours=1)
-                        prior_df = df_5m[df_5m.index <= target_ts]
-                        p_1h_mkt_pence = prior_df['Close'].iloc[-1] if not prior_df.empty else p_today_mkt_pence
-                        p_1h_dollars = avg_b_today_t_dollars if avg_b_today_t_dollars > 0 else (p_1h_mkt_pence / div)
+                        prior_df = df_temp[df_temp.index <= target_ts]
+                        p_1h_mkt = float(prior_df['Close'].iloc[-1]) if not prior_df.empty else p_today_mkt
+                        p_1h_dollars = avg_b_today_t_dollars if avg_b_today_t_dollars > 0 else (p_1h_mkt / div)
                 
                 pv_today = sh_own * (cur_p_dollars - p_today_dollars)
                 pv_1h = sh_own * (cur_p_dollars - p_1h_dollars)
@@ -3266,8 +3262,7 @@ def get_data():
                         sma200 = df_1y['Close'].rolling(200, min_periods=1).mean()
                         sma_dict = {idx.strftime('%Y-%m-%d'): val for idx, val in sma200.items() if pd.notna(val)}
                         last_valid = sma200.dropna().iloc[-1] if not sma200.dropna().empty else last_p
-                    else:
-                        sma_dict, last_valid = {}, last_p
+                    else: sma_dict, last_valid = {}, last_p
                     for d in data:
                         time_str = d['time'] if isinstance(d['time'], str) else pd.to_datetime(d['time'], unit='s').strftime('%Y-%m-%d')
                         val = sma_dict.get(time_str, last_valid)
@@ -3276,15 +3271,17 @@ def get_data():
 
         return jsonify({'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if str(t).endswith('.L') and last_p>100 else f"${last_p:.2f}",
-            'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
-            'status': st['status'], 'color': st['color'], 'reason': st['reason'],
-            'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'],
+            'discount': st.get('discount', '--'), 'buy_score': f"{st.get('score', 0)} / 100", 'tranches': st.get('tranches', 0),
+            'status': st.get('status', '--'), 'color': st.get('color', '#8a8a9e'), 'reason': st.get('reason', ''),
+            'action_main': st.get('action_main', 'HOLD'), 'action_sub': st.get('action_sub', ''), 'action_color': st.get('action_color', '#8a8a9e'),
             'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': ticker_pnl_data['all']['val'], 'pnl_color': ticker_pnl_data['all']['color'], 'pnl_data': ticker_pnl_data,
             'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG'),
             'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator
         }})
-    except Exception as e: 
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/report/forensic', methods=['GET'])
