@@ -4684,7 +4684,11 @@
                 let dayPct = activeLb.daily_pct || 0;
                 let pctStr = `(${dayVal >= 0 ? '+' : ''}${dayPct.toFixed(2)}%)`;
                 let tValEl = document.getElementById('mEquityTodayVal');
+                let tPctEl = document.getElementById('mEquityTodayPct');
+                let dAvgEl = document.getElementById('mEquityDailyAvg');
+
                 if (tValEl) { tValEl.innerText = `${dayVal >= 0 ? '+' : '-'}$${Math.abs(dayVal).toFixed(2)}`; tValEl.style.color = dayCol; }
+                if (tPctEl) { tPctEl.innerText = pctStr; tPctEl.style.color = dayCol; }
                 
                 // True Multi-Day Average: Total profit since inception divided by recorded active trading days
                 let initialCapital = activeLb.budget || 500.0;
@@ -4696,12 +4700,6 @@
                 let dAvgCol = trueDailyAvgPct >= 0 ? '#0ecb81' : '#ff5364';
                 let dAvgStr = `${trueDailyAvgPct >= 0 ? '+' : ''}${trueDailyAvgPct.toFixed(2)}%`;
 
-                let tValEl = document.getElementById('mEquityTodayVal');
-                let tPctEl = document.getElementById('mEquityTodayPct');
-                let dAvgEl = document.getElementById('mEquityDailyAvg');
-                
-                if (tValEl) { tValEl.innerText = `${dayVal >= 0 ? '+' : '-'}£${Math.abs(dayVal).toFixed(2)}`; tValEl.style.color = dayCol; }
-                if (tPctEl) { tPctEl.innerText = pctStr; tPctEl.style.color = dayCol; }
                 if (dAvgEl) { dAvgEl.innerText = dAvgStr; dAvgEl.style.color = dAvgCol; }
 
                 let mobNameEl = document.getElementById('mobCombinedProfileName');
