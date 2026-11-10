@@ -976,6 +976,32 @@ class MarketScoringEngine:
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
+            # +2.50% RATCHET FLOOR (LOCK +2.50% MINIMUM, ALLOW RUNNERS HIGHER)
+            if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
+                profit_floor_250 = avg_buy_price * 1.0250  # Hard floor at +2.50% profit
+                trail_pct = 0.35  # Choke trailing stop to 0.35% for any higher peaks
+                if current_price <= profit_floor_250:
+                    return {
+                        'type': 'Intraday Momentum',
+                        'score': 0,
+                        'tranches': 0,
+                        'discount': f"{pnl_pct:.2f}%",
+                        'reason': f"2.50% PROFIT FLOOR BANKED (+{pnl_pct:.2f}%). Peak: +{peak_pnl_pct:.2f}%. Day complete.",
+                        'is_smart': True,
+                        'rec_buy': current_price,
+                        'rec_sell': current_price,
+                        'status': '2.50% Floor Banked',
+                        'color': '#0ecb81',
+                        'action_main': 'SELL',
+                        'action_sub': '(Bank +2.50%)',
+                        'action_color': '#0ecb81',
+                        'regime': regime,
+                        'trade_type': trade_type,
+                        'health_pct': 100,
+                        'health_color': '#0ecb81',
+                        'health_text': f"Banked (+{pnl_pct:.2f}%)"
+                    }
+
             # VELOCITY CHOKE ON RUNNERS: Choke trail to 0.40% once peak reaches >= +1.20%
             if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 1.20:
                 trail_pct = 0.40
@@ -1253,11 +1279,8 @@ def process_auto_profile(prof_name, client_email=None):
 
                 # PHASE 2 BANK-AND-WALK HARVEST CURFEWS
         cur_mins = now_uk.hour * 60 + now_uk.minute
-        # Vector Hybrid locks gains at +2.20% (+£11 on £500)
-        if any(x in active_profile for x in ['vector', 'test tqm']) and daily_pnl_pct >= 2.20:
-            is_curfew_active = True
-        # Dual Axis locks gains at +2.20%
-        elif any(x in active_profile for x in ['dual', 'test tq']) and daily_pnl_pct >= 2.20:
+        # Vector Hybrid & Dual Axis lock daily wins and halt trading once >= +2.50% is banked
+        if any(x in active_profile for x in ['vector', 'test tqm', 'dual', 'test tq']) and daily_pnl_pct >= 2.50:
             is_curfew_active = True
         # Velocity Pulse locks at +3.00%
         elif any(x in active_profile for x in ['velocity', 'pulse', 'test s']) and daily_pnl_pct >= 3.00:
