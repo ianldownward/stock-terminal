@@ -3065,17 +3065,17 @@
                         let p = tradePnl[t.id];
                         let sign = p.val >= 0 ? '+' : '-';
                         let pCol = p.val >= 0 ? '#0ecb81' : '#ff5364';
-                        pnlStr = `<span style="color:${pCol}; font-weight:800; margin-left:4px;">${sign}£${Math.abs(p.val).toFixed(2)} (${sign}${Math.abs(p.pct).toFixed(1)}%)</span>`;
+                        pnlStr = `<span style="color:${pCol}; font-weight:800; margin-left:4px;">${sign}$${Math.abs(p.val).toFixed(2)} (${sign}${Math.abs(p.pct).toFixed(1)}%)</span>`;
                     }
 
                     return `
                         <div onclick="selectStock('${t.ticker}'); document.getElementById('journeyModal').style.display='none';" style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" title="View ${t.ticker} chart">
                             <div>
                                 <span style="font-weight:bold; color:${col}; font-size:12px;">${t.action} ${t.shares} sh <span style="color:#ffd400; text-decoration:underline;">${t.ticker}</span></span>${pnlStr}
-                                <div style="font-size:10px; color:#8a8a9e; margin-top:2px;">${t.time || '--'} • Total £${(parseFloat(t.amount) || 0).toFixed(2)}</div>
+                                <div style="font-size:10px; color:#8a8a9e; margin-top:2px;">${t.time || '--'} • Total $${(parseFloat(t.amount) || 0).toFixed(2)}</div>
                             </div>
                             <div style="text-align:right;">
-                                <span style="font-weight:bold; color:#fff; font-size:12px;">@ £${(parseFloat(t.price) || 0).toFixed(2)}</span>
+                                <span style="font-weight:bold; color:#fff; font-size:12px;">@ $${(parseFloat(t.price) || 0).toFixed(2)}</span>
                             </div>
                         </div>
                     `;
@@ -4432,7 +4432,7 @@
                     let p = tradePnl[i.id];
                     let sign = p.val >= 0 ? '+' : '-';
                     let col = p.val >= 0 ? '#0ecb81' : '#ff5364';
-                    let valStr = `${sign}£${Math.abs(p.val).toFixed(2)}`;
+                    let valStr = `${sign}$${Math.abs(p.val).toFixed(2)}`;
                     let pctStr = `(${sign}${Math.abs(p.pct).toFixed(2)}%)`;
                     pnlTag = `<span style="color:${col}; font-weight:bold; margin-left:6px; font-size:12px;">${valStr} <span style="font-size:10px;">${pctStr}</span></span>`;
                 }
@@ -4445,7 +4445,7 @@
                     <div class="h-action ${i.action === 'BUY' ? 'h-buy' : 'h-sell'}" style="cursor:pointer;" onclick="selectStock('${i.ticker}')" title="View ${i.ticker} Chart">
                         ${i.action} ${i.shares} sh <span style="text-decoration:underline; text-underline-offset:2px; font-weight:900;">${i.ticker}</span> ${pnlTag}
                     </div>
-                    <div class="h-meta" style="cursor:pointer;" onclick="selectStock('${i.ticker}')">@ £${perShare} (Total £${totalAmt}) • ${i.time}</div>
+                    <div class="h-meta" style="cursor:pointer;" onclick="selectStock('${i.ticker}')">@ $${perShare} (Total $${totalAmt}) • ${i.time}</div>
                 `;
                 ul.appendChild(li);
             });
@@ -5449,13 +5449,13 @@
             let budget = 500.0;
             let r = rate / 100.0;
             let hdr = document.getElementById('milestoneBoxHeader');
-            if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${rate.toFixed(1)}% / Day @ £500 Baseline)`;
+            if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${rate.toFixed(1)}% / Day @ $500 Baseline)`;
 
             function fmt(val) {
-                if (val >= 1e9) return `£${(val/1e9).toFixed(1)}B`;
-                if (val >= 1e6) return `£${(val/1e6).toFixed(2)}M`;
-                if (val >= 1e3) return `£${Math.round(val).toLocaleString()}`;
-                return `£${val.toFixed(2)}`;
+                if (val >= 1e9) return `$${(val/1e9).toFixed(1)}B`;
+                if (val >= 1e6) return `$${(val/1e6).toFixed(2)}M`;
+                if (val >= 1e3) return `$${Math.round(val).toLocaleString()}`;
+                return `$${val.toFixed(2)}`;
             }
 
             for (let yr = 1; yr <= 5; yr++) {
@@ -5520,15 +5520,15 @@
 
             document.getElementById('insightProfName').innerText = userKey;
             document.getElementById('insightProfType').innerText = profileDesc[userKey] || "Algorithmic Strategy Profile";
-            document.getElementById('insightEquity').innerText = `£${currentEq.toFixed(2)}`;
+            document.getElementById('insightEquity').innerText = `$${currentEq.toFixed(2)}`;
             
             let retEl = document.getElementById('insightReturn');
             if (retEl) {
-                retEl.innerText = `${netGain >= 0 ? '+' : '-'}£${Math.abs(netGain).toFixed(2)} (${retPct >= 0 ? '+' : ''}${retPct.toFixed(2)}%)`;
+                retEl.innerText = `${netGain >= 0 ? '+' : '-'}$${Math.abs(netGain).toFixed(2)} (${retPct >= 0 ? '+' : ''}${retPct.toFixed(2)}%)`;
                 retEl.style.color = netGain >= 0 ? '#0ecb81' : '#ff5364';
             }
 
-            document.getElementById('insightBudget').innerText = `£${budget.toFixed(2)}`;
+            document.getElementById('insightBudget').innerText = `$${budget.toFixed(2)}`;
             
             // True Daily Average Return across active days
             let daysActive = Math.max(1, lb.days_active || 1);
@@ -5657,7 +5657,7 @@
                 ctx.lineTo(w - padR, y);
                 ctx.stroke();
 
-                let labelStr = v >= 1e9 ? `£${(v/1e9).toFixed(1)}B` : (v >= 1e6 ? `£${(v/1e6).toFixed(1)}M` : (v >= 1e3 ? `£${(v/1e3).toFixed(0)}k` : `£${v.toFixed(0)}`));
+                let labelStr = v >= 1e9 ? `$${(v/1e9).toFixed(1)}B` : (v >= 1e6 ? `$${(v/1e6).toFixed(2)}M` : (v >= 1e3 ? `$${(v/1e3).toFixed(0)}k` : `$${v.toFixed(0)}`));
                 ctx.fillStyle = '#8a8a9e';
                 ctx.font = `10px ${appFont}`;
                 ctx.fillText(labelStr, 12, y + 3);
