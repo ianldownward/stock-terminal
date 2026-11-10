@@ -2984,6 +2984,13 @@
         let autoRefreshTimer = null;
         let isDrawing = false;
         let openInfoSet = new Set();
+        window._usdGbpRate = 0.7499;
+
+        function formatDualCurrency(usdVal) {
+            let usd = parseFloat(usdVal) || 0;
+            let gbp = usd * (window._usdGbpRate || 0.7499);
+            return `$${usd.toFixed(2)} <span style="font-size:0.82em; opacity:0.8; font-weight:600;">(£${gbp.toFixed(2)})</span>`;
+        }
 
         const profileDesc = {
             'Vector Hybrid': 'Production Desk #1: Flagship 3x leveraged ETF momentum engine. Shifts from opening elasticity to trend momentum. Harvests daily gains at +2.20% and moves 100% to cash.',
@@ -3921,7 +3928,7 @@
                 const activeHeldTicker = activeHoldsList.length > 0 ? activeHoldsList[0] : (activeLb.held_ticker || activeLb.holding || '');
                 const heldTagActive = (isHeldActive && activeHeldTicker) ? `<span style="color:#ffd400; font-weight:800; margin-left:5px;">(${activeHeldTicker})</span>` : '';
 
-                const eqVal = activeLb.equity !== undefined ? parseFloat(activeLb.equity).toFixed(2) : '0.00';
+                const eqVal = formatDualCurrency(activeLb.equity !== undefined ? activeLb.equity : 0);
                 const dVal = parseFloat(activeLb.daily_pnl) || 0;
                 const arrow = dVal > 0 ? '▲' : (dVal < 0 ? '▼' : '►');
                 const col = dVal > 0 ? '#0ecb81' : (dVal < 0 ? '#ff5364' : '#8a8a9e');
@@ -3939,8 +3946,8 @@
                             <span style="font-weight:bold; color:var(--text-accent, #ffd400); font-size:13px;">${shortName}${heldTagActive}</span>
                         </div>
                         <div style="display:flex; justify-content:space-between; align-items:center; width:100%; font-size:12px;">
-                            <span class="trigger-equity-val" style="font-weight:bold; font-size:13px;">£${eqVal}</span>
-                            <span style="color:${col}; font-weight:bold; white-space:nowrap;">${arrowIcon}£${Math.abs(dVal).toFixed(2)} (${signStr}${pctStr})</span>
+                            <span class="trigger-equity-val" style="font-weight:bold; font-size:13px;">${eqVal}</span>
+                            <span style="color:${col}; font-weight:bold; white-space:nowrap;">${arrowIcon}$${Math.abs(dVal).toFixed(2)} (${signStr}${pctStr})</span>
                         </div>
                     </div>
                 `;
@@ -3998,8 +4005,8 @@
                         <div class="custom-select-item ${isSel ? 'selected' : ''}" onclick="selectCustomProfile('${u}')" style="padding: 8px 12px; display:flex; justify-content:space-between; align-items:center;">
                             <span style="font-weight:bold; color:${isSel ? '#ffd400' : '#fff'}; font-size:13px; white-space:nowrap;">${shortName}${heldTag}</span>
                             <div style="display:flex; flex-direction:column; align-items:flex-end; gap:1px;">
-                                <span class="trigger-equity-val" style="font-weight:bold; font-size:12px;">£${eqVal}</span>
-                                <span style="color:${col}; font-weight:bold; font-size:10px; white-space:nowrap;">${itemArrowIcon}£${Math.abs(dVal).toFixed(2)} (${signStr}${pctStr})</span>
+                                <span class="trigger-equity-val" style="font-weight:bold; font-size:12px;">${formatDualCurrency(lb.equity)}</span>
+                                <span style="color:${col}; font-weight:bold; font-size:10px; white-space:nowrap;">${itemArrowIcon}$${Math.abs(dVal).toFixed(2)} (${signStr}${pctStr})</span>
                             </div>
                         </div>
                     `;
@@ -4239,8 +4246,8 @@
                 let arrow = dayVal > 0 ? '▲' : (dayVal < 0 ? '▼' : '');
                 let arrowHtml = arrow ? `<span style="color:${dailyColor}; font-size:10px; margin-left:4px;">${arrow}</span> <span style="color:#ffffff;">${pctStr}</span>` : `<span style="color:#8a8a9e; font-size:11px; margin-left:4px;">0.0%</span>`;
 
-                let dailyPnlFormatted = `${dayVal >= 0 ? '+' : '-'}£${Math.abs(dayVal).toFixed(2)}`;
-                let equityFormatted = `£${lb.equity.toFixed(2)}`;
+                let dailyPnlFormatted = `${dayVal >= 0 ? '+' : '-'}$${Math.abs(dayVal).toFixed(2)}`;
+                let equityFormatted = formatDualCurrency(lb.equity);
                 let isInfoOpen = openInfoSet.has(lb.user);
 
                 let displayVal = sortMode === 'today' ? `${dailyPnlFormatted} ${arrowHtml}` : equityFormatted;
@@ -4656,7 +4663,8 @@
                     }, 300);
                 }
 
-                // Update Total Portfolio Equity & Separate Cash/Shares rows (Default 0.00 for clean slate)
+                // Update Total Portfolio Equity & Separate Cash/Shares rows with live dual currency
+                if (p.usd_gbp_rate) window._usdGbpRate = p.usd_gbp_rate;
                 let totEqVal = (p.metrics && p.metrics.total_equity !== undefined) ? parseFloat(p.metrics.total_equity).toFixed(2) : '0.00';
                 let cashAmt = (p.metrics && p.metrics.budget_remaining !== undefined) ? parseFloat(p.metrics.budget_remaining).toFixed(2) : '0.00';
                 let sharesAmt = (p.metrics ? p.metrics.total_portfolio_owned || 0 : 0).toFixed(2);
@@ -4664,9 +4672,9 @@
                 let eqValEl = document.getElementById('mTotalSharesHeldVal');
                 let cashEl = document.getElementById('mCashVal');
                 let sharesEl = document.getElementById('mSharesVal');
-                if (eqValEl) eqValEl.innerText = `£${totEqVal}`;
-                if (cashEl) cashEl.innerText = `Cash: £${cashAmt}`;
-                if (sharesEl) sharesEl.innerText = `Shares: £${sharesAmt}`;
+                if (eqValEl) eqValEl.innerHTML = formatDualCurrency(totEqVal);
+                if (cashEl) cashEl.innerHTML = `Cash: ${formatDualCurrency(cashAmt)}`;
+                if (sharesEl) sharesEl.innerText = `Shares: $${sharesAmt}`;
 
                 // Update Today & Daily Average Metrics aligned with Cash & Shares
                 let activeProf = document.getElementById('userSelect')?.value || '';
@@ -4675,6 +4683,8 @@
                 let dayCol = dayVal >= 0 ? '#0ecb81' : '#ff5364';
                 let dayPct = activeLb.daily_pct || 0;
                 let pctStr = `(${dayVal >= 0 ? '+' : ''}${dayPct.toFixed(2)}%)`;
+                let tValEl = document.getElementById('mEquityTodayVal');
+                if (tValEl) { tValEl.innerText = `${dayVal >= 0 ? '+' : '-'}$${Math.abs(dayVal).toFixed(2)}`; tValEl.style.color = dayCol; }
                 
                 // True Multi-Day Average: Total profit since inception divided by recorded active trading days
                 let initialCapital = activeLb.budget || 500.0;

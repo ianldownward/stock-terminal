@@ -2937,6 +2937,17 @@ def get_data():
         with ThreadPoolExecutor(max_workers=6) as ex:
             for tick, cur_pnd, start_pnd in ex.map(fetch_lb_price, all_user_holds): prices[tick] = {'cur': cur_pnd, 'start': start_pnd}
 
+        # Fetch live USD/GBP conversion rate (with 0.75 safe fallback)
+        usd_gbp_rate = 0.75
+        try:
+            df_fx = fetch_yf_data("GBPUSD=X", "5d", "5m")
+            if not df_fx.empty:
+                gbp_per_usd = 1.0 / float(df_fx['Close'].iloc[-1])
+                if gbp_per_usd > 0:
+                    usd_gbp_rate = round(gbp_per_usd, 4)
+        except Exception:
+            pass
+
         leaderboard = []
         source_users = (c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})
 
@@ -3069,9 +3080,9 @@ def get_data():
         master_1h_pct = (tot_1h_diff / mb * 100.0) if mb > 0 else 0.0
 
         master_pnl_data = {
-            'all': {'val': f"{'+' if master_pnl_val>0 else ''}£{master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#0ecb81' if master_pnl_val > 0 else ('#ff5364' if master_pnl_val < 0 else '#8a8a9e')},
-            'today': {'val': f"{'+' if tot_today_diff>0 else ''}£{tot_today_diff:.2f} ({'+' if master_today_pct>0 else ''}{master_today_pct:.2f}%)", 'color': '#0ecb81' if tot_today_diff > 0 else ('#ff5364' if tot_today_diff < 0 else '#8a8a9e')},
-            '1h': {'val': f"{'+' if tot_1h_diff>0 else ''}£{tot_1h_diff:.2f} ({'+' if master_1h_pct>0 else ''}{master_1h_pct:.2f}%)", 'color': '#0ecb81' if tot_1h_diff > 0 else ('#ff5364' if tot_1h_diff < 0 else '#8a8a9e')}
+            'all': {'val': f"{'+' if master_pnl_val>0 else ''}${master_pnl_val:.2f} ({'+' if master_pnl_pct>0 else ''}{master_pnl_pct:.2f}%)", 'color': '#0ecb81' if master_pnl_val > 0 else ('#ff5364' if master_pnl_val < 0 else '#8a8a9e')},
+            'today': {'val': f"{'+' if tot_today_diff>0 else ''}${tot_today_diff:.2f} ({'+' if master_today_pct>0 else ''}{master_today_pct:.2f}%)", 'color': '#0ecb81' if tot_today_diff > 0 else ('#ff5364' if tot_today_diff < 0 else '#8a8a9e')},
+            '1h': {'val': f"{'+' if tot_1h_diff>0 else ''}${tot_1h_diff:.2f} ({'+' if master_1h_pct>0 else ''}{master_1h_pct:.2f}%)", 'color': '#0ecb81' if tot_1h_diff > 0 else ('#ff5364' if tot_1h_diff < 0 else '#8a8a9e')}
         }
 
         engine = MarketScoringEngine()
@@ -3293,8 +3304,8 @@ def get_data():
                         mathLine.append({'time': d['time'], 'value': round(((val - d['close']) / val) * 100.0 if val > 0 else 0, 2)})
         except Exception: mathLine = []
 
-        return jsonify({'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'metrics': {
-            'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"£{last_p:.2f}",
+        return jsonify({'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
+            'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if t.endswith('.L') and last_p>100 else f"${last_p:.2f}",
             'discount': st['discount'], 'buy_score': f"{st['score']} / 100", 'tranches': st['tranches'],
             'status': st['status'], 'color': st['color'], 'reason': st['reason'],
             'action_main': st['action_main'], 'action_sub': st['action_sub'], 'action_color': st['action_color'],
