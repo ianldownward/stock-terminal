@@ -976,24 +976,27 @@ class MarketScoringEngine:
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
-            # +2.50% RATCHET FLOOR (LOCK +2.50% MINIMUM, ALLOW RUNNERS HIGHER)
+            # DYNAMIC 0.50% STEP-RATCHET FLOOR (MOVES UP EVERY +0.50% FROM +2.50%)
             if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
-                profit_floor_250 = avg_buy_price * 1.0250  # Hard floor at +2.50% profit
-                trail_pct = 0.35  # Choke trailing stop to 0.35% for any higher peaks
-                if current_price <= profit_floor_250:
+                # Ratchets floor in 0.50% steps: 2.5% -> 3.0% -> 3.5% -> 4.0%
+                floor_pct = round(int(peak_pnl_pct * 2) / 2.0, 2)
+                profit_floor_price = avg_buy_price * (1.0 + (floor_pct / 100.0))
+                trail_pct = 0.30  # Choke trailing stop to 0.30% for active runners
+
+                if current_price <= profit_floor_price:
                     return {
                         'type': 'Intraday Momentum',
                         'score': 0,
                         'tranches': 0,
                         'discount': f"{pnl_pct:.2f}%",
-                        'reason': f"2.50% PROFIT FLOOR BANKED (+{pnl_pct:.2f}%). Peak: +{peak_pnl_pct:.2f}%. Day complete.",
+                        'reason': f"STEP RATCHET FLOOR BANKED (+{floor_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%. Day complete.",
                         'is_smart': True,
                         'rec_buy': current_price,
                         'rec_sell': current_price,
-                        'status': '2.50% Floor Banked',
+                        'status': f"{floor_pct:.1f}% Floor Banked",
                         'color': '#0ecb81',
                         'action_main': 'SELL',
-                        'action_sub': '(Bank +2.50%)',
+                        'action_sub': f'(Bank +{floor_pct:.1f}%)',
                         'action_color': '#0ecb81',
                         'regime': regime,
                         'trade_type': trade_type,
@@ -1279,11 +1282,8 @@ def process_auto_profile(prof_name, client_email=None):
 
                 # PHASE 2 BANK-AND-WALK HARVEST CURFEWS
         cur_mins = now_uk.hour * 60 + now_uk.minute
-        # Vector Hybrid & Dual Axis lock daily wins and halt trading once >= +2.50% is banked
-        if any(x in active_profile for x in ['vector', 'test tqm', 'dual', 'test tq']) and daily_pnl_pct >= 2.50:
-            is_curfew_active = True
-        # Velocity Pulse locks at +3.00%
-        elif any(x in active_profile for x in ['velocity', 'pulse', 'test s']) and daily_pnl_pct >= 3.00:
+        # Once any bot banks >= +2.50% from a ratchet floor, halt trading for the remainder of the session
+        if any(x in active_profile for x in ['vector', 'test tqm', 'dual', 'test tq', 'velocity', 'pulse', 'test s']) and daily_pnl_pct >= 2.50:
             is_curfew_active = True
 
         # ADAPTIVE MODE RESOLUTION (MOMENTUM VS REVERSION SWITCHBOARD)
