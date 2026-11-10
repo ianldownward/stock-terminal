@@ -2963,7 +2963,18 @@ def get_data():
             pass
 
         leaderboard = []
-        source_users = (c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})
+        # Robust user map retrieval ensuring admin profiles are always resolved
+        if is_client and c_store:
+            source_users = c_store.get('users', {})
+        else:
+            portfolio_store.reload()
+            source_users = portfolio_store.data.get('users', {})
+            # Fallback: if data['users'] was wiped or reset, guarantee core production fleet exists
+            if not source_users:
+                for default_p in ['Vector Hybrid', 'Velocity Pulse', 'Dual Axis']:
+                    portfolio_store.data.setdefault('users', {})[default_p] = portfolio_store.default_user_state(default_p)
+                portfolio_store.save_data(portfolio_store.data)
+                source_users = portfolio_store.data.get('users', {})
 
         for u, u_data in source_users.items():
             if not isinstance(u_data, dict): continue
@@ -3087,11 +3098,14 @@ def get_data():
                         p_today_base_dollars = p_today_mkt_pence / div
 
                     target_ts = now_utc - pd.Timedelta(hours=1)
-                    if df_5m.index.tz is None: df_5m.index = df_5m.index.tz_localize('UTC')
-                    else: df_5m.index = df_5m.index.tz_convert('UTC')
-                    prior_df = df_5m[df_5m.index <= target_ts]
-                    p_1h_mkt_pence = prior_df['Close'].iloc[-1] if not prior_df.empty else (df_5m['Close'].iloc[0] if not df_5m.empty else cur_price)
-                    p_1h_base_dollars = p_1h_mkt_pence / div
+                    df_temp = df_5m.copy()
+                    if df_temp.index.tz is None:
+                        df_temp.index = df_temp.index.tz_localize('UTC')
+                    else:
+                        df_temp.index = df_temp.index.tz_convert('UTC')
+                    prior_df = df_temp[df_temp.index <= target_ts]
+                    p_1h_mkt = prior_df['Close'].iloc[-1] if not prior_df.empty else (df_temp['Close'].iloc[0] if not df_temp.empty else cur_price)
+                    p_1h_base_dollars = p_1h_mkt / div
 
                     tot_today_diff += sh_h * (cur_price_dollars - p_today_base_dollars)
                     tot_1h_diff += sh_h * (cur_price_dollars - p_1h_base_dollars)

@@ -4173,16 +4173,16 @@
             }
 
             if (lbData.length === 0) {
-                let uiEl = document.getElementById('leaderboardUI');
-                if (uiEl) {
-                    uiEl.innerHTML = `
-                        <div style="text-align:center; padding:18px 10px; color:#8a8a9e; font-size:11px;">
-                            <div>No active profiles yet.</div>
-                            <button type="button" class="btn-control" style="margin-top:10px; font-size:10px;" onclick="startOnboardingGuide()">+ Create First Profile</button>
-                        </div>`;
-                }
-                renderCustomProfileDropdown(leaderboard);
-                return;
+                // Populate default fleet so the sidebar never renders an empty state
+                lbData = ['Vector Hybrid', 'Velocity Pulse', 'Dual Axis'].map(name => ({
+                    user: name,
+                    equity: 500.0,
+                    budget: 500.0,
+                    daily_pnl: 0.0,
+                    daily_pct: 0.0,
+                    days_active: 1,
+                    active_holds: []
+                }));
             }
 
             if (sortMode === 'all') {
@@ -6061,15 +6061,15 @@
             let container = document.getElementById('dynamicStrategyAllocationsList');
             let profiles = (Array.isArray(latestLeaderboardData) && latestLeaderboardData.length > 0) ? latestLeaderboardData : [];
 
-            // Client Account Direct Fallback: Read active strategy directly if leaderboard has not populated
-            if (profiles.length === 0 && globalPortfolioData && (globalPortfolioData.strategy_name || globalPortfolioData.active_user)) {
-                let sName = globalPortfolioData.strategy_name || globalPortfolioData.active_user;
-                let bVal = parseFloat(globalPortfolioData.master_budget || 500.0);
-                profiles = [{
-                    user: sName,
-                    equity: bVal,
-                    budget: bVal
-                }];
+            // Fallback: Populate default strategy cards if leaderboard sync is still pending
+            if (profiles.length === 0) {
+                const defaultList = ['Vector Hybrid', 'Velocity Pulse', 'Dual Axis'];
+                profiles = defaultList.map(name => ({
+                    user: name,
+                    equity: 500.0,
+                    budget: 500.0,
+                    overnight_sweep: true
+                }));
             }
 
             if (container) {
