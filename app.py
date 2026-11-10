@@ -1267,6 +1267,30 @@ def process_auto_profile(prof_name, client_email=None):
         CIRCUIT_BREAKER_PCT = -2.50
         circuit_breaker_tripped = (daily_pnl_pct <= CIRCUIT_BREAKER_PCT)
 
+        # TOTAL DAILY ACCOUNT STEP-RATCHET (Monitors the big header % on your screen)
+        force_daily_floor_sell = False
+        daily_floor_locked = 0.0
+        if any(x in active_profile for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
+            if ud.get('last_ratchet_date') != today_str:
+                ud['last_ratchet_date'] = today_str
+                ud['daily_peak_pct'] = 0.0
+
+            if daily_pnl_pct > ud.get('daily_peak_pct', 0.0):
+                ud['daily_peak_pct'] = round(daily_pnl_pct, 2)
+                if is_client:
+                    portfolio_store.save_client_store(client_email, c_store)
+                else:
+                    portfolio_store.save_data(portfolio_store.data)
+
+            daily_peak = ud.get('daily_peak_pct', 0.0)
+
+            # Once total daily profit touches >= +2.50%, lock floor in 0.50% increments (2.5%, 3.0%, 3.5%...)
+            if daily_peak >= 2.50:
+                daily_floor_locked = round(int(daily_peak * 2) / 2.0, 2)
+                # If account slips back down to or below the locked step floor, force exit
+                if daily_pnl_pct <= daily_floor_locked:
+                    force_daily_floor_sell = True
+
         # LATE-DAY ENTRY CURFEW (NO NEW BUYS AFTER 20:00 BST / 3:00 PM EST)
         is_curfew_active = (now_uk.hour >= 20) and any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x'])
 
@@ -1425,6 +1449,21 @@ def process_auto_profile(prof_name, client_email=None):
             for h in held_scores:
                 if not any(d['ticker'] == h['ticker'] and d['action'] == 'SELL' for d in dirs):
                     dirs.append({'ticker': h['ticker'], 'action': 'SELL', 'shares': h['shares'], 'price': h['price'], 'amount': round(h['value'], 2)})
+
+        # Execute immediate sale when Daily Account Ratchet floor is breached
+        if force_daily_floor_sell and held_scores:
+            for h in held_scores:
+                if not any(d['ticker'] == h['ticker'] and d['action'] == 'SELL' for d in dirs):
+                    dirs.append({
+                        'ticker': h['ticker'],
+                        'action': 'SELL',
+                        'shares': h['shares'],
+                        'price': h['price'],
+                        'amount': round(h['value'], 2),
+                        'status': f'{daily_floor_locked:.1f}% Daily Floor Banked',
+                        'reason': f'Daily profit peaked at +{ud.get("daily_peak_pct", 0.0):.2f}%. Dipped to +{daily_floor_locked:.1f}% floor. Banked for the day.'
+                    })
+            is_curfew_active = True
 
         if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
