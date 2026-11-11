@@ -1750,7 +1750,10 @@
 
                 <!-- Clean Profile Action Row (Separated with generous 14px margin) -->
                 <div style="display:flex; justify-content:space-between; align-items:center; padding-top:14px; margin-top:6px; border-top:1px solid #1f2430;">
-                    <button type="button" onclick="openStrategyWizard()" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 14px; font-weight:800;">+ New Strategy Profile</button>
+                    <div style="display:flex; gap:8px;">
+                        <button type="button" onclick="openStrategyWizard()" class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 14px; font-weight:800;">+ New Strategy Profile</button>
+                        <button type="button" onclick="openResetModal()" class="btn-control" style="border-color:#ffd400; color:#ffd400; padding:8px 12px; font-weight:800;">Calibrate State</button>
+                    </div>
                     <button type="button" onclick="deleteUserPrompt()" class="btn-control" style="border-color:#262b36; color:#8a8a9e; padding:8px 12px;">Delete Active Profile</button>
                 </div>
             </div>
