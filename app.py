@@ -2489,15 +2489,22 @@ def api_sync_alpaca_state():
         with urllib.request.urlopen(req, timeout=5) as resp:
             acc = json.loads(resp.read().decode('utf-8'))
 
-        alpaca_equity = round(float(acc.get('portfolio_value') or acc.get('equity') or 710.26), 2)
-        alpaca_last_equity = round(float(acc.get('last_equity') or 700.00), 2)
-        if alpaca_last_equity <= 0: alpaca_last_equity = 700.00
+        raw_equity = acc.get('portfolio_value') or acc.get('equity')
+        raw_last_equity = acc.get('last_equity') or ud.get('master_budget')
+
+        if not raw_equity:
+            return jsonify({'status': 'error', 'message': 'Alpaca did not return portfolio value.'}), 500
+
+        alpaca_equity = round(float(raw_equity), 2)
+        alpaca_last_equity = round(float(raw_last_equity), 2)
+        if alpaca_last_equity <= 0:
+            alpaca_last_equity = float(ud.get('master_budget', 500.0))
 
         today_pnl = round(alpaca_equity - alpaca_last_equity, 2)
         today_pct = round((today_pnl / alpaca_last_equity) * 100.0, 2)
 
-        # Set true budget and calibrate today's profit
-        ud['master_budget'] = alpaca_last_equity  # $700.00
+        # Set true budget and calibrate today's profit directly from Alpaca
+        ud['master_budget'] = alpaca_last_equity
         ud['daily_peak_pct'] = max(0.0, today_pct) # Unlocks bot from the 4.5% curfew!
         ud['initial_positions'] = {}
         ud['holdings'] = {}
