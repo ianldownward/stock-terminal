@@ -2850,6 +2850,8 @@ def get_data():
             mb = float(ud.get('master_budget') or 500.0)
             active_profile = (req_user or portfolio_store.active_username()).strip().lower()
 
+        broker = (c_store.get('broker') or {}) if is_client else (portfolio_store.data.get('broker') or {})
+
         wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
         t = request.args.get('t', '').upper().strip()
         is_momentum = any(x in active_profile for x in ['vector', 'dual', 'velocity', 'pulse', 'hybrid', 'axis', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
