@@ -1567,9 +1567,29 @@
         #chartLegend { pointer-events: none; }
         #chartLegend > div { pointer-events: auto; }
         
-        .history-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; min-height: 0; }
-        #tradeHistoryDrawer[open] { flex: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0; }
-        #tradeHistoryDrawer[open] .history-list { flex: 1; max-height: none; }
+        .history-list { 
+            list-style: none; 
+            padding: 0; 
+            margin: 0; 
+            overflow-y: scroll !important; 
+            -webkit-overflow-scrolling: touch;
+            flex: 1; 
+            min-height: 0; 
+        }
+        #tradeHistoryDrawer[open] { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            min-height: 0; 
+            overflow: hidden !important; 
+            margin-bottom: 0; 
+        }
+        #tradeHistoryDrawer[open] .history-list { 
+            flex: 1; 
+            min-height: 0;
+            max-height: none; 
+            overflow-y: scroll !important; 
+        }
         .history-item { background: #1e222d; border: 1px solid #262b36; border-radius: 6px; padding: 10px; margin-bottom: 8px; position: relative; }
         .history-item .h-action { font-weight: bold; font-size: 12px; }
         .history-item .h-buy { color: #0ecb81; }
@@ -2583,7 +2603,7 @@
             </details>
             
             <!-- 3. TRADE HISTORY (EXPANDS TO BOTTOM) -->
-            <details class="drawer-details" id="tradeHistoryDrawer" open style="margin-bottom:0; flex:1; display:flex; flex-direction:column; min-height:0;">
+            <details class="drawer-details" id="tradeHistoryDrawer" open style="margin-bottom:0; flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden;">
                 <summary>Trade History</summary>
                 <ul class="history-list" id="allHistoryUI" style="margin-top:8px; flex:1; min-height:0; overflow-y:auto;"></ul>
             </details>
