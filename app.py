@@ -190,6 +190,44 @@ def send_push_notification(topic, title, message):
         with urllib.request.urlopen(req, timeout=5): pass
     except Exception: pass
 
+ALPACA_ACCOUNT_CACHE = {}
+
+def get_live_alpaca_account(api_key, secret_key, mode):
+    """Fetches real-time equity, cash, and positions directly from Alpaca with a 5-second cache."""
+    now = time.time()
+    cache_key = f"{api_key}_{mode}"
+    if cache_key in ALPACA_ACCOUNT_CACHE:
+        cached_time, data = ALPACA_ACCOUNT_CACHE[cache_key]
+        if now - cached_time < 5:
+            return data
+
+    base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
+    headers = {"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": secret_key}
+    try:
+        req = urllib.request.Request(f"{base_url}/v2/account", headers=headers)
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            acc = json.loads(resp.read().decode('utf-8'))
+            
+            live_pos = []
+            try:
+                req_p = urllib.request.Request(f"{base_url}/v2/positions", headers=headers)
+                with urllib.request.urlopen(req_p, timeout=4) as r_p:
+                    live_pos = json.loads(r_p.read().decode('utf-8'))
+            except Exception:
+                pass
+            
+            result = {
+                'equity': round(float(acc.get('portfolio_value') or acc.get('equity') or 0.0), 2),
+                'cash': round(float(acc.get('cash') or 0.0), 2),
+                'buying_power': round(float(acc.get('buying_power') or 0.0), 2),
+                'last_equity': round(float(acc.get('last_equity') or 0.0), 2),
+                'positions': live_pos
+            }
+            ALPACA_ACCOUNT_CACHE[cache_key] = (now, result)
+            return result
+    except Exception:
+        return None
+
 def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT", trail_pct=None):
     """Sends live orders directly to Alpaca with automatic Paper/Live host detection."""
     if not api_key or not secret_key or not ticker or shares <= 0:
@@ -2851,6 +2889,23 @@ def get_data():
             active_profile = (req_user or portfolio_store.active_username()).strip().lower()
 
         broker = (c_store.get('broker') or {}) if is_client else (portfolio_store.data.get('broker') or {})
+        b_key = str(broker.get('api_key', '')).strip()
+        b_sec = str(broker.get('secret_key', '')).strip()
+        b_mode = broker.get('mode', 'paper')
+        allocations = broker.get('allocations') or {}
+
+        alpaca_acc = None
+        if b_key and b_sec:
+            alpaca_acc = get_live_alpaca_account(b_key, b_sec, b_mode)
+
+        def is_profile_alpaca_enabled(prof_name):
+            p_clean = str(prof_name).lower()
+            if p_clean in allocations:
+                return bool(allocations[p_clean].get('enabled', False))
+            for k, v in allocations.items():
+                if k in p_clean or p_clean in k:
+                    return bool(v.get('enabled', False))
+            return False
 
         wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
         t = request.args.get('t', '').upper().strip()
@@ -2955,53 +3010,67 @@ def get_data():
         if not source_users:
             source_users = portfolio_store.data.get('users', {})
 
+        # Override active profile equity with live Alpaca figures when enabled
+        if is_profile_alpaca_enabled(active_profile) and alpaca_acc is not None:
+            total_equity = alpaca_acc['equity']
+            cash_balance = alpaca_acc['cash']
+            tot_own = round(sum(float(p.get('market_value', 0.0)) for p in alpaca_acc['positions']), 2)
+
         for u, u_data in source_users.items():
             if not isinstance(u_data, dict): continue
             mb_lb = float(u_data.get('master_budget') or 500.0)
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
-            
-            nh_lb = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
-                        for tr in hist_lb if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
-            im_lb = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos_lb.values())
-            cash_now = mb_lb + nh_lb - im_lb
-            
-            trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
-            # Anchor opening baseline to Alpaca to prevent calculation drift
-            if broker.get('api_key') and broker.get('secret_key'):
-                cash_start = mb_lb
+
+            # If checked in Settings, feed directly from Alpaca
+            if is_profile_alpaca_enabled(u) and alpaca_acc is not None:
+                tot_eq_now = alpaca_acc['equity']
+                cash_now = alpaca_acc['cash']
+                tot_eq_start = alpaca_acc['last_equity'] if alpaca_acc['last_equity'] > 0 else mb_lb
+                day_diff = round(tot_eq_now - tot_eq_start, 2)
+                day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
+                day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
+                user_holds = [p['symbol'].upper() for p in alpaca_acc['positions'] if int(p.get('qty', 0)) > 0]
+                held_sym = user_holds[0] if user_holds else ''
             else:
+                # If unchecked, run independently in simulation
+                nh_lb = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
+                            for tr in hist_lb if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
+                im_lb = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos_lb.values())
+                cash_now = mb_lb + nh_lb - im_lb
+                
+                trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
                 net_cash_today = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
                                      for tr in trades_today)
                 cash_start = cash_now - net_cash_today
-            
-            equity_now, equity_start = 0.0, 0.0
-            shares_now_map = {}
-            for tr in hist_lb:
-                tk = tr.get('ticker')
-                if tk and tk not in ['CALIBRATION', 'CAPITAL_INJECTION'] and tk not in shares_now_map:
-                    shares_now_map[tk] = resolve_profile_shares(u_data, tk)
                 
-            for tk, sh_now in shares_now_map.items():
-                if sh_now <= 0 and not any(tr.get('ticker') == tk for tr in trades_today): continue
-                p_data = prices.get(tk, {'cur': 0.0, 'start': 0.0})
-                equity_now += sh_now * p_data['cur']
-                
-                sh_start = sh_now
-                for tr in trades_today:
-                    if tr.get('ticker') == tk:
-                        if tr.get('action') == 'BUY': sh_start -= int(tr.get('shares') or 0)
-                        else: sh_start += int(tr.get('shares') or 0)
-                equity_start += max(0, sh_start) * p_data['start']
-                
-            tot_eq_now = max(0.0, cash_now) + equity_now
-            tot_eq_start = max(0.0, cash_start) + equity_start
+                equity_now, equity_start = 0.0, 0.0
+                shares_now_map = {}
+                for tr in hist_lb:
+                    tk = tr.get('ticker')
+                    if tk and tk not in ['CALIBRATION', 'CAPITAL_INJECTION'] and tk not in shares_now_map:
+                        shares_now_map[tk] = resolve_profile_shares(u_data, tk)
+                    
+                for tk, sh_now in shares_now_map.items():
+                    if sh_now <= 0 and not any(tr.get('ticker') == tk for tr in trades_today): continue
+                    p_data = prices.get(tk, {'cur': 0.0, 'start': 0.0})
+                    equity_now += sh_now * p_data['cur']
+                    
+                    sh_start = sh_now
+                    for tr in trades_today:
+                        if tr.get('ticker') == tk:
+                            if tr.get('action') == 'BUY': sh_start -= int(tr.get('shares') or 0)
+                            else: sh_start += int(tr.get('shares') or 0)
+                    equity_start += max(0, sh_start) * p_data['start']
+                    
+                tot_eq_now = max(0.0, cash_now) + equity_now
+                tot_eq_start = max(0.0, cash_start) + equity_start
 
-            user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
-            held_sym = user_holds[0] if user_holds else ''
-            day_diff = round(tot_eq_now - tot_eq_start, 2)
-            day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
-            day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
+                user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
+                held_sym = user_holds[0] if user_holds else ''
+                day_diff = round(tot_eq_now - tot_eq_start, 2)
+                day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
+                day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
 
             trade_dates = sorted(list(set(tr.get('date_str') for tr in hist_lb if tr.get('date_str'))))
             start_date = trade_dates[0] if trade_dates else today_str
