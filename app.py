@@ -1649,23 +1649,26 @@ def reconcile_single_target(target):
                             },
                             client_email=c_email
                         )
-                # Reconcile BUY fill prices to exact Alpaca execution price
+                # Reconcile BUY fill prices strictly by Alpaca order ID or exact timestamp match
                 elif side == 'buy':
                     for h in hist:
                         if h.get('action') == 'BUY' and h.get('ticker') == symbol and not h.get('price_reconciled'):
-                            if abs(h.get('timestamp', 0) - int(time.time())) < 900:
-                                old_p = h.get('price', filled_price)
-                                if abs(old_p - filled_price) > 0.005:
-                                    h['price'] = round(filled_price, 2)
-                                    cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
-                                    h['amount'] = round(h['shares'] * cps, 2)
-                                    h['price_reconciled'] = True
-                                    h['alpaca_order_id'] = order_id
-                                    if c_email:
-                                        portfolio_store.save_client_store(c_email, c_s)
-                                    else:
-                                        portfolio_store.save_data(portfolio_store.data)
-                            break
+                            # Match only if this order belongs to this trade execution
+                            order_created_at = o.get('created_at', '')
+                            order_ts = int(pd.Timestamp(order_created_at).timestamp()) if order_created_at else 0
+                            time_diff = abs(h.get('timestamp', 0) - order_ts) if order_ts > 0 else abs(h.get('timestamp', 0) - int(time.time()))
+                            
+                            if time_diff < 120:  # Must be within 2 minutes of the exact order fill
+                                h['price'] = round(filled_price, 2)
+                                cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
+                                h['amount'] = round(h['shares'] * cps, 2)
+                                h['price_reconciled'] = True
+                                h['alpaca_order_id'] = order_id
+                                if c_email:
+                                    portfolio_store.save_client_store(c_email, c_s)
+                                else:
+                                    portfolio_store.save_data(portfolio_store.data)
+                                break
     except Exception:
         pass
 
