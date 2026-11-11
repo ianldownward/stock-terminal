@@ -3727,22 +3727,31 @@
             }
         }, 500);
 
-        function openResetModal() {
-            let activeProf = document.getElementById('userSelect')?.value || 'Ian';
-            document.getElementById('resetProfileName').innerText = activeProf;
-            
-            let curEq = 5000.00;
-            let eqText = document.getElementById('mTotalSharesHeldVal')?.innerText || '';
-            let parsedEq = parseFloat(eqText.replace(/[^0-9.-]+/g, ''));
-            if (!isNaN(parsedEq) && parsedEq > 0) curEq = parsedEq;
-            
-            document.getElementById('resetTotalEquity').value = curEq.toFixed(2);
-            document.getElementById('resetTodayPnl').value = "0.00";
-            
-            document.querySelector('input[name="resetPosType"][value="cash"]').checked = true;
-            toggleResetPosFields();
-            
-            document.getElementById('resetModal').style.display = 'flex';
+        async function openResetModal() {
+            let activeProf = document.getElementById('userSelect')?.value || 'Vector Hybrid';
+            let btn = event?.target;
+            if (btn) btn.innerText = "Syncing with Alpaca...";
+
+            try {
+                let res = await fetch('/api/portfolio/sync_alpaca', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: activeProf })
+                });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    if (btn) btn.innerText = "Synced ✓";
+                    closeSettingsModal();
+                    await fetchData(false);
+                    alert(`Calibrated from Alpaca!\n\nAccount: $${d.equity}\nToday: +$${d.today_pnl} (+${d.today_pct}%)\n\nLock removed. Engine is active.`);
+                } else {
+                    alert("Alpaca sync error: " + (d.message || "Failed to reach Alpaca."));
+                }
+            } catch(e) {
+                alert("Connection error syncing with Alpaca.");
+            } finally {
+                if (btn) btn.innerText = "Calibrate State";
+            }
         }
 
         function closeResetModal() {
