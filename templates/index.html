@@ -1954,8 +1954,8 @@
                 </div>
 
                 <div>
-                    <label style="font-size:11px; color:#ffd400; font-weight:800; text-transform:uppercase; display:block; margin-bottom:5px;">Assign Capital (£)</label>
-                    <input type="number" id="wizardCapitalInput" value="500.00" step="50" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:15px; font-weight:800;">
+                    <label style="font-size:11px; color:#ffd400; font-weight:800; text-transform:uppercase; display:block; margin-bottom:5px;">Assign Capital ($)</label>
+                    <input type="number" id="wizardCapitalInput" value="700.00" step="50" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:15px; font-weight:800;">
                 </div>
 
                 <input type="hidden" id="wizardVersionTag" value="">
@@ -2265,8 +2265,8 @@
                             <div id="insightProfType" style="font-size:11px; color:#8a8a9e; margin-top:2px;">Production Desk #1 • Index Momentum</div>
                         </div>
                         <div style="text-align:right;">
-                            <div id="insightEquity" style="font-size:17px; font-weight:800; color:#fff;">£532.24</div>
-                            <div id="insightReturn" style="font-size:11px; font-weight:800; color:#0ecb81;">+£32.24 (+6.45%)</div>
+                            <div id="insightEquity" style="font-size:17px; font-weight:800; color:#fff;">$700.00</div>
+                            <div id="insightReturn" style="font-size:11px; font-weight:800; color:#0ecb81;">+$0.00 (+0.00%)</div>
                         </div>
                     </div>
 
@@ -2274,7 +2274,7 @@
                     <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:6px; margin-top:10px; padding-top:10px; border-top:1px solid #1a1e28;">
                         <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
                             <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Starting Budget</div>
-                            <div id="insightBudget" style="font-size:12px; font-weight:800; color:#fff; margin-top:2px;">£500.00</div>
+                            <div id="insightBudget" style="font-size:12px; font-weight:800; color:#fff; margin-top:2px;">$700.00</div>
                         </div>
                         <div style="background:#0f1115; padding:8px 6px; border-radius:6px; text-align:center;">
                             <div style="font-size:9px; color:#8a8a9e; text-transform:uppercase; font-weight:700;">Win Rate</div>
@@ -2533,23 +2533,23 @@
                         <div class="equity-header-row">
                             <label class="desktop-equity-title">TOTAL PORTFOLIO EQUITY</label>
                             <div class="equity-top-row">
-                                <div id="mTotalSharesHeldVal" class="equity-main-val">£0.00</div>
+                                <div id="mTotalSharesHeldVal" class="equity-main-val">$0.00</div>
                                 <span id="mobCombinedProfileName" class="mob-profile-name">No Profile Active</span>
                             </div>
                         </div>
                         
                         <div class="equity-stats-grid">
                             <div class="equity-stat-row">
-                                <span id="mCashVal" class="stat-left">Cash: £0.00</span>
+                                <span id="mCashVal" class="stat-left">Cash: $0.00</span>
                                 <div class="stat-right">
                                     <span class="stat-label">TODAY</span>
-                                    <span id="mEquityTodayVal" class="stat-val">£0.00</span>
+                                    <span id="mEquityTodayVal" class="stat-val">$0.00</span>
                                     <span id="mEquityTodayPct" class="stat-pct">(0.00%)</span>
                                 </div>
                             </div>
                             
                             <div class="equity-stat-row">
-                                <span id="mSharesVal" class="stat-left">Shares: £0.00</span>
+                                <span id="mSharesVal" class="stat-left">Shares: $0.00</span>
                                 <div class="stat-right">
                                     <span class="stat-label">DAILY AVG</span>
                                     <span id="mEquityDailyAvg" class="stat-val">0.00%</span>
@@ -3849,11 +3849,11 @@
             closeSettingsModal();
             let activeProf = document.getElementById('userSelect')?.value || 'Vector Hybrid';
             document.getElementById('addCapProfileName').innerText = activeProf;
-            let curEq = 500.0;
+            let curEq = 700.0;
             let eqText = document.getElementById('mTotalSharesHeldVal')?.innerText || '';
             let parsed = parseFloat(eqText.replace(/[^0-9.-]+/g, ''));
             if (!isNaN(parsed) && parsed > 0) curEq = parsed;
-            document.getElementById('addCapCurrentEq').innerText = `Current Balance: £${curEq.toFixed(2)}`;
+            document.getElementById('addCapCurrentEq').innerText = `Current Balance: $${curEq.toFixed(2)}`;
             document.getElementById('addCapAmount').value = '';
             let m = document.getElementById('addCapitalModal');
             if (m) m.style.display = 'flex';
@@ -3880,16 +3880,16 @@
             let d = await res.json();
             if (d.status === 'ok') {
                 // Instantly update badge in Settings modal without requiring a refresh
-                let nb = d.new_budget ? parseFloat(d.new_budget).toFixed(2) : '500.00';
+                let nb = d.new_budget ? parseFloat(d.new_budget).toFixed(2) : '700.00';
                 if (activeProf.toLowerCase().includes('vector')) {
                     let b = document.getElementById('alloc_vector_display');
-                    if (b) b.innerText = `£${nb}`;
+                    if (b) b.innerText = `$${nb}`;
                 } else if (activeProf.toLowerCase().includes('dual')) {
                     let b = document.getElementById('alloc_dual_display');
-                    if (b) b.innerText = `£${nb}`;
+                    if (b) b.innerText = `$${nb}`;
                 } else if (activeProf.toLowerCase().includes('pulse') || activeProf.toLowerCase().includes('velocity')) {
                     let b = document.getElementById('alloc_pulse_display');
-                    if (b) b.innerText = `£${nb}`;
+                    if (b) b.innerText = `$${nb}`;
                 }
                 await fetchData(false);
             } else {
@@ -5578,8 +5578,6 @@
             }
 
             document.getElementById('insightBudget').innerText = `$${budget.toFixed(2)}`;
-
-            document.getElementById('insightBudget').innerText = `$${budget.toFixed(2)}`;
             
             // True Daily Average Return across active days
             let daysActive = Math.max(1, lb.days_active || 1);
@@ -5620,9 +5618,12 @@
             ctx.clearRect(0, 0, w, h);
 
             let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || {};
-            let defaultBud = parseFloat(lb.budget) || 700.0;
-            let budget = window._customCapital !== undefined ? window._customCapital : defaultBud;
-            let currentEq = (lb.equity !== undefined && lb.equity > 0 && window._customCapital === undefined) ? parseFloat(lb.equity) : budget;
+            let realBudget = parseFloat(lb.budget) || 700.0;
+            let realEq = (lb.equity !== undefined && lb.equity > 0) ? parseFloat(lb.equity) : realBudget;
+            let budget = (window._customCapital !== undefined && window._customCapital > 0) ? window._customCapital : realBudget;
+            let daysActive = Math.max(1, lb.days_active || 1);
+            let r_avg = (realEq > 0 && realBudget > 0 && realEq !== realBudget) ? (Math.pow(realEq / realBudget, 1 / daysActive) - 1) : 0.01;
+            let currentEq = (budget === realBudget) ? realEq : (budget * Math.pow(1 + r_avg, daysActive));
 
             let shortName = getShortProfileName(userKey);
             let horizon = window._selectedHorizon || '6M';
