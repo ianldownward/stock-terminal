@@ -2995,65 +2995,153 @@
                 return;
             }
 
-            let target = 'Dynamic (+0.5% Steps)';
-            let trail = '-0.75% (0.30% Runners)';
-            let ratchet = 'Step Floor (+0.5% / +2.5%)';
-            let circuit = '-2.50% (Hard Halt)';
-            let sweep = '20:50 BST (100% Cash)';
-
-            if (profName.includes('velocity') || profName.includes('pulse') || profName.includes('test s')) {
-                target = '+3.00% Take Profit';
-                trail = '-0.50% (Chokes to 0.40%)';
-                ratchet = '+1.00% (Locked at +1.20%)';
-            }
-
-            let isSweepEnabled = true;
-            if (globalPortfolioData && globalPortfolioData.users && globalPortfolioData.users[profName]) {
-                let uData = globalPortfolioData.users[profName];
-                if (uData.overnight_sweep !== undefined) isSweepEnabled = uData.overnight_sweep;
-            } else if (globalPortfolioData && globalPortfolioData.overnight_sweep !== undefined) {
-                isSweepEnabled = globalPortfolioData.overnight_sweep;
-            }
-            sweep = isSweepEnabled ? '20:50 BST (100% Cash)' : '<span style="color:#ff5364; font-weight:800;">Holding Overnight (Risk)</span>';
-
-            // Calculate dynamic Loss Buffer
+            // 1. Calculate Daily Loss Shield (Circuit Breaker)
             let activeLb = (latestLeaderboardData || []).find(l => l.user && l.user.toLowerCase().includes(profName)) || {};
-            let budget = activeLb.budget || 500.0;
+            let budget = activeLb.budget || 700.0;
             let dayPnl = activeLb.daily_pnl || 0.0;
-            let maxLoss = budget * 0.025; // 2.50% circuit breaker
+            let maxLoss = budget * 0.025; // -2.50% circuit breaker
             let lossUsed = Math.max(0, -dayPnl);
             let cushionLeft = Math.max(0, maxLoss - lossUsed);
             let cushionPct = Math.max(0, Math.min(100, (cushionLeft / maxLoss) * 100));
+            let shieldColor = cushionPct > 60 ? '#0ecb81' : (cushionPct > 25 ? '#ffb700' : '#ff5364');
+
+            // 2. Trailing Stop Radar with Dynamic Start/End Figures
+            let uData = (globalPortfolioData && globalPortfolioData.users && globalPortfolioData.users[profName]) ? globalPortfolioData.users[profName] : (globalPortfolioData || {});
+            let activeHolds = activeLb.active_holds || [];
+            let heldTicker = activeHolds.length > 0 ? activeHolds[0] : (activeLb.held_ticker || currentTicker || '');
+            let holdsDict = uData.holdings || {};
+            let shOwned = (metrics && metrics.shares_owned !== undefined) ? metrics.shares_owned : (holdsDict[heldTicker]?.shares || 0);
+            let curPrice = (metrics && metrics.price !== undefined) ? parseFloat(metrics.price) : 0;
+            if (curPrice <= 0 && masterData && masterData.length > 0) curPrice = parseFloat(masterData[masterData.length - 1].close) || 0;
+
+            let trailHtml = '';
+            let beCatchHtml = '';
+
+            let trailParam = (profName.includes('velocity') || profName.includes('pulse') || profName.includes('test s')) ? 0.50 : 0.75;
+
+            if (shOwned > 0 && curPrice > 0) {
+                let peakPrice = (holdsDict[heldTicker]?.high_water) || curPrice;
+                if (peakPrice < curPrice) peakPrice = curPrice;
+                let stopPrice = peakPrice * (1.0 - (trailParam / 100.0));
+
+                let dropFromPeakPct = peakPrice > 0 ? ((peakPrice - curPrice) / peakPrice) * 100.0 : 0.0;
+                let distToStopPct = curPrice > 0 ? ((curPrice - stopPrice) / curPrice) * 100.0 : 0.0;
+                let trailCushionPct = Math.max(0, Math.min(100, 100 - (dropFromPeakPct / trailParam * 100.0)));
+                let trailColor = trailCushionPct > 60 ? '#0ecb81' : (trailCushionPct > 30 ? '#ffb700' : '#ff5364');
+
+                trailHtml = `
+                    <div style="display:flex; flex-direction:column; gap:3px; padding:6px 0; border-bottom:1px solid #1a1e28;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                            <span style="color:#8a8a9e;">2. TRAILING STOP CUSHION</span>
+                            <span style="color:${trailColor};">+${distToStopPct.toFixed(2)}% Above Stop</span>
+                        </div>
+                        <div style="width:100%; height:6px; background:#262b36; border-radius:3px; overflow:hidden;">
+                            <div style="width:${trailCushionPct}%; height:100%; background:${trailColor}; transition:width 0.3s ease, background 0.3s ease;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:700; color:#5a5f70;">
+                            <span style="color:#ff5364;">Stop: $${stopPrice.toFixed(2)} (-${trailParam}%)</span>
+                            <span style="color:#0ecb81;">Peak: $${peakPrice.toFixed(2)}</span>
+                        </div>
+                    </div>
+                `;
+
+                // 3. Breakeven Safety Catch
+                let hist = uData.history || [];
+                let tBuy = hist.find(tr => tr.ticker === heldTicker && tr.action === 'BUY');
+                let entryPrice = tBuy ? (parseFloat(tBuy.price) || 0) : 0;
+                let tradeGainPct = (entryPrice > 0 && peakPrice > 0) ? ((peakPrice - entryPrice) / entryPrice) * 100.0 : 0.0;
+                let targetLockGain = (profName.includes('velocity') || profName.includes('pulse') || profName.includes('test s')) ? 1.20 : 0.50;
+                let isLocked = tradeGainPct >= targetLockGain;
+
+                if (isLocked) {
+                    beCatchHtml = `
+                        <div style="display:flex; flex-direction:column; gap:3px; padding-top:6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                                <span style="color:#8a8a9e;">3. BREAKEVEN SAFETY CATCH</span>
+                                <span style="color:#0ecb81; font-weight:900;">LOCKED</span>
+                            </div>
+                            <div style="background:rgba(14,203,129,0.12); border:1px solid #0ecb81; border-radius:5px; padding:4px 8px; text-align:center; font-size:9px; font-weight:800; color:#0ecb81;">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle; margin-right:3px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                <span>+0.18% MINIMUM WIN (RISK-FREE TRADE)</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    let beProgPct = Math.max(0, Math.min(100, (tradeGainPct / targetLockGain) * 100.0));
+                    beCatchHtml = `
+                        <div style="display:flex; flex-direction:column; gap:3px; padding-top:6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                                <span style="color:#8a8a9e;">3. BREAKEVEN SAFETY CATCH</span>
+                                <span style="color:#ffd400;">Arming at +${targetLockGain.toFixed(2)}%</span>
+                            </div>
+                            <div style="width:100%; height:5px; background:#262b36; border-radius:2.5px; overflow:hidden;">
+                                <div style="width:${beProgPct}%; height:100%; background:#ffd400; transition:width 0.3s ease;"></div>
+                            </div>
+                            <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:700; color:#5a5f70;">
+                                <span>Peak: +${tradeGainPct.toFixed(2)}%</span>
+                                <span>Locks Floor at +${targetLockGain.toFixed(2)}%</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+            } else {
+                // Calm, clean idle state when 100% in cash
+                trailHtml = `
+                    <div style="display:flex; flex-direction:column; gap:3px; padding:6px 0; border-bottom:1px solid #1a1e28;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                            <span style="color:#8a8a9e;">2. TRAILING STOP CUSHION</span>
+                            <span style="color:#5a5f70;">100% CASH</span>
+                        </div>
+                        <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:3px 6px; text-align:center; font-size:8.5px; font-weight:700; color:#5a5f70;">
+                            IDLE • Arms on position entry (-${trailParam}% trail)
+                        </div>
+                    </div>
+                `;
+                beCatchHtml = `
+                    <div style="display:flex; flex-direction:column; gap:3px; padding-top:6px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                            <span style="color:#8a8a9e;">3. BREAKEVEN SAFETY CATCH</span>
+                            <span style="color:#5a5f70;">ARMED</span>
+                        </div>
+                        <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:3px 6px; text-align:center; font-size:8.5px; font-weight:700; color:#5a5f70;">
+                            Locks +0.18% floor automatically at +0.50% trade gain
+                        </div>
+                    </div>
+                `;
+            }
+
+            let isSweepEnabled = true;
+            if (uData.overnight_sweep !== undefined) isSweepEnabled = uData.overnight_sweep;
 
             container.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:6px; border-bottom:1px solid #1a1e28; padding-bottom:2px; line-height:1.2;">
-                    <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Target Harvest:</span>
-                    <span style="color:#0ecb81; font-weight:800; text-align:right; margin-left:auto;">${target}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:6px; border-bottom:1px solid #1a1e28; padding-bottom:2px; margin-top:2px; line-height:1.2;">
-                    <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Trailing Stop:</span>
-                    <span style="color:#ffb700; font-weight:800; text-align:right; margin-left:auto;">${trail}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:6px; border-bottom:1px solid #1a1e28; padding-bottom:2px; margin-top:2px; line-height:1.2;">
-                    <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Breakeven Floor:</span>
-                    <span style="color:#0ecb81; font-weight:800; text-align:right; margin-left:auto;">${ratchet}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:6px; border-bottom:1px solid #1a1e28; padding-bottom:2px; margin-top:2px; line-height:1.2;">
-                    <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Circuit Breaker:</span>
-                    <span style="color:#ff5364; font-weight:800; text-align:right; margin-left:auto;">${circuit}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; gap:6px; border-bottom:1px solid #1a1e28; padding-bottom:2px; margin-top:2px; line-height:1.2;">
-                    <span style="color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Overnight Sweep:</span>
-                    <span style="color:#fff; font-weight:800; text-align:right; margin-left:auto;">${sweep}</span>
-                </div>
-                <div style="margin-top:4px; padding-top:2px; display:flex; flex-direction:column; gap:2px;">
-                    <div style="display:flex; justify-content:space-between; font-size:9px; font-weight:800;">
-                        <span style="color:#8a8a9e;">LOSS BUFFER REMAINING</span>
-                        <span style="color:#0ecb81;">$${cushionLeft.toFixed(2)} (${cushionPct.toFixed(0)}%)</span>
+                <!-- 1. Daily Loss Shield -->
+                <div style="display:flex; flex-direction:column; gap:3px; padding-bottom:6px; border-bottom:1px solid #1a1e28;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                        <span style="color:#8a8a9e;">1. DAILY LOSS SHIELD</span>
+                        <span style="color:${shieldColor};">$${cushionLeft.toFixed(2)} Left (${cushionPct.toFixed(0)}%)</span>
                     </div>
-                    <div style="width:100%; height:4px; background:#262b36; border-radius:2px; overflow:hidden;">
-                        <div style="width:${cushionPct}%; height:100%; background:#0ecb81;"></div>
+                    <div style="width:100%; height:6px; background:#262b36; border-radius:3px; overflow:hidden;">
+                        <div style="width:${cushionPct}%; height:100%; background:${shieldColor}; transition:width 0.3s ease, background 0.3s ease;"></div>
                     </div>
+                    <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:700; color:#5a5f70;">
+                        <span>-$${maxLoss.toFixed(2)} (-2.5% Halt)</span>
+                        <span>$0.00 (Full Buffer)</span>
+                    </div>
+                </div>
+
+                <!-- 2. Trailing Stop Radar -->
+                ${trailHtml}
+
+                <!-- 3. Breakeven Safety Catch -->
+                ${beCatchHtml}
+
+                <!-- 4. Overnight Cash Sweep Badge -->
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:8.5px; font-weight:700; color:#8a8a9e; padding-top:6px; margin-top:6px; border-top:1px solid #1a1e28;">
+                    <span>Overnight Sweep:</span>
+                    <span style="color:${isSweepEnabled ? '#0ecb81' : '#ff9900'}; font-weight:800;">
+                        ${isSweepEnabled ? '20:50 BST (100% Cash)' : 'Holding Overnight'}
+                    </span>
                 </div>
             `;
 
