@@ -1316,9 +1316,15 @@ def process_auto_profile(prof_name, client_email=None):
             if ud.get('last_ratchet_date') != today_str:
                 ud['last_ratchet_date'] = today_str
                 ud['daily_peak_pct'] = 0.0
+                ud['manual_locked_day'] = None
+                ud['ratchet_floor_override'] = None
+                ud['ratchet_locked'] = False
+                ud['is_locked'] = False
 
             if daily_pnl_pct > ud.get('daily_peak_pct', 0.0):
                 ud['daily_peak_pct'] = round(daily_pnl_pct, 2)
+                if ud.get('ratchet_floor_override') and daily_pnl_pct >= (ud['ratchet_floor_override'] + 0.6):
+                    ud['ratchet_floor_override'] = None
                 if is_client:
                     portfolio_store.save_client_store(client_email, c_store)
                 else:
@@ -1326,12 +1332,13 @@ def process_auto_profile(prof_name, client_email=None):
 
             daily_peak = ud.get('daily_peak_pct', 0.0)
 
-            # Once total daily profit touches >= +2.50%, lock floor in 0.50% increments indefinitely (2.5%, 3.0%, 3.5%, 4.0%, 4.5%...)
-            if daily_peak >= 2.50:
+            if ud.get('ratchet_floor_override') is not None:
+                daily_floor_locked = float(ud['ratchet_floor_override'])
+            elif daily_peak >= 2.50:
                 daily_floor_locked = round(int(daily_peak * 2) / 2.0, 2)
-                # If account slips back down to or below the locked step floor, force exit
-                if daily_pnl_pct <= daily_floor_locked:
-                    force_daily_floor_sell = True
+
+            if daily_floor_locked > 0 and daily_pnl_pct <= daily_floor_locked and not ud.get('ratchet_locked'):
+                force_daily_floor_sell = True
 
         # LATE-DAY ENTRY CURFEW (NO NEW BUYS AFTER 20:00 BST / 3:00 PM EST)
         is_curfew_active = (now_uk.hour >= 20) and any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x'])
@@ -1348,8 +1355,7 @@ def process_auto_profile(prof_name, client_email=None):
 
                 # PHASE 2 BANK-AND-WALK HARVEST CURFEWS
         cur_mins = now_uk.hour * 60 + now_uk.minute
-        # Once any bot banks >= +2.50% from a ratchet floor, halt trading for the remainder of the session
-        if any(x in active_profile for x in ['vector', 'test tqm', 'dual', 'test tq', 'velocity', 'pulse', 'test s']) and daily_pnl_pct >= 2.50:
+        if ud.get('manual_locked_day') == today_str or ud.get('ratchet_locked'):
             is_curfew_active = True
 
         # ADAPTIVE MODE RESOLUTION (MOMENTUM VS REVERSION SWITCHBOARD)
@@ -1503,8 +1509,14 @@ def process_auto_profile(prof_name, client_email=None):
                         'price': h['price'],
                         'amount': round(h['value'], 2),
                         'status': f'{daily_floor_locked:.1f}% Daily Floor Banked',
-                        'reason': f'Daily profit peaked at +{ud.get("daily_peak_pct", 0.0):.2f}%. Dipped to +{daily_floor_locked:.1f}% floor. Banked for the day.'
+                        'reason': f'Daily profit dipped to +{daily_floor_locked:.1f}% floor. Banked for the day.'
                     })
+            ud['ratchet_locked'] = True
+            ud['locked_floor_val'] = daily_floor_locked
+            if is_client:
+                portfolio_store.save_client_store(client_email, c_store)
+            else:
+                portfolio_store.save_data(portfolio_store.data)
             is_curfew_active = True
 
         if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
@@ -2379,9 +2391,10 @@ def add_user_v2():
         portfolio_store.save_data(portfolio_store.data)
         return jsonify({'status': 'ok', 'profile': prof_name})
 
-@app.route('/api/profile/unlock', methods=['POST'])
+@app.route('/api/profile/step_down_override', methods=['POST'])
 @login_required
-def unlock_profile_route():
+def step_down_override_route():
+    """Smart override: steps floor down by 0.5% and reactivates trading for the profile on screen."""
     data = request.get_json() or {}
     prof_name = data.get('profile', '').strip()
     is_client = (session.get('role') != 'admin')
@@ -2390,21 +2403,96 @@ def unlock_profile_route():
     if is_client:
         c_store = portfolio_store.get_client_store(client_name)
         users = c_store.setdefault('users', {})
-        if prof_name in users:
-            users[prof_name]['daily_peak_pct'] = 0.0
-            users[prof_name]['is_locked'] = False
-            portfolio_store.save_client_store(client_name, c_store)
-            return jsonify({'status': 'ok'})
+        ud = users.get(prof_name)
+    else:
+        portfolio_store.reload()
+        users = portfolio_store.data.setdefault('users', {})
+        ud = users.get(prof_name)
+
+    if not ud:
         return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
 
-    portfolio_store.reload()
-    users = portfolio_store.data.setdefault('users', {})
-    if prof_name in users:
-        users[prof_name]['daily_peak_pct'] = 0.0
-        users[prof_name]['is_locked'] = False
+    current_floor = float(ud.get('locked_floor_val') or 2.5)
+    new_floor = max(0.0, round(current_floor - 0.5, 2))
+
+    ud['ratchet_floor_override'] = new_floor
+    ud['locked_floor_val'] = new_floor
+    ud['ratchet_locked'] = False
+    ud['is_locked'] = False
+    ud['daily_peak_pct'] = round(new_floor + 0.4, 2)
+
+    if is_client:
+        portfolio_store.save_client_store(client_name, c_store)
+    else:
         portfolio_store.save_data(portfolio_store.data)
-        return jsonify({'status': 'ok'})
-    return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
+
+    return jsonify({'status': 'ok', 'new_floor': new_floor})
+
+@app.route('/api/profile/manual_lock_day', methods=['POST'])
+@login_required
+def manual_lock_day_route():
+    """Permanent manual lock: liquidates ONLY the profile on screen and halts it until tomorrow."""
+    data = request.get_json() or {}
+    prof_name = data.get('profile', '').strip()
+    action = data.get('action', 'lock')
+    is_client = (session.get('role') != 'admin')
+    client_name = session.get('user', 'Client')
+
+    now_uk = pd.Timestamp.now(tz='Europe/London')
+    today_str = now_uk.strftime('%Y-%m-%d')
+
+    if is_client:
+        c_store = portfolio_store.get_client_store(client_name)
+        users = c_store.setdefault('users', {})
+        ud = users.get(prof_name)
+    else:
+        portfolio_store.reload()
+        users = portfolio_store.data.setdefault('users', {})
+        ud = users.get(prof_name)
+
+    if not ud:
+        return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
+
+    if action == 'unlock':
+        ud['manual_locked_day'] = None
+        ud['ratchet_locked'] = False
+        ud['is_locked'] = False
+        if is_client:
+            portfolio_store.save_client_store(client_name, c_store)
+        else:
+            portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'status': 'ok', 'locked': False})
+
+    # Liquidate ONLY the position belonging to this specific profile on screen
+    hist = ud.get('history') or []
+    init_pos = ud.get('initial_positions') or {}
+    def r_sh(tk):
+        i_s = (init_pos.get(tk) or {}).get('shares', 0)
+        n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
+        return max(0, i_s + n_s)
+
+    active_tickers = list(set([tr.get('ticker') for tr in hist if r_sh(tr.get('ticker')) > 0]))
+    for tick in active_tickers:
+        sh = r_sh(tick)
+        if sh > 0:
+            df = fetch_yf_data(tick, '1d', '1m')
+            cur_p = df['Close'].iloc[-1] if not df.empty else 1.0
+            portfolio_store.execute_trade(
+                tick, 'SELL', sh, cur_p, prof_name,
+                metadata={'status': 'Manual Day Lock', 'reason': f'Locked on screen for the day by user ({prof_name})'},
+                client_email=client_name if is_client else None
+            )
+
+    ud['manual_locked_day'] = today_str
+    ud['ratchet_locked'] = True
+    ud['is_locked'] = True
+
+    if is_client:
+        portfolio_store.save_client_store(client_name, c_store)
+    else:
+        portfolio_store.save_data(portfolio_store.data)
+
+    return jsonify({'status': 'ok', 'locked': True})
 
 @app.route('/api/profile/toggle_sweep', methods=['POST'])
 @login_required
@@ -3108,7 +3196,9 @@ def get_data():
             daily_avg_pct = round(cum_gain_pct / active_days, 2)
             daily_avg_val = round(cum_gain_val / active_days, 2)
 
-            is_locked = (len(user_holds) == 0 and day_pct >= 2.50)
+            is_manually_locked = (u_data.get('manual_locked_day') == today_str)
+            is_ratchet_locked = bool(u_data.get('ratchet_locked') and len(user_holds) == 0)
+            is_locked = is_manually_locked or is_ratchet_locked or (len(user_holds) == 0 and day_pct >= 2.50 and not u_data.get('ratchet_floor_override'))
 
             leaderboard.append({
                 'user': u, 
@@ -3126,6 +3216,8 @@ def get_data():
                 'active_holds': user_holds,
                 'has_holding': len(user_holds) > 0,
                 'is_locked': is_locked,
+                'is_manually_locked': is_manually_locked,
+                'active_floor': float(u_data.get('ratchet_floor_override') or (round(int(day_pct * 2) / 2.0, 2) if day_pct >= 2.5 else 0.0)),
                 'locked_pct': round(day_pct, 2)
             })
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
