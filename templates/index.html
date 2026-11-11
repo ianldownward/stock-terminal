@@ -1999,7 +1999,7 @@
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
                     <span style="font-size:10px; color:#8a8a9e; text-transform:uppercase; font-weight:800;">Target Strategy</span>
                     <div id="addCapProfileName" style="font-size:15px; font-weight:800; color:#ffd400; margin-top:2px;">Vector Hybrid</div>
-                    <div id="addCapCurrentEq" style="font-size:12px; color:#8a8a9e; margin-top:4px;">Current Balance: £500.00</div>
+                    <div id="addCapCurrentEq" style="font-size:12px; color:#8a8a9e; margin-top:4px;">Current Balance: $700.00</div>
                 </div>
 
                 <!-- Explanation Box -->
@@ -2664,7 +2664,7 @@
                 <div class="card" style="flex: 0.45; min-width: 90px; padding: 10px 8px;">
                     <h3>Position Held</h3>
                     <p id="mHoldingShares" class="val-highlight" style="font-size: 18px; font-weight: 800;">0 Shares</p>
-                    <span id="mHoldingWorth" style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Worth: £0.00</span>
+                    <span id="mHoldingWorth" style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Worth: $0.00</span>
                 </div>
                 
                 <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.55; min-width: 230px;">
@@ -4745,7 +4745,7 @@
                 }
                 if (mobPnlEl) {
                     let arrow = dayVal > 0 ? '▲ ' : (dayVal < 0 ? '▼ ' : '');
-                    mobPnlEl.innerHTML = `<span style="color:${dayCol}; font-weight:800;">${arrow}${dayVal >= 0 ? '+' : '-'}S${Math.abs(dayVal).toFixed(2)} ${pctStr}</span>`;
+                    mobPnlEl.innerHTML = `<span style="color:${dayCol}; font-weight:800;">${arrow}${dayVal >= 0 ? '+' : '-'}$${Math.abs(dayVal).toFixed(2)} ${pctStr}</span>`;
                 }
 
                 if (p.metrics && p.metrics.regime) {
@@ -5642,9 +5642,7 @@
             else if (horizon === '1Y') totalHorizonDays = 252;
             else if (horizon === '5Y') totalHorizonDays = 1260;
 
-            // 2. Compute Actual Daily Average Rate r_avg (Starts strictly from profile creation date)
-            let daysActive = Math.max(1, lb.days_active || 1);
-            let r_avg = (currentEq > 0 && budget > 0) ? (Math.pow(currentEq / budget, 1 / daysActive) - 1) : 0.01;
+            // 2. Clamp Minimum Daily Rate
             if (r_avg < -0.05) r_avg = -0.05;
 
             // Update legend labels
