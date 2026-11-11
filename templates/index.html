@@ -2239,8 +2239,7 @@
         }
         .stepper-white::-webkit-inner-spin-button,
         .stepper-white::-webkit-outer-spin-button {
-            filter: brightness(0) invert(1) !important;
-            opacity: 1 !important;
+            opacity: 0.85 !important;
             cursor: pointer;
         }
         body.light-mode .stepper-white {
@@ -2249,7 +2248,7 @@
         }
         body.light-mode .stepper-white::-webkit-inner-spin-button,
         body.light-mode .stepper-white::-webkit-outer-spin-button {
-            filter: none !important;
+            opacity: 0.85 !important;
         }
     
         .btn-horizon {
@@ -2701,7 +2700,8 @@
                     <span id="mHoldingWorth" style="font-size:10px; color:#8a8a9e; display:block; margin-top:2px;">Worth: $0.00</span>
                 </div>
                 
-                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.55; min-width: 230px;">
+                <!-- 1. Buy Setup Readiness Card -->
+                <div class="card" id="rotatorHealthCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1; min-width: 190px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="rotatorHealthHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buy Setup Readiness</h3>
                         <span id="rotatorHealthStatus" style="font-size:12px; font-weight:800; color:#fff;">10 / 65 Target</span>
@@ -2717,7 +2717,53 @@
                     </div>
                 </div>
 
-                <div class="card" id="sentimentCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1.55; min-width: 230px;">
+                <!-- 2. Profit Ratchet Card (In Between, Perfectly Matched) -->
+                <div class="card" id="profitRatchetCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1; min-width: 190px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+                        <h3 id="ratchetHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Profit Ratchet</h3>
+                        <span id="ratchetStatus" style="font-size:12px; font-weight:800; color:#fff;">Idle (0.0%)</span>
+                    </div>
+                    <div id="ratchetSegmentsRow" style="display:flex; width:100%; height: 13px; justify-content:space-between; align-items:center; gap:3px;">
+                        <div class="ratchet-step" data-target="2.5" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; min-width:0;">
+                            <span style="font-size:7.5px; font-weight:800; color:#8a8a9e; white-space:nowrap;">2.5%</span>
+                            <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                        </div>
+                        <div class="ratchet-step" data-target="3.0" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; min-width:0;">
+                            <span style="font-size:7.5px; font-weight:800; color:#8a8a9e; white-space:nowrap;">3%</span>
+                            <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                        </div>
+                        <div class="ratchet-step" data-target="3.5" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; min-width:0;">
+                            <span style="font-size:7.5px; font-weight:800; color:#8a8a9e; white-space:nowrap;">3.5%</span>
+                            <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                        </div>
+                        <div class="ratchet-step" data-target="4.0" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; min-width:0;">
+                            <span style="font-size:7.5px; font-weight:800; color:#8a8a9e; white-space:nowrap;">4%</span>
+                            <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                        </div>
+                        <div class="ratchet-step" data-target="4.5" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; min-width:0;">
+                            <span style="font-size:7.5px; font-weight:800; color:#8a8a9e; white-space:nowrap;">4.5%</span>
+                            <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                        </div>
+                        <div class="ratchet-step" data-target="5.0" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; min-width:0;">
+                            <span style="font-size:7.5px; font-weight:800; color:#8a8a9e; white-space:nowrap;">5%</span>
+                            <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                        </div>
+                        <div class="ratchet-step" data-target="5.5" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; min-width:0;">
+                            <span style="font-size:7.5px; font-weight:800; color:#8a8a9e; white-space:nowrap;">5.5%</span>
+                            <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                        </div>
+                        <div class="ratchet-step" data-target="6.0" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:2px; min-width:0;">
+                            <span style="font-size:7.5px; font-weight:800; color:#8a8a9e; white-space:nowrap;">6%+</span>
+                            <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                        </div>
+                    </div>
+                    <div style="display:flex; justify-content:center; align-items:center; margin-top:6px; font-size:10px; font-weight:700;">
+                        <span id="ratchetSubtext" style="color:#8a8a9e; font-size:10px; text-align:center;">Locks in 0.5% steps from 2.5%</span>
+                    </div>
+                </div>
+
+                <!-- 3. Market Sentiment Card -->
+                <div class="card" id="sentimentCard" style="border: 1px solid #262b36; background: #14171f; padding: 10px 14px; border-radius: 8px; flex: 1; min-width: 190px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                         <h3 id="sentimentHeader" style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Market Sentiment ⓘ</h3>
                         <span id="sentimentScore" style="font-size:12px; font-weight:800; color:#fff;">--/100</span>
@@ -2790,9 +2836,9 @@
     <div id="colResizer" style="width: 6px; cursor: col-resize; background: #161920; transition: background 0.2s; position: relative; z-index: 20;" title="Drag to resize tactical HUD"></div>
 
     <!-- RIGHT DRAWER: TACTICAL EXECUTION ENGINE & BROKER HUD -->
-    <div class="right-drawer" id="leaderboardCol" style="width: 310px; min-width: 250px; max-width: 500px; padding: 15px; overflow-y: auto;">
+    <div class="right-drawer" id="leaderboardCol" style="width: 310px; min-width: 250px; max-width: 500px; padding: 10px 12px; overflow-y: hidden; display: flex; flex-direction: column;">
         <!-- 1. 3-ASSET STRATEGY READINESS -->
-        <details class="drawer-details" id="watchlistDrawer" open style="margin-bottom:8px;">
+        <details class="drawer-details" id="watchlistDrawer" open style="margin-bottom:5px; padding:7px 10px;">
             <summary>Strategy Readiness (3x Universe)</summary>
             <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
                 <div id="readinessUI" style="display:flex; flex-direction:column; gap:6px;">
@@ -2804,101 +2850,60 @@
         </details>
 
         <!-- 2. DAILY ENGINE SESSION TIMELINE & COUNTDOWN -->
-        <details class="drawer-details" id="timelineDrawer" open style="margin-bottom:8px;">
+        <details class="drawer-details" id="timelineDrawer" open style="margin-bottom:5px; padding:7px 10px;">
             <summary>Engine Session Timeline</summary>
-            <div id="sessionCountdownBadge" style="margin-top:6px; display:flex; justify-content:space-between; align-items:center; background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:4px 8px; font-size:10px; font-weight:800;">
+            <div id="sessionCountdownBadge" style="margin-top:5px; display:flex; justify-content:space-between; align-items:center; background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:3px 8px; font-size:10px; font-weight:800;">
                 <span style="color:#8a8a9e; letter-spacing:0.4px;">NEXT EVENT</span>
-                <span id="liveNextEventText" style="color:#0ecb81; font-family:monospace; font-size:11px;">14:30 OPEN IN --:--:--</span>
+                <span id="liveNextEventText" style="color:#0ecb81; font-family:monospace; font-size:10.5px;">14:30 OPEN IN --:--:--</span>
             </div>
-            <div id="sessionTimelineContainer" style="margin-top:8px; display:flex; flex-direction:column; gap:5px; padding:2px 2px; font-size:10.5px;">
+            <div id="sessionTimelineContainer" style="margin-top:6px; display:flex; flex-direction:column; gap:4px; padding:1px 2px; font-size:10px;">
             </div>
         </details>
 
         <!-- 3. STRATEGY SAFEGUARDS HUD (TIGHTENED WITH LOSS CUSHION) -->
-        <details class="drawer-details" id="safeguardsDrawer" open style="margin-bottom:8px;">
+        <details class="drawer-details" id="safeguardsDrawer" open style="margin-bottom:5px; padding:7px 10px;">
             <summary>Strategy Safeguards HUD</summary>
-            <div id="safeguardsHudContainer" style="margin-top:6px; display:flex; flex-direction:column; gap:3px; padding:2px 2px; font-size:10.5px;">
+            <div id="safeguardsHudContainer" style="margin-top:5px; display:flex; flex-direction:column; gap:2px; padding:1px 2px; font-size:10px;">
             </div>
         </details>
 
         <!-- 4. MACRO RADAR & FUTURES PULSE (NQ / ES / VIX) -->
-        <details class="drawer-details" id="macroRadarDrawer" open style="margin-bottom:8px;">
+        <details class="drawer-details" id="macroRadarDrawer" open style="margin-bottom:5px; padding:7px 10px;">
             <summary>Macro Radar & Futures Pulse</summary>
-            <div style="margin-top:8px; display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; text-align:center;">
-                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 2px;">
-                    <div style="font-size:9px; color:#8a8a9e; font-weight:700;">NQ (Nasdaq)</div>
-                    <div id="macroNqVal" style="font-size:11px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.42% ▲</div>
+            <div style="margin-top:6px; display:grid; grid-template-columns: repeat(3, 1fr); gap:5px; text-align:center;">
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:5px 2px;">
+                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">NQ (Nasdaq)</div>
+                    <div id="macroNqVal" style="font-size:10.5px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.42% ▲</div>
                 </div>
-                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 2px;">
-                    <div style="font-size:9px; color:#8a8a9e; font-weight:700;">ES (S&P 500)</div>
-                    <div id="macroEsVal" style="font-size:11px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.28% ▲</div>
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:5px 2px;">
+                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">ES (S&P 500)</div>
+                    <div id="macroEsVal" style="font-size:10.5px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.28% ▲</div>
                 </div>
-                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 2px;">
-                    <div style="font-size:9px; color:#8a8a9e; font-weight:700;">VIX Index</div>
-                    <div id="macroVixVal" style="font-size:11px; font-weight:800; color:#ffb700; margin-top:2px;">14.85 Calm</div>
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:5px 2px;">
+                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">VIX Index</div>
+                    <div id="macroVixVal" style="font-size:10.5px; font-weight:800; color:#ffb700; margin-top:2px;">14.85 Calm</div>
                 </div>
             </div>
         </details>
 
         <!-- 5. ACTIVE BOT KPI SCORECARD -->
-        <details class="drawer-details" id="botKpiDrawer" open style="margin-bottom:8px;">
+        <details class="drawer-details" id="botKpiDrawer" open style="margin-bottom:5px; padding:7px 10px;">
             <summary>Active Strategy Vital Stats</summary>
-            <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
-                <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1a1e28; padding-bottom:3px;">
-                    <span style="color:#8a8a9e; font-size:10.5px;">Win Rate:</span>
-                    <span id="sideKpiWinRate" style="color:#0ecb81; font-weight:800; font-size:11px;">--</span>
+            <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1a1e28; padding-bottom:2px;">
+                    <span style="color:#8a8a9e; font-size:10px;">Win Rate:</span>
+                    <span id="sideKpiWinRate" style="color:#0ecb81; font-weight:800; font-size:10.5px;">--</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1a1e28; padding-bottom:3px;">
-                    <span style="color:#8a8a9e; font-size:10.5px;">Profit Factor:</span>
-                    <span id="sideKpiProfitFactor" style="color:#fff; font-weight:800; font-size:11px;">--</span>
+                <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1a1e28; padding-bottom:2px;">
+                    <span style="color:#8a8a9e; font-size:10px;">Profit Factor:</span>
+                    <span id="sideKpiProfitFactor" style="color:#fff; font-weight:800; font-size:10.5px;">--</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                    <span style="color:#8a8a9e; font-size:10.5px;">Daily Run-Rate:</span>
-                    <span id="sideKpiRunRate" style="color:#ffb700; font-weight:800; font-size:11px;">--</span>
+                    <span style="color:#8a8a9e; font-size:10px;">Daily Run-Rate:</span>
+                    <span id="sideKpiRunRate" style="color:#ffb700; font-weight:800; font-size:10.5px;">--</span>
                 </div>
             </div>
         </details>
-
-        <!-- 5b. PROFIT RATCHET STEP INDICATOR -->
-        <div id="profitRatchetCard" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:7px 8px; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:6px;">
-            <div style="font-size:10px; font-weight:800; color:#ffd400; line-height:1.0; letter-spacing:0.3px; text-transform:uppercase; white-space:nowrap; flex-shrink:0;">
-                PROFIT<br>RATCHET
-            </div>
-            <div id="ratchetSegmentsRow" style="display:flex; flex:1; justify-content:space-between; gap:3px; min-width:0;">
-                <div class="ratchet-step" data-target="2.5" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:3px; min-width:0;">
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; white-space:nowrap;">2.5%</span>
-                    <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
-                </div>
-                <div class="ratchet-step" data-target="3.0" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:3px; min-width:0;">
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; white-space:nowrap;">3%</span>
-                    <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
-                </div>
-                <div class="ratchet-step" data-target="3.5" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:3px; min-width:0;">
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; white-space:nowrap;">3.5%</span>
-                    <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
-                </div>
-                <div class="ratchet-step" data-target="4.0" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:3px; min-width:0;">
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; white-space:nowrap;">4%</span>
-                    <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
-                </div>
-                <div class="ratchet-step" data-target="4.5" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:3px; min-width:0;">
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; white-space:nowrap;">4.5%</span>
-                    <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
-                </div>
-                <div class="ratchet-step" data-target="5.0" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:3px; min-width:0;">
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; white-space:nowrap;">5%</span>
-                    <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
-                </div>
-                <div class="ratchet-step" data-target="5.5" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:3px; min-width:0;">
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; white-space:nowrap;">5.5%</span>
-                    <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
-                </div>
-                <div class="ratchet-step" data-target="6.0" style="display:flex; flex-direction:column; align-items:center; flex:1; gap:3px; min-width:0;">
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; white-space:nowrap;">6%+</span>
-                    <div class="r-bar" style="width:100%; height:4.5px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
-                </div>
-            </div>
-        </div>
         <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-top:auto; display:flex; flex-direction:column; gap:6px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:6px;">
@@ -2930,8 +2935,30 @@
     <script>
         function updateProfitRatchetHUD(dayPct) {
             let pct = parseFloat(dayPct) || 0.0;
-            // Floor locks in 0.5% steps from 2.5% upwards
             let lockedStep = pct >= 2.5 ? (Math.floor(pct * 2) / 2) : 0;
+
+            let statEl = document.getElementById('ratchetStatus');
+            let subEl = document.getElementById('ratchetSubtext');
+
+            if (statEl) {
+                if (lockedStep > 0) {
+                    statEl.innerHTML = `<span style="color:#0ecb81;">Floor Locked: +${lockedStep.toFixed(1)}%</span>`;
+                } else if (pct > 0) {
+                    statEl.innerHTML = `<span style="color:#ffd400;">Active (+${pct.toFixed(2)}%)</span>`;
+                } else {
+                    statEl.innerHTML = `<span style="color:#8a8a9e;">Idle (0.0%)</span>`;
+                }
+            }
+
+            if (subEl) {
+                if (lockedStep > 0) {
+                    subEl.innerText = `Secured floor: +${lockedStep.toFixed(1)}% in cash`;
+                    subEl.style.color = '#0ecb81';
+                } else {
+                    subEl.innerText = `Locks in 0.5% steps from 2.5%`;
+                    subEl.style.color = '#8a8a9e';
+                }
+            }
 
             document.querySelectorAll('#ratchetSegmentsRow .ratchet-step').forEach(step => {
                 let target = parseFloat(step.getAttribute('data-target'));
@@ -2939,14 +2966,12 @@
                 let barEl = step.querySelector('.r-bar');
 
                 if (lockedStep >= target || pct >= target) {
-                    // Active locked step: Highlight green with white text
                     if (textEl) textEl.style.color = '#ffffff';
                     if (barEl) {
                         barEl.style.background = '#0ecb81';
                         barEl.style.boxShadow = '0 0 6px rgba(14, 203, 129, 0.5)';
                     }
                 } else {
-                    // Inactive: Dark slate gray track with muted text
                     if (textEl) textEl.style.color = '#5a5f70';
                     if (barEl) {
                         barEl.style.background = '#262b36';
@@ -4716,28 +4741,19 @@
             if (multiSeries.length) { multiSeries.forEach(s => { try { tvChart.removeSeries(s); } catch(e){} }); multiSeries = []; }
             
             let style = document.getElementById('styleSelect') ? document.getElementById('styleSelect').value : 'candlestick';
-            if (tvSeries) { try { tvChart.removeSeries(tvSeries); } catch(e){} tvSeries = null; }
+            
+            // Re-use existing series to prevent price scale resets and jumping canvas markers
+            if (!tvSeries || tvSeries._chartStyle !== style) {
+                if (tvSeries) { try { tvChart.removeSeries(tvSeries); } catch(e){} tvSeries = null; }
 
-            if (style === 'line') {
-                tvSeries = tvChart.addLineSeries({ 
-                    color: '#ffd400', 
-                    lineWidth: 2 
-                });
-            } else if (style === 'area') {
-                tvSeries = tvChart.addAreaSeries({ 
-                    topColor: 'rgba(255, 212, 0, 0.35)', 
-                    bottomColor: 'rgba(255, 212, 0, 0.0)', 
-                    lineColor: '#ffd400', 
-                    lineWidth: 2 
-                });
-            } else {
-                tvSeries = tvChart.addCandlestickSeries({ 
-                    upColor: '#0ecb81', 
-                    downColor: '#ff5364', 
-                    borderVisible: false,
-                    wickUpColor: '#0ecb81',
-                    wickDownColor: '#ff5364'
-                });
+                if (style === 'line') {
+                    tvSeries = tvChart.addLineSeries({ color: '#ffd400', lineWidth: 2 });
+                } else if (style === 'area') {
+                    tvSeries = tvChart.addAreaSeries({ topColor: 'rgba(255, 212, 0, 0.35)', bottomColor: 'rgba(255, 212, 0, 0.0)', lineColor: '#ffd400', lineWidth: 2 });
+                } else {
+                    tvSeries = tvChart.addCandlestickSeries({ upColor: '#0ecb81', downColor: '#ff5364', borderVisible: false, wickUpColor: '#0ecb81', wickDownColor: '#ff5364' });
+                }
+                tvSeries._chartStyle = style;
             }
 
             if (Array.isArray(masterData) && masterData.length > 0) {
@@ -4779,16 +4795,16 @@
                         sEma21.setData(calcEMA(cleanData, 21));
                         multiSeries.push(sEma9, sEma21);
                     }
-                    if (!window._userHasPannedChart) {
+                    if (!window._userHasPannedChart && !window._chartEverFitted) {
+                        window._chartEverFitted = true;
                         tvChart.timeScale().applyOptions({ rightOffset: 35 });
                         tvChart.timeScale().fitContent();
                     }
-                    setTimeout(drawTradeMarkers, 50);
 
                     if (tvSeries) {
                         tvSeries.setMarkers([]);
                     }
-                    setTimeout(drawTradeMarkers, 40);
+                    requestAnimationFrame(drawTradeMarkers);
                 } catch(err) {
                     console.error("LightweightCharts setData error:", err);
                 }
