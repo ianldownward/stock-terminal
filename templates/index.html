@@ -4006,7 +4006,7 @@
                 const absPct = Math.abs(dayPct);
                 const pctStr = (absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1)) + '%';
                 const signStr = dVal > 0 ? '+' : (dVal < 0 ? '-' : '');
-                mobPnlEl.innerHTML = `<span style="color:${col}; font-weight:800;">${arrow}${signStr}£${Math.abs(dVal).toFixed(2)} (${signStr}${pctStr})</span>`;
+                mobPnlEl.innerHTML = `<span style="color:${col}; font-weight:800;">${arrow}${signStr}$${Math.abs(dVal).toFixed(2)} (${signStr}${pctStr})</span>`;
             }
 
             // Render list items with dynamic ticker in brackets (e.g. Test TQ (SQQQ))
@@ -4679,7 +4679,7 @@
                 let worthEl = document.getElementById('mHoldingWorth');
                 if (shEl) shEl.innerText = `${shOwned} ${shOwned === 1 ? 'Share' : 'Shares'}`;
                 if (worthEl) {
-                    worthEl.innerText = `Worth: £${valOwned}`;
+                    worthEl.innerText = `Worth: $${valOwned}`;
                     worthEl.style.color = shOwned > 0 ? '#0ecb81' : '#8a8a9e';
                 }
                 
@@ -4774,7 +4774,7 @@
                         if (trigLine) trigLine.style.display = 'none';
                         if (healthHeader) healthHeader.innerText = "Risk Thermometer (Trailing Stop)";
                         // Show current price in top-right
-                        if (healthStatus) healthStatus.innerHTML = `<span style="color:#0ecb81; font-weight:900;">£${curPrice.toFixed(2)}</span>`;
+                        if (healthStatus) healthStatus.innerHTML = `<span style="color:#0ecb81; font-weight:900;">$${curPrice.toFixed(2)}</span>`;
                         if (healthSubtext) healthSubtext.innerText = p.metrics.health_text || "Tracking Position";
                         if (healthMarker) {
                             healthMarker.style.display = "block";
@@ -4790,8 +4790,8 @@
                         let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
                         let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));
 
-                        if (stopEl) stopEl.innerText = `Stop: £${stopPrice.toFixed(2)}`;
-                        if (peakEl) peakEl.innerText = `Peak: £${peakPrice.toFixed(2)}`;
+                        if (stopEl) stopEl.innerText = `Stop: $${stopPrice.toFixed(2)}`;
+                        if (peakEl) peakEl.innerText = `Peak: $${peakPrice.toFixed(2)}`;
                     } else {
                         if (trigLine) trigLine.style.display = 'block';
                         let buyScore = parseInt(p.metrics.buy_score) || 0;
@@ -5134,9 +5134,9 @@
                                     <div style="position:absolute; top:-2px; left:${Math.max(0, Math.min(100, it.health_pct))}%; width:3px; height:14px; background:#fff; border-radius:2px;"></div>
                                 </div>
                                 <div style="display:flex; justify-content:space-between; margin-top:3px; font-size:10px; font-weight:700;">
-                                    <span style="color:#ff5364;">Stop: £${(parseFloat(it.stop_price) || 0).toFixed(2)}</span>
+                                    <span style="color:#ff5364;">Stop: $${(parseFloat(it.stop_price) || 0).toFixed(2)}</span>
                                     <span style="color:#8a8a9e;">${it.health_text || 'Tracking'}</span>
-                                    <span style="color:#0ecb81;">Peak: £${(parseFloat(it.peak_price) || 0).toFixed(2)}</span>
+                                    <span style="color:#0ecb81;">Peak: $${(parseFloat(it.peak_price) || 0).toFixed(2)}</span>
                                 </div>
                             </div>
                         `;
@@ -5164,7 +5164,7 @@
                                     <span style="font-weight:800; font-size:14px; color:#fff;">${it.ticker}</span>
                                     ${heldTag}
                                 </div>
-                                <span style="font-weight:700; color:#ffd400; font-size:13px;">£${formattedPrice}</span>
+                                <span style="font-weight:700; color:#ffd400; font-size:13px;">$${formattedPrice}</span>
                             </div>
                             ${thermoHtml}
                         </div>
@@ -5619,9 +5619,10 @@
             let w = canvas.width, h = canvas.height;
             ctx.clearRect(0, 0, w, h);
 
-            let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || { equity: 500, budget: 500 };
-            let budget = lb.budget || 500.0;
-            let currentEq = lb.equity || 500.0;
+            let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || {};
+            let defaultBud = parseFloat(lb.budget) || 700.0;
+            let budget = window._customCapital !== undefined ? window._customCapital : defaultBud;
+            let currentEq = (lb.equity !== undefined && lb.equity > 0 && window._customCapital === undefined) ? parseFloat(lb.equity) : budget;
 
             let shortName = getShortProfileName(userKey);
             let horizon = window._selectedHorizon || '6M';
@@ -6529,7 +6530,7 @@
                     
                     if (isHeld) {
                         color = valPct >= 70 ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#ff5364');
-                        label = `<span style="color:${color}; font-weight:800;">RISK: ${valPct}%</span> <span style="font-size:9px; color:#8a8a9e;">(Stop £${it.stop_price})</span>`;
+                        label = `<span style="color:${color}; font-weight:800;">RISK: ${valPct}%</span> <span style="font-size:9px; color:#8a8a9e;">(Stop $${it.stop_price})</span>`;
                     } else {
                         let isReady = valPct >= 65;
                         color = isReady ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#4a5060');

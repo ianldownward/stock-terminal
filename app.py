@@ -820,9 +820,9 @@ class PortfolioManager:
                     diff_pct = (diff_val / cost_basis) * 100.0
                     arrow = "▲" if diff_val >= 0 else "▼"
                     sign = "+" if diff_val >= 0 else "-"
-                    pnl_line = f"\n{arrow} {sign}£{abs(diff_val):.2f} ({sign}{abs(diff_pct):.1f}%)"
+                    pnl_line = f"\n{arrow} {sign}${abs(diff_val):.2f} ({sign}{abs(diff_pct):.1f}%)"
 
-            push_message = f"£{cost_per_sh:.2f} (Total £{tot_amt:.2f}){pnl_line}"
+            push_message = f"${cost_per_sh:.2f} (Total ${tot_amt:.2f}){pnl_line}"
 
             send_native_web_push(
                 title=push_title,
@@ -1060,7 +1060,7 @@ class MarketScoringEngine:
             pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
             
             if drop_from_peak_pct >= trail_pct or pnl_pct <= hard_pct:
-                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"STOP TRIPPED {pnl_str}. Peak: £{highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Tripped', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"Stop Tripped {pnl_str}"}
+                return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"STOP TRIPPED {pnl_str}. Peak: ${highest_price:.2f}.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Tripped', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"Stop Tripped {pnl_str}"}
             elif health_pct >= 70:
                 health_color, health_text = "#0ecb81", f"Strong Trend {pnl_str}"
             elif health_pct >= 40:
@@ -1097,7 +1097,7 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"TRAILING STOP TRIPPED. Dropped {drop_from_peak_pct:.2f}% from peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop', 'color': '#ffd400', 'action_main': 'SELL', 'action_sub': '(Lock Profits)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             if pnl_pct <= hard_pct: 
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
-            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: £{highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
+            return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: ${highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
         # ENTRY LOGIC: Intraday EMA alignment (ignores obsolete 5-day drag)
         intraday_pct = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0.5
