@@ -3343,6 +3343,24 @@
             fetchData(false);
         }
 
+        async function unlockProfile(userKey, e) {
+            if (e) e.stopPropagation();
+            if (!confirm(`Manual Override: Unlock "${userKey}" to resume automated trading for today?`)) return;
+            try {
+                let res = await fetch('/api/profile/unlock', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ profile: userKey })
+                });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    await fetchData(false);
+                }
+            } catch(err) {
+                alert('Failed to unlock profile.');
+            }
+        }
+
         function updateMarketClocks() {
             let d = new Date();
             let optionsUK = { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false };
@@ -4195,9 +4213,8 @@
                 const startEq = (parseFloat(activeLb.equity) || 500) - dVal;
                 const dayPct = activeLb.daily_pct !== undefined ? activeLb.daily_pct : (startEq > 0 ? ((dVal / startEq) * 100.0) : 0.0);
                 const absPct = Math.abs(dayPct);
-                const pctStr = (absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1)) + '%';
+                const pctStr = absPct.toFixed(2) + '%';
                 const signStr = dVal > 0 ? '+' : (dVal < 0 ? '-' : '');
-
                 let arrowIcon = arrow ? `<span style="font-size:8px; opacity:0.8; vertical-align:middle; margin-right:2px;">${arrow}</span>` : '';
                 triggerLabel.innerHTML = `
                     <div style="display:flex; flex-direction:column; width:100%; gap:2px;">
@@ -4256,7 +4273,7 @@
                     const startEq = (parseFloat(lb.equity) || 500) - dVal;
                     const dayPct = lb.daily_pct !== undefined ? lb.daily_pct : (startEq > 0 ? ((dVal / startEq) * 100.0) : 0.0);
                     const absPct = Math.abs(dayPct);
-                    const pctStr = (absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1)) + '%';
+                    const pctStr = absPct.toFixed(2) + '%';
                     const signStr = dVal > 0 ? '+' : (dVal < 0 ? '-' : '');
 
                     let itemArrowIcon = arrow ? `<span style="font-size:8px; opacity:0.8; vertical-align:middle; margin-right:2px;">${arrow}</span>` : '';
@@ -4484,12 +4501,12 @@
 
                     tickerUnderName = `
                         <div style="display:flex; gap:5px; flex-wrap:wrap; margin-top:4px;">
-                            <span class="lb-lock-pill" title="Strategy reached daily target and locked profit in 100% cash">
+                            <span class="lb-lock-pill" onclick="unlockProfile('${lb.user.replace(/'/g, "\\'")}', event)" title="Click to manually unlock profile and resume trading" style="cursor:pointer; transition:all 0.15s ease;">
                                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;">
                                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                                 </svg>
-                                <span>${targetPctStr} Target Reached</span>
+                                <span>${targetPctStr} Locked ✕</span>
                             </span>
                         </div>
                     `;
@@ -4499,7 +4516,7 @@
                 let dayPct = lb.daily_pct !== undefined ? lb.daily_pct : (startEq > 0 ? ((dayVal / startEq) * 100.0) : 0.0);
                 let absPct = Math.abs(dayPct);
                 let sign = dayVal >= 0 ? '+' : '-';
-                let pctStr = `${sign}${(absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1))}%`;
+                let pctStr = `${sign}${absPct.toFixed(2)}%`;
                 let arrow = dayVal > 0 ? '▲' : (dayVal < 0 ? '▼' : '');
                 let arrowHtml = arrow ? `<span style="color:${dailyColor}; font-size:10px; margin-left:4px;">${arrow}</span> <span style="color:#ffffff;">${pctStr}</span>` : `<span style="color:#8a8a9e; font-size:11px; margin-left:4px;">0.0%</span>`;
 
@@ -4978,7 +4995,7 @@
 
                     if (sharesOwned > 0) {
                         if (trigLine) trigLine.style.display = 'none';
-                        if (healthHeader) healthHeader.innerText = "Risk Thermometer (Trailing Stop)";
+                        if (healthHeader) healthHeader.innerText = "Trailing Stop";
                         // Show current price in top-right
                         if (healthStatus) healthStatus.innerHTML = `<span style="color:#0ecb81; font-weight:900;">$${curPrice.toFixed(2)}</span>`;
                         if (healthSubtext) healthSubtext.innerText = p.metrics.health_text || "Tracking Position";
@@ -5667,6 +5684,7 @@
         };
 
         async function forceCalibrateAlpaca(btn) {
+            if (!confirm("Calibrate with Alpaca?\n\nThis queries Alpaca for your live balance and reconciles your local ledger.\n\nProceed?")) return;
             let activeProf = document.getElementById('userSelect')?.value || 'Vector Hybrid';
             if (btn) {
                 btn.disabled = true;

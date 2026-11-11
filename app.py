@@ -2379,6 +2379,33 @@ def add_user_v2():
         portfolio_store.save_data(portfolio_store.data)
         return jsonify({'status': 'ok', 'profile': prof_name})
 
+@app.route('/api/profile/unlock', methods=['POST'])
+@login_required
+def unlock_profile_route():
+    data = request.get_json() or {}
+    prof_name = data.get('profile', '').strip()
+    is_client = (session.get('role') != 'admin')
+    client_name = session.get('user', 'Client')
+
+    if is_client:
+        c_store = portfolio_store.get_client_store(client_name)
+        users = c_store.setdefault('users', {})
+        if prof_name in users:
+            users[prof_name]['daily_peak_pct'] = 0.0
+            users[prof_name]['is_locked'] = False
+            portfolio_store.save_client_store(client_name, c_store)
+            return jsonify({'status': 'ok'})
+        return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
+
+    portfolio_store.reload()
+    users = portfolio_store.data.setdefault('users', {})
+    if prof_name in users:
+        users[prof_name]['daily_peak_pct'] = 0.0
+        users[prof_name]['is_locked'] = False
+        portfolio_store.save_data(portfolio_store.data)
+        return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
+
 @app.route('/api/profile/toggle_sweep', methods=['POST'])
 @login_required
 def toggle_profile_sweep():
