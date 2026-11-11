@@ -2915,7 +2915,7 @@
                 </div>
                 <div style="display:flex; gap:5px;">
                     <button id="btnForceCalibrate" class="btn-sync-action" style="border-color:#0ecb81; color:#0ecb81;" onclick="forceCalibrateAlpaca(this)" title="Pulls live Alpaca equity, resets daily peak & aligns portfolio">
-                        Force Calibrate
+                        Calibrate
                     </button>
                     <button id="btnAlpacaSync" class="btn-sync-action" onclick="fetchBrokerStatus(true)" title="Checks Alpaca exposure and updates status">
                         Check
@@ -5786,21 +5786,21 @@
                     setTimeout(() => {
                         if (btn) {
                             btn.disabled = false;
-                            btn.innerText = "Force Calibrate";
+                            btn.innerText = "Calibrate";
                         }
                     }, 2000);
                 } else {
                     alert("Alpaca sync error: " + (d.message || "Failed to reach Alpaca."));
                     if (btn) {
                         btn.disabled = false;
-                        btn.innerText = "Force Calibrate";
+                        btn.innerText = "Calibrate";
                     }
                 }
             } catch(e) {
                 alert("Connection error syncing with Alpaca.");
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerText = "Force Calibrate";
+                    btn.innerText = "Calibrate";
                 }
             }
         }
