@@ -2203,6 +2203,25 @@
     </div>
 
     <style>
+        /* High-contrast white stepper arrows and text in dark mode */
+        .stepper-white {
+            color: #ffffff !important;
+            color-scheme: dark;
+        }
+        .stepper-white::-webkit-inner-spin-button,
+        .stepper-white::-webkit-outer-spin-button {
+            filter: brightness(0) invert(1) !important;
+            opacity: 1 !important;
+            cursor: pointer;
+        }
+        body.light-mode .stepper-white {
+            color: #131722 !important;
+            color-scheme: light;
+        }
+        body.light-mode .stepper-white::-webkit-inner-spin-button,
+        body.light-mode .stepper-white::-webkit-outer-spin-button {
+            filter: none !important;
+        }
         .btn-horizon {
             background: transparent !important;
             border: 1px solid #ffd400 !important;
@@ -2282,6 +2301,16 @@
                         <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Vector Hybrid: Trajectory vs Compounding Targets</span>
                         
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <!-- Editable Initial Capital Box (to the left of the boxes) -->
+                            <div style="display:flex; align-items:center; gap:4px; background:#0f1115; border:1px solid #ffd400; padding:2px 6px; border-radius:5px;">
+                                <span style="font-size:9px; font-weight:800; color:#ffd400;">CAPITAL:</span>
+                                <span style="font-size:11px; font-weight:800; color:#fff;">$</span>
+                                <input type="number" id="customCapitalInput" value="700" step="50" min="10" 
+                                       oninput="onCustomCapitalChange(this.value)" 
+                                       class="stepper-white"
+                                       style="width:52px; background:transparent; border:none; color:#ffffff; font-size:11px; font-weight:800; text-align:right; outline:none;">
+                            </div>
+
                             <!-- Time Horizon Range Buttons -->
                             <div style="display:flex; gap:4px;">
                                 <button type="button" class="btn-horizon" id="btnHorizon5D" onclick="setTimeHorizon('5D')">5D</button>
@@ -2291,12 +2320,13 @@
                                 <button type="button" class="btn-horizon" id="btnHorizon5Y" onclick="setTimeHorizon('5Y')">5Y</button>
                             </div>
 
-                            <!-- Editable Custom Benchmark Input Box -->
+                            <!-- Editable Custom Benchmark Input Box with White Text and White Arrows -->
                             <div style="display:flex; align-items:center; gap:4px; background:#0f1115; border:1px solid #ffd400; padding:2px 6px; border-radius:5px;">
                                 <span style="font-size:9px; font-weight:800; color:#ffd400;">TARGET:</span>
                                 <input type="number" id="customTargetRateInput" value="1.0" step="0.1" min="0.1" max="10.0" 
                                        oninput="onCustomTargetRateChange(this.value)" 
-                                       style="width:38px; background:transparent; border:none; color:#ffd400; font-size:11px; font-weight:800; text-align:right; outline:none;">
+                                       class="stepper-white"
+                                       style="width:40px; background:transparent; border:none; color:#ffffff; font-size:11px; font-weight:800; text-align:right; outline:none;">
                                 <span style="font-size:9px; font-weight:800; color:#ffd400;">%/DAY</span>
                             </div>
                         </div>
@@ -4565,7 +4595,7 @@
                                     lineWidth: 2,
                                     lineStyle: 2,
                                     axisLabelVisible: true,
-                                    title: `BUY ENTRY £${entryP.toFixed(2)}`
+                                    title: `BUY ENTRY $${entryP.toFixed(2)}`
                                 });
                             }
                         }
@@ -5427,7 +5457,8 @@
         // -------------------------------------------------------------
         window._selectedInsightProfile = 'Vector Hybrid';
         window._selectedHorizon = '6M';
-        window._customTargetRate = 1.0; // 1.0% per day by default
+        window._customTargetRate = 1.0;
+        window._customCapital = 700.0;
 
         const profileTargets = {
             'Vector Hybrid': '+2.20% Bank & Walk',
@@ -5440,18 +5471,27 @@
             let parsed = parseFloat(val);
             if (!isNaN(parsed) && parsed > 0) {
                 window._customTargetRate = parsed;
-                updateMilestoneBox(parsed);
+                updateMilestoneBox(parsed, window._customCapital);
                 drawCompoundingCanvas(window._selectedInsightProfile);
             }
         }
 
-        function updateMilestoneBox(rate) {
+        function onCustomCapitalChange(val) {
+            let parsed = parseFloat(val);
+            if (!isNaN(parsed) && parsed > 0) {
+                window._customCapital = parsed;
+                updateMilestoneBox(window._customTargetRate || 1.0, parsed);
+                drawCompoundingCanvas(window._selectedInsightProfile);
+            }
+        }
+
+        function updateMilestoneBox(rate, customCap) {
             let activeProf = window._selectedInsightProfile || 'Vector Hybrid';
             let lb = (latestLeaderboardData || []).find(l => l.user === activeProf) || {};
-            let budget = lb.budget || 700.0;
-            let r = rate / 100.0;
+            let budget = customCap !== undefined ? customCap : (window._customCapital !== undefined ? window._customCapital : (lb.budget || 700.0));
+            let r = (rate || 1.0) / 100.0;
             let hdr = document.getElementById('milestoneBoxHeader');
-            if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${rate.toFixed(1)}% / Day @ $${Math.round(budget)} Baseline)`;
+            if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${(rate || 1.0).toFixed(1)}% / Day @ $${Math.round(budget).toLocaleString()} Baseline)`;
 
             function fmt(val) {
                 if (val >= 1e9) return `$${(val/1e9).toFixed(1)}B`;
@@ -6034,12 +6074,12 @@
             closeSettingsModal();
             targetCapitalProfile = profileName;
             document.getElementById('addCapProfileName').innerText = profileName;
-            let curBudget = 500.0;
+            let curBudget = 700.0;
             if (Array.isArray(latestLeaderboardData)) {
                 let found = latestLeaderboardData.find(l => l.user.toLowerCase().includes(profileName.toLowerCase()));
-                if (found) curBudget = found.budget || 500.0;
+                if (found) curBudget = (found.equity !== undefined && found.equity > 0) ? found.equity : (found.budget || 700.0);
             }
-            document.getElementById('addCapCurrentEq').innerText = `Current Allocation: $${curBudget.toFixed(2)}`;
+            document.getElementById('addCapCurrentEq').innerText = `Current Allocation: $${parseFloat(curBudget).toFixed(2)}`;
             document.getElementById('addCapAmount').value = '';
             document.getElementById('addCapitalModal').style.display = 'flex';
         }
@@ -6087,7 +6127,7 @@
                         let pKey = pName.toLowerCase();
                         let aEntry = allocs[pKey] || {};
                         let isEnabled = (aEntry.enabled !== undefined) ? aEntry.enabled : true;
-                        let curEq = (p.equity !== undefined) ? parseFloat(p.equity).toFixed(2) : parseFloat(p.budget || 0).toFixed(2);
+                        let curEq = (p.equity !== undefined && p.equity > 0) ? parseFloat(p.equity).toFixed(2) : (p.budget ? parseFloat(p.budget).toFixed(2) : '700.00');
                         let isLast = (idx === profiles.length - 1);
 
                         let isSweep = (p.overnight_sweep !== undefined) ? p.overnight_sweep : ((aEntry.overnight_sweep !== undefined) ? aEntry.overnight_sweep : true);
@@ -6162,7 +6202,7 @@
                 let pData = (latestLeaderboardData || []).find(l => l.user === profName) || {};
                 allocations[profKey] = {
                     enabled: chk.checked,
-                    budget: parseFloat(pData.budget || 500.0)
+                    budget: parseFloat(pData.budget || 700.0)
                 };
             });
 

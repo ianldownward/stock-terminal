@@ -364,7 +364,7 @@ class PortfolioManager:
         wl = ['TQQQ', 'SOXL', 'SQQQ'] # Clean 3x leveraged index ETF universe only
 
         return {
-            'master_budget': 500.0,
+            'master_budget': 700.0,
             'watchlist': wl,
             'overnight_sweep': True,
             'initial_positions': {}, 
@@ -2481,10 +2481,11 @@ def reset_portfolio():
         st = ud.get('settings', {})
         portfolio_store.data['users'][prof] = portfolio_store.default_user_state(prof)
         ud = portfolio_store.data['users'][prof]
+        ud['master_budget'] = target_equity
         if wl: ud['watchlist'] = wl
         if st: ud['settings'] = st
         
-        mb = float(ud.get('master_budget', 5000.0))
+        mb = target_equity
         now_lon = pd.Timestamp.now(tz='Europe/London')
         today_str = now_lon.strftime('%Y-%m-%d')
         yesterday_str = (now_lon - pd.Timedelta(days=1)).strftime('%Y-%m-%d')
