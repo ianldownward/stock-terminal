@@ -2965,9 +2965,13 @@ def get_data():
             cash_now = mb_lb + nh_lb - im_lb
             
             trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
-            net_cash_today = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
-                                 for tr in trades_today)
-            cash_start = cash_now - net_cash_today
+            # Anchor opening baseline to Alpaca to prevent calculation drift
+            if broker.get('api_key') and broker.get('secret_key'):
+                cash_start = mb_lb
+            else:
+                net_cash_today = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
+                                     for tr in trades_today)
+                cash_start = cash_now - net_cash_today
             
             equity_now, equity_start = 0.0, 0.0
             shares_now_map = {}

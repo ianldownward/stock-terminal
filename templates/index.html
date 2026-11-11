@@ -1571,24 +1571,30 @@
             list-style: none; 
             padding: 0; 
             margin: 0; 
-            overflow-y: scroll !important; 
+            overflow-y: auto !important; 
+            overflow-x: hidden !important;
             -webkit-overflow-scrolling: touch;
-            flex: 1; 
-            min-height: 0; 
+            max-height: calc(100vh - 460px) !important;
+            min-height: 140px !important;
         }
-        #tradeHistoryDrawer[open] { 
-            flex: 1; 
-            display: flex; 
-            flex-direction: column; 
-            min-height: 0; 
-            overflow: hidden !important; 
-            margin-bottom: 0; 
+        #tradeHistoryDrawer {
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+            margin-bottom: 0;
+        }
+        #tradeHistoryDrawer summary {
+            flex-shrink: 0;
+        }
+        #tradeHistoryDrawer::details-content {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex: 1;
         }
         #tradeHistoryDrawer[open] .history-list { 
-            flex: 1; 
-            min-height: 0;
-            max-height: none; 
-            overflow-y: scroll !important; 
+            max-height: calc(100vh - 460px) !important;
+            overflow-y: auto !important; 
         }
         .history-item { background: #1e222d; border: 1px solid #262b36; border-radius: 6px; padding: 10px; margin-bottom: 8px; position: relative; }
         .history-item .h-action { font-weight: bold; font-size: 12px; }
@@ -4779,63 +4785,10 @@
                     }
                     setTimeout(drawTradeMarkers, 50);
 
-                    // Plot precise pointed Buy & Sell tabs using Lightweight Charts Native Markers
-                    if (showTrades && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
-                        let tickerHist = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker).reverse(); // Oldest first
-                        let chartMarkers = [];
-                        let matchedBuyPrice = 0;
-
-                        tickerHist.forEach(tr => {
-                            let tradePrice = parseFloat(tr.price) || 0;
-                            let tradeTs = parseInt(tr.timestamp) || 0;
-
-                            // Match the precise candle timestamp
-                            let matchTime = null;
-                            for (let i = masterData.length - 1; i >= 0; i--) {
-                                let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
-                                if (cTime <= tradeTs) {
-                                    matchTime = masterData[i].time;
-                                    break;
-                                }
-                            }
-
-                            if (matchTime && tradePrice > 0) {
-                                let act = String(tr.action).toUpperCase();
-                                if (act === 'BUY') {
-                                    matchedBuyPrice = tradePrice;
-                                    chartMarkers.push({
-                                        time: matchTime,
-                                        position: 'belowBar',
-                                        color: '#0ecb81',
-                                        shape: 'arrowUp',
-                                        text: `Buy @ $${tradePrice.toFixed(2)}`
-                                    });
-                                } else if (act === 'SELL') {
-                                    let pnlStr = '';
-                                    if (matchedBuyPrice > 0) {
-                                        let diffPct = ((tradePrice - matchedBuyPrice) / matchedBuyPrice) * 100.0;
-                                        pnlStr = ` (${diffPct >= 0 ? '+' : ''}${diffPct.toFixed(1)}%)`;
-                                    }
-                                    chartMarkers.push({
-                                        time: matchTime,
-                                        position: 'aboveBar',
-                                        color: '#ff5364',
-                                        shape: 'arrowDown',
-                                        text: `Sell @ $${tradePrice.toFixed(2)}${pnlStr}`
-                                    });
-                                    matchedBuyPrice = 0; // Reset for next cycle
-                                }
-                            }
-                        });
-
-                        // Draw native markers directly onto the candles
-                        if (chartMarkers.length > 0) {
-                            tvSeries.setMarkers(chartMarkers);
-                        }
+                    if (tvSeries) {
+                        tvSeries.setMarkers([]);
                     }
-                    
-                    // Draw continuous connecting line between them using the canvas overlay
-                    setTimeout(drawTradeMarkers, 60);
+                    setTimeout(drawTradeMarkers, 40);
                 } catch(err) {
                     console.error("LightweightCharts setData error:", err);
                 }
@@ -5213,72 +5166,127 @@
                 tvChart.timeScale().subscribeVisibleLogicalRangeChange(() => drawTradeMarkers());
             }
 
-            let currentShares = (globalPortfolioData && globalPortfolioData.holdings && globalPortfolioData.holdings[currentTicker]) ? (globalPortfolioData.holdings[currentTicker].shares || 0) : 0;
-            if (showTrades && currentShares > 0 && globalPortfolioData && Array.isArray(globalPortfolioData.history)) {
-                let t_buys = globalPortfolioData.history.filter(tr => tr.ticker === currentTicker && String(tr.action).toUpperCase() === 'BUY');
-                if (t_buys.length > 0) {
-                    let buyTrade = t_buys[0];
-                    let buyPrice = parseFloat(buyTrade.price) || 0;
-                    let buyTs = parseInt(buyTrade.timestamp) || 0;
+            if (showTrades && globalPortfolioData && Array.isArray(globalPortfolioData.history) && masterData && masterData.length > 0) {
+                let trades = globalPortfolioData.history
+                    .filter(tr => tr.ticker === currentTicker && tr.ticker !== 'CALIBRATION')
+                    .slice()
+                    .reverse();
 
-                    if (buyPrice && masterData && masterData.length > 0) {
-                        let matchTime = null;
-                        let isDaily = typeof masterData[0].time === 'string';
+                function getCandleCoords(ts, price) {
+                    if (!ts || !price) return null;
+                    let matchTime = null;
+                    let isDaily = typeof masterData[0].time === 'string';
 
-                        if (isDaily) {
-                            let dStr = new Date(buyTs * 1000).toISOString().split('T')[0];
-                            let found = masterData.find(b => b.time === dStr);
-                            if (found) matchTime = found.time;
-                        } else {
-                            for (let i = masterData.length - 1; i >= 0; i--) {
-                                let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
-                                if (cTime <= buyTs) {
-                                    matchTime = masterData[i].time;
-                                    break;
-                                }
-                            }
-                            if (!matchTime) matchTime = masterData[0].time;
-                        }
-
-                        if (matchTime) {
-                            let x = tvChart.timeScale().timeToCoordinate(matchTime);
-                            let y = tvSeries.priceToCoordinate(buyPrice);
-
-                            if (x !== null && x !== undefined && x >= 0 && x <= chartDiv.clientWidth) {
-                                ctx.save();
-                                ctx.setLineDash([4, 4]);
-                                ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-                                ctx.lineWidth = 1.5;
-                                ctx.beginPath();
-                                ctx.moveTo(x, 0);
-                                ctx.lineTo(x, chartDiv.clientHeight);
-                                ctx.stroke();
-
-                                if (y !== null && y !== undefined && y >= 0 && y <= chartDiv.clientHeight) {
-                                    ctx.setLineDash([]);
-                                    ctx.fillStyle = 'rgba(0, 200, 83, 0.35)';
-                                    ctx.beginPath();
-                                    ctx.arc(x, y, 9, 0, Math.PI * 2);
-                                    ctx.fill();
-
-                                    ctx.fillStyle = '#0ecb81';
-                                    ctx.beginPath();
-                                    ctx.arc(x, y, 6, 0, Math.PI * 2);
-                                    ctx.fill();
-
-                                    ctx.fillStyle = '#ffffff';
-                                    ctx.beginPath();
-                                    ctx.arc(x, y, 3, 0, Math.PI * 2);
-                                    ctx.fill();
-                                }
-                                ctx.restore();
+                    if (isDaily) {
+                        let dStr = new Date(ts * 1000).toISOString().split('T')[0];
+                        let found = masterData.find(b => b.time === dStr);
+                        if (found) matchTime = found.time;
+                        else {
+                            for (let i = 0; i < masterData.length; i++) {
+                                if (masterData[i].time >= dStr) { matchTime = masterData[i].time; break; }
                             }
                         }
+                    } else {
+                        for (let i = masterData.length - 1; i >= 0; i--) {
+                            let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
+                            if (cTime <= ts) {
+                                matchTime = masterData[i].time;
+                                break;
+                            }
+                        }
+                        if (!matchTime && masterData.length > 0) {
+                            let firstT = typeof masterData[0].time === 'number' ? masterData[0].time : (new Date(masterData[0].time).getTime() / 1000);
+                            if (ts >= firstT - 86400 * 2) matchTime = masterData[0].time;
+                        }
+                    }
+
+                    if (!matchTime) return null;
+                    let x = tvChart.timeScale().timeToCoordinate(matchTime);
+                    let y = tvSeries.priceToCoordinate(price);
+                    if (x === null || y === null || isNaN(x) || isNaN(y)) return null;
+                    return { x: x, y: y };
+                }
+
+                function drawThinX(x, y, s = 5.5) {
+                    ctx.save();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.3;
+                    ctx.beginPath();
+                    ctx.moveTo(x - s, y - s);
+                    ctx.lineTo(x + s, y + s);
+                    ctx.moveTo(x + s, y - s);
+                    ctx.lineTo(x - s, y + s);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                function drawStackedText(x, y, lines, isSell = false) {
+                    ctx.save();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'center';
+                    ctx.font = '700 9px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+                    let lineHeight = 11;
+                    let startY = isSell ? (y - 10 - ((lines.length - 1) * lineHeight)) : (y + 14);
+
+                    lines.forEach((line, idx) => {
+                        ctx.fillText(line, x, startY + (idx * lineHeight));
+                    });
+                    ctx.restore();
+                }
+
+                let openBuy = null;
+                for (let tr of trades) {
+                    let act = String(tr.action).toUpperCase();
+                    let p = parseFloat(tr.price) || 0;
+                    let ts = parseInt(tr.timestamp) || 0;
+
+                    if (act === 'BUY') {
+                        openBuy = { trade: tr, price: p, ts: ts };
+                    } else if (act === 'SELL') {
+                        let sellPt = getCandleCoords(ts, p);
+                        let buyPt = openBuy ? getCandleCoords(openBuy.ts, openBuy.price) : null;
+
+                        if (buyPt && sellPt) {
+                            ctx.save();
+                            ctx.strokeStyle = '#ffffff';
+                            ctx.lineWidth = 1.0;
+                            ctx.beginPath();
+                            ctx.moveTo(buyPt.x, buyPt.y);
+                            ctx.lineTo(sellPt.x, sellPt.y);
+                            ctx.stroke();
+                            ctx.restore();
+                        }
+
+                        if (buyPt) {
+                            drawThinX(buyPt.x, buyPt.y);
+                            drawStackedText(buyPt.x, buyPt.y, ['BUY', `$${openBuy.price.toFixed(2)}`], false);
+                        }
+
+                        if (sellPt) {
+                            drawThinX(sellPt.x, sellPt.y);
+                            let pnlText = '';
+                            if (openBuy) {
+                                let pct = ((p - openBuy.price) / openBuy.price) * 100.0;
+                                pnlText = `(${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
+                            }
+                            drawStackedText(sellPt.x, sellPt.y, ['SELL', `$${p.toFixed(2)}`, pnlText].filter(Boolean), true);
+                        }
+
+                        openBuy = null;
+                    }
+                }
+
+                let curShares = (globalPortfolioData.holdings && globalPortfolioData.holdings[currentTicker]) ? (globalPortfolioData.holdings[currentTicker].shares || 0) : 0;
+                if (openBuy && curShares > 0) {
+                    let buyPt = getCandleCoords(openBuy.ts, openBuy.price);
+                    if (buyPt) {
+                        drawThinX(buyPt.x, buyPt.y);
+                        drawStackedText(buyPt.x, buyPt.y, ['BUY', `$${openBuy.price.toFixed(2)}`], false);
                     }
                 }
             }
 
-            // Render trendlines and anchors
             renderLines(ctx);
         }
 
