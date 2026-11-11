@@ -4429,7 +4429,8 @@
                 let startEq = (lb.equity - dayVal);
                 let dayPct = lb.daily_pct !== undefined ? lb.daily_pct : (startEq > 0 ? ((dayVal / startEq) * 100.0) : 0.0);
                 let absPct = Math.abs(dayPct);
-                let pctStr = (absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1)) + '%';
+                let sign = dayVal >= 0 ? '+' : '-';
+                let pctStr = `${sign}${(absPct < 0.1 && absPct > 0 ? absPct.toFixed(2) : absPct.toFixed(1))}%`;
                 let arrow = dayVal > 0 ? '▲' : (dayVal < 0 ? '▼' : '');
                 let arrowHtml = arrow ? `<span style="color:${dailyColor}; font-size:10px; margin-left:4px;">${arrow}</span> <span style="color:#ffffff;">${pctStr}</span>` : `<span style="color:#8a8a9e; font-size:11px; margin-left:4px;">0.0%</span>`;
 
