@@ -1875,7 +1875,7 @@ def test_push_notification():
     target = request.args.get('target', 'all')
     res = send_native_web_push(
         title="IDC Trading Alert",
-        message="Test Trade: Bought 10 TQQQ @ £52.25",
+        message="Test Trade: Bought 10 TQQQ @ $52.25",
         target_device=target
     )
     return jsonify(res or {'status': 'ok'})

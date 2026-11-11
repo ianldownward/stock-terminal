@@ -2048,12 +2048,12 @@
                 <div style="font-size:12px; color:#ffd400; font-weight:bold;">Active Profile: <span id="resetProfileName" style="color:#fff;">--</span></div>
                 
                 <div>
-                    <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Total Equity (£)</label>
+                    <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Total Equity ($)</label>
                     <input type="number" step="0.01" id="resetTotalEquity" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:14px; font-weight:bold;">
                 </div>
 
                 <div>
-                    <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Today's P&L (£)</label>
+                    <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Today's P&L ($)</label>
                     <input type="number" step="0.01" id="resetTodayPnl" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:14px; font-weight:bold;">
                 </div>
 
@@ -2080,7 +2080,7 @@
                             <input type="number" id="resetPosShares" placeholder="e.g. 136" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">
                         </div>
                         <div style="flex:1;">
-                            <label style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:2px;">Buy Price (£)</label>
+                            <label style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:2px;">Buy Price ($)</label>
                             <input type="number" step="0.01" id="resetPosPrice" placeholder="e.g. 36.91" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">
                         </div>
                     </div>
@@ -2104,11 +2104,11 @@
             <div style="margin-top:12px; display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:4px;">
                 <div style="display:flex; gap:10px;">
                     <div style="flex:1;">
-                        <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Total Equity (£)</label>
+                        <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Total Equity ($)</label>
                         <input type="number" step="0.01" id="resetAllTotalEquity" value="5000.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:14px; font-weight:bold;">
                     </div>
                     <div style="flex:1;">
-                        <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Today's P&L (£)</label>
+                        <label style="font-size:11px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:4px;">Today's P&L ($)</label>
                         <input type="number" step="0.01" id="resetAllTodayPnl" value="0.00" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:8px; border-radius:6px; font-size:14px; font-weight:bold;">
                     </div>
                 </div>
@@ -2136,7 +2136,7 @@
                             <input type="number" id="resetAllPosShares" placeholder="e.g. 136" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">
                         </div>
                         <div style="flex:1;">
-                            <label style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:2px;">Buy Price (£)</label>
+                            <label style="font-size:10px; color:#787e8e; text-transform:uppercase; font-weight:bold; display:block; margin-bottom:2px;">Buy Price ($)</label>
                             <input type="number" step="0.01" id="resetAllPosPrice" placeholder="e.g. 36.91" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:6px; border-radius:4px; font-size:12px; font-weight:bold;">
                         </div>
                     </div>
@@ -3800,7 +3800,7 @@
 
             closeStrategyWizard();
             document.getElementById('wizardStep2MethodTitle').innerText = selectedWizardMethod;
-            document.getElementById('wizardCapitalInput').value = '500.00';
+            document.getElementById('wizardCapitalInput').value = '700.00';
             document.getElementById('wizardVersionTag').value = '';
             let m = document.getElementById('strategyFundingModal');
             if (m) m.style.display = 'flex';
@@ -5556,7 +5556,7 @@
 
         function updateProfileSnapshot(userKey) {
             let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || {};
-            let budget = parseFloat(lb.budget) || 500.0;
+            let budget = parseFloat(lb.budget) || 700.0;
             let currentEq = (lb.equity !== undefined && lb.equity > 0) ? parseFloat(lb.equity) : budget;
             let netGain = currentEq - budget;
             let retPct = budget > 0 ? (netGain / budget) * 100.0 : 0.0;
@@ -5670,7 +5670,7 @@
                 projectedPoints.push({ day: d, val: val });
             }
 
-            // Actual Points: Strictly starts from creation Day 0 (£500) to Today (£508.43)
+            // Actual Points: Strictly starts from creation Day 0 ($700) to Today ($721.25)
             let actualPoints = [
                 { day: 0, val: budget },
                 { day: daysActive, val: currentEq }
@@ -6445,7 +6445,7 @@
             }
             try {
                 new Notification('IDC Trading • Mac Alert', {
-                    body: 'Mac desktop banners are active! Trade fill: Bought 10 TQQQ @ £52.25',
+                    body: 'Mac desktop banners are active! Trade fill: Bought 10 TQQQ @ $52.25',
                     icon: '/static/apple-touch-icon.png'
                 });
                 if (statusEl) statusEl.innerHTML = "<span style='color:#0ecb81; font-weight:700;'>✓ Mac notification banner fired!</span>";
