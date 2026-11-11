@@ -2489,8 +2489,8 @@ def api_sync_alpaca_state():
         with urllib.request.urlopen(req, timeout=5) as resp:
             acc = json.loads(resp.read().decode('utf-8'))
 
-        alpaca_equity = round(float(acc.get('portfolio_value', 710.26)), 2)
-        alpaca_last_equity = round(float(acc.get('last_equity', 700.00)), 2)
+        alpaca_equity = round(float(acc.get('portfolio_value') or acc.get('equity') or 710.26), 2)
+        alpaca_last_equity = round(float(acc.get('last_equity') or 700.00), 2)
         if alpaca_last_equity <= 0: alpaca_last_equity = 700.00
 
         today_pnl = round(alpaca_equity - alpaca_last_equity, 2)
