@@ -2222,6 +2222,7 @@
         body.light-mode .stepper-white::-webkit-outer-spin-button {
             filter: none !important;
         }
+    
         .btn-horizon {
             background: transparent !important;
             border: 1px solid #ffd400 !important;
@@ -2301,7 +2302,7 @@
                         <span id="compoundChartTitle" style="font-size:12px; font-weight:800; color:#fff;">Vector Hybrid: Trajectory vs Compounding Targets</span>
                         
                         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                            <!-- Editable Initial Capital Box (to the left of the boxes) -->
+                            <!-- Editable Initial Capital Box -->
                             <div style="display:flex; align-items:center; gap:4px; background:#0f1115; border:1px solid #ffd400; padding:2px 6px; border-radius:5px;">
                                 <span style="font-size:9px; font-weight:800; color:#ffd400;">CAPITAL:</span>
                                 <span style="font-size:11px; font-weight:800; color:#fff;">$</span>
@@ -2320,7 +2321,7 @@
                                 <button type="button" class="btn-horizon" id="btnHorizon5Y" onclick="setTimeHorizon('5Y')">5Y</button>
                             </div>
 
-                            <!-- Editable Custom Benchmark Input Box with White Text and White Arrows -->
+                            <!-- Editable Custom Benchmark Input Box -->
                             <div style="display:flex; align-items:center; gap:4px; background:#0f1115; border:1px solid #ffd400; padding:2px 6px; border-radius:5px;">
                                 <span style="font-size:9px; font-weight:800; color:#ffd400;">TARGET:</span>
                                 <input type="number" id="customTargetRateInput" value="1.0" step="0.1" min="0.1" max="10.0" 
@@ -5554,11 +5555,17 @@
         }
 
         function updateProfileSnapshot(userKey) {
-            let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || { equity: 500, budget: 500 };
-            let budget = lb.budget || 500.0;
-            let currentEq = lb.equity || 500.0;
+            let lb = (latestLeaderboardData || []).find(l => l.user === userKey) || {};
+            let budget = parseFloat(lb.budget) || 500.0;
+            let currentEq = (lb.equity !== undefined && lb.equity > 0) ? parseFloat(lb.equity) : budget;
             let netGain = currentEq - budget;
-            let retPct = (netGain / budget) * 100.0;
+            let retPct = budget > 0 ? (netGain / budget) * 100.0 : 0.0;
+
+            // Automatically set the editable capital box to this specific bot's assigned budget
+            let capInput = document.getElementById('customCapitalInput');
+            if (capInput) capInput.value = Math.round(budget);
+            window._customCapital = budget;
+            updateMilestoneBox(window._customTargetRate || 1.0, budget);
 
             document.getElementById('insightProfName').innerText = userKey;
             document.getElementById('insightProfType').innerText = profileDesc[userKey] || "Algorithmic Strategy Profile";
@@ -5569,6 +5576,8 @@
                 retEl.innerText = `${netGain >= 0 ? '+' : '-'}$${Math.abs(netGain).toFixed(2)} (${retPct >= 0 ? '+' : ''}${retPct.toFixed(2)}%)`;
                 retEl.style.color = netGain >= 0 ? '#0ecb81' : '#ff5364';
             }
+
+            document.getElementById('insightBudget').innerText = `$${budget.toFixed(2)}`;
 
             document.getElementById('insightBudget').innerText = `$${budget.toFixed(2)}`;
             
