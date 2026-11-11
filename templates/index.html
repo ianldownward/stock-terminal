@@ -2879,9 +2879,14 @@
                     <span class="status-dot offline" id="alpacaCardDot"></span>
                     <span style="font-size:10px; font-weight:800; color:#ffb700; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
                 </div>
-                <button id="btnAlpacaSync" class="btn-sync-action" onclick="openSettingsModal('alpaca')" title="Configure Alpaca API credentials">
-                    Connect
-                </button>
+                <div style="display:flex; gap:5px;">
+                    <button id="btnForceCalibrate" class="btn-sync-action" style="border-color:#0ecb81; color:#0ecb81;" onclick="forceCalibrateAlpaca(this)" title="Pulls live Alpaca equity, resets daily peak & aligns portfolio">
+                        Force Calibrate
+                    </button>
+                    <button id="btnAlpacaSync" class="btn-sync-action" onclick="fetchBrokerStatus(true)" title="Checks Alpaca exposure and updates status">
+                        Check
+                    </button>
+                </div>
             </div>
 
             <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:2px;">
@@ -5521,16 +5526,17 @@
                             </div>
                         `;
                     } else {
-                        // Positions are 0 (Flat): Account is completely healthy and in sync
+                        // Positions are 0 (Flat): Keep button active to allow checking on demand
                         localStorage.removeItem('alpaca_orders_queued');
                         let deskBtn = document.getElementById('btnAlpacaSync');
                         let mobBtn = document.getElementById('btnMobAlpacaSync');
                         [deskBtn, mobBtn].filter(Boolean).forEach(b => {
-                            b.disabled = true;
-                            b.innerText = 'Synced';
-                            b.style.borderColor = '#262b36';
-                            b.style.color = '#5a5f70';
-                            b.style.cursor = 'default';
+                            b.disabled = false;
+                            b.innerText = 'Check';
+                            b.style.borderColor = '#ffd400';
+                            b.style.color = '#ffd400';
+                            b.style.cursor = 'pointer';
+                            b.onclick = () => fetchBrokerStatus();
                         });
                     }
 
@@ -5608,6 +5614,46 @@
             if (list) list.style.display = window._alpacaExpExpanded ? 'flex' : 'none';
             if (arrow) arrow.innerText = window._alpacaExpExpanded ? '▲' : '▼';
         };
+
+        async function forceCalibrateAlpaca(btn) {
+            let activeProf = document.getElementById('userSelect')?.value || 'Vector Hybrid';
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = "Syncing...";
+            }
+
+            try {
+                let res = await fetch('/api/portfolio/sync_alpaca', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: activeProf })
+                });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    if (btn) btn.innerText = "Synced ✓";
+                    await fetchData(false);
+                    await fetchBrokerStatus();
+                    setTimeout(() => {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerText = "Force Calibrate";
+                        }
+                    }, 2000);
+                } else {
+                    alert("Alpaca sync error: " + (d.message || "Failed to reach Alpaca."));
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerText = "Force Calibrate";
+                    }
+                }
+            } catch(e) {
+                alert("Connection error syncing with Alpaca.");
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = "Force Calibrate";
+                }
+            }
+        }
 
         async function syncWithAlpaca(btn) {
             let deskBtn = document.getElementById('btnAlpacaSync');

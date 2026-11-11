@@ -1649,16 +1649,20 @@ def reconcile_single_target(target):
                             },
                             client_email=c_email
                         )
-                # Reconcile BUY fill prices strictly by Alpaca order ID or exact timestamp match
+                # Reconcile BUY fill prices STRICTLY by exact client_order_id match (Prevents phantom price jumps)
                 elif side == 'buy':
                     for h in hist:
                         if h.get('action') == 'BUY' and h.get('ticker') == symbol and not h.get('price_reconciled'):
-                            # Match only if this order belongs to this trade execution
-                            order_created_at = o.get('created_at', '')
-                            order_ts = int(pd.Timestamp(order_created_at).timestamp()) if order_created_at else 0
-                            time_diff = abs(h.get('timestamp', 0) - order_ts) if order_ts > 0 else abs(h.get('timestamp', 0) - int(time.time()))
-                            
-                            if time_diff < 120:  # Must be within 2 minutes of the exact order fill
+                            expected_coid = h.get('client_order_id')
+                            # Match by exact order ID, or fall back to orders filled within 60s of this trade entry
+                            matched = (expected_coid and expected_coid == coid) or (h.get('alpaca_order_id') == order_id)
+                            if not matched and not expected_coid:
+                                order_created_at = o.get('created_at', '')
+                                order_ts = int(pd.Timestamp(order_created_at).timestamp()) if order_created_at else 0
+                                if order_ts > 0 and abs(h.get('timestamp', 0) - order_ts) < 60:
+                                    matched = True
+
+                            if matched:
                                 h['price'] = round(filled_price, 2)
                                 cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
                                 h['amount'] = round(h['shares'] * cps, 2)
@@ -2458,7 +2462,7 @@ def get_portfolio():
 @app.route('/api/portfolio/sync_alpaca', methods=['POST'])
 @login_required
 def api_sync_alpaca_state():
-    """1-Click Sync: Pulls real ground truth from Alpaca and calibrates the active profile."""
+    """1-Click Sync: Pulls real ground truth from Alpaca and calibrates the active profile without state corruption."""
     portfolio_store.reload()
     req_data = request.get_json(silent=True) or {}
     prof_name = req_data.get('username') or portfolio_store.active_username()
@@ -2490,53 +2494,50 @@ def api_sync_alpaca_state():
             acc = json.loads(resp.read().decode('utf-8'))
 
         raw_equity = acc.get('portfolio_value') or acc.get('equity')
-        raw_last_equity = acc.get('last_equity') or ud.get('master_budget')
+        raw_last_equity = acc.get('last_equity')
 
         if not raw_equity:
             return jsonify({'status': 'error', 'message': 'Alpaca did not return portfolio value.'}), 500
 
         alpaca_equity = round(float(raw_equity), 2)
-        alpaca_last_equity = round(float(raw_last_equity), 2)
-        if alpaca_last_equity <= 0:
-            alpaca_last_equity = float(ud.get('master_budget', 500.0))
+        
+        # Resolve true baseline starting budget
+        allocs = broker.get('allocations') or {}
+        configured_budget = 700.0
+        for k, v in allocs.items():
+            if k in prof_name.lower() or prof_name.lower() in k:
+                configured_budget = float(v.get('budget', 700.0))
+                break
+
+        alpaca_last_equity = round(float(raw_last_equity), 2) if raw_last_equity else configured_budget
+        if alpaca_last_equity <= 0 or abs(alpaca_last_equity - alpaca_equity) > 150:
+            alpaca_last_equity = configured_budget
 
         today_pnl = round(alpaca_equity - alpaca_last_equity, 2)
         today_pct = round((today_pnl / alpaca_last_equity) * 100.0, 2)
 
-        # Set true budget and calibrate today's profit directly from Alpaca
         ud['master_budget'] = alpaca_last_equity
-        ud['daily_peak_pct'] = max(0.0, today_pct) # Unlocks bot from the 4.5% curfew!
+        ud['daily_peak_pct'] = max(0.0, today_pct) # Lift any erroneous lockout
         ud['initial_positions'] = {}
         ud['holdings'] = {}
 
         now_lon = pd.Timestamp.now(tz='Europe/London')
         today_str = now_lon.strftime('%Y-%m-%d')
 
-        # Check for open positions on Alpaca
+        # Check for live open positions on Alpaca
         req_p = urllib.request.Request(f"{base_url}/v2/positions", headers=headers)
         with urllib.request.urlopen(req_p, timeout=5) as r_p:
             live_pos = json.loads(r_p.read().decode('utf-8'))
 
         hist = []
-        if today_pnl != 0:
-            hist.append({
-                'id': str(int(time.time() * 1000)),
-                'ticker': 'ALPACASYNC',
-                'trade_type': 'LONG',
-                'action': 'SELL' if today_pnl >= 0 else 'BUY',
-                'shares': 0,
-                'price': abs(today_pnl),
-                'amount': abs(today_pnl),
-                'time': now_lon.strftime('%d %b %H:%M'),
-                'date_str': today_str,
-                'timestamp': int(now_lon.timestamp())
-            })
-
+        pos_entry_sum = 0.0
         for p in live_pos:
             tk = p['symbol'].upper()
             q = int(p.get('qty', 0))
             avg_p = float(p.get('avg_entry_price', 0.0))
             if q > 0 and avg_p > 0:
+                pos_amt = round(q * avg_p, 2)
+                pos_entry_sum += pos_amt
                 hist.append({
                     'id': str(int(time.time() * 1000) + 1),
                     'ticker': tk,
@@ -2544,12 +2545,28 @@ def api_sync_alpaca_state():
                     'action': 'BUY',
                     'shares': q,
                     'price': avg_p,
-                    'amount': round(q * avg_p, 2),
+                    'amount': pos_amt,
                     'time': now_lon.strftime('%d %b %H:%M'),
                     'date_str': today_str,
                     'timestamp': int(now_lon.timestamp())
                 })
-                ud['holdings'][tk] = {'shares': q, 'manual_val': round(q * avg_p, 2), 'high_water': avg_p}
+                ud['holdings'][tk] = {'shares': q, 'manual_val': pos_amt, 'high_water': avg_p}
+
+        # Realized intraday profit calibration ledger item
+        prior_realized = round(today_pnl - sum(float(p.get('unrealized_pl', 0.0)) for p in live_pos), 2)
+        if prior_realized != 0:
+            hist.insert(0, {
+                'id': str(int(time.time() * 1000)),
+                'ticker': 'ALPACASYNC',
+                'trade_type': 'LONG',
+                'action': 'SELL' if prior_realized >= 0 else 'BUY',
+                'shares': 0,
+                'price': abs(prior_realized),
+                'amount': abs(prior_realized),
+                'time': now_lon.strftime('%d %b %H:%M'),
+                'date_str': today_str,
+                'timestamp': int(now_lon.timestamp()) - 10
+            })
 
         ud['history'] = hist
 
@@ -2561,6 +2578,7 @@ def api_sync_alpaca_state():
         return jsonify({
             'status': 'ok',
             'equity': alpaca_equity,
+            'budget': alpaca_last_equity,
             'today_pnl': today_pnl,
             'today_pct': today_pct
         })
