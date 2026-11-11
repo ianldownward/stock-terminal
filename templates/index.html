@@ -2353,27 +2353,32 @@
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 1</div>
                             <div id="mStoneY1" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">$8,592</div>
-                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 252)</div>
+                            <div id="mStoneY1_gbp" style="font-size:9.5px; font-weight:700; color:#8a8a9e; margin-top:1px;">(£6,443)</div>
+                            <div style="font-size:8px; color:#555e6d; margin-top:2px;">(Day 252)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 2</div>
                             <div id="mStoneY2" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">$105,461</div>
-                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 504)</div>
+                            <div id="mStoneY2_gbp" style="font-size:9.5px; font-weight:700; color:#8a8a9e; margin-top:1px;">(£79,085)</div>
+                            <div style="font-size:8px; color:#555e6d; margin-top:2px;">(Day 504)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 3</div>
                             <div id="mStoneY3" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">$1.29M</div>
-                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 756)</div>
+                            <div id="mStoneY3_gbp" style="font-size:9.5px; font-weight:700; color:#8a8a9e; margin-top:1px;">(£971k)</div>
+                            <div style="font-size:8px; color:#555e6d; margin-top:2px;">(Day 756)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 4</div>
                             <div id="mStoneY4" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">$15.89M</div>
-                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 1,008)</div>
+                            <div id="mStoneY4_gbp" style="font-size:9.5px; font-weight:700; color:#8a8a9e; margin-top:1px;">(£11.92M)</div>
+                            <div style="font-size:8px; color:#555e6d; margin-top:2px;">(Day 1,008)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 5</div>
                             <div id="mStoneY5" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">$195.0M</div>
-                            <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 1,260)</div>
+                            <div id="mStoneY5_gbp" style="font-size:9.5px; font-weight:700; color:#0ecb81; opacity:0.85; margin-top:1px;">(£146.2M)</div>
+                            <div style="font-size:8px; color:#555e6d; margin-top:2px;">(Day 1,260)</div>
                         </div>
                     </div>
                 </div>
@@ -3019,8 +3024,7 @@
 
         function formatDualCurrency(usdVal) {
             let usd = parseFloat(usdVal) || 0;
-            let gbp = usd * (window._usdGbpRate || 0.7499);
-            return `$${usd.toFixed(2)} <span style="font-size:0.82em; opacity:0.8; font-weight:600;">(£${gbp.toFixed(2)})</span>`;
+            return `$${usd.toFixed(2)}`;
         }
 
         const profileDesc = {
@@ -5494,18 +5498,24 @@
             let hdr = document.getElementById('milestoneBoxHeader');
             if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${(rate || 1.0).toFixed(1)}% / Day @ $${Math.round(budget).toLocaleString()} Baseline)`;
 
-            function fmt(val) {
-                if (val >= 1e9) return `$${(val/1e9).toFixed(1)}B`;
-                if (val >= 1e6) return `$${(val/1e6).toFixed(2)}M`;
-                if (val >= 1e3) return `$${Math.round(val).toLocaleString()}`;
-                return `$${val.toFixed(2)}`;
+            function fmt(val, cur = '$') {
+                if (val >= 1e9) return `${cur}${(val/1e9).toFixed(1)}B`;
+                if (val >= 1e6) return `${cur}${(val/1e6).toFixed(2)}M`;
+                if (val >= 1e5) return `${cur}${Math.round(val/1e3).toLocaleString()}k`;
+                if (val >= 1e3) return `${cur}${Math.round(val).toLocaleString()}`;
+                return `${cur}${val.toFixed(2)}`;
             }
+
+            let gbpRate = window._usdGbpRate || 0.7499;
 
             for (let yr = 1; yr <= 5; yr++) {
                 let d = yr * 252;
                 let v = budget * Math.pow(1 + r, d);
+                let v_gbp = v * gbpRate;
                 let el = document.getElementById(`mStoneY${yr}`);
-                if (el) el.innerText = fmt(v);
+                let elGbp = document.getElementById(`mStoneY${yr}_gbp`);
+                if (el) el.innerText = fmt(v, '$');
+                if (elGbp) elGbp.innerText = `(${fmt(v_gbp, '£')})`;
             }
         }
 
