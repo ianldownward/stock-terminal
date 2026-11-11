@@ -2315,33 +2315,33 @@
                 <!-- 5-Year Milestone Matrix -->
                 <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <span id="milestoneBoxHeader" style="font-size:10px; color:#ffd400; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">5-Year Milestone Compounding Curve (1.0% / Day @ £500 Baseline)</span>
+                        <span id="milestoneBoxHeader" style="font-size:10px; color:#ffd400; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">5-Year Milestone Compounding Curve (1.0% / Day @ $700 Baseline)</span>
                         <span style="font-size:10px; color:#8a8a9e;">252 Trading Days/Year</span>
                     </div>
                     <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:6px; text-align:center;">
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 1</div>
-                            <div id="mStoneY1" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£6,137</div>
+                            <div id="mStoneY1" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">$8,592</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 252)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 2</div>
-                            <div id="mStoneY2" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£75,329</div>
+                            <div id="mStoneY2" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">$105,461</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 504)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 3</div>
-                            <div id="mStoneY3" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£924,625</div>
+                            <div id="mStoneY3" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">$1.29M</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 756)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 4</div>
-                            <div id="mStoneY4" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">£11.35M</div>
+                            <div id="mStoneY4" style="font-size:12px; font-weight:800; color:#ffd400; margin-top:2px;">$15.89M</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 1,008)</div>
                         </div>
                         <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:8px 4px;">
                             <div style="font-size:9px; color:#8a8a9e; font-weight:700;">Year 5</div>
-                            <div id="mStoneY5" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">£139.3M</div>
+                            <div id="mStoneY5" style="font-size:12px; font-weight:800; color:#0ecb81; margin-top:2px;">$195.0M</div>
                             <div style="font-size:8px; color:#8a8a9e; margin-top:1px;">(Day 1,260)</div>
                         </div>
                     </div>
@@ -2946,7 +2946,7 @@
                 <div style="margin-top:4px; padding-top:2px; display:flex; flex-direction:column; gap:2px;">
                     <div style="display:flex; justify-content:space-between; font-size:9px; font-weight:800;">
                         <span style="color:#8a8a9e;">LOSS BUFFER REMAINING</span>
-                        <span style="color:#0ecb81;">£${cushionLeft.toFixed(2)} (${cushionPct.toFixed(0)}%)</span>
+                        <span style="color:#0ecb81;">$${cushionLeft.toFixed(2)} (${cushionPct.toFixed(0)}%)</span>
                     </div>
                     <div style="width:100%; height:4px; background:#262b36; border-radius:2px; overflow:hidden;">
                         <div style="width:${cushionPct}%; height:100%; background:#0ecb81;"></div>
@@ -4355,7 +4355,7 @@
                 let p = tradePnl[lt.id];
                 let sign = p.val >= 0 ? '+' : '-';
                 let pCol = p.val >= 0 ? '#0ecb81' : '#ff5364';
-                pnlHtml = `<span style="color:${pCol}; font-weight:800; margin-left:4px;">${sign}£${Math.abs(p.val).toFixed(2)} (${sign}${Math.abs(p.pct).toFixed(1)}%)</span>`;
+                pnlHtml = `<span style="color:${pCol}; font-weight:800; margin-left:4px;">${sign}$${Math.abs(p.val).toFixed(2)} (${sign}${Math.abs(p.pct).toFixed(1)}%)</span>`;
             }
 
             mobLb.innerHTML = `
@@ -4370,7 +4370,7 @@
                         </div>
                     </div>
                     <div style="text-align:right;">
-                        <span style="color:#fff; font-weight:700; font-size:11px;">@ £${perShare}</span>
+                        <span style="color:#fff; font-weight:700; font-size:11px;">@ $${perShare}</span>
                         <div style="font-size:10px; color:#8a8a9e; margin-top:2px;">${lt.time || '--'}</div>
                     </div>
                 </div>
@@ -5446,10 +5446,12 @@
         }
 
         function updateMilestoneBox(rate) {
-            let budget = 500.0;
+            let activeProf = window._selectedInsightProfile || 'Vector Hybrid';
+            let lb = (latestLeaderboardData || []).find(l => l.user === activeProf) || {};
+            let budget = lb.budget || 700.0;
             let r = rate / 100.0;
             let hdr = document.getElementById('milestoneBoxHeader');
-            if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${rate.toFixed(1)}% / Day @ $500 Baseline)`;
+            if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${rate.toFixed(1)}% / Day @ $${Math.round(budget)} Baseline)`;
 
             function fmt(val) {
                 if (val >= 1e9) return `$${(val/1e9).toFixed(1)}B`;
