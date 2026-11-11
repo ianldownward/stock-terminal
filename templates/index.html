@@ -4255,11 +4255,8 @@
                         </div>
                     `;
                 } else if (isLocked) {
-                    let targetPctStr = '2.5%';
-                    if (lb.daily_pct >= 4.0) targetPctStr = '4%';
-                    else if (lb.daily_pct >= 3.5) targetPctStr = '3.5%';
-                    else if (lb.daily_pct >= 3.0) targetPctStr = '3%';
-                    else if (lb.daily_pct >= 2.5) targetPctStr = '2.5%';
+                    let stepVal = (Math.floor((lb.daily_pct || 2.5) * 2) / 2);
+                    let targetPctStr = `${stepVal % 1 === 0 ? stepVal.toFixed(0) : stepVal.toFixed(1)}%`;
 
                     tickerUnderName = `
                         <div style="display:flex; gap:5px; flex-wrap:wrap; margin-top:4px;">

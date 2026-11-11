@@ -980,9 +980,9 @@ class MarketScoringEngine:
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
-            # DYNAMIC 0.50% STEP-RATCHET FLOOR (MOVES UP EVERY +0.50% FROM +2.50%)
+            # DYNAMIC 0.50% STEP-RATCHET FLOOR (MOVES UP INDEFINITELY EVERY +0.50% FROM +2.50%)
             if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
-                # Ratchets floor in 0.50% steps: 2.5% -> 3.0% -> 3.5% -> 4.0%
+                # Indefinite 0.50% steps: 2.5% -> 3.0% -> 3.5% -> 4.0% -> 4.5% -> 5.0%...
                 floor_pct = round(int(peak_pnl_pct * 2) / 2.0, 2)
                 profit_floor_price = avg_buy_price * (1.0 + (floor_pct / 100.0))
                 trail_pct = 0.30  # Choke trailing stop to 0.30% for active runners
@@ -1288,7 +1288,7 @@ def process_auto_profile(prof_name, client_email=None):
 
             daily_peak = ud.get('daily_peak_pct', 0.0)
 
-            # Once total daily profit touches >= +2.50%, lock floor in 0.50% increments (2.5%, 3.0%, 3.5%...)
+            # Once total daily profit touches >= +2.50%, lock floor in 0.50% increments indefinitely (2.5%, 3.0%, 3.5%, 4.0%, 4.5%...)
             if daily_peak >= 2.50:
                 daily_floor_locked = round(int(daily_peak * 2) / 2.0, 2)
                 # If account slips back down to or below the locked step floor, force exit
