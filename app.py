@@ -3391,8 +3391,7 @@ def get_recommendations():
 def get_data():
     try:
         import traceback
-        curr_u = (session.get('email') or session.get('user') or '').strip().lower()
-        is_admin = (session.get('role') == 'admin') or (curr_u in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian']) or ('ian' in curr_u)
+        is_admin = is_admin_session()
         is_client = not is_admin
         client_name = session.get('email') or session.get('user', 'Client')
         req_user = request.args.get('user', '').strip()
@@ -3544,7 +3543,7 @@ def get_data():
 
         leaderboard = []
         source_users = (c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})
-        if not source_users:
+        if not source_users and not is_client:
             source_users = portfolio_store.data.get('users', {})
 
         for u, u_data in source_users.items():
