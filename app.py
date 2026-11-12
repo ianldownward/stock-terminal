@@ -60,7 +60,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty:
                 df = df.sort_index()
-                # Reject stale intraday responses (>15 mins old) from lagging Yahoo nodes
+                # Reject stale intraday responses (>15 mins old) or single-bar Yahoo outlier glitches (>1.2% jump/drop)
                 if interval in ['1m', '2m', '5m', '15m']:
                     last_ts = df.index[-1]
                     if last_ts.tzinfo is None:
@@ -69,6 +69,15 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                         c_time, c_df = YF_CACHE[cache_key]
                         if not c_df.empty and (now - c_time) < 60:
                             return c_df.copy()
+                    if len(df) >= 2:
+                        prev_c = float(df['Close'].iloc[-2])
+                        last_c = float(df['Close'].iloc[-1])
+                        if prev_c > 0 and abs(last_c - prev_c) / prev_c > 0.012:
+                            if cache_key in YF_CACHE:
+                                c_time, c_df = YF_CACHE[cache_key]
+                                if not c_df.empty and (now - c_time) < 90:
+                                    return c_df.copy()
+                            df = df.iloc[:-1]
                 YF_CACHE[cache_key] = (now, df)
                 return df.copy()
         except Exception:
@@ -1437,8 +1446,17 @@ def process_auto_profile(prof_name, client_email=None):
                 df = dfs.get(t)
                 if df is None or df.empty: continue
                 df.name = t
-                cur = df['Close'].iloc[-1]
+                cur = float(df['Close'].iloc[-1])
                 sh = resolve_shares(t)
+                # Prefer Alpaca's real-time position quote when holding shares so Yahoo lag cannot trigger false stops
+                if sh > 0:
+                    b_cfg = (c_store.get('broker') or {}) if is_client else (portfolio_store.data.get('broker') or {})
+                    if b_cfg.get('api_key') and b_cfg.get('secret_key'):
+                        live_acc = get_live_alpaca_account(str(b_cfg['api_key']).strip(), str(b_cfg['secret_key']).strip(), b_cfg.get('mode', 'paper'))
+                        if live_acc and isinstance(live_acc.get('positions'), list):
+                            alp_pos_cur = next((float(p.get('current_price') or 0) for p in live_acc['positions'] if (p.get('symbol') or '').upper() == t), 0.0)
+                            if alp_pos_cur > 0:
+                                cur = alp_pos_cur
                 cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
                 vo = sh * cps
 
@@ -1692,16 +1710,20 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
     hist = ud.get('history') or []
     init_pos = ud.get('initial_positions') or {}
 
-    for o in reversed(closed_orders or []):
+    used_order_ids = set()
+    for o in (closed_orders or []):
         if o.get('status') != 'filled':
             continue
         coid = o.get('client_order_id') or ''
         side = (o.get('side') or '').lower()
         symbol = (o.get('symbol') or '').upper()
-        filled_qty = int(o.get('filled_qty') or 0)
-        filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
+        try:
+            filled_qty = int(float(o.get('filled_qty') or 0))
+            filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
+        except Exception:
+            continue
         order_id = o.get('id')
-        if side not in ['buy', 'sell'] or filled_qty <= 0 or filled_price <= 0:
+        if side not in ['buy', 'sell'] or filled_qty <= 0 or filled_price <= 0 or order_id in used_order_ids:
             continue
 
         order_ts = 0
@@ -1709,30 +1731,42 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
             coid_parts = coid.rsplit('_', 1)
             if len(coid_parts) == 2 and coid_parts[1].isdigit():
                 order_ts = int(coid_parts[1])
+            elif o.get('filled_at'):
+                order_ts = int(pd.Timestamp(o['filled_at']).timestamp())
             elif o.get('created_at'):
                 order_ts = int(pd.Timestamp(o['created_at']).timestamp())
         except Exception:
             order_ts = 0
 
         target_act = side.upper()
+        best_h = None
+        best_diff = 999999
         for h in hist:
-            if h.get('action') == target_act and h.get('ticker') == symbol and not h.get('price_reconciled'):
-                if h.get('alpaca_order_id') and h.get('alpaca_order_id') != order_id:
-                    continue
-                h_ts = int(h.get('timestamp') or 0)
-                if order_ts > 0 and h_ts > 0 and abs(order_ts - h_ts) > 1800:
-                    continue
+            if h.get('action') != target_act or h.get('ticker') != symbol:
+                continue
+            if h.get('alpaca_order_id') and h.get('alpaca_order_id') != order_id:
+                continue
+            if int(float(h.get('shares') or 0)) != filled_qty:
+                continue
+            h_ts = int(h.get('timestamp') or 0)
+            t_diff = abs(order_ts - h_ts) if (order_ts > 0 and h_ts > 0) else 0
+            if order_ts > 0 and h_ts > 0 and t_diff > 2400:
+                continue
+            if t_diff < best_diff:
+                best_diff = t_diff
+                best_h = h
 
-                new_p = round(filled_price, 2)
-                cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
-                new_amt = round(int(h.get('shares') or filled_qty) * cps, 2)
-                if h.get('price') != new_p or h.get('amount') != new_amt:
-                    h['price'] = new_p
-                    h['amount'] = new_amt
-                    changed = True
-                h['price_reconciled'] = True
-                h['alpaca_order_id'] = order_id
-                break
+        if best_h is not None:
+            used_order_ids.add(order_id)
+            new_p = round(filled_price, 2)
+            cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
+            new_amt = round(int(float(best_h.get('shares') or filled_qty)) * cps, 2)
+            if float(best_h.get('price') or 0) != new_p or float(best_h.get('amount') or 0) != new_amt:
+                best_h['price'] = new_p
+                best_h['amount'] = new_amt
+                changed = True
+            best_h['price_reconciled'] = True
+            best_h['alpaca_order_id'] = order_id
 
     alpaca_pos_map = {p['symbol'].upper(): p for p in (live_pos or []) if int(p.get('qty', 0)) > 0}
 
@@ -1909,8 +1943,11 @@ def reconcile_single_target(target):
             coid = o.get('client_order_id') or ''
             side = (o.get('side') or '').lower()
             symbol = (o.get('symbol') or '').upper()
-            filled_qty = int(o.get('filled_qty') or 0)
-            filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
+            try:
+                filled_qty = int(float(o.get('filled_qty') or 0))
+                filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
+            except Exception:
+                continue
             order_id = o.get('id')
             
             if not coid or filled_qty <= 0 or filled_price <= 0:
