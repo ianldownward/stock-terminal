@@ -135,7 +135,8 @@
         body.light-mode #dialG2 > div,
         body.light-mode #dialG3 > div,
         body.light-mode #dialG4 > div,
-        body.light-mode #dialCd15 > div {
+        body.light-mode #dialCd15 > div,
+        body.light-mode #dialCurfew > div {
             background: #f8f9fb !important;
         }
         body.light-mode .info-icon {
@@ -3070,13 +3071,13 @@
         </div>
 
         <!-- 7. BUYING BLOCK TIMERS & 3-STRIKE LOCKOUT HUD -->
-        <div id="buyingGuardsHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:9px 11px; margin-top:auto;">
+        <div id="buyingGuardsHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:9px 11px; margin-bottom:0;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                 <h3 style="margin:0; font-size:10.5px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buying Guards</h3>
                 <span id="buyGuardStatusText" style="font-size:10.5px; font-weight:800; color:#0ecb81;">All Clear</span>
             </div>
 
-            <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom:2px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0 8px; margin-bottom:2px;">
                 <!-- 15-Min Post-Sell Cooldown Circle -->
                 <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="15-minute post-sell cooldown before next buy">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">15M COOL</span>
@@ -3085,6 +3086,16 @@
                         <span id="dialCd15-val" style="position:relative; font-size:10px; font-weight:800; color:#0ecb81; font-family:monospace;">READY</span>
                     </div>
                     <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">Post-Sell</span>
+                </div>
+
+                <!-- Session & 19:45 Curfew Gate Circle -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="Active hunting window (14:50–19:45 UK time)">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">CURFEW</span>
+                    <div id="dialCurfew" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialCurfew-val" style="position:relative; font-size:9.5px; font-weight:800; color:#8a8a9e; font-family:monospace;">CLOSED</span>
+                    </div>
+                    <span id="dialCurfew-sub" style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">14:30–19:45</span>
                 </div>
 
                 <!-- 3-Strike Loss Lockout Burger Icon (Same 46px height as timer circles) -->
@@ -6737,6 +6748,70 @@
                 }
             }
 
+            // Session & 19:45 Curfew Dial (Europe/London)
+            let now = new Date();
+            let ukParts = new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Europe/London',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false,
+                weekday: 'short'
+            }).formatToParts(now);
+            let ukH = 0, ukM = 0, ukS = 0, ukWd = '';
+            ukParts.forEach(p => {
+                if (p.type === 'hour') ukH = parseInt(p.value, 10);
+                if (p.type === 'minute') ukM = parseInt(p.value, 10);
+                if (p.type === 'second') ukS = parseInt(p.value, 10);
+                if (p.type === 'weekday') ukWd = p.value;
+            });
+
+            let isWknd = (ukWd === 'Sat' || ukWd === 'Sun');
+            let curSecs = ukH * 3600 + ukM * 60 + ukS;
+            let openSecs = 14 * 3600 + 30 * 60;
+            let huntStartSecs = 14 * 3600 + 50 * 60;
+            let curfewSecs = 19 * 3600 + 45 * 60;
+            let closeSecs = 21 * 3600;
+
+            let isOpenLock = !isWknd && curSecs >= openSecs && curSecs < huntStartSecs;
+            let isHuntOpen = !isWknd && curSecs >= huntStartSecs && curSecs < curfewSecs;
+            let isCurfewLock = !isWknd && curSecs >= curfewSecs && curSecs < closeSecs;
+
+            let dCurf = document.getElementById('dialCurfew');
+            let vCurf = document.getElementById('dialCurfew-val');
+            let subCurf = document.getElementById('dialCurfew-sub');
+            if (dCurf && vCurf) {
+                if (isOpenLock) {
+                    let remOpen = huntStartSecs - curSecs;
+                    let pctOpen = Math.max(2, Math.min(100, (remOpen / 1200) * 100));
+                    dCurf.style.background = `conic-gradient(#ff9900 ${pctOpen}%, #262b36 0)`;
+                    vCurf.innerText = formatCountdownMMSS(remOpen);
+                    vCurf.style.color = '#ff9900';
+                    vCurf.style.fontSize = '10px';
+                    if (subCurf) subCurf.innerText = 'Open Lock';
+                } else if (isHuntOpen) {
+                    let remHunt = curfewSecs - curSecs;
+                    let pctHunt = Math.max(4, Math.min(100, (remHunt / (curfewSecs - huntStartSecs)) * 100));
+                    dCurf.style.background = `conic-gradient(#0ecb81 ${pctHunt}%, #262b36 0)`;
+                    vCurf.innerText = 'OPEN';
+                    vCurf.style.color = '#0ecb81';
+                    vCurf.style.fontSize = '10px';
+                    if (subCurf) subCurf.innerText = 'Ends 19:45';
+                } else if (isCurfewLock) {
+                    dCurf.style.background = 'conic-gradient(#ff5364 100%, #262b36 0)';
+                    vCurf.innerText = 'LOCKED';
+                    vCurf.style.color = '#ff5364';
+                    vCurf.style.fontSize = '9px';
+                    if (subCurf) subCurf.innerText = '19:45 Cutoff';
+                } else {
+                    dCurf.style.background = 'conic-gradient(#262b36 0%, #262b36 100%)';
+                    vCurf.innerText = 'CLOSED';
+                    vCurf.style.color = '#8a8a9e';
+                    vCurf.style.fontSize = '9px';
+                    if (subCurf) subCurf.innerText = '14:30–19:45';
+                }
+            }
+
             let used = Math.max(0, Math.min(3, parseInt(st.strikes_used) || 0));
             let left = Math.max(0, 3 - used);
             let isLight = document.body.classList.contains('light-mode');
@@ -6768,6 +6843,12 @@
                 } else if (rem15 > 0) {
                     hdrStatus.innerText = '15m Cooldown';
                     hdrStatus.style.color = '#ff9900';
+                } else if (isOpenLock) {
+                    hdrStatus.innerText = 'Opening Lock';
+                    hdrStatus.style.color = '#ff9900';
+                } else if (isCurfewLock) {
+                    hdrStatus.innerText = '19:45 Curfew';
+                    hdrStatus.style.color = '#ff5364';
                 } else {
                     hdrStatus.innerText = 'All Clear';
                     hdrStatus.style.color = '#0ecb81';
