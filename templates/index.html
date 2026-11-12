@@ -4558,7 +4558,7 @@
         }
 
         function renderCustomProfileDropdown(leaderboard) {
-            if (Array.isArray(leaderboard) && leaderboard.length > 0) {
+            if (Array.isArray(leaderboard)) {
                 latestLeaderboardData = leaderboard;
             }
             const menu = document.getElementById('customSelectDropdown');
@@ -4835,16 +4835,10 @@
             }
 
             if (lbData.length === 0) {
-                // Populate default fleet so the sidebar never renders an empty state
-                lbData = ['Vector Hybrid', 'Velocity Pulse', 'Dual Axis'].map(name => ({
-                    user: name,
-                    equity: 500.0,
-                    budget: 500.0,
-                    daily_pnl: 0.0,
-                    daily_pct: 0.0,
-                    days_active: 1,
-                    active_holds: []
-                }));
+                document.getElementById('leaderboardUI').innerHTML = '<div style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">No strategy profiles yet. Open Settings → + New Strategy Profile.</div>';
+                renderCustomProfileDropdown([]);
+                renderMobileLastTrade(globalPortfolioData ? globalPortfolioData.history : []);
+                return;
             }
 
             if (sortMode === 'all') {
@@ -7294,18 +7288,7 @@
 
             let allocs = window._activeAllocations || {};
             let container = document.getElementById('dynamicStrategyAllocationsList');
-            let profiles = (Array.isArray(latestLeaderboardData) && latestLeaderboardData.length > 0) ? latestLeaderboardData : [];
-
-            // Fallback: Populate default strategy cards if leaderboard sync is still pending
-            if (profiles.length === 0) {
-                const defaultList = ['Vector Hybrid', 'Velocity Pulse', 'Dual Axis'];
-                profiles = defaultList.map(name => ({
-                    user: name,
-                    equity: 500.0,
-                    budget: 500.0,
-                    overnight_sweep: true
-                }));
-            }
+            let profiles = Array.isArray(latestLeaderboardData) ? latestLeaderboardData : [];
 
             if (container) {
                 if (profiles.length === 0) {

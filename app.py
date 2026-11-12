@@ -3406,10 +3406,10 @@ def get_data():
             raw_ud = users_dict.get(active_name) if active_name in users_dict else dict(c_store)
             ud = dict(raw_ud)
             ud['is_configured'] = bool(users_dict)
-            ud['strategy_name'] = active_name or 'Vector Hybrid'
-            ud['active_user'] = active_name or 'Vector Hybrid'
+            ud['strategy_name'] = active_name or ''
+            ud['active_user'] = active_name or ''
             ud['account_username'] = client_name
-            mb = float(ud.get('master_budget') or 500.0)
+            mb = float(ud.get('master_budget') or 0.0)
             active_profile = active_name.strip().lower() if active_name else 'vector hybrid'
         else:
             portfolio_store.reload()
