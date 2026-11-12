@@ -1398,11 +1398,11 @@ def process_auto_profile(prof_name, client_email=None):
 
         # ADAPTIVE MODE RESOLUTION (MOMENTUM VS REVERSION SWITCHBOARD)
         current_mode = 'momentum'
-        # True loss strike counter: Only count trades closed at an actual loss (sell price < buy price)
-        today_loss_stops = 0
-        for i, h in enumerate(hist):
-            if h.get('action') == 'SELL' and h.get('date_str') == today_str:
-                matching_buy = next((b for b in hist[i+1:] if b.get('ticker') == h.get('ticker') and b.get('action') == 'BUY'), None)
+        # 15-Minute Post-Sell Cooldown (ignores internal ALPACASYNC/CALIBRATION entries)
+        real_hist_for_cd = [h for h in hist if h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]
+        if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
+            if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < 900:
+                buys = []
                 if matching_buy:
                     if float(h.get('price', 0)) < float(matching_buy.get('price', 0)):
                         today_loss_stops += 1
@@ -1539,9 +1539,10 @@ def process_auto_profile(prof_name, client_email=None):
         if today_stops_cnt >= 3:
             is_curfew_active = True
 
-        # 15-Minute Post-Loss Cooldown
-        if hist and hist[0].get('action') == 'SELL':
-            if (time.time() - hist[0].get('timestamp', 0)) < 900:
+        # 15-Minute Post-Sell Cooldown (ignores internal ALPACASYNC/CALIBRATION entries)
+        real_hist_for_cd = [h for h in hist if h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]
+        if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
+            if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < 900:
                 buys = []
 
         # 60-Minute Ticker Wash Rule
@@ -1685,8 +1686,178 @@ def match_bot_from_order_id(client_order_id, profiles):
     if 'velocity' in coid_clean or 'pulse' in coid_clean: return 'Velocity Pulse'
     return None
 
+def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon):
+    """Non-destructive two-way reconciliation: preserves today's trade history while aligning exact fills, positions, equity, and ratchet state to Alpaca."""
+    changed = False
+    hist = ud.get('history') or []
+    init_pos = ud.get('initial_positions') or {}
+
+    for o in reversed(closed_orders or []):
+        if o.get('status') != 'filled':
+            continue
+        coid = o.get('client_order_id') or ''
+        side = (o.get('side') or '').lower()
+        symbol = (o.get('symbol') or '').upper()
+        filled_qty = int(o.get('filled_qty') or 0)
+        filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
+        order_id = o.get('id')
+        if side not in ['buy', 'sell'] or filled_qty <= 0 or filled_price <= 0:
+            continue
+
+        order_ts = 0
+        try:
+            coid_parts = coid.rsplit('_', 1)
+            if len(coid_parts) == 2 and coid_parts[1].isdigit():
+                order_ts = int(coid_parts[1])
+            elif o.get('created_at'):
+                order_ts = int(pd.Timestamp(o['created_at']).timestamp())
+        except Exception:
+            order_ts = 0
+
+        target_act = side.upper()
+        for h in hist:
+            if h.get('action') == target_act and h.get('ticker') == symbol and not h.get('price_reconciled'):
+                if h.get('alpaca_order_id') and h.get('alpaca_order_id') != order_id:
+                    continue
+                h_ts = int(h.get('timestamp') or 0)
+                if order_ts > 0 and h_ts > 0 and abs(order_ts - h_ts) > 1800:
+                    continue
+
+                new_p = round(filled_price, 2)
+                cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
+                new_amt = round(int(h.get('shares') or filled_qty) * cps, 2)
+                if h.get('price') != new_p or h.get('amount') != new_amt:
+                    h['price'] = new_p
+                    h['amount'] = new_amt
+                    changed = True
+                h['price_reconciled'] = True
+                h['alpaca_order_id'] = order_id
+                break
+
+    alpaca_pos_map = {p['symbol'].upper(): p for p in (live_pos or []) if int(p.get('qty', 0)) > 0}
+
+    def calc_local_sh(tk):
+        i_s = int((init_pos.get(tk) or {}).get('shares') or 0)
+        n_s = sum(int(t.get('shares') or 0) if t.get('action') == 'BUY' else -int(t.get('shares') or 0) for t in hist if t.get('ticker') == tk)
+        return max(0, i_s + n_s)
+
+    all_tks = set([tr.get('ticker') for tr in hist if tr.get('ticker') and tr.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]) | set(alpaca_pos_map.keys())
+    if 'holdings' not in ud or not isinstance(ud['holdings'], dict):
+        ud['holdings'] = {}
+
+    for tk in all_tks:
+        loc_sh = calc_local_sh(tk)
+        alp_p = alpaca_pos_map.get(tk)
+        alp_sh = int(alp_p.get('qty', 0)) if alp_p else 0
+
+        if loc_sh > 0 and alp_sh == 0:
+            sell_o = next((o for o in (closed_orders or []) if o.get('status') == 'filled' and (o.get('symbol') or '').upper() == tk and (o.get('side') or '').lower() == 'sell'), None)
+            if sell_o and float(sell_o.get('filled_avg_price') or 0) > 0:
+                close_p = round(float(sell_o['filled_avg_price']), 2)
+            else:
+                df_p = fetch_yf_data(tk, "1d", "1m")
+                close_p = round(float(df_p['Close'].iloc[-1]), 2) if not df_p.empty else 1.0
+            cps = close_p / 100.0 if tk.endswith('.L') and close_p > 100 else close_p
+            hist.insert(0, {
+                'id': str(int(time.time() * 1000) + 2),
+                'ticker': tk,
+                'trade_type': 'SHORT' if tk in ['SQQQ', '3SUS.L'] else 'LONG',
+                'action': 'SELL',
+                'shares': loc_sh,
+                'price': close_p,
+                'amount': round(loc_sh * cps, 2),
+                'time': now_lon.strftime('%d %b %H:%M'),
+                'date_str': today_str,
+                'timestamp': int(now_lon.timestamp()),
+                'status': 'Alpaca Auto-Reconciled',
+                'reason': 'Synced flat position with Alpaca',
+                'price_reconciled': True,
+                'source': 'alpaca_sync'
+            })
+            ud['holdings'].pop(tk, None)
+            changed = True
+        elif alp_sh > 0 and loc_sh == 0:
+            avg_p = round(float(alp_p.get('avg_entry_price') or 0.0), 2)
+            if avg_p > 0:
+                pos_amt = round(alp_sh * avg_p, 2)
+                hist.insert(0, {
+                    'id': str(int(time.time() * 1000) + 3),
+                    'ticker': tk,
+                    'trade_type': 'SHORT' if tk in ['SQQQ', '3SUS.L'] else 'LONG',
+                    'action': 'BUY',
+                    'shares': alp_sh,
+                    'price': avg_p,
+                    'amount': pos_amt,
+                    'time': now_lon.strftime('%d %b %H:%M'),
+                    'date_str': today_str,
+                    'timestamp': int(now_lon.timestamp()),
+                    'status': 'Alpaca Position Synced',
+                    'reason': 'Imported live Alpaca position',
+                    'price_reconciled': True,
+                    'source': 'alpaca_sync'
+                })
+                ud['holdings'][tk] = {'shares': alp_sh, 'manual_val': pos_amt, 'high_water': avg_p}
+                changed = True
+        elif alp_sh > 0:
+            mv = round(float(alp_p.get('market_value') or 0.0), 2)
+            hw = max(float((ud['holdings'].get(tk) or {}).get('high_water') or 0.0), float(alp_p.get('current_price') or 0.0))
+            ud['holdings'][tk] = {'shares': alp_sh, 'manual_val': mv, 'high_water': hw}
+        else:
+            ud['holdings'].pop(tk, None)
+
+    alpaca_equity = round(float(acc.get('portfolio_value') or acc.get('equity') or 0.0), 2)
+    alpaca_last_equity = round(float(acc.get('last_equity') or 0.0), 2)
+    if alpaca_last_equity > 0 and abs(float(ud.get('master_budget') or 0.0) - alpaca_last_equity) >= 0.01:
+        ud['master_budget'] = alpaca_last_equity
+        changed = True
+
+    mb_val = float(ud.get('master_budget') or 700.0)
+    non_sync_hist = [tr for tr in hist if not (tr.get('ticker') == 'ALPACASYNC' and tr.get('date_str') == today_str)]
+    if len(non_sync_hist) != len(hist):
+        hist = non_sync_hist
+
+    net_real = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
+                   for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC'])
+    init_man = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos.values())
+    open_mv = sum(round(float(p.get('market_value') or 0.0), 2) for p in alpaca_pos_map.values())
+    local_eq_before_adj = round(mb_val + net_real - init_man + open_mv, 2)
+
+    residual = round(alpaca_equity - local_eq_before_adj, 2) if alpaca_equity > 0 else 0.0
+    if abs(residual) >= 0.02:
+        hist.insert(0, {
+            'id': str(int(time.time() * 1000) + 4),
+            'ticker': 'ALPACASYNC',
+            'trade_type': 'LONG',
+            'action': 'SELL' if residual >= 0 else 'BUY',
+            'shares': 0,
+            'price': abs(residual),
+            'amount': abs(residual),
+            'time': now_lon.strftime('%d %b %H:%M'),
+            'date_str': today_str,
+            'timestamp': int(now_lon.timestamp()) - 10
+        })
+        changed = True
+
+    ud['history'] = hist
+
+    if alpaca_last_equity > 0 and alpaca_equity > 0:
+        true_today_pnl = round(alpaca_equity - alpaca_last_equity, 2)
+        true_today_pct = round((true_today_pnl / alpaca_last_equity) * 100.0, 2)
+        if ud.get('last_ratchet_date') == today_str and float(ud.get('daily_peak_pct') or 0.0) > true_today_pct + 0.15:
+            ud['daily_peak_pct'] = max(0.0, true_today_pct)
+            changed = True
+        if ud.get('manual_locked_day') != today_str and (ud.get('ratchet_locked') or ud.get('is_locked')):
+            if true_today_pct < 2.50 and ud.get('ratchet_floor_override') is None:
+                ud['ratchet_locked'] = False
+                ud['is_locked'] = False
+                ud['locked_floor_val'] = None
+                changed = True
+
+    return changed, alpaca_equity, mb_val
+
+
 def reconcile_single_target(target):
-    """Reconciles orders, fills, and positions for one specific broker account."""
+    """Reconciles orders, fills, positions, and account equity drift for one specific broker account."""
     broker = target['broker']
     api_key = str(broker.get('api_key', '')).strip()
     secret_key = str(broker.get('secret_key', '')).strip()
@@ -1704,115 +1875,149 @@ def reconcile_single_target(target):
         "Content-Type": "application/json"
     }
 
-    # 1. Reconcile Closed Orders (Native Trailing Stops & Exact Fill Prices)
+    now_lon = pd.Timestamp.now(tz='Europe/London')
+    today_str = now_lon.strftime('%Y-%m-%d')
+    closed_orders = []
+    live_pos = []
+    acc = None
+
     try:
-        req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=30&direction=desc", headers=headers)
-        with urllib.request.urlopen(req_orders, timeout=5) as resp:
-            closed_orders = json.loads(resp.read().decode('utf-8'))
-            
-            for o in closed_orders:
-                if o.get('status') != 'filled':
-                    continue
-                coid = o.get('client_order_id') or ''
-                side = (o.get('side') or '').lower()
-                symbol = (o.get('symbol') or '').upper()
-                filled_qty = int(o.get('filled_qty') or 0)
-                filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
-                order_id = o.get('id')
-                
-                if not coid or filled_qty <= 0 or filled_price <= 0:
-                    continue
-                    
-                matched_prof = match_bot_from_order_id(coid, auto_profiles)
-                if not matched_prof:
-                    continue
-
-                if c_email:
-                    c_s = portfolio_store.get_client_store(c_email)
-                    ud = (c_s.get('users') or {}).get(matched_prof, {})
-                else:
-                    ud = portfolio_store.user_data(matched_prof)
-
-                hist = ud.get('history') or []
-                init_pos = ud.get('initial_positions') or {}
-
-                def get_prof_shares(tk):
-                    i_sh = (init_pos.get(tk) or {}).get('shares', 0)
-                    n_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
-                    return max(0, i_sh + n_sh)
-
-               # Parse Alpaca order timestamp (client_order_id suffix or created_at) for safe matching
-                order_ts = 0
-                try:
-                    coid_parts = coid.rsplit('_', 1)
-                    if len(coid_parts) == 2 and coid_parts[1].isdigit():
-                        order_ts = int(coid_parts[1])
-                    elif o.get('created_at'):
-                        order_ts = int(pd.Timestamp(o['created_at']).timestamp())
-                except Exception:
-                    order_ts = 0
-
-                # Reconcile both BUY and SELL fill prices against Alpaca's exact filled_avg_price
-                if side in ['buy', 'sell']:
-                    target_act = side.upper()
-                    reconciled_existing = False
-                    for h in hist:
-                        if h.get('action') == target_act and h.get('ticker') == symbol and not h.get('price_reconciled'):
-                            if h.get('alpaca_order_id') and h.get('alpaca_order_id') != order_id:
-                                continue
-                            h_ts = int(h.get('timestamp') or 0)
-                            if order_ts > 0 and h_ts > 0 and abs(order_ts - h_ts) > 600:
-                                continue
-
-                            h['price'] = round(filled_price, 2)
-                            cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
-                            h['amount'] = round(h['shares'] * cps, 2)
-                            h['price_reconciled'] = True
-                            h['alpaca_order_id'] = order_id
-                            reconciled_existing = True
-                            if c_email:
-                                portfolio_store.save_client_store(c_email, c_s)
-                            else:
-                                portfolio_store.save_data(portfolio_store.data)
-                            break
-
-                    # If Alpaca triggered a native trailing stop SELL not yet in local history, log it
-                    if side == 'sell' and not reconciled_existing:
-                        current_shares = get_prof_shares(symbol)
-                        already_logged = any(h.get('alpaca_order_id') == order_id for h in hist)
-                        if current_shares > 0 and not already_logged:
-                            portfolio_store.execute_trade(
-                                ticker=symbol,
-                                action_type='SELL',
-                                shares=min(current_shares, filled_qty),
-                                price=filled_price,
-                                username=matched_prof,
-                                metadata={
-                                    'status': 'Alpaca Stop Filled',
-                                    'reason': f"Native {o.get('order_type', 'stop').title()} Executed on Alpaca",
-                                    'alpaca_order_id': order_id,
-                                    'price_reconciled': True,
-                                    'source': 'alpaca_sync'
-                                },
-                                client_email=c_email
-                            )
+        req_acc = urllib.request.Request(f"{base_url}/v2/account", headers=headers)
+        with urllib.request.urlopen(req_acc, timeout=5) as resp_a:
+            acc = json.loads(resp_a.read().decode('utf-8'))
     except Exception:
         pass
 
-    # 2. True Two-Way Reconciliation & Overnight Orphan Sweep
+    try:
+        req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=40&direction=desc", headers=headers)
+        with urllib.request.urlopen(req_orders, timeout=5) as resp:
+            closed_orders = json.loads(resp.read().decode('utf-8'))
+    except Exception:
+        pass
+
     try:
         req_pos = urllib.request.Request(f"{base_url}/v2/positions", headers=headers)
         with urllib.request.urlopen(req_pos, timeout=5) as resp:
             live_pos = json.loads(resp.read().decode('utf-8'))
+    except Exception:
+        pass
+
+    try:
+        for o in closed_orders:
+            if o.get('status') != 'filled':
+                continue
+            coid = o.get('client_order_id') or ''
+            side = (o.get('side') or '').lower()
+            symbol = (o.get('symbol') or '').upper()
+            filled_qty = int(o.get('filled_qty') or 0)
+            filled_price = float(o.get('filled_avg_price') or o.get('price') or 0.0)
+            order_id = o.get('id')
+            
+            if not coid or filled_qty <= 0 or filled_price <= 0:
+                continue
+                
+            matched_prof = match_bot_from_order_id(coid, auto_profiles)
+            if not matched_prof:
+                continue
+
+            if c_email:
+                c_s = portfolio_store.get_client_store(c_email)
+                ud = (c_s.get('users') or {}).get(matched_prof, {})
+            else:
+                ud = portfolio_store.user_data(matched_prof)
+
+            hist = ud.get('history') or []
+            init_pos = ud.get('initial_positions') or {}
+
+            def get_prof_shares(tk):
+                i_sh = (init_pos.get(tk) or {}).get('shares', 0)
+                n_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
+                return max(0, i_sh + n_sh)
+
+            order_ts = 0
+            try:
+                coid_parts = coid.rsplit('_', 1)
+                if len(coid_parts) == 2 and coid_parts[1].isdigit():
+                    order_ts = int(coid_parts[1])
+                elif o.get('created_at'):
+                    order_ts = int(pd.Timestamp(o['created_at']).timestamp())
+            except Exception:
+                order_ts = 0
+
+            if side in ['buy', 'sell']:
+                target_act = side.upper()
+                reconciled_existing = False
+                for h in hist:
+                    if h.get('action') == target_act and h.get('ticker') == symbol and not h.get('price_reconciled'):
+                        if h.get('alpaca_order_id') and h.get('alpaca_order_id') != order_id:
+                            continue
+                        h_ts = int(h.get('timestamp') or 0)
+                        if order_ts > 0 and h_ts > 0 and abs(order_ts - h_ts) > 1800:
+                            continue
+
+                        h['price'] = round(filled_price, 2)
+                        cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
+                        h['amount'] = round(h['shares'] * cps, 2)
+                        h['price_reconciled'] = True
+                        h['alpaca_order_id'] = order_id
+                        reconciled_existing = True
+                        if c_email:
+                            portfolio_store.save_client_store(c_email, c_s)
+                        else:
+                            portfolio_store.save_data(portfolio_store.data)
+                        break
+
+                if side == 'sell' and not reconciled_existing:
+                    current_shares = get_prof_shares(symbol)
+                    already_logged = any(h.get('alpaca_order_id') == order_id for h in hist)
+                    if current_shares > 0 and not already_logged:
+                        portfolio_store.execute_trade(
+                            ticker=symbol,
+                            action_type='SELL',
+                            shares=min(current_shares, filled_qty),
+                            price=filled_price,
+                            username=matched_prof,
+                            metadata={
+                                'status': 'Alpaca Stop Filled',
+                                'reason': f"Native {o.get('order_type', 'stop').title()} Executed on Alpaca",
+                                'alpaca_order_id': order_id,
+                                'price_reconciled': True,
+                                'source': 'alpaca_sync'
+                            },
+                            client_email=c_email
+                        )
+    except Exception:
+        pass
+
+    try:
+        allocations = broker.get('allocations') or {}
+        enabled_profs = [
+            p for p in auto_profiles
+            if any((s_key == p.lower() or s_key in p.lower() or p.lower() in s_key) and s_data.get('enabled')
+                   for s_key, s_data in allocations.items())
+        ]
+
+        if acc is not None and len(enabled_profs) == 1:
+            live_prof = enabled_profs[0]
+            if c_email:
+                c_s = portfolio_store.get_client_store(c_email)
+                ud = (c_s.get('users') or {}).get(live_prof)
+            else:
+                ud = portfolio_store.user_data(live_prof)
+
+            if isinstance(ud, dict):
+                changed, alp_eq, mb_v = sync_profile_with_alpaca_non_destructive(
+                    ud, acc, live_pos, closed_orders, today_str, now_lon
+                )
+                if changed:
+                    print(f"[ALPACA AUTO-CALIBRATED] {live_prof}: Synced equity to ${alp_eq:.2f} (Budget ${mb_v:.2f}) while preserving trade history.")
+                    if c_email:
+                        portfolio_store.save_client_store(c_email, c_s)
+                    else:
+                        portfolio_store.save_data(portfolio_store.data)
+        else:
             alpaca_holdings = {p['symbol'].upper(): int(p.get('qty', 0)) for p in live_pos}
-            allocations = broker.get('allocations') or {}
-
-            # Clear local positions if Alpaca already sold them
-            for prof in auto_profiles:
-                is_enabled = any(s_key in prof.lower() and s_data.get('enabled') for s_key, s_data in allocations.items())
-                if not is_enabled:
-                    continue
-
+            for prof in enabled_profs:
                 if c_email:
                     c_s = portfolio_store.get_client_store(c_email)
                     u_data = (c_s.get('users') or {}).get(prof, {})
@@ -1828,7 +2033,6 @@ def reconcile_single_target(target):
                     return max(0, i_s + n_s)
 
                 active_tickers = list(set([tr.get('ticker') for tr in h_list if chk_shares(tr.get('ticker')) > 0]))
-
                 for tk in active_tickers:
                     if alpaca_holdings.get(tk, 0) == 0:
                         local_sh = chk_shares(tk)
@@ -1849,42 +2053,40 @@ def reconcile_single_target(target):
                                 client_email=c_email
                             )
 
-            # Liquidate unowned orphan positions on Alpaca
-            for p in live_pos:
-                tk = p['symbol'].upper()
-                qty = int(p.get('qty', 0))
-                if qty <= 0:
-                    continue
+        for p in live_pos:
+            tk = p['symbol'].upper()
+            qty = int(p.get('qty', 0))
+            if qty <= 0:
+                continue
 
-                total_local_claimed = 0
-                if c_email:
-                    c_s = portfolio_store.get_client_store(c_email)
-                    for u_n, u_d in (c_s.get('users') or {}).items():
-                        i_s = (u_d.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
-                        n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_d.get('history', []) if t.get('ticker') == tk)
-                        total_local_claimed += max(0, i_s + n_s)
-                else:
-                    for u_n, u_d in portfolio_store.data.get('users', {}).items():
-                        i_s = (u_d.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
-                        n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_d.get('history', []) if t.get('ticker') == tk)
-                        total_local_claimed += max(0, i_s + n_s)
+            total_local_claimed = 0
+            if c_email:
+                c_s = portfolio_store.get_client_store(c_email)
+                for u_n, u_d in (c_s.get('users') or {}).items():
+                    i_s = (u_d.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
+                    n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_d.get('history', []) if t.get('ticker') == tk)
+                    total_local_claimed += max(0, i_s + n_s)
+            else:
+                for u_n, u_d in portfolio_store.data.get('users', {}).items():
+                    i_s = (u_d.get('initial_positions', {}).get(tk) or {}).get('shares', 0)
+                    n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_d.get('history', []) if t.get('ticker') == tk)
+                    total_local_claimed += max(0, i_s + n_s)
 
-                if total_local_claimed == 0:
+            if total_local_claimed == 0:
+                try:
+                    has_open_ord = False
                     try:
-                        # Skip if an open order for this symbol is already pending/in-flight on Alpaca
-                        has_open_ord = False
-                        try:
-                            req_oo = urllib.request.Request(f"{base_url}/v2/orders?status=open&symbols={tk}", headers=headers)
-                            with urllib.request.urlopen(req_oo, timeout=4) as r_oo:
-                                if len(json.loads(r_oo.read().decode('utf-8'))) > 0:
-                                    has_open_ord = True
-                        except Exception:
-                            pass
-                        if not has_open_ord:
-                            print(f"[ALPACA AUTO-SYNC] Liquidating unowned orphan position: {qty} {tk}")
-                            req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
-                            with urllib.request.urlopen(req_del, timeout=5): pass
-                    except Exception: pass
+                        req_oo = urllib.request.Request(f"{base_url}/v2/orders?status=open&symbols={tk}", headers=headers)
+                        with urllib.request.urlopen(req_oo, timeout=4) as r_oo:
+                            if len(json.loads(r_oo.read().decode('utf-8'))) > 0:
+                                has_open_ord = True
+                    except Exception:
+                        pass
+                    if not has_open_ord:
+                        print(f"[ALPACA AUTO-SYNC] Liquidating unowned orphan position: {qty} {tk}")
+                        req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
+                        with urllib.request.urlopen(req_del, timeout=5): pass
+                except Exception: pass
     except Exception:
         pass
 
@@ -2765,54 +2967,20 @@ def api_sync_alpaca_state():
         now_lon = pd.Timestamp.now(tz='Europe/London')
         today_str = now_lon.strftime('%Y-%m-%d')
 
-        # 2. Fetch live positions directly from Alpaca
+        # 2. Fetch live positions & closed orders directly from Alpaca (preserves today's trade history)
         req_p = urllib.request.Request(f"{base_url}/v2/positions", headers=headers)
         with urllib.request.urlopen(req_p, timeout=5) as r_p:
             live_pos = json.loads(r_p.read().decode('utf-8'))
 
-        hist = []
-        pos_entry_sum = 0.0
-        ud['initial_positions'] = {}
-        ud['holdings'] = {}
+        closed_orders = []
+        try:
+            req_o = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=40&direction=desc", headers=headers)
+            with urllib.request.urlopen(req_o, timeout=5) as r_o:
+                closed_orders = json.loads(r_o.read().decode('utf-8'))
+        except Exception:
+            pass
 
-        for p in live_pos:
-            tk = p['symbol'].upper()
-            q = int(p.get('qty', 0))
-            avg_p = float(p.get('avg_entry_price', 0.0))
-            if q > 0 and avg_p > 0:
-                pos_amt = round(q * avg_p, 2)
-                pos_entry_sum += pos_amt
-                hist.append({
-                    'id': str(int(time.time() * 1000) + 1),
-                    'ticker': tk,
-                    'trade_type': 'LONG',
-                    'action': 'BUY',
-                    'shares': q,
-                    'price': avg_p,
-                    'amount': pos_amt,
-                    'time': now_lon.strftime('%d %b %H:%M'),
-                    'date_str': today_str,
-                    'timestamp': int(now_lon.timestamp())
-                })
-                ud['holdings'][tk] = {'shares': q, 'manual_val': pos_amt, 'high_water': avg_p}
-
-        # Calibration ledger entry to align realized intraday P&L
-        prior_realized = round(today_pnl - sum(float(p.get('unrealized_pl', 0.0)) for p in live_pos), 2)
-        if prior_realized != 0:
-            hist.insert(0, {
-                'id': str(int(time.time() * 1000)),
-                'ticker': 'ALPACASYNC',
-                'trade_type': 'LONG',
-                'action': 'SELL' if prior_realized >= 0 else 'BUY',
-                'shares': 0,
-                'price': abs(prior_realized),
-                'amount': abs(prior_realized),
-                'time': now_lon.strftime('%d %b %H:%M'),
-                'date_str': today_str,
-                'timestamp': int(now_lon.timestamp()) - 10
-            })
-
-        ud['history'] = hist
+        sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon)
 
         if is_client:
             portfolio_store.save_client_store(client_name, c_store)
@@ -3603,6 +3771,51 @@ def get_data():
                         mathLine.append({'time': d['time'], 'value': round(((val - d['close']) / val) * 100.0 if val > 0 else 0, 2)})
         except Exception: mathLine = []
 
+        now_ts_guard = int(time.time())
+        real_hist_guard = [
+            h for h in hist
+            if h.get('ticker') and h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
+        ]
+        cd_15m_rem = 0
+        if real_hist_guard and real_hist_guard[0].get('action') == 'SELL':
+            last_sell_ts = int(real_hist_guard[0].get('timestamp') or 0)
+            if last_sell_ts > 0:
+                cd_15m_rem = max(0, 900 - (now_ts_guard - last_sell_ts))
+
+        cd_60m_rem = 0
+        wash_ticker = ''
+        for h in real_hist_guard:
+            if h.get('action') == 'SELL':
+                s_ts = int(h.get('timestamp') or 0)
+                if s_ts > 0 and (now_ts_guard - s_ts) < 3600:
+                    rem_w = 3600 - (now_ts_guard - s_ts)
+                    if rem_w > cd_60m_rem:
+                        cd_60m_rem = rem_w
+                        wash_ticker = str(h.get('ticker') or '')
+
+        guard_loss_stops = 0
+        for idx_g, h in enumerate(hist):
+            if h.get('ticker') in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']:
+                continue
+            if h.get('action') == 'SELL' and h.get('date_str') == today_str:
+                m_buy = next((b for b in hist[idx_g+1:] if b.get('ticker') == h.get('ticker') and b.get('action') == 'BUY'), None)
+                if m_buy:
+                    if float(h.get('price') or 0) < float(m_buy.get('price') or 0):
+                        guard_loss_stops += 1
+                else:
+                    guard_loss_stops += 1
+
+        buy_guards = {
+            'cd_15m_rem': cd_15m_rem,
+            'cd_15m_total': 900,
+            'cd_60m_rem': cd_60m_rem,
+            'cd_60m_total': 3600,
+            'wash_ticker': wash_ticker,
+            'strikes_used': min(3, guard_loss_stops),
+            'strikes_max': 3,
+            'server_ts': now_ts_guard
+        }
+
         return jsonify({'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if str(t).endswith('.L') and last_p>100 else f"${last_p:.2f}",
             'discount': st.get('discount', '--'), 'buy_score': f"{st.get('score', 0)} / 100", 'tranches': st.get('tranches', 0),
@@ -3611,7 +3824,8 @@ def get_data():
             'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': ticker_pnl_data['all']['val'], 'pnl_color': ticker_pnl_data['all']['color'], 'pnl_data': ticker_pnl_data,
             'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG'),
-            'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator
+            'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator,
+            'buy_guards': buy_guards
         }})
     except Exception as e:
         import traceback
@@ -4032,6 +4246,25 @@ def get_broker_status():
                             claimed_symbols.add(tk.upper())
 
             has_desync = any(p['symbol'].upper() not in claimed_symbols for p in live_positions)
+            if not has_desync:
+                enabled_u = [
+                    u_n for u_n in audit_users.keys()
+                    if any((s_k == u_n.lower() or s_k in u_n.lower() or u_n.lower() in s_k) and s_d.get('enabled')
+                           for s_k, s_d in allocations.items())
+                ]
+                if len(enabled_u) == 1:
+                    u_d = audit_users[enabled_u[0]]
+                    u_mb = float(u_d.get('master_budget') or 700.0)
+                    u_init = u_d.get('initial_positions') or {}
+                    u_hist = u_d.get('history') or []
+                    u_nh = sum(-float(x.get('amount') or 0.0) if x.get('action') == 'BUY' else float(x.get('amount') or 0.0)
+                               for x in u_hist if x.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
+                    u_im = sum(float(pos.get('manual_val') or 0.0) for pos in u_init.values())
+                    u_open_mv = sum(float(p.get('market_value') or 0.0) for p in live_positions)
+                    u_est_eq = round(u_mb + u_nh - u_im + u_open_mv, 2)
+                    alp_pv = round(float(acc.get('portfolio_value') or 0.0), 2)
+                    if alp_pv > 0 and abs(alp_pv - u_est_eq) >= 0.25:
+                        has_desync = True
 
             return jsonify({
                 'connected': True,

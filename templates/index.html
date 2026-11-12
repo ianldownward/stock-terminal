@@ -88,7 +88,8 @@
         body.light-mode .card,
         body.light-mode .lb-item,
         body.light-mode #executionGearHud,
-        body.light-mode #desktopAlpacaMonitor,
+        body.light-mode #buyingGuardsHud,
+        body.light-mode #alpacaSyncModal .modal,
         body.light-mode .custom-select-trigger,
         body.light-mode select {
             background: #f8f9fb !important;
@@ -119,11 +120,12 @@
         body.light-mode .mob-profile-name {
             color: #ffb700 !important;
         }
-        body.light-mode #desktopAlpacaMonitor span[style*="color:#ffd400"],
-        body.light-mode #desktopAlpacaMonitor span[style*="color: #ffd400"],
+        body.light-mode #buyingGuardsHud h3,
         body.light-mode #executionGearHud h3 {
             color: #ffb700 !important;
         }
+        body.light-mode #buyingGuardsHud span[style*="color:#e1e3e6"],
+        body.light-mode #buyingGuardsHud span[style*="color:#fff"],
         body.light-mode #executionGearHud span[style*="color:#e1e3e6"],
         body.light-mode #executionGearHud span[style*="color:#fff"],
         body.light-mode #gearStageText {
@@ -132,7 +134,9 @@
         body.light-mode #dialG1 > div,
         body.light-mode #dialG2 > div,
         body.light-mode #dialG3 > div,
-        body.light-mode #dialG4 > div {
+        body.light-mode #dialG4 > div,
+        body.light-mode #dialCd15 > div,
+        body.light-mode #dialCd60 > div {
             background: #f8f9fb !important;
         }
         body.light-mode .info-icon {
@@ -552,9 +556,10 @@
             background: #8a8a9e;
             display: inline-block;
         }
-        .status-dot.online { background: #0ecb81; box-shadow: 0 0 6px rgba(14, 203, 129, 0.5); }
+        .status-dot.online { background: #0ecb81; box-shadow: 0 0 7px rgba(14, 203, 129, 0.75); }
+        .status-dot.desync { background: #ff9900; box-shadow: 0 0 7px rgba(255, 153, 0, 0.75); }
         .status-dot.paused { background: #ffd400; box-shadow: 0 0 6px rgba(255, 212, 0, 0.5); }
-        .status-dot.offline { background: #8a8a9e; }
+        .status-dot.offline { background: #ff5364; box-shadow: 0 0 7px rgba(255, 83, 100, 0.75); }
 
         /* NATIVE IOS TOGGLE SWITCH */
         .toggle-switch {
@@ -2297,11 +2302,14 @@
                 </div>
 
                 <div style="display:flex; gap:8px; margin-top:4px;">
+                    <button type="button" id="btnMobAlpacaCalibrate" class="btn-sync-action" style="flex:1; padding:10px; font-size:12px; border-color:#0ecb81 !important; color:#0ecb81 !important;" onclick="forceCalibrateAlpaca(this)">
+                        Calibrate
+                    </button>
                     <button type="button" id="btnMobAlpacaSync" class="btn-sync-action" style="flex:1; padding:10px; font-size:12px;" onclick="syncWithAlpaca(this)">
                         Sync
                     </button>
                     <button type="button" class="btn-control" style="flex:1; justify-content:center; padding:10px;" onclick="closeAlpacaSyncModal(); openSettingsModal();">
-                        Broker Settings
+                        Settings
                     </button>
                 </div>
             </div>
@@ -2577,6 +2585,10 @@
                         <line x1="21" y1="12" x2="9" y2="12"></line>
                     </svg>
                 </a>
+                <!-- Alpaca Live Status Circle (Green=Live, Orange=De-Synced, Red=Disconnected) -->
+                <button class="header-icon-btn" id="headerAlpacaCircleBtn" onclick="openAlpacaSyncModal(true)" title="Alpaca Live Status (Click to Calibrate & Sync)">
+                    <span class="status-dot offline" id="headerAlpacaCircleDot" style="width:11px; height:11px;"></span>
+                </button>
             </div>
 
             <!-- Mobile Refresh Button -->
@@ -3058,29 +3070,44 @@
             </div>
         </div>
 
-        <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:8px 10px; display:flex; flex-direction:column; gap:5px; margin-top:auto;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <div style="display:flex; align-items:center; gap:6px;">
-                    <span class="status-dot offline" id="alpacaCardDot"></span>
-                    <span style="font-size:10px; font-weight:800; color:#ffb700; text-transform:uppercase; letter-spacing:0.4px;">Alpaca Live Sync</span>
-                </div>
-                <div style="display:flex; gap:5px;">
-                    <button id="btnForceCalibrate" class="btn-sync-action" style="border-color:#0ecb81; color:#0ecb81;" onclick="forceCalibrateAlpaca(this)" title="Pulls live Alpaca equity, resets daily peak & aligns portfolio">
-                        Calibrate
-                    </button>
-                    <button id="btnAlpacaSync" class="btn-sync-action" onclick="fetchBrokerStatus(true)" title="Checks Alpaca exposure and updates status">
-                        Check
-                    </button>
-                </div>
+        <!-- 7. BUYING BLOCK TIMERS & 3-STRIKE LOCKOUT HUD -->
+        <div id="buyingGuardsHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:9px 11px; margin-top:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h3 style="margin:0; font-size:10.5px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buying Guards</h3>
+                <span id="buyGuardStatusText" style="font-size:10.5px; font-weight:800; color:#0ecb81;">All Clear</span>
             </div>
 
-            <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                <span style="font-size:10.5px; color:#8a8a9e;">Account Val:</span>
-                <span id="alpacaCardValue" style="font-size:11.5px; font-weight:800; color:#8a8a9e;">Disconnected</span>
-            </div>
+            <div style="display:flex; justify-content:space-around; align-items:center; margin-bottom:2px;">
+                <!-- 15-Min Post-Sell Cooldown Circle -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="15-minute post-sell cooldown before next buy">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">15M COOL</span>
+                    <div id="dialCd15" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialCd15-val" style="position:relative; font-size:10px; font-weight:800; color:#0ecb81; font-family:monospace;">READY</span>
+                    </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">Post-Sell</span>
+                </div>
 
-            <div id="alpacaExposureBox" style="font-size:10.5px; font-weight:700; color:#8a8a9e; background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:5px 8px; display:flex; align-items:center; justify-content:center; gap:6px;">
-                <span>No API Keys Connected</span>
+                <!-- 60-Min Ticker Wash Cooldown Circle -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="60-minute same-ticker wash block after selling">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">60M WASH</span>
+                    <div id="dialCd60" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialCd60-val" style="position:relative; font-size:10px; font-weight:800; color:#0ecb81; font-family:monospace;">READY</span>
+                    </div>
+                    <span id="dialCd60-sub" style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">Same Ticker</span>
+                </div>
+
+                <!-- 3-Strike Loss Lockout Burger Icon (Same 46px height as timer circles) -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="Daily 3-Strike Loss Guard (Yellow bars turn grey as strikes are used)">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">3-STRIKE</span>
+                    <div id="strikeBurgerBox" style="width:46px; height:46px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:6px;">
+                        <div id="strikeBar1" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
+                        <div id="strikeBar2" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
+                        <div id="strikeBar3" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
+                    </div>
+                    <span id="strikeCountText" style="font-size:8px; font-weight:700; color:#ffd400; margin-top:2px;">3 / 3 Left</span>
+                </div>
             </div>
         </div>
     </div>
@@ -3443,7 +3470,7 @@
 
             try {
                 let trades = (globalPortfolioData && Array.isArray(globalPortfolioData.history)) ? globalPortfolioData.history : [];
-                let realTrades = trades.filter(t => t.ticker && t.ticker !== 'CALIBRATION');
+                let realTrades = trades.filter(t => t.ticker && !['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'].includes(t.ticker));
 
                 if (!realTrades || realTrades.length === 0) {
                     content.innerHTML = `<div style="color:#787e8e; text-align:center; padding:20px;">No trades recorded yet for <b>${shortProf}</b>.</div>`;
@@ -4823,7 +4850,7 @@
             mobLb.onclick = () => openJourneyModal();
             mobLb.style.cursor = 'pointer';
 
-            let realTrades = (history || []).filter(t => t.ticker && t.ticker !== 'CALIBRATION');
+            let realTrades = (history || []).filter(t => t.ticker && !['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'].includes(t.ticker));
 
             if (!realTrades || realTrades.length === 0) {
                 mobLb.innerHTML = `
@@ -4914,7 +4941,8 @@
             let ul = document.getElementById('allHistoryUI');
             if (!ul) return;
             ul.innerHTML = '';
-            if (!history || history.length === 0) {
+            let visibleHistory = (history || []).filter(t => t.ticker && !['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'].includes(t.ticker));
+            if (visibleHistory.length === 0) {
                 ul.innerHTML = '<li style="font-size:11px; color:#787e8e; text-align:center; padding:10px;">No trades executed yet.</li>';
                 return;
             }
@@ -4956,7 +4984,7 @@
                 }
             });
 
-            history.forEach(i => {
+            visibleHistory.forEach(i => {
                 let li = document.createElement('li');
                 li.className = 'history-item';
 
@@ -5164,6 +5192,7 @@
                 let profForHud = (userSel && userSel.value) ? userSel.value : (p.portfolio ? p.portfolio.active_user : activeUser);
                 if (typeof updateSafeguardsHUD === 'function') updateSafeguardsHUD(profForHud, p.metrics);
                 if (typeof updateSessionTimeline === 'function') updateSessionTimeline();
+                if (typeof updateBuyingGuardsHUD === 'function') updateBuyingGuardsHUD(p.metrics ? p.metrics.buy_guards : null);
                 renderLeaderboard(p.leaderboard);
                 renderHistory(globalPortfolioData.history);
                 
@@ -5857,6 +5886,8 @@
                 
                 let dot = document.getElementById('headerBrokerDot');
                 let txt = document.getElementById('headerBrokerText');
+                let circleBtn = document.getElementById('headerAlpacaCircleBtn');
+                let circleDot = document.getElementById('headerAlpacaCircleDot');
                 let modalTxt = document.getElementById('modalBrokerStatusText');
                 let pauseBtn = document.getElementById('pauseBtnLabel');
 
@@ -5886,8 +5917,12 @@
                     if (valEl) valEl.innerText = pvStr;
                     if (mobVal) mobVal.innerText = pvStr;
                     if (mobBP) mobBP.innerText = bpStr;
-                    if (cDot) cDot.className = d.paused ? 'status-dot paused' : 'status-dot online';
-                    if (mobDot) mobDot.className = d.paused ? 'status-dot paused' : 'status-dot online';
+                    let isDesyncTop = Boolean(d.has_desync);
+                    let topDotState = isDesyncTop ? 'desync' : 'online';
+                    if (cDot) cDot.className = `status-dot ${topDotState}`;
+                    if (mobDot) mobDot.className = `status-dot ${topDotState}`;
+                    if (circleDot) circleDot.className = `status-dot ${topDotState}`;
+                    if (circleBtn) circleBtn.title = isDesyncTop ? 'Alpaca: De-Synced (Click to Calibrate & Sync)' : 'Alpaca: Live & Synced (Click to Calibrate & Sync)';
 
                     let isExpanded = (window._alpacaExpExpanded !== undefined) ? window._alpacaExpExpanded : true;
                     let expBorder = '#262b36';
@@ -6001,18 +6036,25 @@
                     if (d.paused) {
                         if (dot) { dot.className = 'status-dot paused'; }
                         if (txt) { txt.style.color = '#ffd400'; txt.innerText = 'Alpaca: Paused'; }
-                        if (modalTxt) { modalTxt.innerHTML = `<span style="color:#ffd400;">Relay Paused</span> &bull; Buying Power: ${bpStr}`; }
+                        if (modalTxt) { modalTxt.innerHTML = `<span style="color:#ffd400;">Relay Paused</span> • Buying Power: ${bpStr}`; }
                         if (pauseBtn) { pauseBtn.innerText = 'Resume Relay'; }
+                    } else if (d.has_desync) {
+                        if (dot) { dot.className = 'status-dot desync'; }
+                        if (txt) { txt.style.color = '#ff9900'; txt.innerText = 'Alpaca: De-Synced'; }
+                        if (modalTxt) { modalTxt.innerHTML = `<span style="color:#ff9900;">De-Synced</span> • Buying Power: ${bpStr}`; }
+                        if (pauseBtn) { pauseBtn.innerText = 'Pause Relay'; }
                     } else {
                         if (dot) { dot.className = 'status-dot online'; }
                         if (txt) { txt.style.color = '#0ecb81'; txt.innerText = 'Alpaca: Active'; }
-                        if (modalTxt) { modalTxt.innerHTML = `<span style="color:#0ecb81;">Connected (${d.status})</span> &bull; Buying Power: ${bpStr}`; }
+                        if (modalTxt) { modalTxt.innerHTML = `<span style="color:#0ecb81;">Connected (${d.status})</span> • Buying Power: ${bpStr}`; }
                         if (pauseBtn) { pauseBtn.innerText = 'Pause Relay'; }
                     }
                 } else {
                     if (dot) { dot.className = 'status-dot offline'; }
-                    if (txt) { txt.style.color = '#8a8a9e'; txt.innerText = 'Broker Offline'; }
-                    if (modalTxt) { modalTxt.innerHTML = `<span style="color:#8a8a9e;">Disconnected</span>`; }
+                    if (txt) { txt.style.color = '#ff5364'; txt.innerText = 'Broker Offline'; }
+                    if (circleDot) { circleDot.className = 'status-dot offline'; }
+                    if (circleBtn) { circleBtn.title = 'Alpaca: Disconnected (Click to Connect / Sync)'; }
+                    if (modalTxt) { modalTxt.innerHTML = `<span style="color:#ff5364;">Disconnected</span>`; }
 
                     // Explicitly update Desktop & Mobile Monitor cards to Disconnected
                     let valEl = document.getElementById('alpacaCardValue');
@@ -6668,8 +6710,127 @@
             }
         }
 
-        function openAlpacaSyncModal() {
-            if (window.innerWidth > 900) {
+        window._buyGuardsState = {
+            cd_15m_rem: 0,
+            cd_15m_total: 900,
+            cd_60m_rem: 0,
+            cd_60m_total: 3600,
+            wash_ticker: '',
+            strikes_used: 0,
+            strikes_max: 3,
+            syncedAtMs: Date.now()
+        };
+
+        function formatCountdownMMSS(secs) {
+            let s = Math.max(0, Math.floor(secs));
+            let mm = String(Math.floor(s / 60)).padStart(2, '0');
+            let ss = String(s % 60).padStart(2, '0');
+            return `${mm}:${ss}`;
+        }
+
+        function renderBuyingGuardsCircles() {
+            let st = window._buyGuardsState;
+            if (!st) return;
+            let elapsed = Math.floor((Date.now() - st.syncedAtMs) / 1000);
+            let rem15 = Math.max(0, (st.cd_15m_rem || 0) - elapsed);
+            let rem60 = Math.max(0, (st.cd_60m_rem || 0) - elapsed);
+
+            let d15 = document.getElementById('dialCd15');
+            let v15 = document.getElementById('dialCd15-val');
+            if (d15 && v15) {
+                if (rem15 > 0) {
+                    let pct15 = Math.max(2, Math.min(100, (rem15 / (st.cd_15m_total || 900)) * 100));
+                    d15.style.background = `conic-gradient(#ff9900 ${pct15}%, #262b36 0)`;
+                    v15.innerText = formatCountdownMMSS(rem15);
+                    v15.style.color = '#ff9900';
+                } else {
+                    d15.style.background = 'conic-gradient(#262b36 0%, #262b36 100%)';
+                    v15.innerText = 'READY';
+                    v15.style.color = '#0ecb81';
+                }
+            }
+
+            let d60 = document.getElementById('dialCd60');
+            let v60 = document.getElementById('dialCd60-val');
+            let sub60 = document.getElementById('dialCd60-sub');
+            if (d60 && v60) {
+                if (rem60 > 0) {
+                    let pct60 = Math.max(2, Math.min(100, (rem60 / (st.cd_60m_total || 3600)) * 100));
+                    d60.style.background = `conic-gradient(#38bdf8 ${pct60}%, #262b36 0)`;
+                    v60.innerText = formatCountdownMMSS(rem60);
+                    v60.style.color = '#38bdf8';
+                    if (sub60) sub60.innerText = st.wash_ticker ? `${st.wash_ticker} Lock` : 'Same Ticker';
+                } else {
+                    d60.style.background = 'conic-gradient(#262b36 0%, #262b36 100%)';
+                    v60.innerText = 'READY';
+                    v60.style.color = '#0ecb81';
+                    if (sub60) sub60.innerText = 'Same Ticker';
+                }
+            }
+
+            let used = Math.max(0, Math.min(3, parseInt(st.strikes_used) || 0));
+            let left = Math.max(0, 3 - used);
+            let isLight = document.body.classList.contains('light-mode');
+            let usedCol = isLight ? '#cbd2df' : '#363c4a';
+
+            for (let idx = 1; idx <= 3; idx++) {
+                let bar = document.getElementById(`strikeBar${idx}`);
+                if (!bar) continue;
+                if (idx <= used) {
+                    bar.style.background = usedCol;
+                    bar.style.boxShadow = 'none';
+                } else {
+                    bar.style.background = '#ffd400';
+                    bar.style.boxShadow = '0 0 6px rgba(255, 212, 0, 0.45)';
+                }
+            }
+
+            let sText = document.getElementById('strikeCountText');
+            if (sText) {
+                sText.innerText = used >= 3 ? '0 / 3 • Locked' : `${left} / 3 Left`;
+                sText.style.color = used >= 3 ? '#ff5364' : '#ffd400';
+            }
+
+            let hdrStatus = document.getElementById('buyGuardStatusText');
+            if (hdrStatus) {
+                if (used >= 3) {
+                    hdrStatus.innerText = '3-Strike Lockout';
+                    hdrStatus.style.color = '#ff5364';
+                } else if (rem15 > 0) {
+                    hdrStatus.innerText = '15m Cooldown';
+                    hdrStatus.style.color = '#ff9900';
+                } else if (rem60 > 0) {
+                    hdrStatus.innerText = `${st.wash_ticker || 'Ticker'} Wash`;
+                    hdrStatus.style.color = '#38bdf8';
+                } else {
+                    hdrStatus.innerText = 'All Clear';
+                    hdrStatus.style.color = '#0ecb81';
+                }
+            }
+        }
+
+        function updateBuyingGuardsHUD(guards) {
+            if (!guards) return;
+            window._buyGuardsState = {
+                cd_15m_rem: parseInt(guards.cd_15m_rem) || 0,
+                cd_15m_total: parseInt(guards.cd_15m_total) || 900,
+                cd_60m_rem: parseInt(guards.cd_60m_rem) || 0,
+                cd_60m_total: parseInt(guards.cd_60m_total) || 3600,
+                wash_ticker: guards.wash_ticker || '',
+                strikes_used: parseInt(guards.strikes_used) || 0,
+                strikes_max: parseInt(guards.strikes_max) || 3,
+                syncedAtMs: Date.now()
+            };
+            renderBuyingGuardsCircles();
+        }
+
+        if (!window._buyGuardsTickerStarted) {
+            window._buyGuardsTickerStarted = true;
+            setInterval(renderBuyingGuardsCircles, 1000);
+        }
+
+        function openAlpacaSyncModal(forceModal = false) {
+            if (!forceModal && window.innerWidth > 900) {
                 openSettingsModal();
                 return;
             }
