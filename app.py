@@ -3141,7 +3141,11 @@ def get_data():
         active_holds = list(set([tr.get('ticker') for tr in hist if resolve_profile_shares(ud, tr.get('ticker')) > 0]))
 
         if not t or t == 'ALL_SHARES':
-            t = active_holds[0] if active_holds else (wl[0] if wl else 'TQQQ')
+            last_traded_tk = next(
+                (tr.get('ticker') for tr in hist if tr.get('ticker') and tr.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']),
+                None
+            )
+            t = active_holds[0] if active_holds else (last_traded_tk if last_traded_tk else (wl[0] if wl else 'TQQQ'))
         if 'holdings' not in ud or not isinstance(ud['holdings'], dict): ud['holdings'] = {}
         for tk in active_holds:
             sh_cnt = resolve_profile_shares(ud, tk)

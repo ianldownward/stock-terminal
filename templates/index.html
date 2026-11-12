@@ -5129,19 +5129,22 @@
                 
                 let activeHolds = (p.portfolio && p.portfolio.active_holds) || (p.metrics && p.metrics.active_holds) || [];
                 let profKeyForHold = (userSel && userSel.value) ? userSel.value : (p.portfolio ? p.portfolio.active_user : activeUser);
-                if (Array.isArray(activeHolds) && activeHolds.length > 0) {
-                    let holdKey = `${profKeyForHold}:${activeHolds[0]}`;
-                    if (window._lastAutoSwitchedHoldKey !== holdKey) {
-                        window._lastAutoSwitchedHoldKey = holdKey;
-                        if (currentTicker !== activeHolds[0]) {
-                            currentTicker = activeHolds[0];
-                            window._userHasPannedChart = false;
-                            clearTimeout(safetyTimer);
-                            return fetchData(silent);
-                        }
+                let realHistTrades = (globalPortfolioData.history || []).filter(tr => tr.ticker && !['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'].includes(tr.ticker));
+                let latestTrade = realHistTrades.length > 0 ? realHistTrades[0] : null;
+                let autoTargetTicker = (Array.isArray(activeHolds) && activeHolds.length > 0) ? activeHolds[0] : (latestTrade ? latestTrade.ticker : null);
+                let eventKey = (Array.isArray(activeHolds) && activeHolds.length > 0)
+                    ? `${profKeyForHold}:HOLD:${activeHolds[0]}`
+                    : (latestTrade ? `${profKeyForHold}:TRADE:${latestTrade.id}:${latestTrade.ticker}` : '');
+
+                if (autoTargetTicker && eventKey && window._lastAutoSwitchedHoldKey !== eventKey) {
+                    window._lastAutoSwitchedHoldKey = eventKey;
+                    if (currentTicker !== autoTargetTicker) {
+                        currentTicker = autoTargetTicker;
+                        window._userHasPannedChart = false;
+                        window._chartEverFitted = false;
+                        clearTimeout(safetyTimer);
+                        return fetchData(silent);
                     }
-                } else {
-                    window._lastAutoSwitchedHoldKey = '';
                 }
                 renderWatchlist(globalPortfolioData.watchlist, activeHolds);
 
@@ -5381,6 +5384,7 @@
         function selectStock(ticker) {
             currentTicker = ticker;
             window._userHasPannedChart = false;
+            window._chartEverFitted = false;
             fetchData(false);
         }
 
@@ -5546,19 +5550,20 @@
                     .slice()
                     .reverse();
 
-                // Multi-Timeframe Matcher: handles 1m, 5m, 15m and daily date formats
+                // Multi-Timeframe Matcher with sub-candle X interpolation so multi-minute trades inside 5m/15m bars angle cleanly
                 function getCandleCoords(ts, price) {
                     if (!ts || !price) return null;
                     let matchTime = null;
+                    let matchIdx = -1;
                     let isDaily = typeof masterData[0].time === 'string';
 
                     if (isDaily) {
                         let dStr = new Date(ts * 1000).toISOString().split('T')[0];
-                        let found = masterData.find(b => b.time === dStr);
-                        if (found) matchTime = found.time;
+                        let foundIdx = masterData.findIndex(b => b.time === dStr);
+                        if (foundIdx !== -1) { matchTime = masterData[foundIdx].time; matchIdx = foundIdx; }
                         else {
                             for (let i = 0; i < masterData.length; i++) {
-                                if (masterData[i].time >= dStr) { matchTime = masterData[i].time; break; }
+                                if (masterData[i].time >= dStr) { matchTime = masterData[i].time; matchIdx = i; break; }
                             }
                         }
                     } else {
@@ -5566,12 +5571,13 @@
                             let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
                             if (cTime <= ts) {
                                 matchTime = masterData[i].time;
+                                matchIdx = i;
                                 break;
                             }
                         }
                         if (!matchTime && masterData.length > 0) {
                             let firstT = typeof masterData[0].time === 'number' ? masterData[0].time : (new Date(masterData[0].time).getTime() / 1000);
-                            if (ts >= firstT - 86400 * 7) matchTime = masterData[0].time;
+                            if (ts >= firstT - 86400 * 7) { matchTime = masterData[0].time; matchIdx = 0; }
                         }
                     }
 
@@ -5579,6 +5585,31 @@
                     let x = tvChart.timeScale().timeToCoordinate(matchTime);
                     let y = tvSeries.priceToCoordinate(price);
                     if (x === null || y === null || isNaN(x) || isNaN(y)) return null;
+
+                    if (!isDaily && matchIdx >= 0) {
+                        let cTime = typeof masterData[matchIdx].time === 'number' ? masterData[matchIdx].time : (new Date(masterData[matchIdx].time).getTime() / 1000);
+                        let elapsed = Math.max(0, ts - cTime);
+                        if (elapsed > 0) {
+                            if (matchIdx + 1 < masterData.length) {
+                                let nextTime = typeof masterData[matchIdx + 1].time === 'number' ? masterData[matchIdx + 1].time : (new Date(masterData[matchIdx + 1].time).getTime() / 1000);
+                                let xNext = tvChart.timeScale().timeToCoordinate(masterData[matchIdx + 1].time);
+                                let spanSec = Math.max(60, nextTime - cTime);
+                                if (xNext !== null && !isNaN(xNext)) {
+                                    let frac = Math.min(0.92, elapsed / spanSec);
+                                    x = x + frac * (xNext - x);
+                                }
+                            } else if (matchIdx > 0) {
+                                let prevTime = typeof masterData[matchIdx - 1].time === 'number' ? masterData[matchIdx - 1].time : (new Date(masterData[matchIdx - 1].time).getTime() / 1000);
+                                let xPrev = tvChart.timeScale().timeToCoordinate(masterData[matchIdx - 1].time);
+                                let spanSec = Math.max(60, cTime - prevTime);
+                                if (xPrev !== null && !isNaN(xPrev)) {
+                                    let frac = Math.min(0.92, elapsed / spanSec);
+                                    x = x + frac * (x - xPrev);
+                                }
+                            }
+                        }
+                    }
+
                     return { x: x, y: y };
                 }
 
@@ -5623,6 +5654,11 @@
                     } else if (act === 'SELL') {
                         let sellPt = getCandleCoords(ts, p);
                         let buyPt = openBuy ? getCandleCoords(openBuy.ts, openBuy.price) : null;
+
+                        if (buyPt && sellPt && Math.abs(sellPt.x - buyPt.x) < 10) {
+                            buyPt.x -= 5;
+                            sellPt.x += 5;
+                        }
 
                         // 1. Straight line connecting Buy X to Sell X
                         if (buyPt && sellPt) {
