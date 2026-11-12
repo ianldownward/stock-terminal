@@ -2860,13 +2860,13 @@
     <div id="colResizer" style="width: 6px; cursor: col-resize; background: #161920; transition: background 0.2s; position: relative; z-index: 20;" title="Drag to resize tactical HUD"></div>
 
     <!-- RIGHT DRAWER: TACTICAL EXECUTION ENGINE & BROKER HUD -->
-    <div class="right-drawer" id="leaderboardCol" style="width: 310px; min-width: 250px; max-width: 500px; padding: 10px 12px; overflow-y: auto; display: flex; flex-direction: column;">
+    <div class="right-drawer" id="leaderboardCol" style="width: 310px; min-width: 250px; max-width: 500px; padding: 6px 10px; overflow-y: auto; display: flex; flex-direction: column; justify-content: space-between; gap: 4px;">
         <!-- 1. 3-ASSET STRATEGY READINESS -->
-        <details class="drawer-details" id="watchlistDrawer" open style="margin-bottom:5px; padding:7px 10px;">
+        <details class="drawer-details" id="watchlistDrawer" open style="margin-bottom:0; padding:5px 9px;">
             <summary>Strategy Readiness (3x Universe)</summary>
-            <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
-                <div id="readinessUI" style="display:flex; flex-direction:column; gap:6px;">
-                    <div style="color:#787e8e; font-size:11px; text-align:center; padding:10px;">Scanning strategy tickers...</div>
+            <div style="margin-top:5px; display:flex; flex-direction:column; gap:3px;">
+                <div id="readinessUI" style="display:flex; flex-direction:column; gap:3px;">
+                    <div style="color:#787e8e; font-size:10px; text-align:center; padding:6px;">Scanning strategy tickers...</div>
                 </div>
                 <ul class="watchlist" id="watchlistUI" style="display:none;"></ul>
                 <input type="hidden" id="addTickerInput">
@@ -2874,111 +2874,112 @@
         </details>
 
         <!-- 2. DAILY ENGINE SESSION TIMELINE & COUNTDOWN -->
-        <details class="drawer-details" id="timelineDrawer" open style="margin-bottom:5px; padding:7px 10px;">
+        <details class="drawer-details" id="timelineDrawer" open style="margin-bottom:0; padding:5px 9px;">
             <summary>Engine Session Timeline</summary>
-            <div id="sessionCountdownBadge" style="margin-top:5px; display:flex; justify-content:space-between; align-items:center; background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:3px 8px; font-size:10px; font-weight:800;">
+            <div id="sessionCountdownBadge" style="margin-top:4px; display:flex; justify-content:space-between; align-items:center; background:#0f1115; border:1px solid #262b36; border-radius:4px; padding:2px 7px; font-size:9.5px; font-weight:800;">
                 <span style="color:#8a8a9e; letter-spacing:0.4px;">NEXT EVENT</span>
-                <span id="liveNextEventText" style="color:#0ecb81; font-family:monospace; font-size:10.5px;">14:30 OPEN IN --:--:--</span>
+                <span id="liveNextEventText" style="color:#0ecb81; font-family:monospace; font-size:10px;">14:30 OPEN IN --:--:--</span>
             </div>
-            <div id="sessionTimelineContainer" style="margin-top:6px; display:flex; flex-direction:column; gap:4px; padding:1px 2px; font-size:10px;">
+            <div id="sessionTimelineContainer" style="margin-top:4px; display:flex; flex-direction:column; gap:2px; padding:0 2px; font-size:9.5px;">
             </div>
         </details>
 
-        <!-- 3. STRATEGY SAFEGUARDS HUD (TIGHTENED WITH LOSS CUSHION) -->
-        <details class="drawer-details" id="safeguardsDrawer" open style="margin-bottom:5px; padding:7px 10px;">
+        <!-- 3. STRATEGY SAFEGUARDS HUD -->
+        <details class="drawer-details" id="safeguardsDrawer" open style="margin-bottom:0; padding:5px 9px;">
             <summary>Strategy Safeguards HUD</summary>
-            <div id="safeguardsHudContainer" style="margin-top:5px; display:flex; flex-direction:column; gap:2px; padding:1px 2px; font-size:10px;">
+            <div id="safeguardsHudContainer" style="margin-top:4px; display:flex; flex-direction:column; gap:0; padding:0 2px; font-size:9.5px;">
             </div>
         </details>
 
         <!-- 4. MACRO RADAR & FUTURES PULSE (NQ / ES / VIX) -->
-        <details class="drawer-details" id="macroRadarDrawer" open style="margin-bottom:5px; padding:7px 10px;">
+        <details class="drawer-details" id="macroRadarDrawer" open style="margin-bottom:0; padding:5px 9px;">
             <summary>Macro Radar & Futures Pulse</summary>
-            <div style="margin-top:6px; display:grid; grid-template-columns: repeat(3, 1fr); gap:5px; text-align:center;">
-                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:5px 2px;">
-                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">NQ (Nasdaq)</div>
-                    <div id="macroNqVal" style="font-size:10.5px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.42% ▲</div>
+            <div style="margin-top:4px; display:grid; grid-template-columns: repeat(3, 1fr); gap:4px; text-align:center;">
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:3px 2px;">
+                    <div style="font-size:8px; color:#8a8a9e; font-weight:700;">NQ (Nasdaq)</div>
+                    <div id="macroNqVal" style="font-size:10px; font-weight:800; color:#0ecb81; margin-top:1px;">+0.42% ▲</div>
                 </div>
-                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:5px 2px;">
-                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">ES (S&P 500)</div>
-                    <div id="macroEsVal" style="font-size:10.5px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.28% ▲</div>
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:3px 2px;">
+                    <div style="font-size:8px; color:#8a8a9e; font-weight:700;">ES (S&P 500)</div>
+                    <div id="macroEsVal" style="font-size:10px; font-weight:800; color:#0ecb81; margin-top:1px;">+0.28% ▲</div>
                 </div>
-                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:5px 2px;">
-                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">VIX Index</div>
-                    <div id="macroVixVal" style="font-size:10.5px; font-weight:800; color:#ffb700; margin-top:2px;">14.85 Calm</div>
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:3px 2px;">
+                    <div style="font-size:8px; color:#8a8a9e; font-weight:700;">VIX Index</div>
+                    <div id="macroVixVal" style="font-size:10px; font-weight:800; color:#ffb700; margin-top:1px;">14.85 Calm</div>
                 </div>
             </div>
         </details>
 
         <!-- 5. ACTIVE BOT KPI SCORECARD -->
-        <details class="drawer-details" id="botKpiDrawer" open style="margin-bottom:5px; padding:7px 10px;">
+        <details class="drawer-details" id="botKpiDrawer" open style="margin-bottom:0; padding:5px 9px;">
             <summary>Active Strategy Vital Stats</summary>
-            <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
-                <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1a1e28; padding-bottom:2px;">
-                    <span style="color:#8a8a9e; font-size:10px;">Win Rate:</span>
-                    <span id="sideKpiWinRate" style="color:#0ecb81; font-weight:800; font-size:10.5px;">--</span>
+            <div style="margin-top:4px; display:flex; flex-direction:column; gap:2px;">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1a1e28; padding-bottom:1px;">
+                    <span style="color:#8a8a9e; font-size:9.5px;">Win Rate:</span>
+                    <span id="sideKpiWinRate" style="color:#0ecb81; font-weight:800; font-size:10px;">--</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1a1e28; padding-bottom:2px;">
-                    <span style="color:#8a8a9e; font-size:10px;">Profit Factor:</span>
-                    <span id="sideKpiProfitFactor" style="color:#fff; font-weight:800; font-size:10.5px;">--</span>
+                <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1a1e28; padding-bottom:1px;">
+                    <span style="color:#8a8a9e; font-size:9.5px;">Profit Factor:</span>
+                    <span id="sideKpiProfitFactor" style="color:#fff; font-weight:800; font-size:10px;">--</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                    <span style="color:#8a8a9e; font-size:10px;">Daily Run-Rate:</span>
-                    <span id="sideKpiRunRate" style="color:#ffb700; font-weight:800; font-size:10.5px;">--</span>
+                    <span style="color:#8a8a9e; font-size:9.5px;">Daily Run-Rate:</span>
+                    <span id="sideKpiRunRate" style="color:#ffb700; font-weight:800; font-size:10px;">--</span>
                 </div>
             </div>
         </details>
 
         <!-- 6. 4-GEAR AUTOMATIC TRANSMISSION HUD -->
-        <div id="executionGearHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:14px 16px; margin-bottom:5px; margin-top:auto;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px;">
-                <h3 style="margin:0; font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.5px;">Execution Gear</h3>
-                <div style="text-align:right;">
-                    <div id="gearStageText" style="font-size:13px; font-weight:800; color:#fff;">Gear 1</div>
-                    <div id="gearNameText" style="font-size:10.5px; font-weight:800; color:#0ecb81; margin-top:3px;">(35%) Full Power</div>
+        <div id="executionGearHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:7px 10px; margin-bottom:0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h3 style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Execution Gear</h3>
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <span id="gearNameText" style="font-size:10px; font-weight:800; color:#0ecb81;">(35%) Full Power</span>
+                    <span style="color:#555e6d; font-size:9px;">•</span>
+                    <span id="gearStageText" style="font-size:11px; font-weight:800; color:#fff;">Gear 1</span>
                 </div>
             </div>
             
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:16px; padding: 0 4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:4px; margin-bottom:5px; padding: 0 2px;">
                 <!-- Gear 1 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
-                    <span style="font-size:9px; font-weight:800; color:#e1e3e6;">GEAR 1</span>
-                    <div id="dialG1" style="position:relative; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #0ecb81) var(--dial-pct, 35%), #262b36 0); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialG1-val" style="position:relative; font-size:13px; font-weight:800; color:#fff;">35%</span>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+                    <span style="font-size:8px; font-weight:800; color:#e1e3e6;">GEAR 1</span>
+                    <div id="dialG1" style="position:relative; width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #0ecb81) var(--dial-pct, 35%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:3.5px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG1-val" style="position:relative; font-size:10.5px; font-weight:800; color:#fff;">35%</span>
                     </div>
                 </div>
                 <!-- Gear 2 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
-                    <span style="font-size:9px; font-weight:800; color:#e1e3e6;">GEAR 2</span>
-                    <div id="dialG2" style="position:relative; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialG2-val" style="position:relative; font-size:13px; font-weight:800; color:#8a8a9e;">0%</span>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+                    <span style="font-size:8px; font-weight:800; color:#e1e3e6;">GEAR 2</span>
+                    <div id="dialG2" style="position:relative; width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:3.5px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG2-val" style="position:relative; font-size:10.5px; font-weight:800; color:#8a8a9e;">0%</span>
                     </div>
                 </div>
                 <!-- Gear 3 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
-                    <span style="font-size:9px; font-weight:800; color:#e1e3e6;">GEAR 3</span>
-                    <div id="dialG3" style="position:relative; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialG3-val" style="position:relative; font-size:13px; font-weight:800; color:#8a8a9e;">0%</span>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+                    <span style="font-size:8px; font-weight:800; color:#e1e3e6;">GEAR 3</span>
+                    <div id="dialG3" style="position:relative; width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:3.5px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG3-val" style="position:relative; font-size:10.5px; font-weight:800; color:#8a8a9e;">0%</span>
                     </div>
                 </div>
                 <!-- Gear 4 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
-                    <span style="font-size:9px; font-weight:800; color:#e1e3e6;">GEAR 4</span>
-                    <div id="dialG4" style="position:relative; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialG4-val" style="position:relative; font-size:13px; font-weight:800; color:#8a8a9e;">0%</span>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+                    <span style="font-size:8px; font-weight:800; color:#e1e3e6;">GEAR 4</span>
+                    <div id="dialG4" style="position:relative; width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:3.5px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG4-val" style="position:relative; font-size:10.5px; font-weight:800; color:#8a8a9e;">0%</span>
                     </div>
                 </div>
             </div>
-            <div style="text-align:center; font-size:10px; color:#8a8a9e; font-weight:600;">
+            <div style="text-align:center; font-size:9px; color:#8a8a9e; font-weight:600;">
                 Gear transition thresholds: $2k, $250k, $1M
             </div>
         </div>
 
-        <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
+        <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:7px 10px; display:flex; flex-direction:column; gap:4px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:6px;">
                     <span class="status-dot offline" id="alpacaCardDot"></span>
@@ -2994,12 +2995,12 @@
                 </div>
             </div>
 
-            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:2px;">
-                <span style="font-size:11px; color:#8a8a9e;">Account Val:</span>
-                <span id="alpacaCardValue" style="font-size:12px; font-weight:800; color:#8a8a9e;">Disconnected</span>
+            <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                <span style="font-size:10.5px; color:#8a8a9e;">Account Val:</span>
+                <span id="alpacaCardValue" style="font-size:11.5px; font-weight:800; color:#8a8a9e;">Disconnected</span>
             </div>
 
-            <div id="alpacaExposureBox" style="font-size:11px; font-weight:700; color:#8a8a9e; background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 8px; display:flex; align-items:center; justify-content:center; gap:6px;">
+            <div id="alpacaExposureBox" style="font-size:10.5px; font-weight:700; color:#8a8a9e; background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:4px 8px; display:flex; align-items:center; justify-content:center; gap:6px;">
                 <span>No API Keys Connected</span>
             </div>
         </div>
@@ -3103,9 +3104,9 @@
                 }
 
                 html += `
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <div style="width:7px; height:7px; border-radius:50%; background:${dotColor}; ${shadow} flex-shrink:0;"></div>
-                        <span style="color:${textColor}; font-weight:${weight}; font-size:10px;">${step.label}</span>
+                    <div style="display:flex; align-items:center; gap:6px; line-height:1.25;">
+                        <div style="width:6px; height:6px; border-radius:50%; background:${dotColor}; ${shadow} flex-shrink:0;"></div>
+                        <span style="color:${textColor}; font-weight:${weight}; font-size:9.5px;">${step.label}</span>
                         ${activeTag}
                     </div>
                 `;
@@ -3221,23 +3222,23 @@
             } else {
                 // Calm, clean idle state when 100% in cash
                 trailHtml = `
-                    <div style="display:flex; flex-direction:column; gap:3px; padding:6px 0; border-bottom:1px solid #1a1e28;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                    <div style="display:flex; flex-direction:column; gap:2px; padding:3px 0; border-bottom:1px solid #1a1e28;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:800;">
                             <span style="color:#8a8a9e;">2. TRAILING STOP CUSHION</span>
                             <span style="color:#5a5f70;">100% CASH</span>
                         </div>
-                        <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:3px 6px; text-align:center; font-size:8.5px; font-weight:700; color:#5a5f70;">
+                        <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:2px 5px; text-align:center; font-size:8px; font-weight:700; color:#5a5f70;">
                             IDLE • Arms on position entry (-${trailParam}% trail)
                         </div>
                     </div>
                 `;
                 beCatchHtml = `
-                    <div style="display:flex; flex-direction:column; gap:3px; padding-top:6px;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                    <div style="display:flex; flex-direction:column; gap:2px; padding-top:3px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:800;">
                             <span style="color:#8a8a9e;">3. BREAKEVEN SAFETY CATCH</span>
                             <span style="color:#5a5f70;">ARMED</span>
                         </div>
-                        <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:3px 6px; text-align:center; font-size:8.5px; font-weight:700; color:#5a5f70;">
+                        <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:2px 5px; text-align:center; font-size:8px; font-weight:700; color:#5a5f70;">
                             Locks +0.18% floor automatically at +0.50% trade gain
                         </div>
                     </div>
@@ -3249,15 +3250,15 @@
 
             container.innerHTML = `
                 <!-- 1. Daily Loss Shield -->
-                <div style="display:flex; flex-direction:column; gap:3px; padding-bottom:6px; border-bottom:1px solid #1a1e28;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                <div style="display:flex; flex-direction:column; gap:2px; padding-bottom:3px; border-bottom:1px solid #1a1e28;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:800;">
                         <span style="color:#8a8a9e;">1. DAILY LOSS SHIELD</span>
                         <span style="color:${shieldColor};">$${cushionLeft.toFixed(2)} Left (${cushionPct.toFixed(0)}%)</span>
                     </div>
-                    <div style="width:100%; height:6px; background:#262b36; border-radius:3px; overflow:hidden;">
+                    <div style="width:100%; height:5px; background:#262b36; border-radius:3px; overflow:hidden;">
                         <div style="width:${cushionPct}%; height:100%; background:${shieldColor}; transition:width 0.3s ease, background 0.3s ease;"></div>
                     </div>
-                    <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:700; color:#5a5f70;">
+                    <div style="display:flex; justify-content:space-between; font-size:7.5px; font-weight:700; color:#5a5f70;">
                         <span>-$${maxLoss.toFixed(2)} (-2.5% Halt)</span>
                         <span>$0.00 (Full Buffer)</span>
                     </div>
@@ -3270,7 +3271,7 @@
                 ${beCatchHtml}
 
                 <!-- 4. Overnight Cash Sweep Badge -->
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:8.5px; font-weight:700; color:#8a8a9e; padding-top:6px; margin-top:6px; border-top:1px solid #1a1e28;">
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:8.5px; font-weight:700; color:#8a8a9e; padding-top:3px; margin-top:3px; border-top:1px solid #1a1e28;">
                     <span>Overnight Sweep:</span>
                     <span style="color:${isSweepEnabled ? '#0ecb81' : '#ff9900'}; font-weight:800;">
                         ${isSweepEnabled ? '20:50 BST (100% Cash)' : 'Holding Overnight'}
@@ -7190,12 +7191,12 @@
                     let botBadge = (isHeld && it.user_tag) ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(${it.user_tag})</span>` : (isHeld ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(H)</span>` : '');
 
                     return `
-                    <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:6px; padding:6px 8px; cursor:pointer;" onclick="selectStock('${it.ticker}')">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                            <span style="font-weight:bold; font-size:11px; color:#fff;">${it.ticker} ${botBadge}</span>
-                            <span style="font-size:10px;">${label}</span>
+                    <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:5px; padding:4px 7px; cursor:pointer;" onclick="selectStock('${it.ticker}')">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                            <span style="font-weight:bold; font-size:10.5px; color:#fff;">${it.ticker} ${botBadge}</span>
+                            <span style="font-size:9.5px;">${label}</span>
                         </div>
-                        <div style="width:100%; height:6px; background:#1e222d; border-radius:3px; position:relative; overflow:hidden;">
+                        <div style="width:100%; height:4px; background:#1e222d; border-radius:2px; position:relative; overflow:hidden;">
                             ${!isHeld ? '<div style="position:absolute; left:65%; top:0; bottom:0; width:1.5px; background:#ffd400; z-index:2;" title="Buy Trigger at 65"></div>' : ''}
                             <div style="width:${Math.max(0, Math.min(100, valPct))}%; height:100%; background:${color}; transition: width 0.3s ease;"></div>
                         </div>
