@@ -2918,17 +2918,51 @@
         </details>
 
         <!-- 6. 4-GEAR AUTOMATIC TRANSMISSION HUD -->
-        <div id="executionGearHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-bottom:5px; margin-top:auto;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <h3 style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Execution Gear</h3>
-                <span id="gearStageText" style="font-size:11px; font-weight:800; color:#fff;">Gear 1</span>
+        <div id="executionGearHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:14px 16px; margin-bottom:5px; margin-top:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px;">
+                <h3 style="margin:0; font-size:11px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.5px;">Execution Gear</h3>
+                <div style="text-align:right;">
+                    <div id="gearStageText" style="font-size:13px; font-weight:800; color:#fff;">Gear 1</div>
+                    <div id="gearNameText" style="font-size:10.5px; font-weight:800; color:#0ecb81; margin-top:3px;">(35%) Full Power</div>
+                </div>
             </div>
-            <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800; margin-bottom:3px;">
-                <span id="gearNameText" style="color:#0ecb81;">Full Power (98%)</span>
-                <span id="gearNextText" style="color:#8a8a9e;">Next: $2k</span>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; margin-bottom:16px; padding: 0 4px;">
+                <!-- Gear 1 -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                    <span style="font-size:9px; font-weight:800; color:#e1e3e6;">GEAR 1</span>
+                    <div id="dialG1" style="position:relative; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #0ecb81) var(--dial-pct, 35%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG1-val" style="position:relative; font-size:13px; font-weight:800; color:#fff;">35%</span>
+                    </div>
+                </div>
+                <!-- Gear 2 -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                    <span style="font-size:9px; font-weight:800; color:#e1e3e6;">GEAR 2</span>
+                    <div id="dialG2" style="position:relative; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG2-val" style="position:relative; font-size:13px; font-weight:800; color:#8a8a9e;">0%</span>
+                    </div>
+                </div>
+                <!-- Gear 3 -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                    <span style="font-size:9px; font-weight:800; color:#e1e3e6;">GEAR 3</span>
+                    <div id="dialG3" style="position:relative; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG3-val" style="position:relative; font-size:13px; font-weight:800; color:#8a8a9e;">0%</span>
+                    </div>
+                </div>
+                <!-- Gear 4 -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                    <span style="font-size:9px; font-weight:800; color:#e1e3e6;">GEAR 4</span>
+                    <div id="dialG4" style="position:relative; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG4-val" style="position:relative; font-size:13px; font-weight:800; color:#8a8a9e;">0%</span>
+                    </div>
+                </div>
             </div>
-            <div style="width:100%; height:6px; background:#262b36; border-radius:3px; overflow:hidden;">
-                <div id="gearProgressBar" style="width:0%; height:100%; background:#0ecb81; transition:width 0.5s ease;"></div>
+            <div style="text-align:center; font-size:10px; color:#8a8a9e; font-weight:600;">
+                Gear transition thresholds: $2k, $250k, $1M
             </div>
         </div>
 
@@ -5087,61 +5121,69 @@
                     if (textEl) textEl.innerText = `${p.metrics.regime.state || 'Room Temp'}`; 
                 }
 
-                // UPDATE EXECUTION GEAR HUD
+                // UPDATE EXECUTION GEAR HUD (4-DIAL VERSION)
                 let gearStageEl = document.getElementById('gearStageText');
                 let gearNameEl = document.getElementById('gearNameText');
-                let gearNextEl = document.getElementById('gearNextText');
-                let gearProgEl = document.getElementById('gearProgressBar');
                 if (gearStageEl) {
                     let eq = (p.metrics && p.metrics.total_equity !== undefined) ? parseFloat(p.metrics.total_equity) : (parseFloat(totEqVal) || 700);
                     let gear = 1;
-                    let nextThresh = 2000;
-                    let prevThresh = 0;
-                    let name = "Full Power (98%)";
+                    let name = "Full Power";
                     let accentCol = "#0ecb81";
                     
                     if (eq >= 1000000) {
                         gear = 4;
                         name = "Deep Water (QQQ/SPY)";
-                        prevThresh = 1000000;
-                        nextThresh = 1000000;
                         accentCol = "#b388ff";
                     } else if (eq >= 250000) {
                         gear = 3;
                         name = "Stealth Slicing (TWAP)";
-                        prevThresh = 250000;
-                        nextThresh = 1000000;
                         accentCol = "#38bdf8";
                     } else if (eq >= 2000) {
                         gear = 2;
-                        name = "Standard Margin (98%)";
-                        prevThresh = 2000;
-                        nextThresh = 250000;
+                        name = "Standard Margin";
                         accentCol = "#ffd400";
                     } else {
                         gear = 1;
-                        name = "Full Power (98%)";
-                        prevThresh = 0;
-                        nextThresh = 2000;
+                        name = "Full Power";
                         accentCol = "#0ecb81";
                     }
                     
+                    // Update 4 Dials
+                    let g1Pct = Math.max(0, Math.min(100, (eq / 2000) * 100));
+                    let g2Pct = eq > 2000 ? Math.max(0, Math.min(100, ((eq - 2000) / (250000 - 2000)) * 100)) : 0;
+                    let g3Pct = eq > 250000 ? Math.max(0, Math.min(100, ((eq - 250000) / (1000000 - 250000)) * 100)) : 0;
+                    let g4Pct = eq >= 1000000 ? 100 : 0;
+                    
+                    let activePct = 0;
+                    if (gear === 1) activePct = g1Pct;
+                    else if (gear === 2) activePct = g2Pct;
+                    else if (gear === 3) activePct = g3Pct;
+                    else if (gear === 4) activePct = 100;
+
                     gearStageEl.innerText = "Gear " + gear;
                     gearStageEl.style.color = (gear === 1) ? '#fff' : accentCol;
-                    gearNameEl.innerText = name;
-                    gearNameEl.style.color = accentCol;
-                    
-                    if (gear === 4) {
-                        gearNextEl.innerText = "MAX TIER";
-                        gearProgEl.style.width = "100%";
-                        gearProgEl.style.background = accentCol;
-                    } else {
-                        let fmtNext = (nextThresh >= 1000000) ? `$${nextThresh/1000000}M` : `$${nextThresh/1000}k`;
-                        gearNextEl.innerText = "Next: " + fmtNext;
-                        let pct = ((eq - prevThresh) / (nextThresh - prevThresh)) * 100.0;
-                        gearProgEl.style.width = Math.max(0, Math.min(100, pct)) + "%";
-                        gearProgEl.style.background = accentCol;
+                    if (gearNameEl) {
+                        gearNameEl.innerText = `(${Math.floor(activePct)}%) ${name}`;
+                        gearNameEl.style.color = accentCol;
                     }
+
+                    let dials = [
+                        { id: 'dialG1', pct: g1Pct, col: '#0ecb81' },
+                        { id: 'dialG2', pct: g2Pct, col: '#ffd400' },
+                        { id: 'dialG3', pct: g3Pct, col: '#38bdf8' },
+                        { id: 'dialG4', pct: g4Pct, col: '#b388ff' }
+                    ];
+
+                    dials.forEach(d => {
+                        let dialEl = document.getElementById(d.id);
+                        let valEl = document.getElementById(d.id + '-val');
+                        if (dialEl && valEl) {
+                            dialEl.style.setProperty('--dial-pct', d.pct + '%');
+                            dialEl.style.setProperty('--dial-color', (d.pct > 0 || gear >= parseInt(d.id.replace('dialG',''))) ? d.col : '#555e6d');
+                            valEl.innerText = Math.floor(d.pct) + '%';
+                            valEl.style.color = d.pct > 0 ? '#fff' : '#8a8a9e';
+                        }
+                    });
                 }
 
                 if (p.metrics) {
