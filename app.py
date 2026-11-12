@@ -228,7 +228,7 @@ def get_live_alpaca_account(api_key, secret_key, mode):
     except Exception:
         return None
 
-def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT", trail_pct=None):
+def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT", trail_pct=None, slices=1):
     """Sends live orders directly to Alpaca with automatic Paper/Live host detection."""
     if not api_key or not secret_key or not ticker or shares <= 0:
         print("[ALPACA REJECTED] Missing keys, ticker, or shares <= 0.")
@@ -287,20 +287,36 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
         except Exception as e:
             print(f"[ALPACA CLOSE ERROR]: {e}")
 
-    payload = json.dumps({
-        "symbol": ticker.upper(),
-        "qty": int(shares),
-        "side": action.lower(),
-        "type": "market",
-        "time_in_force": "day",
-        "client_order_id": clean_client_id
-    }).encode('utf-8')
+    num_slices = max(1, min(int(slices or 1), int(shares))) if action.lower() == 'buy' else 1
+    base_qty = int(shares) // num_slices
+    rem_qty = int(shares) % num_slices
+    slice_qtys = [base_qty + (1 if i < rem_qty else 0) for i in range(num_slices)]
 
-    req = urllib.request.Request(f"{base_url}/v2/orders", data=payload, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            res_data = json.loads(resp.read().decode('utf-8'))
-            print(f"[ALPACA SUCCESS] {action.upper()} {shares} {ticker} -> ID: {res_data.get('id')}")
+        res_data = None
+        for idx_s, s_qty in enumerate(slice_qtys):
+            if s_qty <= 0:
+                continue
+            slice_cid = clean_client_id if num_slices == 1 else f"{clean_client_id}_S{idx_s+1}of{num_slices}"
+            payload = json.dumps({
+                "symbol": ticker.upper(),
+                "qty": int(s_qty),
+                "side": action.lower(),
+                "type": "market",
+                "time_in_force": "day",
+                "client_order_id": slice_cid
+            }).encode('utf-8')
+            req = urllib.request.Request(f"{base_url}/v2/orders", data=payload, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                res_data = json.loads(resp.read().decode('utf-8'))
+                if num_slices > 1:
+                    print(f"[ALPACA TWAP SLICE {idx_s+1}/{num_slices}] {action.upper()} {s_qty} {ticker} -> ID: {res_data.get('id')}")
+                else:
+                    print(f"[ALPACA SUCCESS] {action.upper()} {s_qty} {ticker} -> ID: {res_data.get('id')}")
+            if num_slices > 1 and idx_s < len(slice_qtys) - 1:
+                time.sleep(3.0)
+
+        if res_data is not None:
             
             # Attach native trailing stop order on Alpaca exchange servers after BUY fills
             if action.lower() == 'buy' and trail_pct:
@@ -800,6 +816,7 @@ class PortfolioManager:
                 else:
                     t_pct = 0.50
 
+                order_slices = int((metadata or {}).get('slices', 1))
                 threading.Thread(
                     target=send_alpaca_order,
                     args=(
@@ -810,7 +827,8 @@ class PortfolioManager:
                         action,
                         shares,
                         current_profile,
-                        t_pct
+                        t_pct,
+                        order_slices
                     ),
                     daemon=True
                 ).start()
@@ -921,7 +939,7 @@ class MarketScoringEngine:
             'PSLV': 'Sprott Physical Silver Trust', 'CEF': 'Sprott Physical Gold & Silver', 'GLD': 'SPDR Gold Shares',
             'SGLN.L': 'iShares Physical Gold ETC', 'SSLN.L': 'iShares Physical Silver ETC', 'MSFT': 'Microsoft Corp',
             'AAPL': 'Apple Inc.', 'NVDA': 'NVIDIA Corp', 'TSLA': 'Tesla', 'AMZN': 'Amazon', 'META': 'Meta Platforms', 'GOOGL': 'Alphabet', 'AMD': 'Advanced Micro Devices',
-            'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ',
+            'NFLX': 'Netflix', 'PLTR': 'Palantir Tech', 'COIN': 'Coinbase', 'MSTR': 'MicroStrategy', 'TQQQ': 'ProShares UltraPro QQQ', 'QQQ': 'Invesco QQQ Trust', 'SPY': 'SPDR S&P 500 ETF Trust',
             'SOXL': 'Direxion Daily Semi Bull 3X', 'NVDL': 'GraniteShares 2x Long NVDA', 'SQQQ': 'ProShares UltraPro Short QQQ (3x Short)',
             '3SUS.L': 'WisdomTree US NASDAQ 3x Short', 'CONL': 'GraniteShares 2x Long COIN', 'MSTX': 'Defiance 2x Daily Long MSTR', 'BITX': '2x Bitcoin Strategy ETF',
             'RR.L': 'Rolls-Royce Holdings', 'SHEL.L': 'Shell plc', 'BP.L': 'BP plc', 'BARC.L': 'Barclays plc', 'LLOY.L': 'Lloyds Banking Group', 'AZN.L': 'AstraZeneca',
@@ -1293,6 +1311,11 @@ def process_auto_profile(prof_name, client_email=None):
                 tot_own += round(sh_c * (cp / div), 2)
         total_equity = cash_balance + tot_own
 
+        # GEAR 4 ($1,000,000+): Shift to ultra-deep liquidity ETFs (QQQ / SPY)
+        if total_equity >= 1000000:
+            held_symbols = [tr.get('ticker') for tr in hist if resolve_shares(tr.get('ticker')) > 0]
+            scan_list = list(dict.fromkeys(['QQQ', 'SPY'] + held_symbols))
+
         # DYNAMIC PERCENTAGE CIRCUIT BREAKER (SCALABLE TO ANY CAPITAL SIZE)
         now_uk = pd.Timestamp.now(tz='Europe/London')
         today_str = now_uk.strftime('%Y-%m-%d')
@@ -1463,8 +1486,32 @@ def process_auto_profile(prof_name, client_email=None):
                         buys.append({'t': t, 'cps': cps, 'p': cur, 's': st['score']})
             except Exception: pass
 
-        # Standard Single-Slot execution (1 asset held at a time)
+        # --- 4-GEAR AUTOMATIC TRANSMISSION ---
+        # Gear 1 ($0 - $2,000): Full Power (98% cash, 1 hold, 1 slice)
+        # Gear 2 ($2,000 - $250,000): Standard Margin Tier (98% cash, 1 hold, 1 slice)
+        # Gear 3 ($250,000 - $1,000,000): Stealth Slicing TWAP (96% alloc, 5 child slices; 2 holds above $500k)
+        # Gear 4 ($1,000,000+): Deep Water QQQ/SPY (96% alloc, 2 holds, 8 child slices)
         max_allowed_holds = 1
+        live_allocation_pct = 0.98
+        order_slices = 1
+
+        if total_equity >= 1000000:
+            max_allowed_holds = 2
+            live_allocation_pct = 0.96
+            order_slices = 8
+        elif total_equity >= 250000:
+            max_allowed_holds = 2 if total_equity >= 500000 else 1
+            live_allocation_pct = 0.96
+            order_slices = 5
+        elif total_equity >= 2000:
+            max_allowed_holds = 1
+            live_allocation_pct = 0.98
+            order_slices = 1
+        else:
+            max_allowed_holds = 1
+            live_allocation_pct = 0.98
+            order_slices = 1
+
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
@@ -1524,8 +1571,7 @@ def process_auto_profile(prof_name, client_email=None):
             valid_buys = [b for b in buys if time.time() >= ud.get('cooldowns', {}).get(b['t'], 0)]
             top_buys = valid_buys[:slots_available]
             if top_buys:
-                # 98% Focused Allocation per trade
-                live_allocation_pct = 0.98
+                # Gear-controlled allocation per trade
                 compound_capital = min(rem_cash, total_equity * live_allocation_pct)
                 per_stock_budget = compound_capital / len(top_buys)
 
@@ -1533,13 +1579,13 @@ def process_auto_profile(prof_name, client_email=None):
                     bs = int(per_stock_budget // b['cps'])
                     amt = round(bs * b['cps'], 2)
                     if bs > 0 and amt >= MIN_BUY_VALUE and amt <= rem_cash:
-                        dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt})
+                        dirs.append({'ticker': b['t'], 'action': 'BUY', 'shares': bs, 'price': b['p'], 'amount': amt, 'slices': order_slices})
 
         for d in dirs:
             if d['shares'] > 0:
                 portfolio_store.execute_trade(
                     d['ticker'], d['action'], d['shares'], d['price'], prof_name,
-                    metadata={'status': d.get('status', 'Manual/EOD'), 'reason': d.get('reason', ''), 'highest_price': d.get('highest_price', 0.0)},
+                    metadata={'status': d.get('status', 'Manual/EOD'), 'reason': d.get('reason', ''), 'highest_price': d.get('highest_price', 0.0), 'slices': d.get('slices', 1)},
                     client_email=client_email
                 )
                 # Stamp 15-minute cooldown on stop-outs to avoid whipsaw chop
@@ -1558,7 +1604,7 @@ def global_background_worker():
     while True:
         try:
             # 1. Single Centralized Market Ingestion: One fetch feeds all 20 users
-            bot_tickers = ['TQQQ', 'SOXL', 'SQQQ', 'QQQ']
+            bot_tickers = ['TQQQ', 'SOXL', 'SQQQ', 'QQQ', 'SPY']
             def prefetch(tk): 
                 fetch_yf_data(tk, "5d", "5m")
                 fetch_yf_data(tk, "1d", "1m")
@@ -2719,6 +2765,62 @@ def api_sync_alpaca_state():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/portfolio/reset', methods=['POST'])
+@login_required
+def api_portfolio_reset():
+    portfolio_store.reload()
+    data = request.get_json() or {}
+    username = data.get('username') or portfolio_store.active_username()
+    total_equity = float(data.get('total_equity', 5000.0))
+    today_pnl = float(data.get('today_pnl', 0.0))
+    pos_type = data.get('position_type', 'cash')
+    ticker = data.get('ticker', '').strip().upper()
+    shares = int(data.get('shares', 0))
+    buy_price = float(data.get('buy_price', 0.0))
+
+    is_client = (session.get('role') != 'admin')
+    client_name = session.get('user', 'Client')
+
+    if is_client:
+        c_store = portfolio_store.get_client_store(client_name)
+        users = c_store.setdefault('users', {})
+        ud = users.setdefault(username, portfolio_store.default_user_state(username))
+    else:
+        ud = portfolio_store.user_data(username)
+
+    ud['master_budget'] = total_equity
+    ud['initial_positions'] = {}
+    ud['holdings'] = {}
+    ud['history'] = []
+    ud['ratchet_locked'] = False
+    ud['manual_locked_day'] = None
+    ud['daily_peak_pct'] = 0.0
+
+    if pos_type == 'pos' and ticker and shares > 0 and buy_price > 0:
+        pos_amt = round(shares * buy_price, 2)
+        now_lon = pd.Timestamp.now(tz='Europe/London')
+        ud['initial_positions'][ticker] = {'shares': shares, 'manual_val': pos_amt}
+        ud['holdings'][ticker] = {'shares': shares, 'manual_val': pos_amt, 'high_water': buy_price}
+        ud['history'].append({
+            'id': str(int(time.time() * 1000)),
+            'ticker': ticker,
+            'trade_type': 'LONG',
+            'action': 'BUY',
+            'shares': shares,
+            'price': buy_price,
+            'amount': pos_amt,
+            'time': now_lon.strftime('%d %b %H:%M'),
+            'date_str': now_lon.strftime('%Y-%m-%d'),
+            'timestamp': int(now_lon.timestamp())
+        })
+
+    if is_client:
+        portfolio_store.save_client_store(client_name, c_store)
+    else:
+        portfolio_store.save_data(portfolio_store.data)
+
+    return jsonify({'status': 'ok'})
 
 @app.route('/api/portfolio/reset_all_profiles', methods=['POST'])
 def reset_all_profiles():

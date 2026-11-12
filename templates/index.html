@@ -87,6 +87,7 @@
         body.light-mode .drawer-details,
         body.light-mode .card,
         body.light-mode .lb-item,
+        body.light-mode #executionGearHud,
         body.light-mode #desktopAlpacaMonitor,
         body.light-mode .custom-select-trigger,
         body.light-mode select {
@@ -2361,11 +2362,19 @@
                         </div>
                     </div>
 
-                    <!-- 3-Line Legend -->
-                    <div style="display:flex; justify-content:flex-end; gap:14px; margin-bottom:8px; font-size:10px; font-weight:700;">
-                        <span style="color:#0ecb81; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:3px; background:#0ecb81;"></span> Actual</span>
-                        <span style="color:#38bdf8; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:2px; background:#38bdf8; border-top:1px dashed #38bdf8;"></span> <span id="legendRunRateLabel">Run-Rate (+1.29%/d)</span></span>
-                        <span style="color:#ffd400; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:2px; background:#ffd400; border-top:1px dotted #ffd400;"></span> <span id="legendTargetLabel">Target (1.0%/d)</span></span>
+                    <!-- 3-Line Legend + 4-Gear Segmented Rate Strip -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:10px; font-weight:700;">
+                        <div id="gearSegmentedRatesStrip" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:9.5px; color:#8a8a9e;">
+                            <span style="color:#0ecb81; font-weight:800;">G1 (<$2k): 1.00%/d</span> •
+                            <span style="color:#ffd400; font-weight:800;">G2 ($2k–$250k): 0.85%/d</span> •
+                            <span style="color:#38bdf8; font-weight:800;">G3 ($250k–$1M): 0.55%/d</span> •
+                            <span style="color:#b388ff; font-weight:800;">G4 ($1M+): 0.35%/d</span>
+                        </div>
+                        <div style="display:flex; gap:12px;">
+                            <span style="color:#0ecb81; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:3px; background:#0ecb81;"></span> Actual</span>
+                            <span style="color:#38bdf8; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:2px; background:#38bdf8; border-top:1px dashed #38bdf8;"></span> <span id="legendRunRateLabel">Run-Rate (G1: +1.29%/d)</span></span>
+                            <span style="color:#ffd400; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:2px; background:#ffd400; border-top:1px dotted #ffd400;"></span> <span id="legendTargetLabel">Target (G1: 1.0%/d)</span></span>
+                        </div>
                     </div>
 
                     <canvas id="compoundCanvas" width="680" height="240" style="width:100%; height:240px; display:block; border-radius:6px; background:#0f1115;"></canvas>
@@ -2907,7 +2916,23 @@
                 </div>
             </div>
         </details>
-        <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-top:auto; display:flex; flex-direction:column; gap:6px;">
+
+        <!-- 6. 4-GEAR AUTOMATIC TRANSMISSION HUD -->
+        <div id="executionGearHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-bottom:5px; margin-top:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h3 style="margin:0; font-size:10px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Execution Gear</h3>
+                <span id="gearStageText" style="font-size:11px; font-weight:800; color:#fff;">Gear 1</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800; margin-bottom:3px;">
+                <span id="gearNameText" style="color:#0ecb81;">Full Power (98%)</span>
+                <span id="gearNextText" style="color:#8a8a9e;">Next: $2k</span>
+            </div>
+            <div style="width:100%; height:6px; background:#262b36; border-radius:3px; overflow:hidden;">
+                <div id="gearProgressBar" style="width:0%; height:100%; background:#0ecb81; transition:width 0.5s ease;"></div>
+            </div>
+        </div>
+
+        <div id="desktopAlpacaMonitor" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:6px;">
                     <span class="status-dot offline" id="alpacaCardDot"></span>
@@ -5062,6 +5087,63 @@
                     if (textEl) textEl.innerText = `${p.metrics.regime.state || 'Room Temp'}`; 
                 }
 
+                // UPDATE EXECUTION GEAR HUD
+                let gearStageEl = document.getElementById('gearStageText');
+                let gearNameEl = document.getElementById('gearNameText');
+                let gearNextEl = document.getElementById('gearNextText');
+                let gearProgEl = document.getElementById('gearProgressBar');
+                if (gearStageEl) {
+                    let eq = (p.metrics && p.metrics.total_equity !== undefined) ? parseFloat(p.metrics.total_equity) : (parseFloat(totEqVal) || 700);
+                    let gear = 1;
+                    let nextThresh = 2000;
+                    let prevThresh = 0;
+                    let name = "Full Power (98%)";
+                    let accentCol = "#0ecb81";
+                    
+                    if (eq >= 1000000) {
+                        gear = 4;
+                        name = "Deep Water (QQQ/SPY)";
+                        prevThresh = 1000000;
+                        nextThresh = 1000000;
+                        accentCol = "#b388ff";
+                    } else if (eq >= 250000) {
+                        gear = 3;
+                        name = "Stealth Slicing (TWAP)";
+                        prevThresh = 250000;
+                        nextThresh = 1000000;
+                        accentCol = "#38bdf8";
+                    } else if (eq >= 2000) {
+                        gear = 2;
+                        name = "Standard Margin (98%)";
+                        prevThresh = 2000;
+                        nextThresh = 250000;
+                        accentCol = "#ffd400";
+                    } else {
+                        gear = 1;
+                        name = "Full Power (98%)";
+                        prevThresh = 0;
+                        nextThresh = 2000;
+                        accentCol = "#0ecb81";
+                    }
+                    
+                    gearStageEl.innerText = "Gear " + gear;
+                    gearStageEl.style.color = (gear === 1) ? '#fff' : accentCol;
+                    gearNameEl.innerText = name;
+                    gearNameEl.style.color = accentCol;
+                    
+                    if (gear === 4) {
+                        gearNextEl.innerText = "MAX TIER";
+                        gearProgEl.style.width = "100%";
+                        gearProgEl.style.background = accentCol;
+                    } else {
+                        let fmtNext = (nextThresh >= 1000000) ? `$${nextThresh/1000000}M` : `$${nextThresh/1000}k`;
+                        gearNextEl.innerText = "Next: " + fmtNext;
+                        let pct = ((eq - prevThresh) / (nextThresh - prevThresh)) * 100.0;
+                        gearProgEl.style.width = Math.max(0, Math.min(100, pct)) + "%";
+                        gearProgEl.style.background = accentCol;
+                    }
+                }
+
                 if (p.metrics) {
                     let healthHeader = document.getElementById('rotatorHealthHeader');
                     let healthStatus = document.getElementById('rotatorHealthStatus');
@@ -5894,13 +5976,55 @@
             }
         }
 
+        // 4-Gear Segmented Daily Compounding Simulator
+        // Gear 1 (< $2k): 1.00x base rate | Gear 2 ($2k-$250k): 0.85x | Gear 3 ($250k-$1M): 0.55x | Gear 4 ($1M+): 0.35x
+        function getGearMultiplier(equity) {
+            if (equity >= 1000000) return 0.35;
+            if (equity >= 250000) return 0.55;
+            if (equity >= 2000) return 0.85;
+            return 1.00;
+        }
+
+        function simulateGearSegmentedSeries(startCapital, baseDailyRate, totalDays) {
+            let val = Math.max(1.0, parseFloat(startCapital) || 700.0);
+            let dailySeries = [val];
+            let transitions = [];
+            let prevGear = val >= 1000000 ? 4 : (val >= 250000 ? 3 : (val >= 2000 ? 2 : 1));
+
+            for (let d = 1; d <= totalDays; d++) {
+                let mult = getGearMultiplier(val);
+                let effectiveRate = Math.max(-0.05, baseDailyRate * mult);
+                val = val * (1.0 + effectiveRate);
+                dailySeries.push(val);
+
+                let curGear = val >= 1000000 ? 4 : (val >= 250000 ? 3 : (val >= 2000 ? 2 : 1));
+                if (curGear > prevGear) {
+                    transitions.push({ day: d, gear: curGear, val: val });
+                    prevGear = curGear;
+                }
+            }
+            return { dailySeries, transitions };
+        }
+
         function updateMilestoneBox(rate, customCap) {
             let activeProf = window._selectedInsightProfile || 'Vector Hybrid';
             let lb = (latestLeaderboardData || []).find(l => l.user === activeProf) || {};
             let budget = customCap !== undefined ? customCap : (window._customCapital !== undefined ? window._customCapital : (lb.budget || 700.0));
-            let r = (rate || 1.0) / 100.0;
+            let basePct = parseFloat(rate) || 1.0;
+            let r = basePct / 100.0;
+
             let hdr = document.getElementById('milestoneBoxHeader');
-            if (hdr) hdr.innerText = `5-Year Milestone Compounding Curve (${(rate || 1.0).toFixed(1)}% / Day @ $${Math.round(budget).toLocaleString()} Baseline)`;
+            if (hdr) hdr.innerText = `5-Year Gear-Segmented Compounding Curve (G1: ${basePct.toFixed(1)}%/d → G4: ${(basePct * 0.35).toFixed(2)}%/d @ $${Math.round(budget).toLocaleString()})`;
+
+            let strip = document.getElementById('gearSegmentedRatesStrip');
+            if (strip) {
+                strip.innerHTML = `
+                    <span style="color:#0ecb81; font-weight:800;">G1 (<$2k): ${basePct.toFixed(2)}%/d</span> •
+                    <span style="color:#ffd400; font-weight:800;">G2 ($2k–$250k): ${(basePct * 0.85).toFixed(2)}%/d</span> •
+                    <span style="color:#38bdf8; font-weight:800;">G3 ($250k–$1M): ${(basePct * 0.55).toFixed(2)}%/d</span> •
+                    <span style="color:#b388ff; font-weight:800;">G4 ($1M+): ${(basePct * 0.35).toFixed(2)}%/d</span>
+                `;
+            }
 
             function fmt(val, cur = '$') {
                 if (val >= 1e9) return `${cur}${(val/1e9).toFixed(1)}B`;
@@ -5911,10 +6035,11 @@
             }
 
             let gbpRate = window._usdGbpRate || 0.7499;
+            let sim = simulateGearSegmentedSeries(budget, r, 1260);
 
             for (let yr = 1; yr <= 5; yr++) {
                 let d = yr * 252;
-                let v = budget * Math.pow(1 + r, d);
+                let v = sim.dailySeries[d] || budget;
                 let v_gbp = v * gbpRate;
                 let el = document.getElementById(`mStoneY${yr}`);
                 let elGbp = document.getElementById(`mStoneY${yr}_gbp`);
@@ -6024,7 +6149,7 @@
             }
         }
 
-        function drawCompoundingCanvas(userKey) {
+        ffunction drawCompoundingCanvas(userKey) {
             let canvas = document.getElementById('compoundCanvas');
             if (!canvas) return;
             let ctx = canvas.getContext('2d');
@@ -6042,9 +6167,9 @@
             let shortName = getShortProfileName(userKey);
             let horizon = window._selectedHorizon || '6M';
             let titleEl = document.getElementById('compoundChartTitle');
-            if (titleEl) titleEl.innerText = `${shortName}: ${horizon} Trajectory vs Targets`;
+            if (titleEl) titleEl.innerText = `${shortName}: ${horizon} Segmented Gear Trajectory`;
 
-            let padL = 60, padR = 30, padT = 25, padB = 30;
+            let padL = 60, padR = 30, padT = 28, padB = 30;
             let graphW = w - padL - padR;
             let graphH = h - padT - padB;
 
@@ -6059,42 +6184,47 @@
             // 2. Clamp Minimum Daily Rate
             if (r_avg < -0.05) r_avg = -0.05;
 
-            // Update legend labels
+            // Update legend labels with Gear 1 base rate
             let rRateEl = document.getElementById('legendRunRateLabel');
             let tgtEl = document.getElementById('legendTargetLabel');
-            if (rRateEl) rRateEl.innerText = `Run-Rate (${r_avg >= 0 ? '+' : ''}${(r_avg * 100).toFixed(2)}%/d)`;
-            if (tgtEl) tgtEl.innerText = `Target (${window._customTargetRate.toFixed(1)}%/d)`;
+            if (rRateEl) rRateEl.innerText = `Run-Rate (G1: ${r_avg >= 0 ? '+' : ''}${(r_avg * 100).toFixed(2)}%/d)`;
+            if (tgtEl) tgtEl.innerText = `Target (G1: ${window._customTargetRate.toFixed(1)}%/d)`;
 
-            // 3. Generate Curves
+            // 3. Generate Gear-Segmented Curves day-by-day
             let targetRate = (window._customTargetRate || 1.0) / 100.0;
-            let steps = 40;
+            let targetSim = simulateGearSegmentedSeries(budget, targetRate, totalHorizonDays);
+            let targetPoints = targetSim.dailySeries.map((val, d) => ({ day: d, val: val }));
 
-            // Target Curve: Starts at Day 0 (Creation Budget) and compounds forward
-            let targetPoints = [];
-            for (let i = 0; i <= steps; i++) {
-                let d = (i / steps) * totalHorizonDays;
-                targetPoints.push({ day: d, val: budget * Math.pow(1 + targetRate, d) });
-            }
-
-            // Projected Curve: Follows inception path to Today, then projects future compounding
+            // Projected Curve: Historical path up to daysActive, then segmented gear compounding forward
+            let futureDays = Math.max(0, totalHorizonDays - daysActive);
+            let futureSim = simulateGearSegmentedSeries(currentEq, r_avg, futureDays);
             let projectedPoints = [];
-            for (let i = 0; i <= steps; i++) {
-                let d = (i / steps) * totalHorizonDays;
-                let val = d <= daysActive ? (budget * Math.pow(1 + r_avg, d)) : (currentEq * Math.pow(1 + r_avg, d - daysActive));
-                projectedPoints.push({ day: d, val: val });
+            for (let d = 0; d <= totalHorizonDays; d++) {
+                if (d <= daysActive) {
+                    let ratio = daysActive > 0 ? (d / daysActive) : 1;
+                    let histVal = budget * Math.pow(currentEq / budget, ratio);
+                    projectedPoints.push({ day: d, val: histVal });
+                } else {
+                    projectedPoints.push({ day: d, val: futureSim.dailySeries[d - daysActive] });
+                }
             }
 
-            // Actual Points: Strictly starts from creation Day 0 ($700) to Today ($721.25)
+            // Actual Points: Strictly starts from creation Day 0 ($700) to Today
             let actualPoints = [
                 { day: 0, val: budget },
-                { day: daysActive, val: currentEq }
+                { day: Math.min(daysActive, totalHorizonDays), val: currentEq }
             ];
 
             // 4. Scaling (Preserves exponential curve without crushing initial data)
-            let maxVal = Math.max(targetPoints[targetPoints.length - 1].val, projectedPoints[projectedPoints.length - 1].val);
+            let maxVal = Math.max(
+                targetPoints[targetPoints.length - 1].val,
+                projectedPoints[projectedPoints.length - 1].val,
+                currentEq * 1.05
+            );
             let minVal = Math.min(budget, currentEq) * 0.95;
+            if (maxVal <= minVal) maxVal = minVal * 1.1;
 
-            let powerExp = (horizon === '5Y') ? 0.35 : (horizon === '1Y' ? 0.60 : 1.0);
+            let powerExp = (horizon === '5Y') ? 0.42 : (horizon === '1Y' ? 0.65 : 1.0);
 
             function getY(val) {
                 let vClamped = Math.max(minVal, val);
@@ -6106,8 +6236,61 @@
                 return padL + (d / totalHorizonDays) * graphW;
             }
 
-            // Typography matching terminal software
             const appFont = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+            // 5. Draw 4-Gear Segmented Background Zones & Shift Markers
+            const gearMeta = {
+                1: { label: 'G1 • 98% Full', color: 'rgba(14, 203, 129, 0.06)', stroke: '#0ecb81' },
+                2: { label: 'G2 • $2k Margin', color: 'rgba(255, 212, 0, 0.06)', stroke: '#ffd400' },
+                3: { label: 'G3 • $250k TWAP', color: 'rgba(56, 189, 248, 0.07)', stroke: '#38bdf8' },
+                4: { label: 'G4 • $1M+ QQQ/SPY', color: 'rgba(179, 136, 255, 0.08)', stroke: '#b388ff' }
+            };
+
+            let startGear = budget >= 1000000 ? 4 : (budget >= 250000 ? 3 : (budget >= 2000 ? 2 : 1));
+            let segments = [];
+            let segStartDay = 0;
+            let activeGear = startGear;
+
+            targetSim.transitions.forEach(tr => {
+                if (tr.day > segStartDay && tr.day <= totalHorizonDays) {
+                    segments.push({ startDay: segStartDay, endDay: tr.day, gear: activeGear, shiftVal: tr.val });
+                    segStartDay = tr.day;
+                    activeGear = tr.gear;
+                }
+            });
+            segments.push({ startDay: segStartDay, endDay: totalHorizonDays, gear: activeGear, shiftVal: null });
+
+            segments.forEach((seg, idx) => {
+                let x1 = getX(seg.startDay);
+                let x2 = getX(seg.endDay);
+                let segW = x2 - x1;
+                let meta = gearMeta[seg.gear] || gearMeta[1];
+
+                ctx.fillStyle = meta.color;
+                ctx.fillRect(x1, padT, segW, graphH);
+
+                if (segW >= 46) {
+                    ctx.fillStyle = meta.stroke;
+                    ctx.font = `bold 9px ${appFont}`;
+                    ctx.fillText(meta.label, x1 + 6, padT + 12);
+                } else if (segW >= 22) {
+                    ctx.fillStyle = meta.stroke;
+                    ctx.font = `bold 9px ${appFont}`;
+                    ctx.fillText(`G${seg.gear}`, x1 + 4, padT + 12);
+                }
+
+                if (idx > 0) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.setLineDash([2, 3]);
+                    ctx.strokeStyle = meta.stroke;
+                    ctx.lineWidth = 1;
+                    ctx.moveTo(x1, padT);
+                    ctx.lineTo(x1, padT + graphH);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            });
 
             // Grid Lines & Y-Axis Labels
             ctx.strokeStyle = '#202531';
