@@ -59,15 +59,25 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         try:
             df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty:
+                df = df.sort_index()
+                # Reject stale intraday responses (>15 mins old) from lagging Yahoo nodes
+                if interval in ['1m', '2m', '5m', '15m']:
+                    last_ts = df.index[-1]
+                    if last_ts.tzinfo is None:
+                        last_ts = last_ts.tz_localize('UTC')
+                    if (now - last_ts.timestamp()) > 900 and cache_key in YF_CACHE:
+                        c_time, c_df = YF_CACHE[cache_key]
+                        if not c_df.empty and (now - c_time) < 60:
+                            return c_df.copy()
                 YF_CACHE[cache_key] = (now, df)
                 return df.copy()
         except Exception:
             pass
 
-        # STALE CACHE FALLBACK: If Yahoo throttles the server IP, never return empty data
+        # STALE CACHE FALLBACK: Only reuse recent cache (<60s) to prevent phantom stale fills
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
-            if not df.empty:
+            if not df.empty and (now - cached_time) < 60:
                 return df.copy()
 
         return pd.DataFrame()
@@ -3967,16 +3977,23 @@ def get_broker_status():
                         has_queued_orders = True
             except Exception: pass
 
-            # Audit desync against all active bots
+            # Audit desync across ALL profiles in the active account (admin or client)
             claimed_symbols = set()
-            for u in portfolio_store.data.get('users', {}).values():
-                if isinstance(u, dict):
-                    for tr in u.get('history', []):
+            audit_users = (c_store.get('users', {}) if is_client else portfolio_store.data.get('users', {})) or {}
+            for u_name, u_data in audit_users.items():
+                if isinstance(u_data, dict):
+                    u_init = u_data.get('initial_positions') or {}
+                    u_hist = u_data.get('history') or []
+                    for tr in u_hist:
                         tk = tr.get('ticker')
-                        if tk and portfolio_store.get_shares(tk) > 0:
-                            claimed_symbols.add(tk)
+                        if not tk or tk in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']:
+                            continue
+                        i_sh = int((u_init.get(tk) or {}).get('shares') or 0)
+                        n_sh = sum(int(x.get('shares') or 0) if x.get('action') == 'BUY' else -int(x.get('shares') or 0) for x in u_hist if x.get('ticker') == tk)
+                        if max(0, i_sh + n_sh) > 0:
+                            claimed_symbols.add(tk.upper())
 
-            has_desync = any(p['symbol'] not in claimed_symbols for p in live_positions)
+            has_desync = any(p['symbol'].upper() not in claimed_symbols for p in live_positions)
 
             return jsonify({
                 'connected': True,
