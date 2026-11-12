@@ -18,6 +18,9 @@ ADMIN_ALIAS = "ian"
 ADMIN_PW = "ild81!MKH"
 ADMIN_HASH = generate_password_hash(ADMIN_PW)
 
+# The account used to feed live performance stats into the public Strategy Wizard
+PAPER_STATS_ACCOUNT = "ian_paper@gmail.com"
+
 def is_admin_session():
     u = (session.get('email') or session.get('user') or '').strip().lower()
     return (session.get('role') == 'admin') or (u in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian'])
@@ -4696,6 +4699,116 @@ def handle_broker_disconnect():
         portfolio_store.data['broker'] = {'paused': False, 'allocations': {}, 'connected': False, 'mode': 'paper', 'api_key': '', 'secret_key': ''}
         portfolio_store.save_data(portfolio_store.data)
         return jsonify({'status': 'ok'})
+
+@app.route('/api/account/update_email', methods=['POST'])
+@login_required
+def api_update_email():
+    if session.get('role') == 'admin':
+        return jsonify({'status': 'error', 'message': 'Admin email is hardcoded and cannot be changed here.'}), 400
+    data = request.get_json() or {}
+    new_email = data.get('new_email', '').strip().lower()
+    old_email = session.get('user', '').lower()
+    if not new_email or new_email == old_email:
+        return jsonify({'status': 'error', 'message': 'Invalid or unchanged email.'}), 400
+    if portfolio_store.client:
+        accounts_col = portfolio_store.client['stock_terminal']['accounts']
+        if accounts_col.find_one({"username": new_email}):
+            return jsonify({'status': 'error', 'message': 'Email already in use.'}), 400
+        old_doc = accounts_col.find_one({"username": old_email})
+        if old_doc:
+            new_doc = dict(old_doc)
+            new_doc['_id'] = f"client_{new_email}"
+            new_doc['username'] = new_email
+            if 'portfolio' in new_doc and isinstance(new_doc['portfolio'], dict):
+                new_doc['portfolio']['username'] = new_email
+            accounts_col.insert_one(new_doc)
+            accounts_col.delete_one({"username": old_email})
+            session['user'] = new_email
+            session['email'] = new_email
+            return jsonify({'status': 'ok'})
+    return jsonify({'status': 'error', 'message': 'Database error.'}), 500
+
+@app.route('/api/account/update_password', methods=['POST'])
+@login_required
+def api_update_password():
+    if session.get('role') == 'admin':
+        return jsonify({'status': 'error', 'message': 'Admin password cannot be changed here.'}), 400
+    data = request.get_json() or {}
+    old_pw = data.get('old_password', '')
+    new_pw = data.get('new_password', '')
+    if not old_pw or not new_pw:
+        return jsonify({'status': 'error', 'message': 'Missing fields.'}), 400
+    curr_user = session.get('user')
+    if portfolio_store.client:
+        accounts_col = portfolio_store.client['stock_terminal']['accounts']
+        doc = accounts_col.find_one({"username": curr_user})
+        if doc and check_password_hash(doc.get('password_hash', ''), old_pw):
+            accounts_col.update_one(
+                {"username": curr_user},
+                {"$set": {
+                    "password_hash": generate_password_hash(new_pw),
+                    "plain_password": new_pw
+                }}
+            )
+            return jsonify({'status': 'ok'})
+        return jsonify({'status': 'error', 'message': 'Incorrect old password.'}), 401
+    return jsonify({'status': 'error', 'message': 'Database error.'}), 500
+
+@app.route('/api/strategy_stats', methods=['GET'])
+@login_required
+def get_strategy_stats():
+    default_stats = {
+        'Vector Hybrid': {'win_rate': '70.0%', 'profit_factor': '4.55', 'daily_pace': '+1.31%'},
+        'Dual Axis': {'win_rate': '50.0%', 'profit_factor': '2.07', 'daily_pace': '+0.88%'},
+        'Velocity Pulse': {'win_rate': '60.0%', 'profit_factor': '1.20', 'daily_pace': '+1.20%'}
+    }
+    if not portfolio_store.client:
+        return jsonify(default_stats)
+        
+    doc = portfolio_store.client['stock_terminal']['accounts'].find_one({"username": PAPER_STATS_ACCOUNT})
+    if not doc or 'portfolio' not in doc or 'users' not in doc['portfolio']:
+        return jsonify(default_stats)
+        
+    users_dict = doc['portfolio']['users']
+    stats_out = {}
+    for strat_name in ['Vector Hybrid', 'Dual Axis', 'Velocity Pulse']:
+        prof_key = next((k for k in users_dict.keys() if strat_name.lower() in k.lower()), None)
+        if not prof_key:
+            stats_out[strat_name] = default_stats[strat_name]
+            continue
+        ud = users_dict[prof_key]
+        hist = ud.get('history', [])
+        budget = float(ud.get('master_budget', 500.0))
+        
+        buy_q = []
+        wins, losses, win_val, loss_val = 0, 0, 0.0, 0.0
+        for t in reversed(hist):
+            if t.get('ticker') in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']: continue
+            if t.get('action') == 'BUY':
+                buy_q.append(t)
+            elif t.get('action') == 'SELL' and buy_q:
+                b = buy_q.pop(0)
+                diff = round((float(t.get('price', 1)) - float(b.get('price', 1))) * int(t.get('shares', 1)), 2)
+                if diff >= 0:
+                    wins += 1; win_val += diff
+                else:
+                    losses += 1; loss_val += abs(diff)
+        
+        tot_trades = wins + losses
+        wr = (wins / tot_trades * 100.0) if tot_trades > 0 else 0.0
+        pf = (win_val / loss_val) if loss_val > 0 else (win_val if win_val > 0 else 1.0)
+        
+        trade_dates = list(set([tr.get('date_str') for tr in hist if tr.get('date_str')]))
+        days_active = max(1, len(trade_dates))
+        net_gain = win_val - loss_val
+        daily_pct = ((net_gain / budget) * 100.0) / days_active if budget > 0 else 0.0
+        
+        stats_out[strat_name] = {
+            'win_rate': f"{wr:.1f}%",
+            'profit_factor': f"{pf:.2f}",
+            'daily_pace': f"{'+' if daily_pct >= 0 else ''}{daily_pct:.2f}%"
+        }
+    return jsonify(stats_out)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8095))

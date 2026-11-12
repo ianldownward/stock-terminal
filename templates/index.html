@@ -1944,9 +1944,9 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">4.55 (Elite)</b></div>
-                                <div>• Win Rate: <b style="color:#fff;">7 out of 10 wins (70.0%)</b></div>
-                                <div>• Daily Pace: <b style="color:#0ecb81;">+1.31% / Day Target</b></div>
+                                <div>• Profit Factor: <b id="wiz-pf-Vector" style="color:#0ecb81; font-size:12px;">4.55</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-Vector" style="color:#fff;">70.0%</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-Vector" style="color:#0ecb81;">+1.31%</b></div>
                                 <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
@@ -1966,9 +1966,9 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">2.07 (Strong)</b></div>
-                                <div>• Win Rate: <b style="color:#fff;">5 out of 10 wins (50.0%)</b></div>
-                                <div>• Daily Pace: <b style="color:#0ecb81;">+0.88% / Day Target</b></div>
+                                <div>• Profit Factor: <b id="wiz-pf-Dual" style="color:#0ecb81; font-size:12px;">2.07</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-Dual" style="color:#fff;">50.0%</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-Dual" style="color:#0ecb81;">+0.88%</b></div>
                                 <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
@@ -1988,9 +1988,9 @@
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Profit Factor: <b style="color:#0ecb81; font-size:12px;">1.20 (Quick Scalp)</b></div>
-                                <div>• Win Rate: <b style="color:#fff;">6 out of 10 wins (60.0%)</b></div>
-                                <div>• Daily Pace: <b style="color:#0ecb81;">+1.20% / Burst Target</b></div>
+                                <div>• Profit Factor: <b id="wiz-pf-Pulse" style="color:#0ecb81; font-size:12px;">1.20</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-Pulse" style="color:#fff;">60.0%</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-Pulse" style="color:#0ecb81;">+1.20%</b></div>
                                 <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
@@ -2052,6 +2052,37 @@
                     <button class="btn-control" onclick="backToWizardStep1()">Back</button>
                     <button class="btn-control" style="background:#ffd400; color:#000; border:none; padding:8px 18px; font-weight:800;" onclick="submitWizardLaunch()">Confirm & Launch</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MY ACCOUNT MODAL (EMAIL & PASSWORD) -->
+    <div class="modal-overlay" id="accountModal" style="display:none; z-index:1200;">
+        <div class="modal" style="width: 440px; max-width: 95vw;">
+            <h2>
+                <span>My Account</span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeAccountModal()">✕</button>
+            </h2>
+            <div style="margin-top:14px; display:flex; flex-direction:column; gap:16px;">
+                
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <span style="font-size:11px; color:#ffd400; font-weight:800; text-transform:uppercase;">Change Email</span>
+                    <div style="margin-top:10px;">
+                        <input type="email" id="accNewEmail" placeholder="Enter new email address" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:13px;">
+                    </div>
+                    <button class="btn-control" style="width:100%; margin-top:8px; justify-content:center; border-color:#262b36; color:#8a8a9e;" onclick="submitEmailChange()">Update Email</button>
+                </div>
+
+                <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:12px;">
+                    <span style="font-size:11px; color:#ffd400; font-weight:800; text-transform:uppercase;">Change Password</span>
+                    <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
+                        <input type="password" id="accOldPw" placeholder="Current Password" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:13px;">
+                        <input type="password" id="accNewPw" placeholder="New Password" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:13px;">
+                        <input type="password" id="accConfirmPw" placeholder="Confirm New Password" style="width:100%; background:#0f1115; border:1px solid #262b36; color:#fff; padding:10px; border-radius:6px; font-size:13px;">
+                    </div>
+                    <button class="btn-control" style="width:100%; margin-top:8px; justify-content:center; border-color:#262b36; color:#8a8a9e;" onclick="submitPasswordChange()">Update Password</button>
+                </div>
+
             </div>
         </div>
     </div>
@@ -2539,6 +2570,10 @@
                         <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
                     </svg>
                 </button>
+                <!-- My Account -->
+                <button class="header-icon-btn" onclick="openAccountModal()" title="My Account">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                </button>
                 <!-- Settings -->
                 <button class="header-icon-btn" onclick="openSettingsModal()" title="Settings">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2611,6 +2646,10 @@
 
             <!-- Mobile Burger Dropdown Menu -->
             <div id="mobileMenuDropdown">
+                <button class="mobile-menu-item" onclick="openAccountModal(); toggleMobileBurgerMenu();">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <span>My Account</span>
+                </button>
                 <button class="mobile-menu-item" onclick="openCompoundingModal(); toggleMobileBurgerMenu();">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>
                     <span>Growth & Compounding</span>
@@ -4288,13 +4327,80 @@
 
         let latestLeaderboardData = [];
 
+        function openAccountModal() {
+            let m = document.getElementById('accountModal');
+            if (m) m.style.display = 'flex';
+        }
+
+        function closeAccountModal() {
+            let m = document.getElementById('accountModal');
+            if (m) m.style.display = 'none';
+        }
+
+        async function submitEmailChange() {
+            let newEmail = document.getElementById('accNewEmail').value.trim();
+            if (!newEmail) return alert("Enter a new email.");
+            let res = await fetch('/api/account/update_email', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({new_email: newEmail})
+            });
+            let d = await res.json();
+            if (d.status === 'ok') {
+                alert("Email updated successfully.");
+                window.location.reload();
+            } else {
+                alert(d.message);
+            }
+        }
+
+        async function submitPasswordChange() {
+            let oldPw = document.getElementById('accOldPw').value;
+            let newPw = document.getElementById('accNewPw').value;
+            let confirmPw = document.getElementById('accConfirmPw').value;
+            if (!oldPw || !newPw || !confirmPw) return alert("Fill all password fields.");
+            if (newPw !== confirmPw) return alert("New passwords do not match.");
+            
+            let res = await fetch('/api/account/update_password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({old_password: oldPw, new_password: newPw})
+            });
+            let d = await res.json();
+            if (d.status === 'ok') {
+                alert("Password updated successfully.");
+                document.getElementById('accOldPw').value = '';
+                document.getElementById('accNewPw').value = '';
+                document.getElementById('accConfirmPw').value = '';
+                closeAccountModal();
+            } else {
+                alert(d.message);
+            }
+        }
+
         let selectedWizardMethod = 'Vector Hybrid';
 
-        function openStrategyWizard() {
+        async function openStrategyWizard() {
             closeSettingsModal();
             selectWizardStrategy('Vector Hybrid');
             let m = document.getElementById('strategyWizardModal');
             if (m) m.style.display = 'flex';
+            
+            try {
+                let res = await fetch('/api/strategy_stats');
+                let stats = await res.json();
+                ['Vector Hybrid', 'Dual Axis', 'Velocity Pulse'].forEach(strat => {
+                    let sId = strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0];
+                    let wrEl = document.getElementById(`wiz-wr-${sId}`);
+                    let pfEl = document.getElementById(`wiz-pf-${sId}`);
+                    let dpEl = document.getElementById(`wiz-dp-${sId}`);
+                    if (stats[strat]) {
+                        if (wrEl) wrEl.innerText = stats[strat].win_rate;
+                        if (pfEl) pfEl.innerText = stats[strat].profit_factor;
+                        if (dpEl) dpEl.innerText = stats[strat].daily_pace;
+                    }
+                });
+            } catch(e) {}
         }
 
         function closeStrategyWizard() {

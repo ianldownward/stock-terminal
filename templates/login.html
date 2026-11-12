@@ -154,6 +154,10 @@
                     <label>Password</label>
                     <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
                 </div>
+                <div class="input-group" id="confirmPasswordGroup" style="display:none;">
+                    <label>Confirm Password</label>
+                    <input type="password" id="confirmPassword" placeholder="••••••••" autocomplete="new-password">
+                </div>
                 <button type="submit" class="btn-submit" id="submitBtn">Sign In</button>
             </form>
         </div>
@@ -163,9 +167,15 @@
         let mode = 'login';
         function setMode(m) {
             mode = m;
-            document.getElementById('loginTab').classList.toggle('active', m === 'login');
-            document.getElementById('regTab').classList.toggle('active', m === 'register');
-            document.getElementById('submitBtn').innerText = (m === 'login') ? 'Sign In' : 'Create Account';
+            const isReg = (m === 'register');
+            document.getElementById('loginTab').classList.toggle('active', !isReg);
+            document.getElementById('regTab').classList.toggle('active', isReg);
+            document.getElementById('submitBtn').innerText = isReg ? 'Create Account' : 'Sign In';
+            document.getElementById('confirmPasswordGroup').style.display = isReg ? 'block' : 'none';
+            const cpInput = document.getElementById('confirmPassword');
+            cpInput.required = isReg;
+            cpInput.value = '';
+            document.getElementById('password').autocomplete = isReg ? 'new-password' : 'current-password';
             document.getElementById('errMsg').style.display = 'none';
         }
 
@@ -175,6 +185,15 @@
             const p = document.getElementById('password').value;
             const errDiv = document.getElementById('errMsg');
             errDiv.style.display = 'none';
+
+            if (mode === 'register') {
+                const cp = document.getElementById('confirmPassword').value;
+                if (p !== cp) {
+                    errDiv.innerText = 'Passwords do not match.';
+                    errDiv.style.display = 'block';
+                    return;
+                }
+            }
 
             const endpoint = (mode === 'login') ? '/api/auth/login' : '/api/auth/register';
             try {
