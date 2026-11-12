@@ -1331,6 +1331,11 @@ def process_auto_profile(prof_name, client_email=None):
         net_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
         cash_start = cash_balance - net_cash_today
 
+        b_cfg_top = (c_store.get('broker') or {}) if is_client else (portfolio_store.data.get('broker') or {})
+        live_acc_top = None
+        if b_cfg_top.get('api_key') and b_cfg_top.get('secret_key'):
+            live_acc_top = get_live_alpaca_account(str(b_cfg_top['api_key']).strip(), str(b_cfg_top['secret_key']).strip(), b_cfg_top.get('mode', 'paper'))
+
         tot_own = 0.0
         peak_tot_own = 0.0
         equity_start = 0.0
@@ -1338,21 +1343,25 @@ def process_auto_profile(prof_name, client_email=None):
         for h_tk in held_tks_now:
             sh_c = resolve_shares(h_tk)
             cur_df = fetch_yf_data(h_tk, "1d", "1m")
-            if not cur_df.empty:
-                cp = float(cur_df['Close'].iloc[-1])
+            cp = float(cur_df['Close'].iloc[-1]) if not cur_df.empty else 0.0
+            if sh_c > 0 and live_acc_top and isinstance(live_acc_top.get('positions'), list):
+                alp_cp_top = next((float(p.get('current_price') or 0) for p in live_acc_top['positions'] if (p.get('symbol') or '').upper() == h_tk), 0.0)
+                if alp_cp_top > 0:
+                    cp = alp_cp_top
+            if cp > 0:
                 div = 100.0 if h_tk.endswith('.L') and cp > 100 else 1.0
                 tot_own += round(sh_c * (cp / div), 2)
 
-                # Highest price reached while holding this position today (captures intra-bar spikes above 2.5%)
+                # Highest price reached AFTER entry timestamp (captures intra-bar spikes above 2.5% without pre-buy lookback)
                 peak_cp = cp
                 if sh_c > 0:
                     stored_hw = float((ud.get('holdings', {}).get(h_tk) or {}).get('high_water') or 0.0)
                     t_buys_h = [tr for tr in hist if tr.get('ticker') == h_tk and tr.get('action') == 'BUY']
                     buy_ts_h = int(t_buys_h[0].get('timestamp') or 0) if t_buys_h else 0
                     candle_hi = cp
-                    if 'High' in cur_df.columns and buy_ts_h > 0:
+                    if not cur_df.empty and 'High' in cur_df.columns and buy_ts_h > 0:
                         try:
-                            post_df_h = cur_df[cur_df.index.astype('int64') // 10**9 >= (buy_ts_h - 60)]
+                            post_df_h = cur_df[cur_df.index.astype('int64') // 10**9 >= buy_ts_h]
                             if not post_df_h.empty:
                                 candle_hi = float(post_df_h['High'].max())
                         except Exception:
@@ -1515,9 +1524,11 @@ def process_auto_profile(prof_name, client_email=None):
                     if t_buys:
                         avg_buy_p = t_buys[0].get('price', 0.0)
                         buy_ts = t_buys[0].get('timestamp', 0)
-                        if not df.empty and 'High' in df.columns:
+                        df_1m_hw = fetch_yf_data(t, "1d", "1m")
+                        hw_src = df_1m_hw if (df_1m_hw is not None and not df_1m_hw.empty) else df
+                        if not hw_src.empty and 'High' in hw_src.columns:
                             try:
-                                post_buy_df = df[df.index.astype('int64') // 10**9 >= (buy_ts - 300)]
+                                post_buy_df = hw_src[hw_src.index.astype('int64') // 10**9 >= buy_ts]
                                 candle_high = float(post_buy_df['High'].max()) if not post_buy_df.empty else cur
                             except Exception:
                                 candle_high = cur
@@ -3011,7 +3022,7 @@ def api_sync_alpaca_state():
         return jsonify({'status': 'error', 'message': 'No Alpaca keys found.'}), 400
 
     base_url = "https://paper-api.alpaca.markets" if b_mode == 'paper' else "https://api.alpaca.markets"
-    headers = {"APCA-API-KEY-ID": api_k, "APCA-API-SECRET-KEY": sec_k}
+    headers = {"APCA-API-KEY-ID": api_k, "APCA-API-SECRET-KEY": sec_k, "User-Agent": "IDCTradingTerminal/1.0"}
 
     try:
         # 1. Fetch exact account equity & start-of-day equity directly from Alpaca
@@ -3742,10 +3753,11 @@ def get_data():
             if t_buys: 
                 avg_buy_p = float(t_buys[0].get('price') or 0.0)
                 buy_ts = int(t_buys[0].get('timestamp') or 0)
-                df_check = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
+                df_1m_chk = fetch_yf_data(t, "1d", "1m")
+                df_check = df_1m_chk if (df_1m_chk is not None and not df_1m_chk.empty) else (pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m"))
                 if df_check is not None and not df_check.empty and 'High' in df_check.columns:
                     try:
-                        post_buy_df = df_check[df_check.index.astype('int64') // 10**9 >= (buy_ts - 300)]
+                        post_buy_df = df_check[df_check.index.astype('int64') // 10**9 >= buy_ts]
                         candle_high = float(post_buy_df['High'].max()) if not post_buy_df.empty else last_p
                     except Exception: candle_high = last_p
                 else: candle_high = last_p
