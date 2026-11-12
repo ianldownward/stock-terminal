@@ -2202,6 +2202,49 @@
         </div>
     </div>
 
+    <!-- GEAR INFO MODAL -->
+    <div class="modal-overlay" id="gearInfoModal" style="display:none; z-index:1300;">
+        <div class="modal" style="width: 440px; max-width: 95vw;">
+            <h2 style="border-bottom:none; padding-bottom:0; margin-bottom:12px;">
+                <span id="gearModalTitle" style="color:#0ecb81; display:flex; align-items:center; gap:8px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    Gear 1: Full Power ($0 – $2.5k)
+                </span>
+                <button class="btn-control" style="padding:4px 8px; font-size:12px; color:#fff; border-color:#262b36;" onclick="closeGearInfoModal()">✕</button>
+            </h2>
+            
+            <div style="background:#13161c; border:1px solid #262b36; border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:12px; font-size:12px; line-height:1.5; color:#e1e3e6;">
+                
+                <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; border-bottom:1px solid #1a1e28;">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-size:10px; color:#8a8a9e; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Allocation Strategy</span>
+                        <span id="gearModalAlloc" style="font-size:14px; font-weight:800; color:#fff; margin-top:2px;">98% Capital / 1 Position</span>
+                    </div>
+                    <div style="text-align:right; display:flex; flex-direction:column;">
+                        <span style="font-size:10px; color:#8a8a9e; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Execution Protocol</span>
+                        <span id="gearModalExec" style="font-size:14px; font-weight:800; color:#fff; margin-top:2px;">Instant Market Fill</span>
+                    </div>
+                </div>
+
+                <div id="gearModalDesc" style="color:#e1e3e6;">
+                    Maximum velocity. The engine allocates 98% of available capital into a single high-conviction trade and executes it as a single market order for instant fills. Designed to aggressively compound small accounts.
+                </div>
+                
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:6px; margin-top:4px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:10.5px; font-weight:800; color:#8a8a9e;">Base Daily Target:</span>
+                        <span id="gearModalTarget" style="font-size:11.5px; font-weight:800; color:#0ecb81;">1.00% / Day</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:10.5px; font-weight:800; color:#8a8a9e;">Target Asset:</span>
+                        <span id="gearModalAsset" style="font-size:11.5px; font-weight:800; color:#fff;">3x Leveraged ETFs (TQQQ/SOXL)</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
     <!-- DEDICATED MOBILE ALPACA SYNC & RECTIFY MODAL -->
     <div class="modal-overlay" id="alpacaSyncModal" style="display:none;">
         <div class="modal" style="width: 420px; max-width: 92vw;">
@@ -2940,42 +2983,43 @@
                 </div>
             </div>
             
-            <div style="display:flex; justify-content:center; align-items:center; gap:14px; margin-bottom:7px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
                 <!-- Gear 1 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(1)">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 1</span>
                     <div id="dialG1" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #0ecb81) var(--dial-pct, 35%), #262b36 0); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
                         <span id="dialG1-val" style="position:relative; font-size:12px; font-weight:800; color:#fff;">35%</span>
                     </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$0–$2.5k</span>
                 </div>
                 <!-- Gear 2 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(2)">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 2</span>
                     <div id="dialG2" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
                         <span id="dialG2-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
                     </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$2.5k–$250k</span>
                 </div>
                 <!-- Gear 3 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(3)">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 3</span>
                     <div id="dialG3" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
                         <span id="dialG3-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
                     </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$250k–$1M</span>
                 </div>
                 <!-- Gear 4 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(4)">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 4</span>
                     <div id="dialG4" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
                         <span id="dialG4-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
                     </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$1M+</span>
                 </div>
-            </div>
-            <div style="text-align:center; font-size:9.5px; color:#8a8a9e; font-weight:600;">
-                Gear transition thresholds: $2k, $250k, $1M
             </div>
         </div>
 
@@ -5882,6 +5926,61 @@
                     });
                 }
             } catch(e) {}
+        }
+
+        function openGearInfoModal(gearNum) {
+            let titleEl = document.getElementById('gearModalTitle');
+            let allocEl = document.getElementById('gearModalAlloc');
+            let execEl = document.getElementById('gearModalExec');
+            let descEl = document.getElementById('gearModalDesc');
+            let tgtEl = document.getElementById('gearModalTarget');
+            let assetEl = document.getElementById('gearModalAsset');
+            
+            let color = '#8a8a9e';
+            let icon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
+
+            if (gearNum === 1) {
+                color = '#0ecb81';
+                titleEl.innerHTML = icon + ' Gear 1: Full Power ($0 – $2.5k)';
+                allocEl.innerText = '98% Capital / 1 Position';
+                execEl.innerText = 'Instant Market Fill';
+                descEl.innerText = 'Maximum velocity. The engine allocates 98% of available capital into a single high-conviction trade and executes it as a single market order for instant fills. Designed to aggressively compound small accounts.';
+                tgtEl.innerText = '1.00% / Day';
+                assetEl.innerText = '3x Leveraged ETFs (TQQQ/SOXL)';
+            } else if (gearNum === 2) {
+                color = '#ffd400';
+                titleEl.innerHTML = icon + ' Gear 2: Standard Margin ($2.5k – $250k)';
+                allocEl.innerText = '98% Capital / 1 Position';
+                execEl.innerText = 'Instant Market Fill';
+                descEl.innerText = 'Account is now FINRA margin-eligible. The engine continues to deploy 98% of capital into a single high-conviction 3x ETF trade with instant market fills, but compounding velocity intentionally cools to manage standard risk.';
+                tgtEl.innerText = '0.85% / Day';
+                assetEl.innerText = '3x Leveraged ETFs (TQQQ/SOXL)';
+            } else if (gearNum === 3) {
+                color = '#38bdf8';
+                titleEl.innerHTML = icon + ' Gear 3: Stealth Slicing ($250k – $1M)';
+                allocEl.innerText = '96% Capital / 1–2 Positions';
+                execEl.innerText = '5-Slice TWAP';
+                descEl.innerText = 'Institutional sizing protocol active. To avoid slippage and market impact on large orders, the engine now slices entries into 5 smaller blocks executed automatically over 15 seconds. Splits into 2 separate positions if equity exceeds $500k.';
+                tgtEl.innerText = '0.55% / Day';
+                assetEl.innerText = '3x Leveraged ETFs (TQQQ/SOXL)';
+            } else if (gearNum === 4) {
+                color = '#b388ff';
+                titleEl.innerHTML = icon + ' Gear 4: Deep Water ($1M+)';
+                allocEl.innerText = '96% Capital / 2 Positions';
+                execEl.innerText = '8-Slice TWAP';
+                descEl.innerText = 'Ultra-high liquidity preservation. The engine abandons 3x leveraged instruments entirely and trades deep-water index ETFs (QQQ and SPY) sliced across 8 blocks. Growth targets drop significantly to prioritize capital preservation at scale.';
+                tgtEl.innerText = '0.35% / Day';
+                assetEl.innerText = 'Unleveraged Index ETFs (QQQ/SPY)';
+            }
+            
+            titleEl.style.color = color;
+            tgtEl.style.color = color;
+            
+            document.getElementById('gearInfoModal').style.display = 'flex';
+        }
+
+        function closeGearInfoModal() {
+            document.getElementById('gearInfoModal').style.display = 'none';
         }
 
         function getProfileCurrentEquity(keySnippet, fallback) {
