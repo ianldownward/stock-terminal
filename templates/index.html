@@ -3156,6 +3156,39 @@
         function updateProfitRatchetHUD(dayPct, isProfileLocked = false, activeFloor = 0) {
             let pct = parseFloat(dayPct) || 0.0;
             let lockedStep = activeFloor > 0 ? activeFloor : (pct >= 2.5 ? (Math.floor(pct * 2) / 2) : 0);
+            let isLight = document.body.classList.contains('light-mode');
+            let approachingTarget = 0;
+
+            document.querySelectorAll('#ratchetSegmentsRow .ratchet-step').forEach(step => {
+                let target = parseFloat(step.getAttribute('data-target'));
+                let warnThreshold = Math.round((target - 0.1) * 100) / 100;
+                let textEl = step.querySelector('span');
+                let barEl = step.querySelector('.r-bar');
+
+                let isHit = (lockedStep >= target || pct >= target);
+                let isApproaching = (!isHit && !isProfileLocked && pct >= warnThreshold);
+                if (isApproaching) approachingTarget = target;
+
+                if (isHit) {
+                    if (textEl) textEl.style.color = isLight ? '#131722' : '#ffffff';
+                    if (barEl) {
+                        barEl.style.background = '#0ecb81';
+                        barEl.style.boxShadow = '0 0 6px rgba(14, 203, 129, 0.5)';
+                    }
+                } else if (isApproaching) {
+                    if (textEl) textEl.style.color = '#ff9900';
+                    if (barEl) {
+                        barEl.style.background = '#ff9900';
+                        barEl.style.boxShadow = '0 0 6px rgba(255, 153, 0, 0.6)';
+                    }
+                } else {
+                    if (textEl) textEl.style.color = isLight ? '#8a8a9e' : '#5a5f70';
+                    if (barEl) {
+                        barEl.style.background = isLight ? '#d8dce6' : '#262b36';
+                        barEl.style.boxShadow = 'none';
+                    }
+                }
+            });
 
             let statEl = document.getElementById('ratchetStatus');
             let subEl = document.getElementById('ratchetSubtext');
@@ -3165,6 +3198,8 @@
                     statEl.innerHTML = `<span style="color:#0ecb81;">Floor Locked: +${lockedStep.toFixed(1)}%</span>`;
                 } else if (lockedStep > 0) {
                     statEl.innerHTML = `<span style="color:#0ecb81;">Floor Armed: +${lockedStep.toFixed(1)}%</span>`;
+                } else if (approachingTarget > 0) {
+                    statEl.innerHTML = `<span style="color:#ff9900;">Active (+${pct.toFixed(2)}%)</span>`;
                 } else if (pct > 0) {
                     statEl.innerHTML = `<span style="color:#ffd400;">Active (+${pct.toFixed(2)}%)</span>`;
                 } else {
@@ -3176,6 +3211,9 @@
                 if (isProfileLocked && lockedStep > 0) {
                     subEl.innerText = `Secured floor: +${lockedStep.toFixed(1)}% in cash`;
                     subEl.style.color = '#0ecb81';
+                } else if (approachingTarget > 0) {
+                    subEl.innerText = `Approaching +${approachingTarget.toFixed(1)}% floor...`;
+                    subEl.style.color = '#ff9900';
                 } else if (lockedStep > 0) {
                     subEl.innerText = `Trailing floor armed at +${lockedStep.toFixed(1)}%`;
                     subEl.style.color = '#ffd400';
@@ -3185,30 +3223,12 @@
                 }
             }
 
-            document.querySelectorAll('#ratchetSegmentsRow .ratchet-step').forEach(step => {
-                let target = parseFloat(step.getAttribute('data-target'));
-                let textEl = step.querySelector('span');
-                let barEl = step.querySelector('.r-bar');
-
-                if (lockedStep >= target || pct >= target) {
-                    if (textEl) textEl.style.color = '#ffffff';
-                    if (barEl) {
-                        barEl.style.background = '#0ecb81';
-                        barEl.style.boxShadow = '0 0 6px rgba(14, 203, 129, 0.5)';
-                    }
-                } else {
-                    if (textEl) textEl.style.color = '#5a5f70';
-                    if (barEl) {
-                        barEl.style.background = '#262b36';
-                        barEl.style.boxShadow = 'none';
-                    }
-                }
-            });
-
             let mobStatEl = document.getElementById('mobRatchetStatus');
             if (mobStatEl) {
                 if (lockedStep > 0) {
                     mobStatEl.innerHTML = `<span style="color:#0ecb81;">Floor +${lockedStep.toFixed(1)}%</span>`;
+                } else if (approachingTarget > 0) {
+                    mobStatEl.innerHTML = `<span style="color:#ff9900;">+${pct.toFixed(2)}% / ${approachingTarget.toFixed(1)}%</span>`;
                 } else if (pct > 0) {
                     mobStatEl.innerHTML = `<span style="color:#ffd400;">+${pct.toFixed(2)}% / 2.5%</span>`;
                 } else {
@@ -3218,13 +3238,21 @@
 
             document.querySelectorAll('#mobRatchetSegments .mob-r-bar').forEach(bar => {
                 let target = parseFloat(bar.getAttribute('data-target'));
-                if (lockedStep >= target || pct >= target) {
+                let warnThreshold = Math.round((target - 0.1) * 100) / 100;
+                let isHit = (lockedStep >= target || pct >= target);
+                let isApproaching = (!isHit && !isProfileLocked && pct >= warnThreshold);
+
+                if (isHit) {
                     bar.setAttribute('data-active', 'true');
                     bar.style.background = '#0ecb81';
                     bar.style.boxShadow = '0 0 5px rgba(14, 203, 129, 0.5)';
+                } else if (isApproaching) {
+                    bar.setAttribute('data-active', 'true');
+                    bar.style.background = '#ff9900';
+                    bar.style.boxShadow = '0 0 5px rgba(255, 153, 0, 0.6)';
                 } else {
                     bar.setAttribute('data-active', 'false');
-                    bar.style.background = document.body.classList.contains('light-mode') ? '#d8dce6' : '#262b36';
+                    bar.style.background = isLight ? '#d8dce6' : '#262b36';
                     bar.style.boxShadow = 'none';
                 }
             });
