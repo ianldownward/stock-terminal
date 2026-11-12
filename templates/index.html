@@ -2420,10 +2420,10 @@
                     <!-- 3-Line Legend + 4-Gear Segmented Rate Strip -->
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:8px; font-size:10px; font-weight:700;">
                         <div id="gearSegmentedRatesStrip" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:9.5px; color:#8a8a9e;">
-                            <span style="color:#0ecb81; font-weight:800;">G1 (<$2k): 1.00%/d</span> •
-                            <span style="color:#ffd400; font-weight:800;">G2 ($2k–$250k): 0.85%/d</span> •
-                            <span style="color:#38bdf8; font-weight:800;">G3 ($250k–$1M): 0.55%/d</span> •
-                            <span style="color:#b388ff; font-weight:800;">G4 ($1M+): 0.35%/d</span>
+                            <span style="color:#0ecb81; font-weight:800;">G1 (<$2.5k): 1.00%/d</span> •
+                            <span style="color:#ffd400; font-weight:800;">G2 ($2.5k–$250k): 0.98%/d</span> •
+                            <span style="color:#38bdf8; font-weight:800;">G3 ($250k–$1M): 0.75%/d</span> •
+                            <span style="color:#b388ff; font-weight:800;">G4 ($1M+): 0.45%/d</span>
                         </div>
                         <div style="display:flex; gap:12px;">
                             <span style="color:#0ecb81; display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:3px; background:#0ecb81;"></span> Actual</span>
@@ -5935,9 +5935,12 @@
             let descEl = document.getElementById('gearModalDesc');
             let tgtEl = document.getElementById('gearModalTarget');
             let assetEl = document.getElementById('gearModalAsset');
+            let targetLabel = document.getElementById('gearModalTarget').previousElementSibling;
             
             let color = '#8a8a9e';
             let icon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
+
+            targetLabel.innerText = "Target Multiplier:";
 
             if (gearNum === 1) {
                 color = '#0ecb81';
@@ -5945,15 +5948,15 @@
                 allocEl.innerText = '98% Capital / 1 Position';
                 execEl.innerText = 'Instant Market Fill';
                 descEl.innerText = 'Maximum velocity. The engine allocates 98% of available capital into a single high-conviction trade and executes it as a single market order for instant fills. Designed to aggressively compound small accounts.';
-                tgtEl.innerText = '1.00% / Day';
+                tgtEl.innerText = '1.00x Base Target';
                 assetEl.innerText = '3x Leveraged ETFs (TQQQ/SOXL)';
             } else if (gearNum === 2) {
                 color = '#ffd400';
                 titleEl.innerHTML = icon + ' Gear 2: Standard Margin ($2.5k – $250k)';
                 allocEl.innerText = '98% Capital / 1 Position';
                 execEl.innerText = 'Instant Market Fill';
-                descEl.innerText = 'Account is now FINRA margin-eligible. The engine continues to deploy 98% of capital into a single high-conviction 3x ETF trade with instant market fills, but compounding velocity intentionally cools to manage standard risk.';
-                tgtEl.innerText = '0.85% / Day';
+                descEl.innerText = 'Account is now FINRA margin-eligible. The engine continues to deploy 98% of capital into a single high-conviction 3x ETF trade with instant market fills. Velocity remains near maximum with a tiny slippage buffer.';
+                tgtEl.innerText = '0.98x Base Target';
                 assetEl.innerText = '3x Leveraged ETFs (TQQQ/SOXL)';
             } else if (gearNum === 3) {
                 color = '#38bdf8';
@@ -5961,15 +5964,15 @@
                 allocEl.innerText = '96% Capital / 1–2 Positions';
                 execEl.innerText = '5-Slice TWAP';
                 descEl.innerText = 'Institutional sizing protocol active. To avoid slippage and market impact on large orders, the engine now slices entries into 5 smaller blocks executed automatically over 15 seconds. Splits into 2 separate positions if equity exceeds $500k.';
-                tgtEl.innerText = '0.55% / Day';
+                tgtEl.innerText = '0.75x Base Target';
                 assetEl.innerText = '3x Leveraged ETFs (TQQQ/SOXL)';
             } else if (gearNum === 4) {
                 color = '#b388ff';
                 titleEl.innerHTML = icon + ' Gear 4: Deep Water ($1M+)';
                 allocEl.innerText = '96% Capital / 2 Positions';
                 execEl.innerText = '8-Slice TWAP';
-                descEl.innerText = 'Ultra-high liquidity preservation. The engine abandons 3x leveraged instruments entirely and trades deep-water index ETFs (QQQ and SPY) sliced across 8 blocks. Growth targets drop significantly to prioritize capital preservation at scale.';
-                tgtEl.innerText = '0.35% / Day';
+                descEl.innerText = 'Ultra-high liquidity preservation. The engine abandons 3x leveraged instruments entirely and trades deep-water index ETFs (QQQ and SPY) sliced across 8 blocks. Velocity shifts to match as unleveraged assets move 1/3 as much, prioritizing capital preservation at scale.';
+                tgtEl.innerText = '0.45x Base Target';
                 assetEl.innerText = 'Unleveraged Index ETFs (QQQ/SPY)';
             }
             
@@ -6133,9 +6136,9 @@
         // 4-Gear Segmented Daily Compounding Simulator
         // Gear 1 (< $2k): 1.00x base rate | Gear 2 ($2k-$250k): 0.85x | Gear 3 ($250k-$1M): 0.55x | Gear 4 ($1M+): 0.35x
         function getGearMultiplier(equity) {
-            if (equity >= 1000000) return 0.35;
-            if (equity >= 250000) return 0.55;
-            if (equity >= 2000) return 0.85;
+            if (equity >= 1000000) return 0.45;
+            if (equity >= 250000) return 0.75;
+            if (equity >= 2500) return 0.98;
             return 1.00;
         }
 
@@ -6143,7 +6146,7 @@
             let val = Math.max(1.0, parseFloat(startCapital) || 700.0);
             let dailySeries = [val];
             let transitions = [];
-            let prevGear = val >= 1000000 ? 4 : (val >= 250000 ? 3 : (val >= 2000 ? 2 : 1));
+            let prevGear = val >= 1000000 ? 4 : (val >= 250000 ? 3 : (val >= 2500 ? 2 : 1));
 
             for (let d = 1; d <= totalDays; d++) {
                 let mult = getGearMultiplier(val);
@@ -6151,7 +6154,7 @@
                 val = val * (1.0 + effectiveRate);
                 dailySeries.push(val);
 
-                let curGear = val >= 1000000 ? 4 : (val >= 250000 ? 3 : (val >= 2000 ? 2 : 1));
+                let curGear = val >= 1000000 ? 4 : (val >= 250000 ? 3 : (val >= 2500 ? 2 : 1));
                 if (curGear > prevGear) {
                     transitions.push({ day: d, gear: curGear, val: val });
                     prevGear = curGear;
@@ -6168,15 +6171,15 @@
             let r = basePct / 100.0;
 
             let hdr = document.getElementById('milestoneBoxHeader');
-            if (hdr) hdr.innerText = `5-Year Gear-Segmented Compounding Curve (G1: ${basePct.toFixed(1)}%/d → G4: ${(basePct * 0.35).toFixed(2)}%/d @ $${Math.round(budget).toLocaleString()})`;
+            if (hdr) hdr.innerText = `5-Year Gear-Segmented Compounding Curve (G1: ${basePct.toFixed(1)}%/d → G4: ${(basePct * 0.45).toFixed(2)}%/d @ $${Math.round(budget).toLocaleString()})`;
 
             let strip = document.getElementById('gearSegmentedRatesStrip');
             if (strip) {
                 strip.innerHTML = `
-                    <span style="color:#0ecb81; font-weight:800;">G1 (<$2k): ${basePct.toFixed(2)}%/d</span> •
-                    <span style="color:#ffd400; font-weight:800;">G2 ($2k–$250k): ${(basePct * 0.85).toFixed(2)}%/d</span> •
-                    <span style="color:#38bdf8; font-weight:800;">G3 ($250k–$1M): ${(basePct * 0.55).toFixed(2)}%/d</span> •
-                    <span style="color:#b388ff; font-weight:800;">G4 ($1M+): ${(basePct * 0.35).toFixed(2)}%/d</span>
+                    <span style="color:#0ecb81; font-weight:800;">G1 (<$2.5k): ${basePct.toFixed(2)}%/d</span> •
+                    <span style="color:#ffd400; font-weight:800;">G2 ($2.5k–$250k): ${(basePct * 0.98).toFixed(2)}%/d</span> •
+                    <span style="color:#38bdf8; font-weight:800;">G3 ($250k–$1M): ${(basePct * 0.75).toFixed(2)}%/d</span> •
+                    <span style="color:#b388ff; font-weight:800;">G4 ($1M+): ${(basePct * 0.45).toFixed(2)}%/d</span>
                 `;
             }
 
