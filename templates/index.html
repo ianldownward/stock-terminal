@@ -135,8 +135,7 @@
         body.light-mode #dialG2 > div,
         body.light-mode #dialG3 > div,
         body.light-mode #dialG4 > div,
-        body.light-mode #dialCd15 > div,
-        body.light-mode #dialCd60 > div {
+        body.light-mode #dialCd15 > div {
             background: #f8f9fb !important;
         }
         body.light-mode .info-icon {
@@ -3088,16 +3087,6 @@
                     <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">Post-Sell</span>
                 </div>
 
-                <!-- 60-Min Ticker Wash Cooldown Circle -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="60-minute same-ticker wash block after selling">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">60M WASH</span>
-                    <div id="dialCd60" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialCd60-val" style="position:relative; font-size:10px; font-weight:800; color:#0ecb81; font-family:monospace;">READY</span>
-                    </div>
-                    <span id="dialCd60-sub" style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">Same Ticker</span>
-                </div>
-
                 <!-- 3-Strike Loss Lockout Burger Icon (Same 46px height as timer circles) -->
                 <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="Daily 3-Strike Loss Guard (Yellow bars turn grey as strikes are used)">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">3-STRIKE</span>
@@ -3124,6 +3113,8 @@
             if (statEl) {
                 if (isProfileLocked && lockedStep > 0) {
                     statEl.innerHTML = `<span style="color:#0ecb81;">Floor Locked: +${lockedStep.toFixed(1)}%</span>`;
+                } else if (lockedStep > 0) {
+                    statEl.innerHTML = `<span style="color:#0ecb81;">Floor Armed: +${lockedStep.toFixed(1)}%</span>`;
                 } else if (pct > 0) {
                     statEl.innerHTML = `<span style="color:#ffd400;">Active (+${pct.toFixed(2)}%)</span>`;
                 } else {
@@ -6713,9 +6704,6 @@
         window._buyGuardsState = {
             cd_15m_rem: 0,
             cd_15m_total: 900,
-            cd_60m_rem: 0,
-            cd_60m_total: 3600,
-            wash_ticker: '',
             strikes_used: 0,
             strikes_max: 3,
             syncedAtMs: Date.now()
@@ -6733,7 +6721,6 @@
             if (!st) return;
             let elapsed = Math.floor((Date.now() - st.syncedAtMs) / 1000);
             let rem15 = Math.max(0, (st.cd_15m_rem || 0) - elapsed);
-            let rem60 = Math.max(0, (st.cd_60m_rem || 0) - elapsed);
 
             let d15 = document.getElementById('dialCd15');
             let v15 = document.getElementById('dialCd15-val');
@@ -6747,24 +6734,6 @@
                     d15.style.background = 'conic-gradient(#262b36 0%, #262b36 100%)';
                     v15.innerText = 'READY';
                     v15.style.color = '#0ecb81';
-                }
-            }
-
-            let d60 = document.getElementById('dialCd60');
-            let v60 = document.getElementById('dialCd60-val');
-            let sub60 = document.getElementById('dialCd60-sub');
-            if (d60 && v60) {
-                if (rem60 > 0) {
-                    let pct60 = Math.max(2, Math.min(100, (rem60 / (st.cd_60m_total || 3600)) * 100));
-                    d60.style.background = `conic-gradient(#38bdf8 ${pct60}%, #262b36 0)`;
-                    v60.innerText = formatCountdownMMSS(rem60);
-                    v60.style.color = '#38bdf8';
-                    if (sub60) sub60.innerText = st.wash_ticker ? `${st.wash_ticker} Lock` : 'Same Ticker';
-                } else {
-                    d60.style.background = 'conic-gradient(#262b36 0%, #262b36 100%)';
-                    v60.innerText = 'READY';
-                    v60.style.color = '#0ecb81';
-                    if (sub60) sub60.innerText = 'Same Ticker';
                 }
             }
 
@@ -6799,9 +6768,6 @@
                 } else if (rem15 > 0) {
                     hdrStatus.innerText = '15m Cooldown';
                     hdrStatus.style.color = '#ff9900';
-                } else if (rem60 > 0) {
-                    hdrStatus.innerText = `${st.wash_ticker || 'Ticker'} Wash`;
-                    hdrStatus.style.color = '#38bdf8';
                 } else {
                     hdrStatus.innerText = 'All Clear';
                     hdrStatus.style.color = '#0ecb81';
@@ -6814,9 +6780,6 @@
             window._buyGuardsState = {
                 cd_15m_rem: parseInt(guards.cd_15m_rem) || 0,
                 cd_15m_total: parseInt(guards.cd_15m_total) || 900,
-                cd_60m_rem: parseInt(guards.cd_60m_rem) || 0,
-                cd_60m_total: parseInt(guards.cd_60m_total) || 3600,
-                wash_ticker: guards.wash_ticker || '',
                 strikes_used: parseInt(guards.strikes_used) || 0,
                 strikes_max: parseInt(guards.strikes_max) || 3,
                 syncedAtMs: Date.now()

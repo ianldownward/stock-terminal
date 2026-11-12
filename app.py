@@ -1324,33 +1324,71 @@ def process_auto_profile(prof_name, client_email=None):
         cash_balance = mb + net_history - init_manual
         rem_cash = max(0, cash_balance)
 
-        # Isolated total equity calculation (never touches admin database)
-        tot_own = 0.0
-        for h_tk in list(set([tr.get('ticker') for tr in hist if resolve_shares(tr.get('ticker')) > 0])):
-            sh_c = resolve_shares(h_tk)
-            cur_df = fetch_yf_data(h_tk, "1d", "1m")
-            if not cur_df.empty:
-                cp = cur_df['Close'].iloc[-1]
-                div = 100.0 if h_tk.endswith('.L') and cp > 100 else 1.0
-                tot_own += round(sh_c * (cp / div), 2)
-        total_equity = cash_balance + tot_own
-
-        # GEAR 4 ($1,000,000+): Shift to ultra-deep liquidity ETFs (QQQ / SPY)
-        if total_equity >= 1000000:
-            held_symbols = [tr.get('ticker') for tr in hist if resolve_shares(tr.get('ticker')) > 0]
-            scan_list = list(dict.fromkeys(['QQQ', 'SPY'] + held_symbols))
-
-        # DYNAMIC PERCENTAGE CIRCUIT BREAKER (SCALABLE TO ANY CAPITAL SIZE)
+        # Isolated total equity & intra-candle peak equity calculation
         now_uk = pd.Timestamp.now(tz='Europe/London')
         today_str = now_uk.strftime('%Y-%m-%d')
         trades_today = [tr for tr in hist if tr.get('date_str') == today_str]
         net_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
         cash_start = cash_balance - net_cash_today
 
-        # Calculate Start-Of-Day (SOD) equity
-        sod_equity = max(50.0, cash_start)
+        tot_own = 0.0
+        peak_tot_own = 0.0
+        equity_start = 0.0
+        held_tks_now = list(set([tr.get('ticker') for tr in hist if tr.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'] and (resolve_shares(tr.get('ticker')) > 0 or any(t2.get('ticker') == tr.get('ticker') for t2 in trades_today))]))
+        for h_tk in held_tks_now:
+            sh_c = resolve_shares(h_tk)
+            cur_df = fetch_yf_data(h_tk, "1d", "1m")
+            if not cur_df.empty:
+                cp = float(cur_df['Close'].iloc[-1])
+                div = 100.0 if h_tk.endswith('.L') and cp > 100 else 1.0
+                tot_own += round(sh_c * (cp / div), 2)
+
+                # Highest price reached while holding this position today (captures intra-bar spikes above 2.5%)
+                peak_cp = cp
+                if sh_c > 0:
+                    stored_hw = float((ud.get('holdings', {}).get(h_tk) or {}).get('high_water') or 0.0)
+                    t_buys_h = [tr for tr in hist if tr.get('ticker') == h_tk and tr.get('action') == 'BUY']
+                    buy_ts_h = int(t_buys_h[0].get('timestamp') or 0) if t_buys_h else 0
+                    candle_hi = cp
+                    if 'High' in cur_df.columns and buy_ts_h > 0:
+                        try:
+                            post_df_h = cur_df[cur_df.index.astype('int64') // 10**9 >= (buy_ts_h - 60)]
+                            if not post_df_h.empty:
+                                candle_hi = float(post_df_h['High'].max())
+                        except Exception:
+                            candle_hi = cp
+                    peak_cp = max(cp, stored_hw, candle_hi)
+                peak_tot_own += round(sh_c * (peak_cp / div), 2)
+
+                # Start-of-day held equity if shares were carried overnight
+                sh_start = sh_c
+                for tr in trades_today:
+                    if tr.get('ticker') == h_tk:
+                        if tr.get('action') == 'BUY': sh_start -= int(tr.get('shares') or 0)
+                        else: sh_start += int(tr.get('shares') or 0)
+                if sh_start > 0:
+                    df_5m_sod = fetch_yf_data(h_tk, "5d", "5m")
+                    if not df_5m_sod.empty:
+                        df_tmp_s = df_5m_sod.copy()
+                        if df_tmp_s.index.tz is None: df_tmp_s.index = df_tmp_s.index.tz_localize('UTC')
+                        else: df_tmp_s.index = df_tmp_s.index.tz_convert('UTC')
+                        prev_s = df_tmp_s[df_tmp_s.index.tz_convert('Europe/London').strftime('%Y-%m-%d') < today_str]
+                        start_p = float(prev_s['Close'].iloc[-1]) if not prev_s.empty else float(df_tmp_s['Close'].iloc[0])
+                        equity_start += max(0, sh_start) * (start_p / div)
+
+        total_equity = cash_balance + tot_own
+        peak_total_equity = cash_balance + peak_tot_own
+
+        # GEAR 4 ($1,000,000+): Shift to ultra-deep liquidity ETFs (QQQ / SPY)
+        if total_equity >= 1000000:
+            held_symbols = [tr.get('ticker') for tr in hist if resolve_shares(tr.get('ticker')) > 0]
+            scan_list = list(dict.fromkeys(['QQQ', 'SPY'] + held_symbols))
+
+        # Calculate Start-Of-Day (SOD) equity & instantaneous + peak daily %
+        sod_equity = max(50.0, cash_start + equity_start)
         daily_pnl = total_equity - sod_equity
         daily_pnl_pct = (daily_pnl / sod_equity) * 100.0 if sod_equity > 0 else 0.0
+        peak_daily_pnl_pct = ((peak_total_equity - sod_equity) / sod_equity) * 100.0 if sod_equity > 0 else daily_pnl_pct
 
         # Maximum allowable daily drawdown: -2.5% of starting daily equity
         CIRCUIT_BREAKER_PCT = -2.50
@@ -1368,16 +1406,17 @@ def process_auto_profile(prof_name, client_email=None):
                 ud['ratchet_locked'] = False
                 ud['is_locked'] = False
 
-            if daily_pnl_pct > ud.get('daily_peak_pct', 0.0):
-                ud['daily_peak_pct'] = round(daily_pnl_pct, 2)
-                if ud.get('ratchet_floor_override') is not None and daily_pnl_pct >= (float(ud['ratchet_floor_override']) + 0.6):
+            observed_peak_pct = round(max(daily_pnl_pct, peak_daily_pnl_pct), 2)
+            if observed_peak_pct > float(ud.get('daily_peak_pct') or 0.0):
+                ud['daily_peak_pct'] = observed_peak_pct
+                if ud.get('ratchet_floor_override') is not None and observed_peak_pct >= (float(ud['ratchet_floor_override']) + 0.6):
                     ud['ratchet_floor_override'] = None
                 if is_client:
                     portfolio_store.save_client_store(client_email, c_store)
                 else:
                     portfolio_store.save_data(portfolio_store.data)
 
-            daily_peak = ud.get('daily_peak_pct', 0.0)
+            daily_peak = float(ud.get('daily_peak_pct') or 0.0)
 
             if ud.get('ratchet_floor_override') is not None:
                 daily_floor_locked = float(ud['ratchet_floor_override'])
@@ -1407,11 +1446,13 @@ def process_auto_profile(prof_name, client_email=None):
 
         # ADAPTIVE MODE RESOLUTION (MOMENTUM VS REVERSION SWITCHBOARD)
         current_mode = 'momentum'
-        # 15-Minute Post-Sell Cooldown (ignores internal ALPACASYNC/CALIBRATION entries)
-        real_hist_for_cd = [h for h in hist if h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]
-        if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
-            if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < 900:
-                buys = []
+        # True loss strike counter: Only count real trades closed at an actual loss (sell price < buy price)
+        today_loss_stops = 0
+        for i, h in enumerate(hist):
+            if h.get('ticker') in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']:
+                continue
+            if h.get('action') == 'SELL' and h.get('date_str') == today_str:
+                matching_buy = next((b for b in hist[i+1:] if b.get('ticker') == h.get('ticker') and b.get('action') == 'BUY'), None)
                 if matching_buy:
                     if float(h.get('price', 0)) < float(matching_buy.get('price', 0)):
                         today_loss_stops += 1
@@ -1562,13 +1603,6 @@ def process_auto_profile(prof_name, client_email=None):
         if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
             if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < 900:
                 buys = []
-
-        # 60-Minute Ticker Wash Rule
-        recent_stopped_tickers = {
-            h.get('ticker') for h in hist
-            if h.get('action') == 'SELL' and (time.time() - h.get('timestamp', 0)) < 3600
-        }
-        buys = [b for b in buys if b.get('t') not in recent_stopped_tickers]
 
         # Emergency Shutdown: If circuit breaker tripped or curfew active, block ALL buys
         if circuit_breaker_tripped or is_curfew_active:
@@ -3554,6 +3588,21 @@ def get_data():
             daily_avg_pct = round(cum_gain_pct / active_days, 2)
             daily_avg_val = round(cum_gain_val / active_days, 2)
 
+            # Persist daily_peak_pct monotonically so UI & background engine share the exact same Ratchet high-water mark
+            if u_data.get('last_ratchet_date') != today_str:
+                u_data['last_ratchet_date'] = today_str
+                u_data['daily_peak_pct'] = max(0.0, day_pct)
+            elif day_pct > float(u_data.get('daily_peak_pct') or 0.0):
+                u_data['daily_peak_pct'] = round(day_pct, 2)
+                if is_client:
+                    portfolio_store.save_client_store(client_name, c_store)
+                else:
+                    portfolio_store.save_data(portfolio_store.data)
+
+            peak_pct_today = max(float(u_data.get('daily_peak_pct') or 0.0), day_pct)
+            computed_floor = round(int(peak_pct_today * 2) / 2.0, 2) if peak_pct_today >= 2.50 else 0.0
+            active_floor_val = float(u_data.get('ratchet_floor_override')) if u_data.get('ratchet_floor_override') is not None else computed_floor
+
             has_override = (u_data.get('ratchet_floor_override') is not None)
             is_manually_locked = (u_data.get('manual_locked_day') == today_str)
             is_ratchet_locked = bool(u_data.get('ratchet_locked') and len(user_holds) == 0)
@@ -3576,7 +3625,8 @@ def get_data():
                 'has_holding': len(user_holds) > 0,
                 'is_locked': is_locked,
                 'is_manually_locked': is_manually_locked,
-                'active_floor': float(u_data.get('ratchet_floor_override') or (round(int(day_pct * 2) / 2.0, 2) if day_pct >= 2.5 else 0.0)),
+                'active_floor': active_floor_val,
+                'daily_peak_pct': round(peak_pct_today, 2),
                 'locked_pct': round(day_pct, 2)
             })
         leaderboard.sort(key=lambda x: x['equity'], reverse=True)
@@ -3808,6 +3858,7 @@ def get_data():
                         mathLine.append({'time': d['time'], 'value': round(((val - d['close']) / val) * 100.0 if val > 0 else 0, 2)})
         except Exception: mathLine = []
 
+        # Compute real-time Buying Block Timers (15m Post-Sell Cooldown) + 3-Strike Loss Count
         now_ts_guard = int(time.time())
         real_hist_guard = [
             h for h in hist
@@ -3818,17 +3869,6 @@ def get_data():
             last_sell_ts = int(real_hist_guard[0].get('timestamp') or 0)
             if last_sell_ts > 0:
                 cd_15m_rem = max(0, 900 - (now_ts_guard - last_sell_ts))
-
-        cd_60m_rem = 0
-        wash_ticker = ''
-        for h in real_hist_guard:
-            if h.get('action') == 'SELL':
-                s_ts = int(h.get('timestamp') or 0)
-                if s_ts > 0 and (now_ts_guard - s_ts) < 3600:
-                    rem_w = 3600 - (now_ts_guard - s_ts)
-                    if rem_w > cd_60m_rem:
-                        cd_60m_rem = rem_w
-                        wash_ticker = str(h.get('ticker') or '')
 
         guard_loss_stops = 0
         for idx_g, h in enumerate(hist):
@@ -3845,9 +3885,6 @@ def get_data():
         buy_guards = {
             'cd_15m_rem': cd_15m_rem,
             'cd_15m_total': 900,
-            'cd_60m_rem': cd_60m_rem,
-            'cd_60m_total': 3600,
-            'wash_ticker': wash_ticker,
             'strikes_used': min(3, guard_loss_stops),
             'strikes_max': 3,
             'server_ts': now_ts_guard
