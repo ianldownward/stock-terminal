@@ -1736,32 +1736,27 @@ def reconcile_single_target(target):
                     n_sh = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
                     return max(0, i_sh + n_sh)
 
-                # Check for Trailing Stop SELLs executed on Alpaca
-                if side == 'sell':
-                    current_shares = get_prof_shares(symbol)
-                    already_logged = any(h.get('alpaca_order_id') == order_id for h in hist)
-                    if current_shares > 0 and not already_logged:
-                        portfolio_store.execute_trade(
-                            ticker=symbol,
-                            action_type='SELL',
-                            shares=min(current_shares, filled_qty),
-                            price=filled_price,
-                            username=matched_prof,
-                            metadata={
-                                'status': 'Alpaca Stop Filled',
-                                'reason': f"Native {o.get('order_type', 'stop').title()} Executed on Alpaca",
-                                'alpaca_order_id': order_id,
-                                'source': 'alpaca_sync'
-                            },
-                            client_email=c_email
-                        )
-                # Reconcile BUY fill prices strictly by client_order_id
-                elif side == 'buy':
+               # Parse Alpaca order timestamp (client_order_id suffix or created_at) for safe matching
+                order_ts = 0
+                try:
+                    coid_parts = coid.rsplit('_', 1)
+                    if len(coid_parts) == 2 and coid_parts[1].isdigit():
+                        order_ts = int(coid_parts[1])
+                    elif o.get('created_at'):
+                        order_ts = int(pd.Timestamp(o['created_at']).timestamp())
+                except Exception:
+                    order_ts = 0
+
+                # Reconcile both BUY and SELL fill prices against Alpaca's exact filled_avg_price
+                if side in ['buy', 'sell']:
+                    target_act = side.upper()
+                    reconciled_existing = False
                     for h in hist:
-                        if h.get('action') == 'BUY' and h.get('ticker') == symbol and not h.get('price_reconciled'):
-                            expected_coid = h.get('client_order_id')
-                            # Match only if the client_order_id or alpaca order ID strictly matches
-                            if expected_coid and expected_coid != coid:
+                        if h.get('action') == target_act and h.get('ticker') == symbol and not h.get('price_reconciled'):
+                            if h.get('alpaca_order_id') and h.get('alpaca_order_id') != order_id:
+                                continue
+                            h_ts = int(h.get('timestamp') or 0)
+                            if order_ts > 0 and h_ts > 0 and abs(order_ts - h_ts) > 600:
                                 continue
 
                             h['price'] = round(filled_price, 2)
@@ -1769,11 +1764,33 @@ def reconcile_single_target(target):
                             h['amount'] = round(h['shares'] * cps, 2)
                             h['price_reconciled'] = True
                             h['alpaca_order_id'] = order_id
+                            reconciled_existing = True
                             if c_email:
                                 portfolio_store.save_client_store(c_email, c_s)
                             else:
                                 portfolio_store.save_data(portfolio_store.data)
                             break
+
+                    # If Alpaca triggered a native trailing stop SELL not yet in local history, log it
+                    if side == 'sell' and not reconciled_existing:
+                        current_shares = get_prof_shares(symbol)
+                        already_logged = any(h.get('alpaca_order_id') == order_id for h in hist)
+                        if current_shares > 0 and not already_logged:
+                            portfolio_store.execute_trade(
+                                ticker=symbol,
+                                action_type='SELL',
+                                shares=min(current_shares, filled_qty),
+                                price=filled_price,
+                                username=matched_prof,
+                                metadata={
+                                    'status': 'Alpaca Stop Filled',
+                                    'reason': f"Native {o.get('order_type', 'stop').title()} Executed on Alpaca",
+                                    'alpaca_order_id': order_id,
+                                    'price_reconciled': True,
+                                    'source': 'alpaca_sync'
+                                },
+                                client_email=c_email
+                            )
     except Exception:
         pass
 
@@ -1849,8 +1866,19 @@ def reconcile_single_target(target):
 
                 if total_local_claimed == 0:
                     try:
-                        req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
-                        with urllib.request.urlopen(req_del, timeout=5): pass
+                        # Skip if an open order for this symbol is already pending/in-flight on Alpaca
+                        has_open_ord = False
+                        try:
+                            req_oo = urllib.request.Request(f"{base_url}/v2/orders?status=open&symbols={tk}", headers=headers)
+                            with urllib.request.urlopen(req_oo, timeout=4) as r_oo:
+                                if len(json.loads(r_oo.read().decode('utf-8'))) > 0:
+                                    has_open_ord = True
+                        except Exception:
+                            pass
+                        if not has_open_ord:
+                            print(f"[ALPACA AUTO-SYNC] Liquidating unowned orphan position: {qty} {tk}")
+                            req_del = urllib.request.Request(f"{base_url}/v2/positions/{tk}", headers=headers, method="DELETE")
+                            with urllib.request.urlopen(req_del, timeout=5): pass
                     except Exception: pass
     except Exception:
         pass
@@ -3241,67 +3269,51 @@ def get_data():
         if not source_users:
             source_users = portfolio_store.data.get('users', {})
 
-        # Override active profile equity with live Alpaca figures when enabled
-        if is_profile_alpaca_enabled(active_profile) and alpaca_acc is not None:
-            total_equity = alpaca_acc['equity']
-            cash_balance = alpaca_acc['cash']
-            tot_own = round(sum(float(p.get('market_value', 0.0)) for p in alpaca_acc['positions']), 2)
-
         for u, u_data in source_users.items():
             if not isinstance(u_data, dict): continue
             mb_lb = float(u_data.get('master_budget') or 500.0)
             hist_lb = u_data.get('history') or []
             init_pos_lb = u_data.get('initial_positions') or {}
 
-            # If checked in Settings, feed directly from Alpaca
-            if is_profile_alpaca_enabled(u) and alpaca_acc is not None:
-                tot_eq_now = alpaca_acc['equity']
-                cash_now = alpaca_acc['cash']
-                tot_eq_start = alpaca_acc['last_equity'] if alpaca_acc['last_equity'] > 0 else mb_lb
-                day_diff = round(tot_eq_now - tot_eq_start, 2)
-                day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
-                day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
-                user_holds = [p['symbol'].upper() for p in alpaca_acc['positions'] if int(p.get('qty', 0)) > 0]
-                held_sym = user_holds[0] if user_holds else ''
-            else:
-                # If unchecked, run independently in simulation
-                nh_lb = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
-                            for tr in hist_lb if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
-                im_lb = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos_lb.values())
-                cash_now = mb_lb + nh_lb - im_lb
+            # Compute each profile's Cash, Shares, Equity, and Held Ticker from its own reconciled ledger
+            # so sidebar cards, POSITION HELD, and TRADE HISTORY always stay 100% consistent.
+            nh_lb = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
+                        for tr in hist_lb if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
+            im_lb = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos_lb.values())
+            cash_now = mb_lb + nh_lb - im_lb
+            
+            trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
+            net_cash_today = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
+                                 for tr in trades_today)
+            cash_start = cash_now - net_cash_today
+            
+            equity_now, equity_start = 0.0, 0.0
+            shares_now_map = {}
+            for tr in hist_lb:
+                tk = tr.get('ticker')
+                if tk and tk not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'] and tk not in shares_now_map:
+                    shares_now_map[tk] = resolve_profile_shares(u_data, tk)
                 
-                trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
-                net_cash_today = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
-                                     for tr in trades_today)
-                cash_start = cash_now - net_cash_today
+            for tk, sh_now in shares_now_map.items():
+                if sh_now <= 0 and not any(tr.get('ticker') == tk for tr in trades_today): continue
+                p_data = prices.get(tk, {'cur': 0.0, 'start': 0.0})
+                equity_now += sh_now * p_data['cur']
                 
-                equity_now, equity_start = 0.0, 0.0
-                shares_now_map = {}
-                for tr in hist_lb:
-                    tk = tr.get('ticker')
-                    if tk and tk not in ['CALIBRATION', 'CAPITAL_INJECTION'] and tk not in shares_now_map:
-                        shares_now_map[tk] = resolve_profile_shares(u_data, tk)
-                    
-                for tk, sh_now in shares_now_map.items():
-                    if sh_now <= 0 and not any(tr.get('ticker') == tk for tr in trades_today): continue
-                    p_data = prices.get(tk, {'cur': 0.0, 'start': 0.0})
-                    equity_now += sh_now * p_data['cur']
-                    
-                    sh_start = sh_now
-                    for tr in trades_today:
-                        if tr.get('ticker') == tk:
-                            if tr.get('action') == 'BUY': sh_start -= int(tr.get('shares') or 0)
-                            else: sh_start += int(tr.get('shares') or 0)
-                    equity_start += max(0, sh_start) * p_data['start']
-                    
-                tot_eq_now = max(0.0, cash_now) + equity_now
-                tot_eq_start = max(0.0, cash_start) + equity_start
+                sh_start = sh_now
+                for tr in trades_today:
+                    if tr.get('ticker') == tk:
+                        if tr.get('action') == 'BUY': sh_start -= int(tr.get('shares') or 0)
+                        else: sh_start += int(tr.get('shares') or 0)
+                equity_start += max(0, sh_start) * p_data['start']
+                
+            tot_eq_now = max(0.0, cash_now) + equity_now
+            tot_eq_start = max(0.0, cash_start) + equity_start
 
-                user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
-                held_sym = user_holds[0] if user_holds else ''
-                day_diff = round(tot_eq_now - tot_eq_start, 2)
-                day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
-                day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
+            user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
+            held_sym = user_holds[0] if user_holds else ''
+            day_diff = round(tot_eq_now - tot_eq_start, 2)
+            day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
+            day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
 
             trade_dates = sorted(list(set(tr.get('date_str') for tr in hist_lb if tr.get('date_str'))))
             start_date = trade_dates[0] if trade_dates else today_str
