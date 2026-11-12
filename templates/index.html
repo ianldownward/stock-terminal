@@ -3087,15 +3087,15 @@
     </div> <!-- END app-body-container -->
 
     <script>
-        function updateProfitRatchetHUD(dayPct) {
+        function updateProfitRatchetHUD(dayPct, isProfileLocked = false, activeFloor = 0) {
             let pct = parseFloat(dayPct) || 0.0;
-            let lockedStep = pct >= 2.5 ? (Math.floor(pct * 2) / 2) : 0;
+            let lockedStep = activeFloor > 0 ? activeFloor : (pct >= 2.5 ? (Math.floor(pct * 2) / 2) : 0);
 
             let statEl = document.getElementById('ratchetStatus');
             let subEl = document.getElementById('ratchetSubtext');
 
             if (statEl) {
-                if (lockedStep > 0) {
+                if (isProfileLocked && lockedStep > 0) {
                     statEl.innerHTML = `<span style="color:#0ecb81;">Floor Locked: +${lockedStep.toFixed(1)}%</span>`;
                 } else if (pct > 0) {
                     statEl.innerHTML = `<span style="color:#ffd400;">Active (+${pct.toFixed(2)}%)</span>`;
@@ -3105,9 +3105,12 @@
             }
 
             if (subEl) {
-                if (lockedStep > 0) {
+                if (isProfileLocked && lockedStep > 0) {
                     subEl.innerText = `Secured floor: +${lockedStep.toFixed(1)}% in cash`;
                     subEl.style.color = '#0ecb81';
+                } else if (lockedStep > 0) {
+                    subEl.innerText = `Trailing floor armed at +${lockedStep.toFixed(1)}%`;
+                    subEl.style.color = '#ffd400';
                 } else {
                     subEl.innerText = `Locks in 0.5% steps from 2.5%`;
                     subEl.style.color = '#8a8a9e';
@@ -5209,7 +5212,7 @@
                 let dayCol = dayVal >= 0 ? '#0ecb81' : '#ff5364';
                 let dayPct = activeLb.daily_pct || 0;
                 
-                updateProfitRatchetHUD(dayPct); 
+                updateProfitRatchetHUD(dayPct, Boolean(activeLb.is_locked), parseFloat(activeLb.active_floor) || 0);
                 
                 let pctStr = `(${dayVal >= 0 ? '+' : ''}${dayPct.toFixed(2)}%)`;
                 let tValEl = document.getElementById('mEquityTodayVal');
@@ -5655,9 +5658,10 @@
                         let sellPt = getCandleCoords(ts, p);
                         let buyPt = openBuy ? getCandleCoords(openBuy.ts, openBuy.price) : null;
 
-                        if (buyPt && sellPt && Math.abs(sellPt.x - buyPt.x) < 10) {
-                            buyPt.x -= 5;
-                            sellPt.x += 5;
+                        if (buyPt && sellPt && Math.abs(sellPt.x - buyPt.x) < 26) {
+                            let midX = (buyPt.x + sellPt.x) / 2;
+                            buyPt.x = midX - 13;
+                            sellPt.x = midX + 13;
                         }
 
                         // 1. Straight line connecting Buy X to Sell X

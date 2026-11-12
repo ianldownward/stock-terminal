@@ -907,6 +907,11 @@ class PortfolioManager:
         if not trade: return False
         hist.remove(trade)
         ud['history'] = hist
+        ud['ratchet_locked'] = False
+        ud['is_locked'] = False
+        ud['ratchet_floor_override'] = None
+        ud['locked_floor_val'] = None
+        ud['daily_peak_pct'] = 0.0
         
         curr_tot = self.get_shares(trade.get('ticker'))
         if 'holdings' not in ud: ud['holdings'] = {}
@@ -1356,7 +1361,7 @@ def process_auto_profile(prof_name, client_email=None):
 
             if daily_pnl_pct > ud.get('daily_peak_pct', 0.0):
                 ud['daily_peak_pct'] = round(daily_pnl_pct, 2)
-                if ud.get('ratchet_floor_override') and daily_pnl_pct >= (ud['ratchet_floor_override'] + 0.6):
+                if ud.get('ratchet_floor_override') is not None and daily_pnl_pct >= (float(ud['ratchet_floor_override']) + 0.6):
                     ud['ratchet_floor_override'] = None
                 if is_client:
                     portfolio_store.save_client_store(client_email, c_store)
@@ -2496,14 +2501,29 @@ def step_down_override_route():
     if not ud:
         return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
 
-    current_floor = float(ud.get('locked_floor_val') or 2.5)
+    # Compute true current daily % so stepping down never gets immediately overwritten by stale daily_peak_pct
+    mb_cur = float(ud.get('master_budget') or 700.0)
+    hist_cur = ud.get('history') or []
+    init_cur = ud.get('initial_positions') or {}
+    nh_cur = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
+                 for tr in hist_cur if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
+    im_cur = sum(float(pos.get('manual_val') or 0.0) for pos in init_cur.values())
+    cur_eq_est = max(0.0, mb_cur + nh_cur - im_cur)
+    cur_day_pct = ((cur_eq_est - mb_cur) / mb_cur * 100.0) if mb_cur > 0 else 0.0
+
+    raw_floor = ud.get('locked_floor_val') if ud.get('locked_floor_val') is not None else (
+        round(int(cur_day_pct * 2) / 2.0, 2) if cur_day_pct >= 2.5 else 2.5
+    )
+    current_floor = float(raw_floor)
     new_floor = max(0.0, round(current_floor - 0.5, 2))
 
     ud['ratchet_floor_override'] = new_floor
     ud['locked_floor_val'] = new_floor
     ud['ratchet_locked'] = False
     ud['is_locked'] = False
-    ud['daily_peak_pct'] = round(new_floor + 0.4, 2)
+    ud['manual_locked_day'] = None
+    # Keep daily_peak_pct >= cur_day_pct so process_auto_profile does not wipe ratchet_floor_override on the next tick
+    ud['daily_peak_pct'] = round(max(cur_day_pct, new_floor + 0.4), 2)
 
     if is_client:
         portfolio_store.save_client_store(client_name, c_store)
@@ -2733,9 +2753,14 @@ def api_sync_alpaca_state():
         today_pnl = round(alpaca_equity - alpaca_last_equity, 2)
         today_pct = round((today_pnl / alpaca_last_equity) * 100.0, 2)
 
-        # Baseline budget is set to Alpaca's opening equity
+        # Baseline budget is set to Alpaca's opening equity & clear any stale ratchet/day locks
         ud['master_budget'] = alpaca_last_equity
         ud['daily_peak_pct'] = max(0.0, today_pct)
+        ud['ratchet_locked'] = False
+        ud['is_locked'] = False
+        ud['manual_locked_day'] = None
+        ud['ratchet_floor_override'] = None
+        ud['locked_floor_val'] = None
 
         now_lon = pd.Timestamp.now(tz='Europe/London')
         today_str = now_lon.strftime('%Y-%m-%d')
@@ -3324,9 +3349,10 @@ def get_data():
             daily_avg_pct = round(cum_gain_pct / active_days, 2)
             daily_avg_val = round(cum_gain_val / active_days, 2)
 
+            has_override = (u_data.get('ratchet_floor_override') is not None)
             is_manually_locked = (u_data.get('manual_locked_day') == today_str)
             is_ratchet_locked = bool(u_data.get('ratchet_locked') and len(user_holds) == 0)
-            is_locked = is_manually_locked or is_ratchet_locked or (len(user_holds) == 0 and day_pct >= 2.50 and not u_data.get('ratchet_floor_override'))
+            is_locked = is_manually_locked or is_ratchet_locked or (len(user_holds) == 0 and day_pct >= 2.50 and not has_override)
 
             leaderboard.append({
                 'user': u, 
