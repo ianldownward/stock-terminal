@@ -474,6 +474,16 @@
         body.light-mode #mobHeldShareCard span[style*="color: #fff"] {
             color: #131722 !important;
         }
+        body.light-mode #mobProfitRatchetCard {
+            background: #ffffff !important;
+            border-color: #d8dce6 !important;
+        }
+        body.light-mode #mobProfitRatchetCard .mob-ratchet-title {
+            color: #ffb700 !important;
+        }
+        body.light-mode #mobRatchetSegments .mob-r-bar[data-active="false"] {
+            background: #d8dce6 !important;
+        }
 
        /* TOP GLOBAL HEADER BAR (DEEPER & REFINED) */
         .top-header-bar {
@@ -880,6 +890,17 @@
                 margin-bottom: 0 !important;
                 padding: 6px 10px !important;
                 min-width: 0 !important;
+            }
+            #mobProfitRatchetCard {
+                margin-bottom: 0 !important;
+                background: #14171f;
+                border: 1px solid #262b36;
+                border-radius: 8px;
+                padding: 5px 10px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
             }
             #mobLeaderboardCard {
                 margin-bottom: 0 !important;
@@ -2683,6 +2704,20 @@
     <div class="main-content">
         <!-- MOBILE DASHBOARD CONTAINER -->
         <div id="mobileDashboardStack">
+            <div id="mobProfitRatchetCard">
+                <span class="mob-ratchet-title" style="font-size:9px; font-weight:800; color:#ffd400; letter-spacing:0.4px; text-transform:uppercase; white-space:nowrap; flex-shrink:0;">Ratchet</span>
+                <div id="mobRatchetSegments" style="display:flex; flex:1; align-items:center; gap:2.5px; min-width:0;">
+                    <div class="mob-r-bar" data-target="2.5" data-active="false" title="2.5%" style="flex:1; height:4px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                    <div class="mob-r-bar" data-target="3.0" data-active="false" title="3.0%" style="flex:1; height:4px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                    <div class="mob-r-bar" data-target="3.5" data-active="false" title="3.5%" style="flex:1; height:4px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                    <div class="mob-r-bar" data-target="4.0" data-active="false" title="4.0%" style="flex:1; height:4px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                    <div class="mob-r-bar" data-target="4.5" data-active="false" title="4.5%" style="flex:1; height:4px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                    <div class="mob-r-bar" data-target="5.0" data-active="false" title="5.0%" style="flex:1; height:4px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                    <div class="mob-r-bar" data-target="5.5" data-active="false" title="5.5%" style="flex:1; height:4px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                    <div class="mob-r-bar" data-target="6.0" data-active="false" title="6.0%+" style="flex:1; height:4px; border-radius:2px; background:#262b36; transition:background 0.3s ease;"></div>
+                </div>
+                <span id="mobRatchetStatus" style="font-size:9.5px; font-weight:800; color:#8a8a9e; white-space:nowrap; flex-shrink:0;">Idle (0.0%)</span>
+            </div>
             <div id="mobLeaderboardCard" class="lb-item active-profile-card"></div>
             <div id="mobHeldShareCard" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:6px 12px; display:flex; justify-content:space-between; align-items:center;">
                 <div style="display:flex; align-items:center; gap:8px;">
@@ -3098,7 +3133,31 @@
                     }
                 }
             });
-        }
+
+            let mobStatEl = document.getElementById('mobRatchetStatus');
+            if (mobStatEl) {
+                if (lockedStep > 0) {
+                    mobStatEl.innerHTML = `<span style="color:#0ecb81;">Floor +${lockedStep.toFixed(1)}%</span>`;
+                } else if (pct > 0) {
+                    mobStatEl.innerHTML = `<span style="color:#ffd400;">+${pct.toFixed(2)}% / 2.5%</span>`;
+                } else {
+                    mobStatEl.innerHTML = `<span style="color:#8a8a9e;">Idle (0.0%)</span>`;
+                }
+            }
+
+            document.querySelectorAll('#mobRatchetSegments .mob-r-bar').forEach(bar => {
+                let target = parseFloat(bar.getAttribute('data-target'));
+                if (lockedStep >= target || pct >= target) {
+                    bar.setAttribute('data-active', 'true');
+                    bar.style.background = '#0ecb81';
+                    bar.style.boxShadow = '0 0 5px rgba(14, 203, 129, 0.5)';
+                } else {
+                    bar.setAttribute('data-active', 'false');
+                    bar.style.background = document.body.classList.contains('light-mode') ? '#d8dce6' : '#262b36';
+                    bar.style.boxShadow = 'none';
+                }
+            });
+        }}
 
         function updateSessionTimeline() {
             let d = new Date();
@@ -5337,8 +5396,12 @@
             if (!stack) return;
 
             if (isMobile) {
+                let mobRatchet = document.getElementById('mobProfitRatchetCard');
                 if (profileBox && profileBox.parentElement !== stack) {
                     stack.prepend(profileBox);
+                }
+                if (mobRatchet && profileBox && mobRatchet.previousElementSibling !== profileBox) {
+                    profileBox.insertAdjacentElement('afterend', mobRatchet);
                 }
                 if (mobLb && mobLb.parentElement !== stack) stack.appendChild(mobLb);
                 if (mobHeld && mobHeld.parentElement !== stack) stack.appendChild(mobHeld);
