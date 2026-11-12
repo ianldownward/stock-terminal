@@ -4991,10 +4991,11 @@
             let isLight = document.body.classList.contains('light-mode');
             if (lg) {
                 let curTk = currentTicker || 'TQQQ';
+                let curInt = document.getElementById('intervalSelect') ? document.getElementById('intervalSelect').value : '5m';
                 let legBg = isLight ? 'rgba(255,255,255,0.92)' : 'rgba(23,26,33,0.85)';
                 let legBorder = isLight ? '#d8dce6' : '#262b36';
                 let legText = isLight ? '#ffb700' : '#ffd400';
-                lg.innerHTML = `<span style="background:${legBg}; border:1px solid ${legBorder}; color:${legText}; padding:3px 8px; border-radius:4px; font-weight:bold; font-size:11px;">${curTk} • 5m</span>`;
+                lg.innerHTML = `<span style="background:${legBg}; border:1px solid ${legBorder}; color:${legText}; padding:3px 8px; border-radius:4px; font-weight:bold; font-size:11px;">${curTk} • ${curInt}</span>`;
             }
             if (!tvChart) return;
 
@@ -5127,6 +5128,21 @@
                 }
                 
                 let activeHolds = (p.portfolio && p.portfolio.active_holds) || (p.metrics && p.metrics.active_holds) || [];
+                let profKeyForHold = (userSel && userSel.value) ? userSel.value : (p.portfolio ? p.portfolio.active_user : activeUser);
+                if (Array.isArray(activeHolds) && activeHolds.length > 0) {
+                    let holdKey = `${profKeyForHold}:${activeHolds[0]}`;
+                    if (window._lastAutoSwitchedHoldKey !== holdKey) {
+                        window._lastAutoSwitchedHoldKey = holdKey;
+                        if (currentTicker !== activeHolds[0]) {
+                            currentTicker = activeHolds[0];
+                            window._userHasPannedChart = false;
+                            clearTimeout(safetyTimer);
+                            return fetchData(silent);
+                        }
+                    }
+                } else {
+                    window._lastAutoSwitchedHoldKey = '';
+                }
                 renderWatchlist(globalPortfolioData.watchlist, activeHolds);
 
                 // Update Mobile Chart Header (Preserves ticker and burger menu permanently)
