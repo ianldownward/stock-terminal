@@ -5836,7 +5836,8 @@
                     ctx.restore();
                 }
 
-                // Clean stacked white text
+                // Clean stacked white text with automatic collision avoidance
+                let placedLabelBoxes = [];
                 function drawStackedText(x, y, lines, isSell = false) {
                     ctx.save();
                     ctx.fillStyle = '#ffffff';
@@ -5844,7 +5845,22 @@
                     ctx.font = '700 9px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
                     let lineHeight = 11;
+                    let boxW = 48;
+                    let boxH = lines.length * lineHeight;
                     let startY = isSell ? (y - 8 - ((lines.length - 1) * lineHeight)) : (y + 14);
+
+                    let attempts = 0;
+                    while (attempts < 6) {
+                        let top = startY - 9;
+                        let bottom = top + boxH;
+                        let collides = placedLabelBoxes.some(b =>
+                            Math.abs(b.x - x) < boxW && !(bottom < b.top || top > b.bottom)
+                        );
+                        if (!collides) break;
+                        startY += isSell ? -(boxH + 4) : (boxH + 4);
+                        attempts++;
+                    }
+                    placedLabelBoxes.push({ x: x, top: startY - 9, bottom: startY - 9 + boxH });
 
                     lines.forEach((line, idx) => {
                         ctx.fillText(line, x, startY + (idx * lineHeight));
@@ -7580,11 +7596,34 @@
             } catch(e) {}
         }
 
-        // Register Background Service Worker for Native Push
+        // Register Background Service Worker & Auto-Refresh Phone Push Token on Load
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js', { scope: '/' })
-                    .then(reg => console.log('[SW] Active with scope:', reg.scope))
+                    .then(async (reg) => {
+                        console.log('[SW] Active with scope:', reg.scope);
+                        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                        if (isMobile && 'PushManager' in window && Notification.permission === 'granted' && localStorage.getItem('phone_alerts_disabled') !== 'true') {
+                            try {
+                                const resKey = await fetch('/api/push/vapid_public_key');
+                                const { public_key } = await resKey.json();
+                                if (public_key) {
+                                    let sub = await reg.pushManager.getSubscription();
+                                    if (!sub) {
+                                        sub = await reg.pushManager.subscribe({
+                                            userVisibleOnly: true,
+                                            applicationServerKey: urlBase64ToUint8Array(public_key)
+                                        });
+                                    }
+                                    await fetch('/api/push/subscribe', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify(sub)
+                                    });
+                                }
+                            } catch (e) {}
+                        }
+                    })
                     .catch(err => console.error('[SW] Registration failed:', err));
             });
         }
@@ -7677,6 +7716,13 @@
         }
 
         async function turnOnPhoneAlerts() {
+            const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (!isMobileDevice) {
+                alert("Phone Notifications must be enabled directly on your phone.\n\nOpen the IDC Trading app from your iPhone Home Screen icon -> tap the top-right menu (☰) -> Phone Alerts -> Re-Sync.");
+                syncAlertStateUI();
+                return;
+            }
+
             localStorage.removeItem('phone_alerts_disabled');
             const statusEl = document.getElementById('pushStatusText');
             if (statusEl) statusEl.innerHTML = "<span style='color:#ffd400;'>Connecting alerts...</span>";

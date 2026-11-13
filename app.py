@@ -1675,20 +1675,24 @@ def process_auto_profile(prof_name, client_email=None):
 
         for d in dirs:
             if d['shares'] > 0:
-                portfolio_store.execute_trade(
+                executed = portfolio_store.execute_trade(
                     d['ticker'], d['action'], d['shares'], d['price'], prof_name,
                     metadata={'status': d.get('status', 'Manual/EOD'), 'reason': d.get('reason', ''), 'highest_price': d.get('highest_price', 0.0), 'slices': d.get('slices', 1)},
                     client_email=client_email
                 )
-                # Stamp 15-minute cooldown on stop-outs to avoid whipsaw chop
-                if d['action'] == 'SELL':
-                    if 'cooldowns' not in ud or not isinstance(ud['cooldowns'], dict):
-                        ud['cooldowns'] = {}
-                    ud['cooldowns'][d['ticker']] = int(time.time()) + 900
+                # Stamp 15-minute cooldown on fresh user state so execute_trade history is never overwritten
+                if executed and d['action'] == 'SELL':
                     if is_client:
-                        portfolio_store.save_client_store(client_email, c_store)
+                        fresh_cs = portfolio_store.get_client_store(client_email)
+                        fresh_ud = (fresh_cs.get('users') or {}).get(prof_name)
+                        if isinstance(fresh_ud, dict):
+                            fresh_ud.setdefault('cooldowns', {})[d['ticker']] = int(time.time()) + 900
+                            portfolio_store.save_client_store(client_email, fresh_cs)
                     else:
-                        portfolio_store.save_data(portfolio_store.data)
+                        fresh_ud = portfolio_store.user_data(prof_name)
+                        if isinstance(fresh_ud, dict):
+                            fresh_ud.setdefault('cooldowns', {})[d['ticker']] = int(time.time()) + 900
+                            portfolio_store.save_data(portfolio_store.data)
     except Exception: pass
 
 def global_background_worker():
@@ -1837,10 +1841,20 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
     if 'holdings' not in ud or not isinstance(ud['holdings'], dict):
         ud['holdings'] = {}
 
+    now_ts_sync = int(time.time())
     for tk in all_tks:
         loc_sh = calc_local_sh(tk)
         alp_p = alpaca_pos_map.get(tk)
         alp_sh = int(alp_p.get('qty', 0)) if alp_p else 0
+
+        # Skip reconciliation if an order for this ticker was placed within the last 75s (still settling on Alpaca)
+        recent_tk_tr = next((tr for tr in hist if tr.get('ticker') == tk and tr.get('source') != 'alpaca_sync'), None)
+        if recent_tk_tr and (now_ts_sync - int(recent_tk_tr.get('timestamp') or 0)) < 75:
+            if alp_sh > 0:
+                mv = round(float(alp_p.get('market_value') or 0.0), 2)
+                hw = max(float((ud['holdings'].get(tk) or {}).get('high_water') or 0.0), float(alp_p.get('current_price') or 0.0))
+                ud['holdings'][tk] = {'shares': alp_sh, 'manual_val': mv, 'high_water': hw}
+            continue
 
         if loc_sh > 0 and alp_sh == 0:
             sell_o = next((o for o in (closed_orders or []) if o.get('status') == 'filled' and (o.get('symbol') or '').upper() == tk and (o.get('side') or '').lower() == 'sell'), None)
@@ -2129,6 +2143,9 @@ def reconcile_single_target(target):
 
                 active_tickers = list(set([tr.get('ticker') for tr in h_list if chk_shares(tr.get('ticker')) > 0]))
                 for tk in active_tickers:
+                    recent_buy_tr = next((tr for tr in h_list if tr.get('ticker') == tk and tr.get('action') == 'BUY'), None)
+                    if recent_buy_tr and (int(time.time()) - int(recent_buy_tr.get('timestamp') or 0)) < 75:
+                        continue
                     if alpaca_holdings.get(tk, 0) == 0:
                         local_sh = chk_shares(tk)
                         if local_sh > 0:
