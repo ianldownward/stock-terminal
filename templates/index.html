@@ -7970,7 +7970,19 @@
 
             try {
                 let res = await fetch('/api/staging/deploy_to_live', { method: 'POST' });
-                let d = await res.json();
+                if (res.redirected) {
+                    alert("Session expired. Please refresh the page, sign in, and click Deploy to Live again.");
+                    if (btn) btn.disabled = false;
+                    if (lbl) lbl.innerText = 'Deploy to Live';
+                    return;
+                }
+                let rawTxt = await res.text();
+                let d = {};
+                try {
+                    d = JSON.parse(rawTxt);
+                } catch (parseErr) {
+                    throw new Error(`HTTP ${res.status} — Render may still be restarting. Wait 15s and retry.`);
+                }
                 if (d.status === 'ok') {
                     if (btn) {
                         btn.style.background = '#0ecb81';
@@ -7999,7 +8011,7 @@
                     if (lbl) lbl.innerText = 'Deploy to Live';
                 }
             } catch (err) {
-                alert("Network error triggering live deployment.");
+                alert("Deploy error: " + (err.message || "Network error triggering live deployment."));
                 if (btn) btn.disabled = false;
                 if (lbl) lbl.innerText = 'Deploy to Live';
             }
