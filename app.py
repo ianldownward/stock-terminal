@@ -20,6 +20,7 @@ ADMIN_HASH = generate_password_hash(ADMIN_PW)
 
 # The account used to feed live performance stats into the public Strategy Wizard
 PAPER_STATS_ACCOUNT = "ian_paper@gmail.com"
+MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'stock_terminal')
 
 def is_admin_session():
     u = (session.get('email') or session.get('user') or '').strip().lower()
