@@ -5515,61 +5515,126 @@ def api_update_password():
 @login_required
 def get_strategy_stats():
     default_stats = {
-        'Vector Hybrid': {'win_rate': '70.0%', 'profit_factor': '4.55', 'daily_pace': '+1.31%'},
-        'Dual Axis': {'win_rate': '50.0%', 'profit_factor': '2.07', 'daily_pace': '+0.88%'},
-        'Velocity Pulse': {'win_rate': '60.0%', 'profit_factor': '1.20', 'daily_pace': '+1.20%'}
+        'Vector Hybrid': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
+        'Dual Axis': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
+        'Velocity Pulse': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
     }
     if not portfolio_store.client:
-        return jsonify(default_stats)
-        
-    doc = portfolio_store.client[MONGO_DB_NAME]['accounts'].find_one({"username": PAPER_STATS_ACCOUNT})
-    if not doc or 'portfolio' not in doc or 'users' not in doc['portfolio']:
-        return jsonify(default_stats)
-        
-    users_dict = doc['portfolio']['users']
+        return jsonify({'stats': default_stats, 'connected': False, 'account': PAPER_STATS_ACCOUNT, **default_stats})
+
+    # Always read from the live production database ('stock_terminal') on all versions (Live & Staging)
+    recon_db_name = os.environ.get('RECON_MONGO_DB', 'stock_terminal')
+    accounts_col = portfolio_store.client[recon_db_name]['accounts']
+    doc = accounts_col.find_one({"_id": f"client_{PAPER_STATS_ACCOUNT.lower()}"})
+    if not doc:
+        doc = accounts_col.find_one({"username": {"$regex": f"^{re.escape(PAPER_STATS_ACCOUNT)}$", "$options": "i"}})
+
+    if not doc or not isinstance(doc.get('portfolio'), dict):
+        return jsonify({'stats': default_stats, 'connected': False, 'account': PAPER_STATS_ACCOUNT, **default_stats})
+
+    p = doc['portfolio']
+    users_dict = p.get('users') if isinstance(p.get('users'), dict) else {}
+
+    # Support legacy single-strategy client documents if 'users' wasn't populated yet
+    if not users_dict and (p.get('strategy_name') or p.get('active_user') or p.get('history')):
+        legacy_name = (p.get('strategy_name') or p.get('active_user') or 'Vector Hybrid').strip()
+        users_dict = {
+            legacy_name: {
+                'master_budget': float(p.get('master_budget') or 700.0),
+                'history': p.get('history') or [],
+                'initial_positions': p.get('initial_positions') or {}
+            }
+        }
+
     stats_out = {}
-    for strat_name in ['Vector Hybrid', 'Dual Axis', 'Velocity Pulse']:
-        prof_key = next((k for k in users_dict.keys() if strat_name.lower() in k.lower()), None)
+    strategy_aliases = {
+        'Vector Hybrid': ['vector'],
+        'Dual Axis': ['dual'],
+        'Velocity Pulse': ['velocity', 'pulse']
+    }
+
+    for strat_name, aliases in strategy_aliases.items():
+        prof_key = next((k for k in users_dict.keys() if any(a in k.lower() for a in aliases)), None)
         if not prof_key:
-            stats_out[strat_name] = default_stats[strat_name]
-            continue
-        ud = users_dict[prof_key]
-        hist = ud.get('history', [])
-        budget = float(ud.get('master_budget', 500.0))
-        
-        buy_q = []
-        wins, losses, win_val, loss_val = 0, 0, 0.0, 0.0
-        for t in reversed(hist):
-            if t.get('ticker') in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']: continue
-            if t.get('action') == 'BUY':
-                buy_q.append(t)
-            elif t.get('action') == 'SELL' and buy_q:
-                b = buy_q.pop(0)
-                diff = round((float(t.get('price', 1)) - float(b.get('price', 1))) * int(t.get('shares', 1)), 2)
-                if diff >= 0:
-                    wins += 1; win_val += diff
-                else:
-                    losses += 1; loss_val += abs(diff)
-        
-        tot_trades = wins + losses
-        if tot_trades == 0:
-            stats_out[strat_name] = default_stats[strat_name]
+            stats_out[strat_name] = {
+                'win_rate': '0.0% (0W/0L)',
+                'profit_factor': '0.00',
+                'daily_pace': '+0.00%',
+                'trades': 0
+            }
             continue
 
-        wr = (wins / tot_trades * 100.0)
-        pf = (win_val / loss_val) if loss_val > 0 else (win_val if win_val > 0 else 1.0)
-        
-        trade_dates = list(set([tr.get('date_str') for tr in hist if tr.get('date_str')]))
-        days_active = max(1, len(trade_dates))
+        ud = users_dict[prof_key] or {}
+        hist = ud.get('history') or []
+        budget = float(ud.get('master_budget') or 700.0)
+        if budget <= 0:
+            budget = 700.0
+
+        # Share-by-share FIFO matching for exact realized wins/losses
+        buy_queues = {}
+        wins, losses, win_val, loss_val = 0, 0, 0.0, 0.0
+        for t in reversed(hist):
+            tk = (t.get('ticker') or '').strip().upper()
+            if not tk or tk in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']:
+                continue
+            act = (t.get('action') or '').upper()
+            sh = int(float(t.get('shares') or 0))
+            pr = float(t.get('price') or 0.0)
+            amt = float(t.get('amount') or (sh * pr))
+            if sh <= 0 or pr <= 0:
+                continue
+
+            if act == 'BUY':
+                buy_queues.setdefault(tk, []).append({'shares': sh, 'amount': amt})
+            elif act == 'SELL':
+                rem = sh
+                cost_basis = 0.0
+                matched_sh = 0
+                q = buy_queues.get(tk) or []
+                while q and rem > 0:
+                    b = q[0]
+                    m = min(b['shares'], rem)
+                    unit_c = (b['amount'] / b['shares']) if b['shares'] > 0 else pr
+                    cost_basis += m * unit_c
+                    matched_sh += m
+                    rem -= m
+                    b['shares'] -= m
+                    b['amount'] -= m * unit_c
+                    if b['shares'] <= 0:
+                        q.pop(0)
+
+                if matched_sh > 0:
+                    sell_proceeds = amt * (matched_sh / sh)
+                    diff = round(sell_proceeds - cost_basis, 2)
+                    if diff >= 0:
+                        wins += 1
+                        win_val += diff
+                    else:
+                        losses += 1
+                        loss_val += abs(diff)
+
+        tot_trades = wins + losses
+        wr = (wins / tot_trades * 100.0) if tot_trades > 0 else 0.0
+        pf = (win_val / loss_val) if loss_val > 0 else (round(win_val, 2) if win_val > 0 else 0.0)
+
+        trade_dates = sorted(list(set([tr.get('date_str') for tr in hist if tr.get('date_str')])))
+        if trade_dates:
+            now_lon = pd.Timestamp.now(tz='Europe/London')
+            days_active = max(1, len(pd.bdate_range(trade_dates[0], now_lon.strftime('%Y-%m-%d'))))
+        else:
+            days_active = 1
+
         net_gain = win_val - loss_val
         daily_pct = ((net_gain / budget) * 100.0) / days_active if budget > 0 else 0.0
-        
+
         stats_out[strat_name] = {
-            'win_rate': f"{wr:.1f}%",
+            'win_rate': f"{wr:.1f}% ({wins}W/{losses}L)",
             'profit_factor': f"{pf:.2f}",
-            'daily_pace': f"{'+' if daily_pct >= 0 else ''}{daily_pct:.2f}%"
+            'daily_pace': f"{'+' if daily_pct >= 0 else ''}{daily_pct:.2f}%",
+            'trades': tot_trades
         }
-    return jsonify(stats_out)
+
+    return jsonify({'stats': stats_out, 'connected': True, 'account': PAPER_STATS_ACCOUNT, **stats_out})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8095))

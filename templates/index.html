@@ -1920,7 +1920,10 @@
     <div class="modal-overlay" id="strategyWizardModal" style="display:none; z-index:1150;">
         <div class="modal" style="width: 820px; max-width: 95vw; max-height: 90vh; display:flex; flex-direction:column;">
             <h2>
-                <span>Choose Your Strategy Method</span>
+                <span style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <span>Choose Your Strategy Method</span>
+                    <span id="wizardReconFeedBadge" style="font-size:10px; font-weight:700; color:#8a8a9e; background:#0f1115; border:1px solid #262b36; padding:3px 8px; border-radius:5px;">Connecting to ian_paper@gmail.com...</span>
+                </span>
                 <button class="btn-control" style="padding:4px 8px; font-size:12px;" onclick="closeStrategyWizard()">✕</button>
             </h2>
             <div style="margin-top:14px; overflow-y:auto; padding-right:4px;">
@@ -3494,19 +3497,20 @@
                 </div>
             `;
 
-            // Populate Active Strategy Vital Stats (Drawer 5)
+            // Populate Active Strategy Vital Stats (Drawer 5) from live recon feed
             let wrEl = document.getElementById('sideKpiWinRate');
             let pfEl = document.getElementById('sideKpiProfitFactor');
             let rrEl = document.getElementById('sideKpiRunRate');
             if (wrEl && pfEl && rrEl) {
-                let wrMap = { 'vector': '61.5% (8W / 5L)', 'dual': '50.0% (8W / 8L)', 'velocity': '40.0% (6W / 9L)', 'pulse': '40.0% (6W / 9L)' };
-                let pfMap = { 'vector': '3.55 (Elite)', 'dual': '2.07 (Strong)', 'velocity': '1.20 (Scalp)', 'pulse': '1.20 (Scalp)' };
-                let matched = Object.keys(wrMap).find(k => profName.includes(k));
-                wrEl.innerText = matched ? wrMap[matched] : '70.0% (7W / 3L)';
-                pfEl.innerText = matched ? pfMap[matched] : '4.55 (Elite)';
+                if (!window._reconStrategyStats) refreshReconStrategyStats();
+                let rStats = window._reconStrategyStats || {};
+                let stratKey = profName.includes('dual') ? 'Dual Axis' : ((profName.includes('velocity') || profName.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid');
+                let liveS = rStats[stratKey];
+                wrEl.innerText = liveS ? liveS.win_rate : '--';
+                pfEl.innerText = liveS ? liveS.profit_factor : '--';
 
                 let curEq = activeLb.equity || budget;
-                let days = Math.max(1, activeLb.days_active || 5);
+                let days = Math.max(1, activeLb.days_active || 1);
                 let gainPct = ((curEq - budget) / budget) * 100.0;
                 let dailyRate = gainPct / days;
                 rrEl.innerText = `${dailyRate >= 0 ? '+' : ''}${dailyRate.toFixed(2)}% / Day`;
@@ -4421,27 +4425,45 @@
 
         let selectedWizardMethod = 'Vector Hybrid';
 
-        async function openStrategyWizard() {
-            closeSettingsModal();
-            selectWizardStrategy('Vector Hybrid');
-            let m = document.getElementById('strategyWizardModal');
-            if (m) m.style.display = 'flex';
-            
+        window._reconStrategyStats = null;
+
+        async function refreshReconStrategyStats() {
             try {
                 let res = await fetch('/api/strategy_stats');
-                let stats = await res.json();
+                let data = await res.json();
+                window._reconStrategyStats = data;
+                let badge = document.getElementById('wizardReconFeedBadge');
+                if (badge) {
+                    if (data.connected) {
+                        badge.style.color = '#0ecb81';
+                        badge.style.borderColor = '#0ecb81';
+                        badge.innerText = `● Live Feed: ${data.account || 'ian_paper@gmail.com'}`;
+                    } else {
+                        badge.style.color = '#ff9900';
+                        badge.style.borderColor = '#ff9900';
+                        badge.innerText = `● Recon Account Offline (${data.account || 'ian_paper@gmail.com'})`;
+                    }
+                }
                 ['Vector Hybrid', 'Dual Axis', 'Velocity Pulse'].forEach(strat => {
                     let sId = strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0];
                     let wrEl = document.getElementById(`wiz-wr-${sId}`);
                     let pfEl = document.getElementById(`wiz-pf-${sId}`);
                     let dpEl = document.getElementById(`wiz-dp-${sId}`);
-                    if (stats[strat]) {
-                        if (wrEl) wrEl.innerText = stats[strat].win_rate;
-                        if (pfEl) pfEl.innerText = stats[strat].profit_factor;
-                        if (dpEl) dpEl.innerText = stats[strat].daily_pace;
+                    if (data[strat]) {
+                        if (wrEl) wrEl.innerText = data[strat].win_rate;
+                        if (pfEl) pfEl.innerText = data[strat].profit_factor;
+                        if (dpEl) dpEl.innerText = data[strat].daily_pace;
                     }
                 });
             } catch(e) {}
+        }
+
+        async function openStrategyWizard() {
+            closeSettingsModal();
+            selectWizardStrategy('Vector Hybrid');
+            let m = document.getElementById('strategyWizardModal');
+            if (m) m.style.display = 'flex';
+            await refreshReconStrategyStats();
         }
 
         function closeStrategyWizard() {
