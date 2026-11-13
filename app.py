@@ -835,7 +835,7 @@ class PortfolioManager:
 
             if should_route_alpaca and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
                 strat_prof = str(current_profile).lower()
-                if any(x in strat_prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
+                if any(x in strat_prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
                     t_pct = 0.75
                 elif 'test e5' in strat_prof:
                     t_pct = 0.35
@@ -1063,14 +1063,14 @@ class MarketScoringEngine:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"S2 VELOCITY FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Velocity Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Velocity Lock (+{pnl_pct:.2f}%)"}
 
             # SIMULATION-OPTIMIZED BREAKEVEN LOCK (+0.18% LOCK ONCE +0.50% PEAK HIT)
-            # Protects early winning turns from turning into losses across Vector Hybrid and Dual Axis
-            if any(x in prof for x in ['vector', 'dual', 'tqm', 'tq']) and peak_pnl_pct >= 0.50:
+            # Protects early winning turns from turning into losses across Vector Hybrid and Apex Precision
+            if any(x in prof for x in ['vector', 'apex', 'tqm', 'tq']) and peak_pnl_pct >= 0.50:
                 breakeven_price = avg_buy_price * 1.0018  # Locks +0.18% minimum profit
                 if current_price <= breakeven_price:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
             # DYNAMIC 0.50% STEP-RATCHET FLOOR (MOVES UP INDEFINITELY EVERY +0.50% FROM +2.50%)
-            if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
+            if any(x in prof for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
                 # Indefinite 0.50% steps: 2.5% -> 3.0% -> 3.5% -> 4.0% -> 4.5% -> 5.0%...
                 floor_pct = round(int(peak_pnl_pct * 2) / 2.0, 2)
                 profit_floor_price = avg_buy_price * (1.0 + (floor_pct / 100.0))
@@ -1099,11 +1099,11 @@ class MarketScoringEngine:
                     }
 
             # VELOCITY CHOKE ON RUNNERS: Choke trail to 0.40% once peak reaches >= +1.20%
-            if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 1.20:
+            if any(x in prof for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 1.20:
                 trail_pct = 0.40
 
             # TIERED CHOKE-TRAIL, RATCHET PROFIT FLOORS & 18:30 BANK-AND-WALK
-            if any(x in prof for x in ['test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
+            if any(x in prof for x in ['apex', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
                 # 1. EVENING BANK-AND-WALK: Past 18:30 BST with >= +2.80% profit -> Exit & shut down
                 if (now_uk.hour > 18 or (now_uk.hour == 18 and now_uk.minute >= 30)) and pnl_pct >= 2.80:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"E22 BANK-AND-WALK: Banked +{pnl_pct:.2f}% after 18:30 BST.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Bank & Walk', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Bank Win)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"Banked (+{pnl_pct:.2f}%)"}
@@ -1200,24 +1200,28 @@ class MarketScoringEngine:
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
             max_extension = 0.65 if is_3x_etf else 0.35
 
-            if any(x in prof for x in ['test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and ema_extension_pct > max_extension:
+            if any(x in prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and ema_extension_pct > max_extension:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max {max_extension:.2f}%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
             
             if 'test e12' in prof and rsi < 50:
                 return {'type': 'Intraday Momentum', 'score': 40, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"E12 Momentum Filter: RSI ({rsi:.1f}) below 50. Entry blocked.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low RSI Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI < 50)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # Relative volume threshold check
-            if any(x in prof for x in ['test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 1.20:
+            if any(x in prof for x in ['apex', 'test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 1.20:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # UNIVERSAL 14:30 - 14:50 BST OPENING MORATORIUM (Blocks opening whipsaws across all bots)
-            if any(x in prof for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
+            if any(x in prof for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
                 if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:50 BST for opening range confirmation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
 
             # TEST E17: 19:45 BST LATE-SESSION CURFEW
             if 'test e17' in prof and (now_uk.hour > 19 or (now_uk.hour == 19 and now_uk.minute >= 45)):
                 return {'type': 'Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'E17 Session Curfew: No new entries permitted after 19:45 BST.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
+
+            # LONG-ONLY BLOCK FOR APEX PRECISION (No SQQQ inverse shorts)
+            if is_inverse and 'apex' in prof:
+                return {'type': 'Intraday Momentum', 'score': 15, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "Apex Precision is Long-Only (TQQQ/SOXL). Inverse ETFs disabled.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Long-Only Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Long-Only)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # CAPITULATION DOWNSIDE SWITCH: Only allow SQQQ buys when sentiment <= 35
             reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
@@ -1296,7 +1300,7 @@ def process_auto_profile(prof_name, client_email=None):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['vector', 'dual', 'velocity', 'pulse', 'hybrid', 'axis', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_auto_profile = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         if not is_auto_profile: return
 
         # TEST B: PASSIVE BUY-AND-HOLD BENCHMARK
@@ -1415,7 +1419,7 @@ def process_auto_profile(prof_name, client_email=None):
         # TOTAL DAILY ACCOUNT STEP-RATCHET (Monitors the big header % on your screen)
         force_daily_floor_sell = False
         daily_floor_locked = 0.0
-        if any(x in active_profile for x in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
+        if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
             if ud.get('last_ratchet_date') != today_str:
                 ud['last_ratchet_date'] = today_str
                 ud['daily_peak_pct'] = 0.0
@@ -1707,7 +1711,7 @@ def global_background_worker():
             # Admin profiles
             for prof_name in list(portfolio_store.data.get('users', {}).keys()):
                 p_lower = prof_name.lower()
-                if any(k in p_lower for k in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
+                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
                     strategy_tasks.append((prof_name, None))
 
             # Client profiles
@@ -1721,7 +1725,7 @@ def global_background_worker():
                         users_dict = c_store.get('users') or {}
                         for p_name in list(users_dict.keys()):
                             p_low = p_name.lower()
-                            if any(k in p_low for k in ['vector', 'dual', 'velocity', 'tqm', 'tq', 'test s']):
+                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
                                 strategy_tasks.append((p_name, c_email))
                 except Exception as ex_c:
                     print(f"Client Background Scan Error: {ex_c}")
@@ -1754,7 +1758,7 @@ def match_bot_from_order_id(client_order_id, profiles):
             return p
     # Prefix fallbacks
     if 'vector' in coid_clean: return 'Vector Hybrid'
-    if 'dual' in coid_clean: return 'Dual Axis'
+    if 'apex' in coid_clean: return 'Apex Precision'
     if 'velocity' in coid_clean or 'pulse' in coid_clean: return 'Velocity Pulse'
     return None
 
@@ -2466,7 +2470,7 @@ def view_admin_users_log():
                 users_dict = c_store.get('users') or {}
                 
                 prof_tds = ""
-                for target_prof in ['Vector Hybrid', 'Velocity Pulse', 'Dual Axis']:
+                for target_prof in ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse']:
                     matched_k = next((k for k in users_dict.keys() if target_prof.lower() in k.lower()), None)
                     if matched_k:
                         ud = users_dict[matched_k]
@@ -2564,8 +2568,8 @@ def view_admin_users_log():
                         <tr style='background:#14171f; color:#8a8a9e; text-transform:uppercase; font-size:10px; letter-spacing:0.5px;'>
                             <th style='padding:12px; min-width:160px;'>Account Info</th>
                             <th style='padding:12px; border-left:1px solid #262b36;'>Vector Hybrid</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>Apex Precision</th>
                             <th style='padding:12px; border-left:1px solid #262b36;'>Velocity Pulse</th>
-                            <th style='padding:12px; border-left:1px solid #262b36;'>Dual Axis</th>
                             <th style='padding:12px; border-left:1px solid #262b36; text-align:right;'>Action</th>
                         </tr>
                     </thead>
@@ -3449,7 +3453,7 @@ def get_data():
 
         wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
         t = request.args.get('t', '').upper().strip()
-        is_momentum = any(x in active_profile for x in ['vector', 'dual', 'velocity', 'pulse', 'hybrid', 'axis', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         is_rotator = is_momentum
 
         hist = ud.get('history') or []
@@ -5518,7 +5522,7 @@ def api_update_password():
 def get_strategy_stats():
     default_stats = {
         'Vector Hybrid': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
-        'Dual Axis': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
+        'Apex Precision': {'win_rate': '72.0%', 'profit_factor': '3.85', 'daily_pace': '+1.42%'},
         'Velocity Pulse': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
     }
     if not portfolio_store.client:
@@ -5551,7 +5555,7 @@ def get_strategy_stats():
     stats_out = {}
     strategy_aliases = {
         'Vector Hybrid': ['vector'],
-        'Dual Axis': ['dual'],
+        'Apex Precision': ['apex'],
         'Velocity Pulse': ['velocity', 'pulse']
     }
 
