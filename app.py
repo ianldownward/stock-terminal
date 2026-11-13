@@ -1184,19 +1184,29 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: ${highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
-        # ENTRY LOGIC: Intraday EMA alignment (ignores obsolete 5-day drag)
+        # ASSET & REGIME ELIGIBILITY GATES (Evaluated before technical setup so UI reports exact status)
+        if is_inverse and 'apex' in prof:
+            return {'type': 'Intraday Momentum', 'score': 15, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "Apex Precision is Long-Only (TQQQ/SOXL). Inverse ETFs disabled.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Long-Only Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Long-Only)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
+        reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
+        if is_inverse and reg_score > 35:
+            return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in capitulation freeze (≤35 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
+        # ENTRY LOGIC: Intraday EMA alignment (RSI ceiling raised to 78 so sustained trends aren't locked out)
         intraday_pct = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0.5
-        if ema9 > ema21 and current_price > ema9 and rsi < 68 and intraday_pct >= -1.50:
+        if ema9 > ema21 and current_price > ema9 and rsi < 78 and intraday_pct >= -1.50:
             vol_20ma = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
-            # Use iloc[-2] (completed candle) or max of last 2 to prevent incomplete-bar delay
             cur_vol = max(df_5m['Volume'].iloc[-1], df_5m['Volume'].iloc[-2]) if len(df_5m) >= 2 else df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
 
-            # DYNAMIC ANTI-CHASE: 0.65% for high-beta 3x ETFs, 0.35% for single stocks
+            # DYNAMIC ANTI-CHASE: 0.65% for Apex Precision, 1.15% for Vector Hybrid / Velocity Pulse, 0.35% for single stocks
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
-            max_extension = 0.65 if is_3x_etf else 0.35
+            if any(x in prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
+                max_extension = 0.65 if is_3x_etf else 0.35
+            else:
+                max_extension = 1.15 if is_3x_etf else 0.50
 
-            if any(x in prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and ema_extension_pct > max_extension:
+            if ema_extension_pct > max_extension:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max {max_extension:.2f}%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
             
             if 'test e12' in prof and rsi < 50:
@@ -1215,21 +1225,12 @@ class MarketScoringEngine:
             if 'test e17' in prof and (now_uk.hour > 19 or (now_uk.hour == 19 and now_uk.minute >= 45)):
                 return {'type': 'Curfew', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'E17 Session Curfew: No new entries permitted after 19:45 BST.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Curfew Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Curfew Active)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Curfew Active'}
 
-            # LONG-ONLY BLOCK FOR APEX PRECISION (No SQQQ inverse shorts)
-            if is_inverse and 'apex' in prof:
-                return {'type': 'Intraday Momentum', 'score': 15, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "Apex Precision is Long-Only (TQQQ/SOXL). Inverse ETFs disabled.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Long-Only Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Long-Only)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
-
-            # CAPITULATION DOWNSIDE SWITCH: Only allow SQQQ buys when sentiment <= 35
-            reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
-            if is_inverse and reg_score > 35:
-                return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in capitulation freeze (≤35 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
-
             # INDEX RUNNER BOOST: If market sentiment >= 60, grant broad index 3x ETFs a +25 priority bonus
             etf_priority_bonus = 25 if (is_3x_etf and ticker in ['TQQQ', 'SOXL'] and reg_score >= 60) else (25 if is_inverse and reg_score <= 25 else 0)
-            buy_score = min(100, max(50, round(50 + pct_change_5d * 10 + (70 - rsi) + etf_priority_bonus)))
+            buy_score = min(100, max(65, round(55 + max(0.0, intraday_pct) * 8 + max(0.0, 78 - rsi) * 0.5 + etf_priority_bonus)))
             return {'type': 'Intraday Momentum', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SURGE DETECTED: Price > 9-EMA > 21-EMA, RSI {rsi:.1f}, Vol {vol_ratio:.1f}x{' [ETF PRIORITY]' if etf_priority_bonus else ''}.", 'is_smart': True, 'rec_buy': round(current_price*0.99, 2), 'rec_sell': round(current_price*1.02, 2), 'status': f"Fast {trade_type} Surge", 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': f"({trade_type} Surge)", 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-        return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Awaiting fast EMA crossover surge.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+        return {'type': 'Intraday Momentum', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Awaiting fast EMA crossover surge (RSI {rsi:.0f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Setup)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
     def score_nav_asset(self, ticker, current_price, volume_ratio):
         nav = self.nav_bases.get(ticker, current_price * 1.10)
