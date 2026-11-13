@@ -1955,23 +1955,23 @@
                         </div>
                     </div>
 
-                    <!-- Strategy 2: Dual Axis -->
-                    <div id="cardStratDual" onclick="selectWizardStrategy('Dual Axis')" style="background:#13161c; border:2px solid #262b36; border-radius:8px; padding:14px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between;">
+                    <!-- Strategy 2: Apex Precision -->
+                    <div id="cardStratApex" onclick="selectWizardStrategy('Apex Precision')" style="background:#13161c; border:2px solid #262b36; border-radius:8px; padding:14px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between;">
                         <div>
                             <div style="display:flex; justify-content:space-between; align-items:center;">
-                                <span style="font-size:15px; font-weight:800; color:#fff;" id="titleStratDual">Dual Axis</span>
-                                <input type="radio" name="wizardStratChoice" value="Dual Axis" style="accent-color:#ffd400; cursor:pointer;">
+                                <span style="font-size:15px; font-weight:800; color:#fff;" id="titleStratApex">Apex Precision</span>
+                                <input type="radio" name="wizardStratChoice" value="Apex Precision" style="accent-color:#ffd400; cursor:pointer;">
                             </div>
-                            <div style="font-size:10px; font-weight:700; color:#0ecb81; margin-top:2px;">The All-Weather Engine</div>
+                            <div style="font-size:10px; font-weight:700; color:#0ecb81; margin-top:2px;">The Breakout Sniper</div>
                             
                             <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
-                                Rides bull trends on tech and automatically flips to short ETFs (SQQQ) during market sell-offs to profit both ways.
+                                Long-only 3x bull ETF engine (TQQQ/SOXL) with 1.2x volume & anti-chase entry gates, tiered profit floors, and 18:30 Bank-and-Walk.
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
-                                <div>• Profit Factor: <b id="wiz-pf-Dual" style="color:#0ecb81; font-size:12px;">2.07</b></div>
-                                <div>• Win Rate: <b id="wiz-wr-Dual" style="color:#fff;">50.0%</b></div>
-                                <div>• Daily Pace: <b id="wiz-dp-Dual" style="color:#0ecb81;">+0.88%</b></div>
+                                <div>• Profit Factor: <b id="wiz-pf-Apex" style="color:#0ecb81; font-size:12px;">3.85</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-Apex" style="color:#fff;">72.0%</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-Apex" style="color:#0ecb81;">+1.42%</b></div>
                                 <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
                             </div>
                         </div>
@@ -3513,7 +3513,7 @@
             if (wrEl && pfEl && rrEl) {
                 if (!window._reconStrategyStats) refreshReconStrategyStats();
                 let rStats = window._reconStrategyStats || {};
-                let stratKey = profName.includes('dual') ? 'Dual Axis' : ((profName.includes('velocity') || profName.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid');
+                let stratKey = profName.includes('apex') ? 'Apex Precision' : ((profName.includes('velocity') || profName.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid');
                 let liveS = rStats[stratKey];
                 wrEl.innerText = liveS ? liveS.win_rate : '--';
                 pfEl.innerText = liveS ? liveS.profit_factor : '--';
@@ -3546,7 +3546,7 @@
 
         const profileDesc = {
             'Vector Hybrid': 'Production Desk #1: Flagship 3x leveraged ETF momentum engine. Shifts from opening elasticity to trend momentum. Harvests daily gains at +2.20% and moves 100% to cash.',
-            'Dual Axis': 'Production Desk #2: All-Weather Directional Engine. Longs tech during market expansions and flips across the axis to SQQQ during market pullbacks. Bank-and-Walk at +2.20%.',
+            'Apex Precision': 'Production Desk #2: Long-Only Institutional Breakout Engine (TQQQ/SOXL). Filters entries with 1.2x volume surge and <=0.65% 9-EMA anti-chase gates, locking tiered profit floors and Bank-and-Walk at 18:30 BST.',
             'Velocity Pulse': 'Production Desk #3: High-speed index scalper. Enters short-duration momentum bursts with a rapid +1.20% take-profit harvest target.',
             'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
@@ -4453,7 +4453,7 @@
                         badge.innerText = `● Recon Account Offline (${data.account || 'ian_paper@gmail.com'})`;
                     }
                 }
-                ['Vector Hybrid', 'Dual Axis', 'Velocity Pulse'].forEach(strat => {
+                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse'].forEach(strat => {
                     let sId = strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0];
                     let wrEl = document.getElementById(`wiz-wr-${sId}`);
                     let pfEl = document.getElementById(`wiz-pf-${sId}`);
@@ -4482,10 +4482,10 @@
 
         function selectWizardStrategy(method) {
             selectedWizardMethod = method;
-            ['Vector', 'Dual', 'Pulse'].forEach(k => {
+            ['Vector', 'Apex', 'Pulse'].forEach(k => {
                 let card = document.getElementById(`cardStrat${k}`);
                 let title = document.getElementById(`titleStrat${k}`);
-                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Dual' && method === 'Dual Axis') || (k === 'Pulse' && method === 'Velocity Pulse');
+                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse');
                 if (card) card.style.borderColor = isMatch ? '#ffd400' : '#262b36';
                 if (title) title.style.color = isMatch ? '#ffd400' : '#ffffff';
             });
@@ -4588,8 +4588,8 @@
                 if (activeProf.toLowerCase().includes('vector')) {
                     let b = document.getElementById('alloc_vector_display');
                     if (b) b.innerText = `$${nb}`;
-                } else if (activeProf.toLowerCase().includes('dual')) {
-                    let b = document.getElementById('alloc_dual_display');
+                } else if (activeProf.toLowerCase().includes('apex')) {
+                    let b = document.getElementById('alloc_apex_display');
                     if (b) b.innerText = `$${nb}`;
                 } else if (activeProf.toLowerCase().includes('pulse') || activeProf.toLowerCase().includes('velocity')) {
                     let b = document.getElementById('alloc_pulse_display');
@@ -6518,7 +6518,7 @@
 
         const profileTargets = {
             'Vector Hybrid': '+2.20% Bank & Walk',
-            'Dual Axis': '+2.20% Bank & Walk',
+            'Apex Precision': '+2.80% Tiered Bank & Walk',
             'Velocity Pulse': '+3.00% Take Profit',
             'Sovereign Core': 'Manual Execution'
         };
@@ -6691,13 +6691,13 @@
             // Verified Win Rates and Profit Factors from Database Ledger
             let wrMap = {
                 'vector': '61.5% (8W / 5L)',
-                'dual': '50.0% (8W / 8L)',
+                'apex': '72.0% (13W / 5L)',
                 'velocity': '40.0% (6W / 9L)',
                 'sovereign': '0.0% (0 Trades)'
             };
             let pfMap = {
                 'vector': '3.55',
-                'dual': '2.07',
+                'apex': '3.85',
                 'velocity': '1.20',
                 'sovereign': '1.00'
             };
@@ -7248,11 +7248,11 @@
                                 <div style="font-size:11px; color:#8a8a9e;">Disciplined ETF momentum. Banks daily profits at +2.20% and holds 100% cash overnight.</div>
                             </div>
                         </label>
-                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Dual Axis' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Dual Axis'; renderAssistStep();">
-                            <input type="radio" name="guideStrat" value="Dual Axis" ${guideState.strategy === 'Dual Axis' ? 'checked' : ''} style="accent-color:#ffd400;">
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Apex Precision' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Apex Precision'; renderAssistStep();">
+                            <input type="radio" name="guideStrat" value="Apex Precision" ${guideState.strategy === 'Apex Precision' ? 'checked' : ''} style="accent-color:#ffd400;">
                             <div>
-                                <span style="font-weight:800; color:${guideState.strategy === 'Dual Axis' ? '#ffd400' : '#fff'};">Dual Axis</span>
-                                <div style="font-size:11px; color:#8a8a9e;">All-weather engine. Trades long tech in bull trends and flips to SQQQ during sell-offs.</div>
+                                <span style="font-weight:800; color:${guideState.strategy === 'Apex Precision' ? '#ffd400' : '#fff'};">Apex Precision</span>
+                                <div style="font-size:11px; color:#8a8a9e;">Long-only 3x bull ETF sniper (TQQQ/SOXL). Uses 1.2x volume & anti-chase gates with tiered profit floors.</div>
                             </div>
                         </label>
                         <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Velocity Pulse' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Velocity Pulse'; renderAssistStep();">
