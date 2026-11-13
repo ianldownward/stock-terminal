@@ -3129,42 +3129,42 @@
         </div>
 
         <!-- 7. BUYING BLOCK TIMERS & 3-STRIKE LOCKOUT HUD -->
-        <div id="buyingGuardsHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:9px 11px; margin-bottom:0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div id="buyingGuardsHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:9px 0; margin-bottom:0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:0 11px; margin-bottom:8px;">
                 <h3 style="margin:0; font-size:10.5px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buying Guards</h3>
                 <span id="buyGuardStatusText" style="font-size:10.5px; font-weight:800; color:#0ecb81;">All Clear</span>
             </div>
 
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:0 8px; margin-bottom:2px;">
+            <div style="display:flex; justify-content:space-evenly; align-items:center; width:100%; margin-bottom:2px;">
                 <!-- 15-Min Post-Sell Cooldown Circle -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="15-minute post-sell cooldown before next buy">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">15M COOL</span>
+                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px;" title="15-minute post-sell cooldown before next buy">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">15M COOL</span>
                     <div id="dialCd15" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
                         <span id="dialCd15-val" style="position:relative; font-size:10px; font-weight:800; color:#0ecb81; font-family:monospace;">READY</span>
                     </div>
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">Post-Sell</span>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px; white-space:nowrap;">Post-Sell</span>
                 </div>
 
                 <!-- Session & 19:45 Curfew Gate Circle -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="Active hunting window (14:50–19:45 UK time)">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">CURFEW</span>
+                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px;" title="Active hunting window (14:50–19:45 UK time)">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">CURFEW</span>
                     <div id="dialCurfew" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
                         <span id="dialCurfew-val" style="position:relative; font-size:9.5px; font-weight:800; color:#8a8a9e; font-family:monospace;">CLOSED</span>
                     </div>
-                    <span id="dialCurfew-sub" style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">14:30–19:45</span>
+                    <span id="dialCurfew-sub" style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px; white-space:nowrap;">14:30–19:45</span>
                 </div>
 
                 <!-- 3-Strike Loss Lockout Burger Icon (Same 46px height as timer circles) -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px;" title="Daily 3-Strike Loss Guard (Yellow bars turn grey as strikes are used)">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">3-STRIKE</span>
+                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px;" title="Daily 3-Strike Loss Guard (Yellow bars turn grey as strikes are used)">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">3-STRIKE</span>
                     <div id="strikeBurgerBox" style="width:46px; height:46px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:6px;">
                         <div id="strikeBar1" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
                         <div id="strikeBar2" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
                         <div id="strikeBar3" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
                     </div>
-                    <span id="strikeCountText" style="font-size:8px; font-weight:700; color:#ffd400; margin-top:2px;">3 / 3 Left</span>
+                    <span id="strikeCountText" style="font-size:8px; font-weight:700; color:#ffd400; margin-top:2px; white-space:nowrap;">3 / 3 Left</span>
                 </div>
             </div>
         </div>
