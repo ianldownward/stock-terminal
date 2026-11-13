@@ -4258,7 +4258,7 @@ def export_forensic_report():
 @app.route('/api/report/tax_estimator', methods=['GET'])
 @login_required
 def export_tax_estimator():
-    import io, calendar
+    import io
     from flask import send_file
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -4275,7 +4275,7 @@ def export_tax_estimator():
     else:
         users_data = portfolio_store.data.get('users') or {}
 
-    # Live USD -> GBP rate (fallback 0.7499)
+    # Live USD -> GBP FX rate (fallback 0.7499)
     usd_gbp_rate = 0.7499
     try:
         df_fx = fetch_yf_data("GBPUSD=X", "5d", "5m")
@@ -4294,40 +4294,11 @@ def export_tax_estimator():
     fy_label = f"{fy_start_year}/{str(fy_end_year)[-2:]}"
     sa_deadline_str = f"31 January {fy_end_year + 1}"
 
-    # Build chronological list of UK tax-year month tabs (Apr YYYY -> Apr YYYY+1)
-    month_specs = []
-    for offset in range(13):
-        m_num = ((4 - 1 + offset) % 12) + 1
-        y_num = fy_start_year + ((4 - 1 + offset) // 12)
-        m_abbr = calendar.month_abbr[m_num]
-        tab_name = f"{m_abbr} {y_num}"
-        if offset == 0:
-            d_from, d_to = f"{y_num}-04-06", f"{y_num}-04-30"
-            period_desc = f"6 Apr – 30 Apr {y_num}"
-        elif offset == 12:
-            d_from, d_to = f"{y_num}-04-01", f"{y_num}-04-05"
-            period_desc = f"1 Apr – 5 Apr {y_num}"
-        else:
-            last_day = calendar.monthrange(y_num, m_num)[1]
-            d_from, d_to = f"{y_num}-{m_num:02d}-01", f"{y_num}-{m_num:02d}-{last_day:02d}"
-            period_desc = f"1 {m_abbr} – {last_day} {m_abbr} {y_num}"
-        month_specs.append({
-            'tab': tab_name,
-            'd_from': d_from,
-            'd_to': d_to,
-            'desc': period_desc,
-            'trades': [],
-            'same_day_buckets': {}
-        })
-
-    def get_month_bucket(date_str):
-        for ms in month_specs:
-            if ms['d_from'] <= date_str <= ms['d_to']:
-                return ms
-        return None
-
-    # Extract all closed trades across every strategy profile in the account for the active UK tax year
+    # Aggregate closed trades in the active UK tax year across all profiles (HMRC same-day matched)
     all_tickers_seen = set(['TQQQ', 'SOXL', 'SQQQ'])
+    tk_stats = {}
+    same_day_buckets = {}
+
     for u_name, u_data in users_data.items():
         if not isinstance(u_data, dict):
             continue
@@ -4346,19 +4317,17 @@ def export_tax_estimator():
                 continue
 
             if act == 'BUY':
-                buy_queues.setdefault(tk, []).append({'shares': sh, 'amount': amt, 'price': pr, 'time': tr.get('time', '')})
+                buy_queues.setdefault(tk, []).append({'shares': sh, 'amount': amt, 'price': pr})
             elif act == 'SELL':
                 rem = sh
                 cost_basis = 0.0
                 matched_sh = 0
-                entry_px_sum = 0.0
                 q = buy_queues.get(tk) or []
                 while q and rem > 0:
                     b = q[0]
                     m = min(b['shares'], rem)
                     unit_c = (b['amount'] / b['shares']) if b['shares'] > 0 else b['price']
                     cost_basis += m * unit_c
-                    entry_px_sum += m * b['price']
                     matched_sh += m
                     rem -= m
                     b['shares'] -= m
@@ -4369,573 +4338,278 @@ def export_tax_estimator():
                 if matched_sh > 0:
                     sell_proceeds = amt * (matched_sh / sh)
                     pnl_usd = round(sell_proceeds - cost_basis, 2)
-                    avg_buy_px = round(entry_px_sum / matched_sh, 2)
                     d_str = tr.get('date_str') or now_lon.strftime('%Y-%m-%d')
                     if fy_start_str <= d_str <= fy_end_str:
-                        ms = get_month_bucket(d_str)
-                        if ms is not None:
-                            ms['trades'].append({
-                                'date': d_str,
-                                'time': tr.get('time', ''),
-                                'profile': u_name,
-                                'ticker': tk,
-                                'shares': matched_sh,
-                                'buy_price': avg_buy_px,
-                                'sell_price': round(pr, 2),
-                                'pnl_usd': pnl_usd
-                            })
-                            ms['same_day_buckets'][(tk, d_str)] = round(ms['same_day_buckets'].get((tk, d_str), 0.0) + pnl_usd, 2)
+                        tk_stats.setdefault(tk, {'trades': 0, 'win_usd': 0.0, 'loss_usd': 0.0})
+                        tk_stats[tk]['trades'] += 1
+                        same_day_buckets[(tk, d_str)] = round(same_day_buckets.get((tk, d_str), 0.0) + pnl_usd, 2)
+
+    for (tk, _), day_pnl in same_day_buckets.items():
+        tk_stats.setdefault(tk, {'trades': 0, 'win_usd': 0.0, 'loss_usd': 0.0})
+        if day_pnl >= 0:
+            tk_stats[tk]['win_usd'] = round(tk_stats[tk]['win_usd'] + day_pnl, 2)
+        else:
+            tk_stats[tk]['loss_usd'] = round(tk_stats[tk]['loss_usd'] + abs(day_pnl), 2)
 
     ordered_tickers = ['TQQQ', 'SOXL', 'SQQQ'] + sorted([x for x in all_tickers_seen if x not in ['TQQQ', 'SOXL', 'SQQQ']])
 
-    # Exact row coordinates on every monthly tab so cross-sheet formulas stay 100% aligned
-    m_share_first = 12
-    m_share_last = m_share_first + len(ordered_tickers) - 1
-    m_inv_sec_r = m_share_last + 2
-    m_inv_hdr_r = m_inv_sec_r + 1
-    m_inv_r_start = m_inv_hdr_r + 1
-    m_inv_r_end = m_inv_r_start + 4
-    m_inv_tot_r = m_inv_r_end + 1
-    m_tr_sec_r = m_inv_tot_r + 2
-
     wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = f"UK Tax {fy_start_year}-{str(fy_end_year)[-2:]}"
+    ws.views.sheetView[0].showGridLines = True
 
-    # Shared Dark Slate & Gold Styling (Matches IDC Trading Terminal)
-    bg_dark = PatternFill(start_color="14171F", end_color="14171F", fill_type="solid")
-    sec_fill = PatternFill(start_color="1E222D", end_color="1E222D", fill_type="solid")
-    row_fill = PatternFill(start_color="13161C", end_color="13161C", fill_type="solid")
-    zebra_fill = PatternFill(start_color="171B24", end_color="171B24", fill_type="solid")
-    input_fill = PatternFill(start_color="0F1115", end_color="0F1115", fill_type="solid")
-    highlight_fill = PatternFill(start_color="1D2432", end_color="1D2432", fill_type="solid")
+    col_widths = {'A': 3, 'B': 46, 'C': 16, 'D': 18, 'E': 18, 'F': 18, 'G': 48}
+    for col_l, w_val in col_widths.items():
+        ws.column_dimensions[col_l].width = w_val
 
-    title_font = Font(name="Calibri", size=13, bold=True, color="FFD400")
-    sec_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-    tbl_hdr_font = Font(name="Calibri", size=10, bold=True, color="FFD400")
-    lbl_font = Font(name="Calibri", size=10, bold=True, color="C7CCD8")
-    note_font = Font(name="Calibri", size=9, italic=True, color="8A8A9E")
-    input_font = Font(name="Calibri", size=11, bold=True, color="FFD400")
-    val_font = Font(name="Calibri", size=10, bold=True, color="E1E3E6")
-    green_font = Font(name="Calibri", size=10, bold=True, color="0ECB81")
-    red_font = Font(name="Calibri", size=10, bold=True, color="FF5364")
-    total_gold_font = Font(name="Calibri", size=11, bold=True, color="FFD400")
+    # Clean, light executive palette
+    navy_banner = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+    sub_banner = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    sec_fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
+    tbl_hdr_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    input_fill = PatternFill(start_color="FFFBEB", end_color="FFFBEB", fill_type="solid")
+    subtotal_fill = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
+    final_due_fill = PatternFill(start_color="ECFDF5", end_color="ECFDF5", fill_type="solid")
 
-    thin_border = Border(
-        left=Side(style='thin', color='262B36'), right=Side(style='thin', color='262B36'),
-        top=Side(style='thin', color='262B36'), bottom=Side(style='thin', color='262B36')
+    title_font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
+    subtitle_font = Font(name="Calibri", size=9.5, italic=True, color="475569")
+    sec_font = Font(name="Calibri", size=10.5, bold=True, color="0F172A")
+    tbl_hdr_font = Font(name="Calibri", size=10, bold=True, color="1E293B")
+    lbl_font = Font(name="Calibri", size=10, bold=True, color="1E293B")
+    note_font = Font(name="Calibri", size=9.5, italic=True, color="64748B")
+    input_font = Font(name="Calibri", size=11, bold=True, color="0F172A")
+    val_font = Font(name="Calibri", size=10, bold=True, color="0F172A")
+    green_font = Font(name="Calibri", size=10, bold=True, color="047857")
+    red_font = Font(name="Calibri", size=10, bold=True, color="B91C1C")
+    final_font = Font(name="Calibri", size=12, bold=True, color="065F46")
+
+    light_border = Border(
+        left=Side(style='thin', color='CBD5E1'), right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='CBD5E1'), bottom=Side(style='thin', color='CBD5E1')
+    )
+    hdr_border = Border(
+        left=Side(style='thin', color='CBD5E1'), right=Side(style='thin', color='CBD5E1'),
+        top=Side(style='thin', color='94A3B8'), bottom=Side(style='medium', color='94A3B8')
     )
     input_border = Border(
-        left=Side(style='medium', color='FFD400'), right=Side(style='medium', color='FFD400'),
-        top=Side(style='medium', color='FFD400'), bottom=Side(style='medium', color='FFD400')
+        left=Side(style='medium', color='D97706'), right=Side(style='medium', color='D97706'),
+        top=Side(style='medium', color='D97706'), bottom=Side(style='medium', color='D97706')
+    )
+    subtotal_border = Border(
+        left=Side(style='thin', color='93C5FD'), right=Side(style='thin', color='93C5FD'),
+        top=Side(style='thin', color='60A5FA'), bottom=Side(style='double', color='2563EB')
+    )
+    final_border = Border(
+        left=Side(style='medium', color='059669'), right=Side(style='medium', color='059669'),
+        top=Side(style='medium', color='059669'), bottom=Side(style='medium', color='059669')
     )
 
-    # ==========================================================================
-    # TAB 1: FINANCIAL YEAR TOTAL & TAX CALCULATOR
-    # ==========================================================================
-    ws_fy = wb.active
-    ws_fy.title = f"FY {fy_start_year}-{str(fy_end_year)[-2:]} Total"
-    ws_fy.views.sheetView[0].showGridLines = False
+    ws.row_dimensions[1].height = 10
 
-    fy_col_widths = {'A': 3, 'B': 44, 'C': 18, 'D': 18, 'E': 18, 'F': 18, 'G': 18, 'H': 30}
-    for col_l, w_val in fy_col_widths.items():
-        ws_fy.column_dimensions[col_l].width = w_val
+    ws.merge_cells('B2:G2')
+    ws['B2'] = f"IDC TRADING • UK TAX ESTIMATOR ({fy_label} TAX YEAR: 6 APR {fy_start_year} – 5 APR {fy_end_year})"
+    ws['B2'].font = title_font
+    ws['B2'].fill = navy_banner
+    ws['B2'].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 34
 
-    ws_fy.merge_cells('B2:H2')
-    ws_fy['B2'] = f"IDC TRADING • UK TAX & NI ESTIMATOR ({fy_label} FINANCIAL YEAR: 6 APR {fy_start_year} – 5 APR {fy_end_year})"
-    ws_fy['B2'].font = title_font
-    ws_fy['B2'].fill = bg_dark
-    ws_fy['B2'].alignment = Alignment(horizontal="center", vertical="center")
-    ws_fy.row_dimensions[2].height = 32
+    ws.merge_cells('B3:G3')
+    ws['B3'] = "Type your Annual Salary and Extra Invoices total in the highlighted boxes below. Tax already paid on your Salary (PAYE) is excluded — only tax due on Extra Invoices & Alpaca is calculated."
+    ws['B3'].font = subtitle_font
+    ws['B3'].fill = sub_banner
+    ws['B3'].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[3].height = 22
+    ws.row_dimensions[4].height = 12
 
-    ws_fy.merge_cells('B3:H3')
-    ws_fy['B3'] = "Enter your Salary & Extra Earnings in the yellow boxes below (or log monthly invoices on each month's tab). All Alpaca share profits & losses auto-sync."
-    ws_fy['B3'].font = note_font
-    ws_fy['B3'].fill = row_fill
-    ws_fy['B3'].alignment = Alignment(horizontal="center", vertical="center")
-    ws_fy.row_dimensions[3].height = 20
-
-    def style_section(ws_target, row_idx, end_col, title_txt):
-        ws_target.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=end_col)
-        c = ws_target.cell(row=row_idx, column=2, value=title_txt)
+    def add_section_bar(row_idx, title_txt):
+        ws.merge_cells(start_row=row_idx, start_column=2, end_row=row_idx, end_column=7)
+        c = ws.cell(row=row_idx, column=2, value=title_txt)
         c.font = sec_font
         c.fill = sec_fill
         c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-        for col_i in range(2, end_col + 1):
-            ws_target.cell(row=row_idx, column=col_i).border = thin_border
-            ws_target.cell(row=row_idx, column=col_i).fill = sec_fill
-        ws_target.row_dimensions[row_idx].height = 24
+        for ci in range(2, 8):
+            ws.cell(row=row_idx, column=ci).fill = sec_fill
+            ws.cell(row=row_idx, column=ci).border = light_border
+        ws.row_dimensions[row_idx].height = 26
 
-    # Section 1: Salary & Extra Earnings Inputs (Rows 5-13)
-    style_section(ws_fy, 5, 8, f"1. YOUR SALARY, EXTRA EARNINGS & RELIEFS ({fy_label})")
+    # 1. SALARY & EXTRA INVOICES
+    add_section_bar(5, f"1. SALARY & EXTRA INVOICES ({fy_label})")
 
-    monthly_extra_sum_formula = "=" + "+".join([f"'{ms['tab']}'!D{m_inv_tot_r}" for ms in month_specs])
     sec1_rows = [
-        (6, "Current Base Salary (PAYE) (£):", 0.0, '£#,##0.00', "Your annual gross PAYE salary", True),
-        (7, "Extra Earnings / Invoices Logged on Monthly Tabs (£):", monthly_extra_sum_formula, '£#,##0.00', "Auto-summed from the 13 monthly tabs (Apr–Apr)", False),
-        (8, "Current Extra Earnings / Side Income (Direct Entry) (£):", 0.0, '£#,##0.00', "Or type your current extra earnings/invoices right here", True),
-        (9, "Expected Future Extra Earnings Remaining in Tax Year (£):", 0.0, '£#,##0.00', "Projected extra earnings before 5 April", True),
-        (10, "Allowable Business Expenses Against Extra Earnings (£):", 0.0, '£#,##0.00', "Deductible expenses reducing self-employed profit", True),
-        (11, "Gross SIPP / Pension Contributions (£):", 0.0, '£#,##0.00', "Extends basic/higher tax bands & restores £100k allowance", True),
-        (12, "Tax & NI Already Paid (PAYE / Payments on Account) (£):", 0.0, '£#,##0.00', "Subtracted at the bottom to show net HMRC balance due", True),
-        (13, "USD → GBP Exchange Rate (Live Yahoo FX):", usd_gbp_rate, '0.0000', f"Live GBP/USD rate ({usd_gbp_rate:.4f}) — editable", True),
+        (6, "Annual Salary (PAYE) (£)", 0.0, '£#,##0.00', "Used only to place your extra earnings in the right UK tax band (PAYE tax already paid)", True),
+        (7, "Extra Invoices Total (£)", 0.0, '£#,##0.00', "Enter your total extra invoice income for the tax year", True),
+        (8, "Allowable Business Expenses (£)", 0.0, '£#,##0.00', "Optional deductible costs against extra invoices (leave £0.00 if none)", True),
+        (9, "Net Extra Invoice Profit (£)", "=MAX(0, C7-C8)", '£#,##0.00', "Taxable profit from your extra invoices", False),
+        (10, "USD → GBP Exchange Rate", usd_gbp_rate, '0.0000', f"Live Yahoo FX rate ({usd_gbp_rate:.4f}) used to convert Alpaca USD profits to £ (editable)", True),
     ]
 
-    fy_unlocked_cells = []
+    unlocked_cells = []
     for r_i, lbl_t, val_v, fmt_s, hint_t, is_inp in sec1_rows:
-        ws_fy.row_dimensions[r_i].height = 22
-        c_l = ws_fy.cell(row=r_i, column=2, value=lbl_t)
-        c_l.font = lbl_font; c_l.fill = row_fill; c_l.border = thin_border; c_l.alignment = Alignment(vertical="center", indent=1)
+        ws.row_dimensions[r_i].height = 25
+        c_l = ws.cell(row=r_i, column=2, value=lbl_t)
+        c_l.font = lbl_font
+        c_l.fill = white_fill if is_inp else zebra_fill
+        c_l.border = light_border
+        c_l.alignment = Alignment(vertical="center", indent=1)
 
-        c_v = ws_fy.cell(row=r_i, column=3, value=val_v)
-        c_v.font = input_font if is_inp else green_font
-        c_v.fill = input_fill if is_inp else row_fill
-        c_v.border = input_border if is_inp else thin_border
+        c_v = ws.cell(row=r_i, column=3, value=val_v)
+        c_v.font = input_font if is_inp else val_font
+        c_v.fill = input_fill if is_inp else zebra_fill
+        c_v.border = input_border if is_inp else light_border
         c_v.number_format = fmt_s
         c_v.alignment = Alignment(horizontal="right", vertical="center")
         if is_inp:
-            fy_unlocked_cells.append((r_i, 3))
+            unlocked_cells.append((r_i, 3))
 
-        ws_fy.merge_cells(start_row=r_i, start_column=4, end_row=r_i, end_column=8)
-        c_h = ws_fy.cell(row=r_i, column=4, value=hint_t)
-        c_h.font = note_font; c_h.fill = row_fill; c_h.alignment = Alignment(vertical="center", indent=1)
-        for ci in range(4, 9):
-            ws_fy.cell(row=r_i, column=ci).border = thin_border
-            ws_fy.cell(row=r_i, column=ci).fill = row_fill
+        ws.merge_cells(start_row=r_i, start_column=4, end_row=r_i, end_column=7)
+        c_h = ws.cell(row=r_i, column=4, value=hint_t)
+        c_h.font = note_font
+        c_h.fill = white_fill if is_inp else zebra_fill
+        c_h.alignment = Alignment(vertical="center", indent=1)
+        for ci in range(4, 8):
+            ws.cell(row=r_i, column=ci).fill = white_fill if is_inp else zebra_fill
+            ws.cell(row=r_i, column=ci).border = light_border
 
-    # Section 2: Financial Year Alpaca Earnings by Share (Dynamic across all Monthly Tabs)
-    sec2_start = 15
-    style_section(ws_fy, sec2_start, 8, f"2. ALPACA EARNINGS BY SHARE ({fy_label} FINANCIAL YEAR TOTAL)")
+    ws.row_dimensions[11].height = 14
 
-    hdr_r2 = sec2_start + 1
-    ws_fy.row_dimensions[hdr_r2].height = 23
+    # 2. ALPACA TRADING TOTALS
+    add_section_bar(12, f"2. ALPACA TRADING TOTALS ({fy_label} TAX YEAR)")
+
+    hdr_r2 = 13
+    ws.row_dimensions[hdr_r2].height = 25
     s2_headers = [
         "Share / ETF", "Closed Trades", "Taxable Wins ($)", "Taxable Wins (£)",
-        "Capital Losses ($)", "Capital Losses (£)", "Net Alpaca P&L (£)"
+        "Capital Losses (£)", "UK Tax Treatment"
     ]
     for idx, h_txt in enumerate(s2_headers, start=2):
-        cell = ws_fy.cell(row=hdr_r2, column=idx, value=h_txt)
-        cell.font = tbl_hdr_font; cell.fill = bg_dark; cell.border = thin_border
-        cell.alignment = Alignment(horizontal="center" if idx > 2 else "left", vertical="center", indent=0 if idx > 2 else 1)
+        c = ws.cell(row=hdr_r2, column=idx, value=h_txt)
+        c.font = tbl_hdr_font
+        c.fill = tbl_hdr_fill
+        c.border = hdr_border
+        c.alignment = Alignment(horizontal="center" if idx in [3, 4, 5, 6] else "left", vertical="center", indent=0 if idx in [3, 4, 5, 6] else 1)
 
-    share_first_row = hdr_r2 + 1
-    for t_idx, tk in enumerate(ordered_tickers):
-        r_curr = share_first_row + t_idx
-        ws_fy.row_dimensions[r_curr].height = 21
-        r_bg = row_fill if t_idx % 2 == 0 else zebra_fill
-        m_share_row = m_share_first + t_idx
+    share_first_r = 14
+    for idx_t, tk in enumerate(ordered_tickers):
+        r_curr = share_first_r + idx_t
+        ws.row_dimensions[r_curr].height = 23
+        r_bg = white_fill if idx_t % 2 == 0 else zebra_fill
+        st = tk_stats.get(tk, {'trades': 0, 'win_usd': 0.0, 'loss_usd': 0.0})
 
-        c_tk = ws_fy.cell(row=r_curr, column=2, value=tk)
-        c_tk.font = Font(name="Calibri", size=10, bold=True, color="FFD400")
-        c_tk.fill = r_bg; c_tk.border = thin_border; c_tk.alignment = Alignment(vertical="center", indent=1)
+        c_tk = ws.cell(row=r_curr, column=2, value=tk)
+        c_tk.font = lbl_font; c_tk.fill = r_bg; c_tk.border = light_border; c_tk.alignment = Alignment(vertical="center", indent=1)
 
-        trades_sum_f = "=" + "+".join([f"'{ms['tab']}'!C{m_share_row}" for ms in month_specs])
-        wins_usd_f = "=" + "+".join([f"'{ms['tab']}'!D{m_share_row}" for ms in month_specs])
-        loss_usd_f = "=" + "+".join([f"'{ms['tab']}'!F{m_share_row}" for ms in month_specs])
+        c_tr = ws.cell(row=r_curr, column=3, value=st['trades'])
+        c_tr.font = val_font; c_tr.fill = r_bg; c_tr.border = light_border; c_tr.number_format = '#,##0'; c_tr.alignment = Alignment(horizontal="center", vertical="center")
 
-        c_tr = ws_fy.cell(row=r_curr, column=3, value=trades_sum_f)
-        c_tr.font = val_font; c_tr.fill = r_bg; c_tr.border = thin_border; c_tr.number_format = '#,##0'; c_tr.alignment = Alignment(horizontal="center", vertical="center")
+        c_wu = ws.cell(row=r_curr, column=4, value=st['win_usd'])
+        c_wu.font = green_font if st['win_usd'] > 0 else val_font; c_wu.fill = r_bg; c_wu.border = light_border; c_wu.number_format = '$#,##0.00'; c_wu.alignment = Alignment(horizontal="right", vertical="center")
 
-        c_wu = ws_fy.cell(row=r_curr, column=4, value=wins_usd_f)
-        c_wu.font = green_font; c_wu.fill = r_bg; c_wu.border = thin_border; c_wu.number_format = '$#,##0.00'; c_wu.alignment = Alignment(horizontal="right", vertical="center")
+        c_wg = ws.cell(row=r_curr, column=5, value=f"=D{r_curr}*$C$10")
+        c_wg.font = green_font if st['win_usd'] > 0 else val_font; c_wg.fill = r_bg; c_wg.border = light_border; c_wg.number_format = '£#,##0.00'; c_wg.alignment = Alignment(horizontal="right", vertical="center")
 
-        c_wg = ws_fy.cell(row=r_curr, column=5, value=f"=D{r_curr}*$C$13")
-        c_wg.font = green_font; c_wg.fill = r_bg; c_wg.border = thin_border; c_wg.number_format = '£#,##0.00'; c_wg.alignment = Alignment(horizontal="right", vertical="center")
+        loss_usd_val = round(st['loss_usd'], 2)
+        c_lg = ws.cell(row=r_curr, column=6, value=f"=ROUND({loss_usd_val}*$C$10, 2)")
+        c_lg.font = red_font if loss_usd_val > 0 else note_font; c_lg.fill = r_bg; c_lg.border = light_border; c_lg.number_format = '£#,##0.00'; c_lg.alignment = Alignment(horizontal="right", vertical="center")
 
-        c_lu = ws_fy.cell(row=r_curr, column=6, value=loss_usd_f)
-        c_lu.font = red_font; c_lu.fill = r_bg; c_lu.border = thin_border; c_lu.number_format = '$#,##0.00'; c_lu.alignment = Alignment(horizontal="right", vertical="center")
+        note_str = "Taxed as Offshore Income (20%–45%, 0% NI)" if st['win_usd'] > 0 else ("Capital loss carried forward separately" if st['loss_usd'] > 0 else "No closed trades in tax year")
+        c_nt = ws.cell(row=r_curr, column=7, value=note_str)
+        c_nt.font = note_font; c_nt.fill = r_bg; c_nt.border = light_border; c_nt.alignment = Alignment(vertical="center", indent=1)
 
-        c_lg = ws_fy.cell(row=r_curr, column=7, value=f"=F{r_curr}*$C$13")
-        c_lg.font = red_font; c_lg.fill = r_bg; c_lg.border = thin_border; c_lg.number_format = '£#,##0.00'; c_lg.alignment = Alignment(horizontal="right", vertical="center")
+    share_last_r = share_first_r + len(ordered_tickers) - 1
+    alp_tot_r = share_last_r + 1
+    ws.row_dimensions[alp_tot_r].height = 26
 
-        c_net = ws_fy.cell(row=r_curr, column=8, value=f"=E{r_curr}-G{r_curr}")
-        c_net.font = val_font; c_net.fill = r_bg; c_net.border = thin_border; c_net.number_format = '£#,##0.00;-£#,##0.00;£0.00'; c_net.alignment = Alignment(horizontal="right", vertical="center")
+    ws.cell(row=alp_tot_r, column=2, value="TOTAL ALPACA EARNINGS").font = lbl_font
+    ws.cell(row=alp_tot_r, column=2).fill = subtotal_fill; ws.cell(row=alp_tot_r, column=2).border = subtotal_border; ws.cell(row=alp_tot_r, column=2).alignment = Alignment(vertical="center", indent=1)
 
-    share_last_row = share_first_row + len(ordered_tickers) - 1
-    share_tot_row = share_last_row + 1
-    ws_fy.row_dimensions[share_tot_row].height = 24
-    ws_fy.cell(row=share_tot_row, column=2, value="TOTAL ACROSS ALL SHARES").font = total_gold_font
-    ws_fy.cell(row=share_tot_row, column=2).fill = highlight_fill; ws_fy.cell(row=share_tot_row, column=2).border = thin_border; ws_fy.cell(row=share_tot_row, column=2).alignment = Alignment(vertical="center", indent=1)
-
-    for col_i, fmt_code, f_col in [
-        (3, '#,##0', val_font), (4, '$#,##0.00', green_font), (5, '£#,##0.00', green_font),
-        (6, '$#,##0.00', red_font), (7, '£#,##0.00', red_font), (8, '£#,##0.00;-£#,##0.00;£0.00', total_gold_font)
+    for col_i, fmt_s, f_use in [
+        (3, '#,##0', val_font),
+        (4, '$#,##0.00', green_font),
+        (5, '£#,##0.00', green_font),
+        (6, '£#,##0.00', red_font),
     ]:
         col_let = get_column_letter(col_i)
-        c_t = ws_fy.cell(row=share_tot_row, column=col_i, value=f"=SUM({col_let}{share_first_row}:{col_let}{share_last_row})")
-        c_t.font = f_col; c_t.fill = highlight_fill; c_t.border = thin_border; c_t.number_format = fmt_code
-        c_t.alignment = Alignment(horizontal="center" if col_i == 3 else "right", vertical="center")
+        c_sum = ws.cell(row=alp_tot_r, column=col_i, value=f"=SUM({col_let}{share_first_r}:{col_let}{share_last_r})")
+        c_sum.font = f_use; c_sum.fill = subtotal_fill; c_sum.border = subtotal_border; c_sum.number_format = fmt_s
+        c_sum.alignment = Alignment(horizontal="center" if col_i == 3 else "right", vertical="center")
 
-    # Section 3: Month-by-Month Rollup Table (Links every monthly tab into the Financial Year Total)
-    sec3_start = share_tot_row + 2
-    style_section(ws_fy, sec3_start, 8, f"3. MONTH-BY-MONTH PROGRESS TRACKER ({fy_label} TAX YEAR)")
+    c_tot_nt = ws.cell(row=alp_tot_r, column=7, value=f'=IF(E{alp_tot_r}>0, "Added to extra earnings in tax calculation below", "No taxable Alpaca gains")')
+    c_tot_nt.font = note_font; c_tot_nt.fill = subtotal_fill; c_tot_nt.border = subtotal_border; c_tot_nt.alignment = Alignment(vertical="center", indent=1)
 
-    hdr_r3 = sec3_start + 1
-    ws_fy.row_dimensions[hdr_r3].height = 23
-    s3_headers = [
-        "Tax Month", "Extra Earnings (£)", "Alpaca Wins ($)", "Alpaca Wins (£)",
-        "Capital Losses (£)", "Net Alpaca P&L (£)", "Est. Tax Ring-Fence (£)"
-    ]
-    for idx, h_txt in enumerate(s3_headers, start=2):
-        cell = ws_fy.cell(row=hdr_r3, column=idx, value=h_txt)
-        cell.font = tbl_hdr_font; cell.fill = bg_dark; cell.border = thin_border
-        cell.alignment = Alignment(horizontal="center" if idx > 2 else "left", vertical="center", indent=0 if idx > 2 else 1)
+    spacer_r = alp_tot_r + 1
+    ws.row_dimensions[spacer_r].height = 14
 
-    m_first_row = hdr_r3 + 1
-    for m_idx, ms in enumerate(month_specs):
-        r_m = m_first_row + m_idx
-        ws_fy.row_dimensions[r_m].height = 20
-        r_bg = row_fill if m_idx % 2 == 0 else zebra_fill
-        t_ref = f"'{ms['tab']}'"
+    # 3. TOTAL UK TAX TO PAY (EXTRA INVOICES + ALPACA ONLY)
+    sec3_r = spacer_r + 1
+    add_section_bar(sec3_r, f"3. TOTAL UK TAX TO PAY (EXTRA INVOICES + ALPACA ONLY)")
 
-        c_mn = ws_fy.cell(row=r_m, column=2, value=f"{ms['tab']} ({ms['desc']})")
-        c_mn.font = lbl_font; c_mn.fill = r_bg; c_mn.border = thin_border; c_mn.alignment = Alignment(vertical="center", indent=1)
+    r_comb_inc = sec3_r + 1
+    r_sal_ded = sec3_r + 2
+    r_new_taxable = sec3_r + 3
+    r_it_extra = sec3_r + 4
+    r_ni_extra = sec3_r + 5
+    r_total_due = sec3_r + 6
 
-        c_ex = ws_fy.cell(row=r_m, column=3, value=f"={t_ref}!D{m_inv_tot_r}")
-        c_ex.font = val_font; c_ex.fill = r_bg; c_ex.border = thin_border; c_ex.number_format = '£#,##0.00'; c_ex.alignment = Alignment(horizontal="right", vertical="center")
-
-        c_awu = ws_fy.cell(row=r_m, column=4, value=f"={t_ref}!C5")
-        c_awu.font = green_font; c_awu.fill = r_bg; c_awu.border = thin_border; c_awu.number_format = '$#,##0.00'; c_awu.alignment = Alignment(horizontal="right", vertical="center")
-
-        c_awg = ws_fy.cell(row=r_m, column=5, value=f"={t_ref}!C6")
-        c_awg.font = green_font; c_awg.fill = r_bg; c_awg.border = thin_border; c_awg.number_format = '£#,##0.00'; c_awg.alignment = Alignment(horizontal="right", vertical="center")
-
-        c_alg = ws_fy.cell(row=r_m, column=6, value=f"={t_ref}!E7")
-        c_alg.font = red_font; c_alg.fill = r_bg; c_alg.border = thin_border; c_alg.number_format = '£#,##0.00'; c_alg.alignment = Alignment(horizontal="right", vertical="center")
-
-        c_anet = ws_fy.cell(row=r_m, column=7, value=f"={t_ref}!G7")
-        c_anet.font = val_font; c_anet.fill = r_bg; c_anet.border = thin_border; c_anet.number_format = '£#,##0.00;-£#,##0.00;£0.00'; c_anet.alignment = Alignment(horizontal="right", vertical="center")
-
-        c_atax = ws_fy.cell(row=r_m, column=8, value=f"={t_ref}!G8")
-        c_atax.font = red_font; c_atax.fill = r_bg; c_atax.border = thin_border; c_atax.number_format = '£#,##0.00'; c_atax.alignment = Alignment(horizontal="right", vertical="center")
-
-    m_last_row = m_first_row + len(month_specs) - 1
-    m_tot_row = m_last_row + 1
-    ws_fy.row_dimensions[m_tot_row].height = 24
-    ws_fy.cell(row=m_tot_row, column=2, value=f"FINANCIAL YEAR TOTAL ({fy_label})").font = total_gold_font
-    ws_fy.cell(row=m_tot_row, column=2).fill = highlight_fill; ws_fy.cell(row=m_tot_row, column=2).border = thin_border; ws_fy.cell(row=m_tot_row, column=2).alignment = Alignment(vertical="center", indent=1)
-
-    for col_i, fmt_code, f_col in [
-        (3, '£#,##0.00', val_font), (4, '$#,##0.00', green_font), (5, '£#,##0.00', green_font),
-        (6, '£#,##0.00', red_font), (7, '£#,##0.00;-£#,##0.00;£0.00', total_gold_font), (8, '£#,##0.00', red_font)
-    ]:
-        col_let = get_column_letter(col_i)
-        c_mt = ws_fy.cell(row=m_tot_row, column=col_i, value=f"=SUM({col_let}{m_first_row}:{col_let}{m_last_row})")
-        c_mt.font = f_col; c_mt.fill = highlight_fill; c_mt.border = thin_border; c_mt.number_format = fmt_code; c_mt.alignment = Alignment(horizontal="right", vertical="center")
-
-    # Section 4: UK Income Tax & Class 4 NI Calculation (2026/27 England & Wales)
-    sec4_start = m_tot_row + 2
-    style_section(ws_fy, sec4_start, 8, f"4. HMRC INCOME TAX & CLASS 4 NI CALCULATION ({fy_label})")
-
-    r_net_extra = sec4_start + 1
-    r_alp_gbp = sec4_start + 2
-    r_cap_loss = sec4_start + 3
-    r_adj_inc = sec4_start + 4
-    r_eff_pa = sec4_start + 5
-    r_marg_rate = sec4_start + 6
-
-    summary_rows = [
-        (r_net_extra, "Net Extra Earnings / Self-Employed Profit (£):", "=MAX(0, C7+C8+C9-C10)", '£#,##0.00', "Monthly Tabs + Direct Entry + Future Expected minus Expenses", val_font),
-        (r_alp_gbp, "Alpaca Taxable Offshore Income Gains (£):", f"=E{share_tot_row}", '£#,##0.00', "Gross USD winning disposals converted to GBP (HMRC IFM13550)", green_font),
-        (r_cap_loss, "Separate Capital Losses Carried Forward (£):", f"=G{share_tot_row}", '£#,##0.00', "ETF losses cannot offset ETF wins; offsets regular shares/crypto > £3k", red_font),
-        (r_adj_inc, "Total Adjusted Net Income (Salary + Extra + Alpaca - SIPP) (£):", f"=MAX(0, C6+C{r_net_extra}+C{r_alp_gbp}-C11)", '£#,##0.00', "Total income assessed for Income Tax & £100k allowance taper", total_gold_font),
-        (r_eff_pa, "Effective Tax-Free Personal Allowance Remaining (£):", f"=MAX(0, 12570 - MAX(0, (C{r_adj_inc}-100000)/2))", '£#,##0.00', "Tapers by £1 for every £2 earned above £100,000", val_font),
-        (r_marg_rate, "Your Marginal Income Tax Rate on Next £1 Earned:", f"=IF(C{r_adj_inc}>125140, 0.45, IF(C{r_adj_inc}>100000, 0.60, IF(C{r_adj_inc}>50270, 0.40, IF(C{r_adj_inc}>12570, 0.20, 0))))", '0.0%', "Used by monthly tabs to calculate monthly tax ring-fence", total_gold_font),
-    ]
-
-    for r_i, lbl_t, fml_s, fmt_s, hint_t, f_use in summary_rows:
-        ws_fy.row_dimensions[r_i].height = 22
-        bg_u = highlight_fill if r_i in [r_adj_inc, r_marg_rate] else row_fill
-        c_l = ws_fy.cell(row=r_i, column=2, value=lbl_t)
-        c_l.font = lbl_font; c_l.fill = bg_u; c_l.border = thin_border; c_l.alignment = Alignment(vertical="center", indent=1)
-        c_v = ws_fy.cell(row=r_i, column=3, value=fml_s)
-        c_v.font = f_use; c_v.fill = bg_u; c_v.border = thin_border; c_v.number_format = fmt_s; c_v.alignment = Alignment(horizontal="right", vertical="center")
-        ws_fy.merge_cells(start_row=r_i, start_column=4, end_row=r_i, end_column=8)
-        c_h = ws_fy.cell(row=r_i, column=4, value=hint_t)
-        c_h.font = note_font; c_h.fill = bg_u; c_h.alignment = Alignment(vertical="center", indent=1)
-        for ci in range(4, 9):
-            ws_fy.cell(row=r_i, column=ci).border = thin_border
-            ws_fy.cell(row=r_i, column=ci).fill = bg_u
-
-    # Tax Band Table Header
-    band_hdr_r = r_marg_rate + 2
-    ws_fy.row_dimensions[band_hdr_r].height = 22
-    ws_fy.cell(row=band_hdr_r, column=2, value="Tax / National Insurance Band").font = tbl_hdr_font
-    ws_fy.cell(row=band_hdr_r, column=2).fill = bg_dark; ws_fy.cell(row=band_hdr_r, column=2).border = thin_border; ws_fy.cell(row=band_hdr_r, column=2).alignment = Alignment(vertical="center", indent=1)
-    ws_fy.cell(row=band_hdr_r, column=3, value="Taxable Slice (£)").font = tbl_hdr_font
-    ws_fy.cell(row=band_hdr_r, column=3).fill = bg_dark; ws_fy.cell(row=band_hdr_r, column=3).border = thin_border; ws_fy.cell(row=band_hdr_r, column=3).alignment = Alignment(horizontal="center", vertical="center")
-    ws_fy.cell(row=band_hdr_r, column=4, value="Tax / NI Due (£)").font = tbl_hdr_font
-    ws_fy.cell(row=band_hdr_r, column=4).fill = bg_dark; ws_fy.cell(row=band_hdr_r, column=4).border = thin_border; ws_fy.cell(row=band_hdr_r, column=4).alignment = Alignment(horizontal="center", vertical="center")
-    ws_fy.merge_cells(start_row=band_hdr_r, start_column=5, end_row=band_hdr_r, end_column=8)
-    ws_fy.cell(row=band_hdr_r, column=5, value="HMRC Rule & Threshold").font = tbl_hdr_font
-    ws_fy.cell(row=band_hdr_r, column=5).fill = bg_dark; ws_fy.cell(row=band_hdr_r, column=5).alignment = Alignment(vertical="center", indent=1)
-    for ci in range(5, 9):
-        ws_fy.cell(row=band_hdr_r, column=ci).border = thin_border
-        ws_fy.cell(row=band_hdr_r, column=ci).fill = bg_dark
-
-    b_r1 = band_hdr_r + 1
-    bands_data = [
-        (b_r1, "Personal Allowance (0%)", f"=MIN(C{r_eff_pa}, C{r_adj_inc})", f"=C{b_r1}*0", "0% up to £12,570 (tapers £100k–£125,140)"),
-        (b_r1 + 1, "Basic Rate Income Tax (20%)", f"=MAX(0, MIN(50270, C{r_adj_inc}) - 12570)", f"=C{b_r1+1}*0.20", "20% on taxable income £12,571 – £50,270"),
-        (b_r1 + 2, "Higher Rate Income Tax (40%)", f"=MAX(0, MIN(125140, C{r_adj_inc}) - 50270) + MAX(0, 12570 - C{r_eff_pa})", f"=C{b_r1+2}*0.40", "40% on £50,271 – £125,140 (includes tapered allowance)"),
-        (b_r1 + 3, "Additional Rate Income Tax (45%)", f"=MAX(0, C{r_adj_inc} - 125140)", f"=C{b_r1+3}*0.45", "45% on taxable income above £125,140"),
-        (b_r1 + 4, "Class 4 NI on Extra Earnings (6% Main Rate)", f"=MAX(0, MIN(50270, C{r_net_extra}) - 12570)", f"=C{b_r1+4}*0.06", "6% on self-employed extra profits £12,570 – £50,270 (Alpaca is NI-exempt)"),
-        (b_r1 + 5, "Class 4 NI on Extra Earnings (2% Upper Rate)", f"=MAX(0, C{r_net_extra} - 50270)", f"=C{b_r1+5}*0.02", "2% on self-employed extra profits above £50,270"),
-    ]
-
-    for r_i, b_lbl, f_sl, f_tx, b_nt in bands_data:
-        ws_fy.row_dimensions[r_i].height = 21
-        c1 = ws_fy.cell(row=r_i, column=2, value=b_lbl)
-        c1.font = lbl_font; c1.fill = row_fill; c1.border = thin_border; c1.alignment = Alignment(vertical="center", indent=1)
-        c2 = ws_fy.cell(row=r_i, column=3, value=f_sl)
-        c2.font = val_font; c2.fill = row_fill; c2.border = thin_border; c2.number_format = '£#,##0.00'; c2.alignment = Alignment(horizontal="right", vertical="center")
-        c3 = ws_fy.cell(row=r_i, column=4, value=f_tx)
-        c3.font = red_font; c3.fill = row_fill; c3.border = thin_border; c3.number_format = '£#,##0.00'; c3.alignment = Alignment(horizontal="right", vertical="center")
-        ws_fy.merge_cells(start_row=r_i, start_column=5, end_row=r_i, end_column=8)
-        c4 = ws_fy.cell(row=r_i, column=5, value=b_nt)
-        c4.font = note_font; c4.fill = row_fill; c4.alignment = Alignment(vertical="center", indent=1)
-        for ci in range(5, 9):
-            ws_fy.cell(row=r_i, column=ci).border = thin_border
-            ws_fy.cell(row=r_i, column=ci).fill = row_fill
-
-    tot_tax_r = b_r1 + 6
-    alp_tax_r = b_r1 + 7
-    paid_r = b_r1 + 8
-    net_due_r = b_r1 + 9
-
-    no_alp_inc = f"MAX(0, C{r_adj_inc}-C{r_alp_gbp})"
-    no_alp_pa = f"MAX(0, 12570 - MAX(0, ({no_alp_inc}-100000)/2))"
-    no_alp_it = (
-        f"(MAX(0, MIN(50270, {no_alp_inc}) - 12570)*0.20 + "
-        f"(MAX(0, MIN(125140, {no_alp_inc}) - 50270) + MAX(0, 12570 - {no_alp_pa}))*0.40 + "
-        f"MAX(0, {no_alp_inc} - 125140)*0.45)"
+    tot_inc_expr = f"C{r_comb_inc}"
+    tot_pa_expr = f"MAX(0, 12570 - MAX(0, ({tot_inc_expr}-100000)/2))"
+    tot_it_expr = (
+        f"(MAX(0, MIN(50270, {tot_inc_expr}) - 12570)*0.20 + "
+        f"(MAX(0, MIN(125140, {tot_inc_expr}) - 50270) + MAX(0, 12570 - {tot_pa_expr}))*0.40 + "
+        f"MAX(0, {tot_inc_expr} - 125140)*0.45)"
     )
 
-    final_rows = [
-        (tot_tax_r, "Total Combined Income Tax + Class 4 NI (£):", f"=SUM(D{b_r1}:D{b_r1+5})", "Total annual HMRC liability before PAYE credits", red_font, highlight_fill),
-        (alp_tax_r, "Tax Caused Specifically by Alpaca Earnings (£):", f"=MAX(0, SUM(D{b_r1}:D{b_r1+3}) - {no_alp_it})", "Exact extra Income Tax added by your Alpaca ETF wins", val_font, zebra_fill),
-        (paid_r, "Less: Tax & NI Already Paid via PAYE / On Account (£):", "=C12", "Deducted from your total HMRC liability", green_font, zebra_fill),
+    sal_inc_expr = "MAX(0, C6)"
+    sal_pa_expr = f"MAX(0, 12570 - MAX(0, ({sal_inc_expr}-100000)/2))"
+    sal_it_expr = (
+        f"(MAX(0, MIN(50270, {sal_inc_expr}) - 12570)*0.20 + "
+        f"(MAX(0, MIN(125140, {sal_inc_expr}) - 50270) + MAX(0, 12570 - {sal_pa_expr}))*0.40 + "
+        f"MAX(0, {sal_inc_expr} - 125140)*0.45)"
+    )
+
+    ni_extra_expr = "MAX(0, MIN(50270, C9) - 12570)*0.06 + MAX(0, C9 - 50270)*0.02"
+
+    tax_rows = [
+        (r_comb_inc, "Total Combined Income (Salary + Extra Invoices + Alpaca) (£)", f"=MAX(0, C6+C9+E{alp_tot_r})", val_font, white_fill, "Determines your UK tax bracket (20% Basic, 40% Higher, 45% Additional)"),
+        (r_sal_ded, "Less: Annual Salary (Tax already paid via PAYE) (£)", "=-C6", green_font, zebra_fill, "Excluded from your bill — HMRC already collects PAYE tax monthly on your salary"),
+        (r_new_taxable, "Taxable Extra Earnings (Extra Invoices + Alpaca) (£)", f"=C9+E{alp_tot_r}", val_font, white_fill, "The new untaxed income you need to declare on Self Assessment"),
+        (r_it_extra, "Income Tax Due on Extra Invoices & Alpaca (£)", f"=MAX(0, ROUND({tot_it_expr} - {sal_it_expr}, 2))", red_font, zebra_fill, "Exact Income Tax on Extra Invoices + Alpaca sitting above your Salary"),
+        (r_ni_extra, "Class 4 National Insurance on Extra Invoices (£)", f"=ROUND({ni_extra_expr}, 2)", red_font, white_fill, "6% on extra invoice profits over £12,570 (2% over £50,270; Alpaca is 0% NI)"),
     ]
 
-    for r_i, lbl_t, fml_s, hint_t, f_col, bg_u in final_rows:
-        ws_fy.row_dimensions[r_i].height = 23
-        c1 = ws_fy.cell(row=r_i, column=2, value=lbl_t)
-        c1.font = Font(name="Calibri", size=10, bold=True, color="FFFFFF"); c1.fill = bg_u; c1.border = thin_border; c1.alignment = Alignment(vertical="center", indent=1)
-        ws_fy.cell(row=r_i, column=3, value="").fill = bg_u; ws_fy.cell(row=r_i, column=3).border = thin_border
-        c3 = ws_fy.cell(row=r_i, column=4, value=fml_s)
-        c3.font = f_col; c3.fill = bg_u; c3.border = thin_border; c3.number_format = '£#,##0.00'; c3.alignment = Alignment(horizontal="right", vertical="center")
-        ws_fy.merge_cells(start_row=r_i, start_column=5, end_row=r_i, end_column=8)
-        c4 = ws_fy.cell(row=r_i, column=5, value=hint_t)
-        c4.font = note_font; c4.fill = bg_u; c4.alignment = Alignment(vertical="center", indent=1)
-        for ci in range(5, 9):
-            ws_fy.cell(row=r_i, column=ci).border = thin_border
-            ws_fy.cell(row=r_i, column=ci).fill = bg_u
+    for r_i, lbl_t, fml_s, f_col, bg_u, hint_t in tax_rows:
+        ws.row_dimensions[r_i].height = 25
+        c_l = ws.cell(row=r_i, column=2, value=lbl_t)
+        c_l.font = lbl_font; c_l.fill = bg_u; c_l.border = light_border; c_l.alignment = Alignment(vertical="center", indent=1)
 
-    ws_fy.row_dimensions[net_due_r].height = 28
-    ws_fy.merge_cells(start_row=net_due_r, start_column=2, end_row=net_due_r, end_column=3)
-    c_nd_l = ws_fy.cell(row=net_due_r, column=2, value="NET TAX BALANCE TO SET ASIDE FOR HMRC (£):")
-    c_nd_l.font = total_gold_font; c_nd_l.fill = bg_dark; c_nd_l.alignment = Alignment(vertical="center", indent=1)
-    ws_fy.cell(row=net_due_r, column=2).border = input_border; ws_fy.cell(row=net_due_r, column=3).border = input_border; ws_fy.cell(row=net_due_r, column=3).fill = bg_dark
+        c_v = ws.cell(row=r_i, column=3, value=fml_s)
+        c_v.font = f_col; c_v.fill = bg_u; c_v.border = light_border; c_v.number_format = '£#,##0.00;-£#,##0.00;£0.00'; c_v.alignment = Alignment(horizontal="right", vertical="center")
 
-    c_nd_v = ws_fy.cell(row=net_due_r, column=4, value=f"=MAX(0, D{tot_tax_r}-D{paid_r})")
-    c_nd_v.font = total_gold_font; c_nd_v.fill = bg_dark; c_nd_v.border = input_border; c_nd_v.number_format = '£#,##0.00'; c_nd_v.alignment = Alignment(horizontal="right", vertical="center")
+        ws.merge_cells(start_row=r_i, start_column=4, end_row=r_i, end_column=7)
+        c_h = ws.cell(row=r_i, column=4, value=hint_t)
+        c_h.font = note_font; c_h.fill = bg_u; c_h.alignment = Alignment(vertical="center", indent=1)
+        for ci in range(4, 8):
+            ws.cell(row=r_i, column=ci).fill = bg_u
+            ws.cell(row=r_i, column=ci).border = light_border
 
-    ws_fy.merge_cells(start_row=net_due_r, start_column=5, end_row=net_due_r, end_column=8)
-    c_nd_h = ws_fy.cell(row=net_due_r, column=5, value=f"Self Assessment filing & payment deadline: {sa_deadline_str}")
-    c_nd_h.font = green_font; c_nd_h.fill = bg_dark; c_nd_h.alignment = Alignment(vertical="center", indent=1)
-    for ci in range(5, 9):
-        ws_fy.cell(row=net_due_r, column=ci).border = input_border
-        ws_fy.cell(row=net_due_r, column=ci).fill = bg_dark
+    ws.row_dimensions[r_total_due].height = 32
+    c_td_l = ws.cell(row=r_total_due, column=2, value="TOTAL TAX TO PAY (EXTRA INVOICES + ALPACA)")
+    c_td_l.font = final_font; c_td_l.fill = final_due_fill; c_td_l.border = final_border; c_td_l.alignment = Alignment(vertical="center", indent=1)
 
-    ws_fy.protection.enable()
-    for r_u, c_u in fy_unlocked_cells:
-        ws_fy.cell(row=r_u, column=c_u).protection = openpyxl.styles.Protection(locked=False)
+    c_td_v = ws.cell(row=r_total_due, column=3, value=f"=ROUND(C{r_it_extra}+C{r_ni_extra}, 2)")
+    c_td_v.font = final_font; c_td_v.fill = final_due_fill; c_td_v.border = final_border; c_td_v.number_format = '£#,##0.00'; c_td_v.alignment = Alignment(horizontal="right", vertical="center")
 
-    # ==========================================================================
-    # TABS 2–14: ONE DEDICATED TAB FOR EACH MONTH OF THE UK FINANCIAL YEAR
-    # ==========================================================================
-    fy_sheet_ref = f"'{ws_fy.title}'"
-    for ms in month_specs:
-        ws_m = wb.create_sheet(title=ms['tab'])
-        ws_m.views.sheetView[0].showGridLines = False
+    ws.merge_cells(start_row=r_total_due, start_column=4, end_row=r_total_due, end_column=7)
+    c_td_h = ws.cell(row=r_total_due, column=4, value=f"Total HMRC Self Assessment tax to set aside (Due {sa_deadline_str})")
+    c_td_h.font = green_font; c_td_h.fill = final_due_fill; c_td_h.alignment = Alignment(vertical="center", indent=1)
+    for ci in range(4, 8):
+        ws.cell(row=r_total_due, column=ci).fill = final_due_fill
+        ws.cell(row=r_total_due, column=ci).border = final_border
 
-        m_widths = {'A': 3, 'B': 18, 'C': 22, 'D': 16, 'E': 16, 'F': 16, 'G': 18, 'H': 18, 'I': 26}
-        for cl, wv in m_widths.items():
-            ws_m.column_dimensions[cl].width = wv
-
-        ws_m.merge_cells('B2:I2')
-        ws_m['B2'] = f"IDC TRADING • {ms['tab'].upper()} TAX LEDGER ({ms['desc']})"
-        ws_m['B2'].font = title_font; ws_m['B2'].fill = bg_dark; ws_m['B2'].alignment = Alignment(horizontal="center", vertical="center")
-        ws_m.row_dimensions[2].height = 30
-
-        # Monthly KPI Strip (Rows 5-8 — referenced by FY Summary)
-        style_section(ws_m, 4, 9, f"1. {ms['tab'].upper()} MONTHLY SNAPSHOT (AUTO-LINKED TO {ws_fy.title.upper()})")
-        for r_k in range(5, 9):
-            ws_m.row_dimensions[r_k].height = 21
-            for ci in range(2, 10):
-                ws_m.cell(row=r_k, column=ci).fill = row_fill
-                ws_m.cell(row=r_k, column=ci).border = thin_border
-
-        ws_m['B5'] = "Alpaca Taxable Wins ($):"; ws_m['B5'].font = lbl_font
-        ws_m['C5'] = f"=SUM(D{m_share_first}:D{m_share_last})"; ws_m['C5'].font = green_font; ws_m['C5'].number_format = '$#,##0.00'
-        ws_m['D5'] = "Alpaca Capital Losses ($):"; ws_m['D5'].font = lbl_font
-        ws_m['E5'] = f"=SUM(F{m_share_first}:F{m_share_last})"; ws_m['E5'].font = red_font; ws_m['E5'].number_format = '$#,##0.00'
-        ws_m['F5'] = "Net Alpaca P&L ($):"; ws_m['F5'].font = lbl_font
-        ws_m['G5'] = "=C5-E5"; ws_m['G5'].font = val_font; ws_m['G5'].number_format = '$#,##0.00;-$#,##0.00;$0.00'
-
-        ws_m['B6'] = "Alpaca Taxable Wins (£):"; ws_m['B6'].font = lbl_font
-        ws_m['C6'] = f"=C5*{fy_sheet_ref}!$C$13"; ws_m['C6'].font = green_font; ws_m['C6'].number_format = '£#,##0.00'
-        ws_m['D6'] = "Extra Earnings This Month (£):"; ws_m['D6'].font = lbl_font
-        ws_m['E6'] = f"=D{m_inv_tot_r}"; ws_m['E6'].font = total_gold_font; ws_m['E6'].number_format = '£#,##0.00'
-
-        ws_m['B7'] = "Alpaca Taxable Gains (£):"; ws_m['B7'].font = lbl_font
-        ws_m['C7'] = "=C6"; ws_m['C7'].font = green_font; ws_m['C7'].number_format = '£#,##0.00'
-        ws_m['D7'] = "Capital Losses (£):"; ws_m['D7'].font = lbl_font
-        ws_m['E7'] = f"=E5*{fy_sheet_ref}!$C$13"; ws_m['E7'].font = red_font; ws_m['E7'].number_format = '£#,##0.00'
-        ws_m['F7'] = "Net Alpaca P&L (£):"; ws_m['F7'].font = lbl_font
-        ws_m['G7'] = "=C7-E7"; ws_m['G7'].font = val_font; ws_m['G7'].number_format = '£#,##0.00;-£#,##0.00;£0.00'
-
-        ws_m['F8'] = "Est. Tax Ring-Fence (£):"; ws_m['F8'].font = total_gold_font
-        ws_m['G8'] = f"=ROUND(C7*{fy_sheet_ref}!$C${r_marg_rate}, 2)"; ws_m['G8'].font = red_font; ws_m['G8'].number_format = '£#,##0.00'
-        ws_m.merge_cells('H8:I8')
-        ws_m['H8'] = "Set aside in Monzo Tax Pot"; ws_m['H8'].font = note_font
-
-        # Section 2: Share-by-Share Breakdown for This Month
-        style_section(ws_m, 10, 9, f"2. {ms['tab'].upper()} EARNINGS BY SHARE (HMRC SAME-DAY MATCHED)")
-        ws_m.row_dimensions[11].height = 22
-        m_s_hdrs = ["Share / ETF", "Closed Trades", "Taxable Wins ($)", "Taxable Wins (£)", "Capital Losses ($)", "Capital Losses (£)", "Net P&L (£)", "Notes"]
-        for idx, ht in enumerate(m_s_hdrs, start=2):
-            c = ws_m.cell(row=11, column=idx, value=ht)
-            c.font = tbl_hdr_font; c.fill = bg_dark; c.border = thin_border
-            c.alignment = Alignment(horizontal="center" if idx in [3, 4, 5, 6, 7, 8] else "left", vertical="center", indent=0 if idx in [3, 4, 5, 6, 7, 8] else 1)
-
-        tk_month_stats = {tk: {'trades': 0, 'win_usd': 0.0, 'loss_usd': 0.0} for tk in ordered_tickers}
-        for tr in ms['trades']:
-            tk_month_stats[tr['ticker']]['trades'] += 1
-        for (tk, d_str), day_pnl in ms['same_day_buckets'].items():
-            if day_pnl >= 0:
-                tk_month_stats[tk]['win_usd'] = round(tk_month_stats[tk]['win_usd'] + day_pnl, 2)
-            else:
-                tk_month_stats[tk]['loss_usd'] = round(tk_month_stats[tk]['loss_usd'] + abs(day_pnl), 2)
-
-        for t_idx, tk in enumerate(ordered_tickers):
-            r_s = m_share_first + t_idx
-            ws_m.row_dimensions[r_s].height = 20
-            r_bg = row_fill if t_idx % 2 == 0 else zebra_fill
-            st_d = tk_month_stats[tk]
-
-            c_tk = ws_m.cell(row=r_s, column=2, value=tk)
-            c_tk.font = Font(name="Calibri", size=10, bold=True, color="FFD400"); c_tk.fill = r_bg; c_tk.border = thin_border; c_tk.alignment = Alignment(vertical="center", indent=1)
-
-            c_tr = ws_m.cell(row=r_s, column=3, value=st_d['trades'])
-            c_tr.font = val_font; c_tr.fill = r_bg; c_tr.border = thin_border; c_tr.number_format = '#,##0'; c_tr.alignment = Alignment(horizontal="center", vertical="center")
-
-            c_wu = ws_m.cell(row=r_s, column=4, value=st_d['win_usd'])
-            c_wu.font = green_font; c_wu.fill = r_bg; c_wu.border = thin_border; c_wu.number_format = '$#,##0.00'; c_wu.alignment = Alignment(horizontal="right", vertical="center")
-
-            c_wg = ws_m.cell(row=r_s, column=5, value=f"=D{r_s}*{fy_sheet_ref}!$C$13")
-            c_wg.font = green_font; c_wg.fill = r_bg; c_wg.border = thin_border; c_wg.number_format = '£#,##0.00'; c_wg.alignment = Alignment(horizontal="right", vertical="center")
-
-            c_lu = ws_m.cell(row=r_s, column=6, value=st_d['loss_usd'])
-            c_lu.font = red_font; c_lu.fill = r_bg; c_lu.border = thin_border; c_lu.number_format = '$#,##0.00'; c_lu.alignment = Alignment(horizontal="right", vertical="center")
-
-            c_lg = ws_m.cell(row=r_s, column=7, value=f"=F{r_s}*{fy_sheet_ref}!$C$13")
-            c_lg.font = red_font; c_lg.fill = r_bg; c_lg.border = thin_border; c_lg.number_format = '£#,##0.00'; c_lg.alignment = Alignment(horizontal="right", vertical="center")
-
-            c_np = ws_m.cell(row=r_s, column=8, value=f"=E{r_s}-G{r_s}")
-            c_np.font = val_font; c_np.fill = r_bg; c_np.border = thin_border; c_np.number_format = '£#,##0.00;-£#,##0.00;£0.00'; c_np.alignment = Alignment(horizontal="right", vertical="center")
-
-            c_nt = ws_m.cell(row=r_s, column=9, value="Offshore Income Gain (20–45%)" if st_d['win_usd'] > 0 else ("Capital Loss Carry-Fwd" if st_d['loss_usd'] > 0 else "No closed trades"))
-            c_nt.font = note_font; c_nt.fill = r_bg; c_nt.border = thin_border; c_nt.alignment = Alignment(vertical="center", indent=1)
-
-        # Section 3: Editable Monthly Extra Earnings / Invoices
-        style_section(ws_m, m_inv_sec_r, 9, f"3. {ms['tab'].upper()} EXTRA EARNINGS / INVOICES (EDITABLE)")
-        ws_m.row_dimensions[m_inv_hdr_r].height = 21
-        for idx, ht in enumerate(["Invoice / Ref #", "Date", "Amount (£)", "Client / Extra Income Description"], start=2):
-            c = ws_m.cell(row=m_inv_hdr_r, column=idx, value=ht)
-            c.font = tbl_hdr_font; c.fill = bg_dark; c.border = thin_border
-            c.alignment = Alignment(horizontal="center" if idx in [2, 3, 4] else "left", vertical="center", indent=0 if idx in [2, 3, 4] else 1)
-        ws_m.merge_cells(start_row=m_inv_hdr_r, start_column=5, end_row=m_inv_hdr_r, end_column=9)
-        for ci in range(5, 10):
-            ws_m.cell(row=m_inv_hdr_r, column=ci).border = thin_border
-            ws_m.cell(row=m_inv_hdr_r, column=ci).fill = bg_dark
-
-        m_unlocked = []
-        for r_inv in range(m_inv_r_start, m_inv_r_end + 1):
-            ws_m.row_dimensions[r_inv].height = 20
-            for ci in range(2, 10):
-                cell = ws_m.cell(row=r_inv, column=ci)
-                cell.fill = input_fill if ci == 4 else row_fill
-                cell.border = input_border if ci == 4 else thin_border
-                cell.font = input_font if ci == 4 else val_font
-                if ci == 4:
-                    cell.number_format = '£#,##0.00'
-                    cell.alignment = Alignment(horizontal="right", vertical="center")
-                m_unlocked.append((r_inv, ci))
-            ws_m.merge_cells(start_row=r_inv, start_column=5, end_row=r_inv, end_column=9)
-
-        ws_m.row_dimensions[m_inv_tot_r].height = 23
-        ws_m.merge_cells(start_row=m_inv_tot_r, start_column=2, end_row=m_inv_tot_r, end_column=3)
-        ws_m.cell(row=m_inv_tot_r, column=2, value=f"TOTAL {ms['tab'].upper()} EXTRA EARNINGS:").font = total_gold_font
-        ws_m.cell(row=m_inv_tot_r, column=2).fill = highlight_fill; ws_m.cell(row=m_inv_tot_r, column=2).alignment = Alignment(horizontal="right", vertical="center")
-        ws_m.cell(row=m_inv_tot_r, column=2).border = thin_border; ws_m.cell(row=m_inv_tot_r, column=3).border = thin_border; ws_m.cell(row=m_inv_tot_r, column=3).fill = highlight_fill
-
-        c_mit = ws_m.cell(row=m_inv_tot_r, column=4, value=f"=SUM(D{m_inv_r_start}:D{m_inv_r_end})")
-        c_mit.font = total_gold_font; c_mit.fill = highlight_fill; c_mit.border = thin_border; c_mit.number_format = '£#,##0.00'; c_mit.alignment = Alignment(horizontal="right", vertical="center")
-        ws_m.merge_cells(start_row=m_inv_tot_r, start_column=5, end_row=m_inv_tot_r, end_column=9)
-        ws_m.cell(row=m_inv_tot_r, column=5, value=f"Auto-links to {ws_fy.title} Tab").font = note_font
-        for ci in range(5, 10):
-            ws_m.cell(row=m_inv_tot_r, column=ci).fill = highlight_fill
-            ws_m.cell(row=m_inv_tot_r, column=ci).border = thin_border
-
-        # Section 4: Complete Closed Trade Log for This Month
-        style_section(ws_m, m_tr_sec_r, 9, f"4. {ms['tab'].upper()} CLOSED ALPACA TRADES ({len(ms['trades'])} COMPLETED TRADES)")
-        tr_hdr_r = m_tr_sec_r + 1
-        ws_m.row_dimensions[tr_hdr_r].height = 22
-        tr_headers = ["Date", "Strategy Profile", "Share", "Shares", "Buy ($)", "Sell ($)", "Realised P&L ($)", "Realised P&L (£)"]
-        for idx, ht in enumerate(tr_headers, start=2):
-            c = ws_m.cell(row=tr_hdr_r, column=idx, value=ht)
-            c.font = tbl_hdr_font; c.fill = bg_dark; c.border = thin_border
-            c.alignment = Alignment(horizontal="center" if idx in [2, 4, 5, 6, 7, 8, 9] else "left", vertical="center", indent=0 if idx != 3 else 1)
-
-        if not ms['trades']:
-            r_empty = tr_hdr_r + 1
-            ws_m.row_dimensions[r_empty].height = 22
-            ws_m.merge_cells(start_row=r_empty, start_column=2, end_row=r_empty, end_column=9)
-            c_em = ws_m.cell(row=r_empty, column=2, value=f"No closed trades recorded in {ms['tab']}.")
-            c_em.font = note_font; c_em.fill = row_fill; c_em.alignment = Alignment(horizontal="center", vertical="center")
-            for ci in range(2, 10):
-                ws_m.cell(row=r_empty, column=ci).border = thin_border
-                ws_m.cell(row=r_empty, column=ci).fill = row_fill
-        else:
-            for idx_t, tr in enumerate(ms['trades']):
-                r_tr = tr_hdr_r + 1 + idx_t
-                ws_m.row_dimensions[r_tr].height = 20
-                r_bg = row_fill if idx_t % 2 == 0 else zebra_fill
-                p_col_font = green_font if tr['pnl_usd'] >= 0 else red_font
-
-                ws_m.cell(row=r_tr, column=2, value=tr['date']).font = val_font
-                ws_m.cell(row=r_tr, column=2).alignment = Alignment(horizontal="center", vertical="center")
-                ws_m.cell(row=r_tr, column=3, value=tr['profile']).font = lbl_font
-                ws_m.cell(row=r_tr, column=3).alignment = Alignment(vertical="center", indent=1)
-                ws_m.cell(row=r_tr, column=4, value=tr['ticker']).font = Font(name="Calibri", size=10, bold=True, color="FFD400")
-                ws_m.cell(row=r_tr, column=4).alignment = Alignment(horizontal="center", vertical="center")
-                c_sh = ws_m.cell(row=r_tr, column=5, value=tr['shares'])
-                c_sh.font = val_font; c_sh.number_format = '#,##0'; c_sh.alignment = Alignment(horizontal="center", vertical="center")
-                c_bp = ws_m.cell(row=r_tr, column=6, value=tr['buy_price'])
-                c_bp.font = val_font; c_bp.number_format = '$#,##0.00'; c_bp.alignment = Alignment(horizontal="right", vertical="center")
-                c_sp = ws_m.cell(row=r_tr, column=7, value=tr['sell_price'])
-                c_sp.font = val_font; c_sp.number_format = '$#,##0.00'; c_sp.alignment = Alignment(horizontal="right", vertical="center")
-                c_pu = ws_m.cell(row=r_tr, column=8, value=tr['pnl_usd'])
-                c_pu.font = p_col_font; c_pu.number_format = '$#,##0.00;-$#,##0.00;$0.00'; c_pu.alignment = Alignment(horizontal="right", vertical="center")
-                c_pg = ws_m.cell(row=r_tr, column=9, value=f"=H{r_tr}*{fy_sheet_ref}!$C$13")
-                c_pg.font = p_col_font; c_pg.number_format = '£#,##0.00;-£#,##0.00;£0.00'; c_pg.alignment = Alignment(horizontal="right", vertical="center")
-
-                for ci in range(2, 10):
-                    ws_m.cell(row=r_tr, column=ci).fill = r_bg
-                    ws_m.cell(row=r_tr, column=ci).border = thin_border
-
-        ws_m.protection.enable()
-        for r_u, c_u in m_unlocked:
-            ws_m.cell(row=r_u, column=c_u).protection = openpyxl.styles.Protection(locked=False)
+    ws.protection.enable()
+    for r_u, c_u in unlocked_cells:
+        ws.cell(row=r_u, column=c_u).protection = openpyxl.styles.Protection(locked=False)
 
     out_buf = io.BytesIO()
     wb.save(out_buf)
