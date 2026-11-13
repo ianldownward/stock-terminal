@@ -424,6 +424,7 @@ def alpaca_cancel_and_liquidate(api_key, secret_key, mode):
 class PortfolioManager:
     def __init__(self):
         self.trade_lock = threading.Lock()
+        self.filename = 'portfolio.json'
         self.mongo_uri = os.environ.get('MONGO_URI')
         if self.mongo_uri:
             try:
@@ -432,7 +433,6 @@ class PortfolioManager:
             except Exception: self.client = None
         else:
             self.client = None
-            self.filename = 'portfolio.json'
         self.data = self.load()
         self._ensure_default_user()
 
