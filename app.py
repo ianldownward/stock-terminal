@@ -2628,12 +2628,14 @@ def index():
         c_store = portfolio_store.get_client_store(session.get('user'))
         is_configured = bool(c_store and c_store.get('is_configured', False))
     is_staging = (os.environ.get('MONGO_DB_NAME', 'stock_terminal') != 'stock_terminal')
+    is_recon = (display_user.lower() == PAPER_STATS_ACCOUNT.lower())
     return render_template(
         'index.html',
         user_role=session.get('role', 'client'),
         current_user=display_user,
         is_configured=is_configured,
-        is_staging=is_staging
+        is_staging=is_staging,
+        is_recon=is_recon
     )
 
 @app.route('/api/client/settings', methods=['POST'])

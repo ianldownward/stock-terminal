@@ -9,7 +9,7 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="apple-touch-icon" href="/static/favicon.svg">
     <link rel="manifest" href="/manifest.json">
-    <title>{% if is_staging %}STAGING • {% endif %}IDC Trading</title>
+    <title>{% if is_staging %}STAGING • {% elif is_recon %}RECON • {% endif %}IDC Trading</title>
     <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
     <style>
        * { box-sizing: border-box; }
@@ -2558,6 +2558,9 @@
                 <span id="deployLiveBtnLabel">Deploy to Live</span>
             </button>
             {% endif %}
+            {% endif %}
+            {% if is_recon %}
+            <div style="background:rgba(56, 189, 248, 0.15); color:#38bdf8; font-size:9px; font-weight:900; padding:2px 6px; border-radius:4px; letter-spacing:1px; margin-left:12px; border:1px solid #38bdf8; box-shadow:0 0 8px rgba(56, 189, 248, 0.4);">RECON</div>
             {% endif %}
         </div>
         <div class="header-right" style="position:relative;">
@@ -7967,7 +7970,19 @@
 
             try {
                 let res = await fetch('/api/staging/deploy_to_live', { method: 'POST' });
-                let d = await res.json();
+                if (res.redirected) {
+                    alert("Session expired. Please refresh the page, sign in, and click Deploy to Live again.");
+                    if (btn) btn.disabled = false;
+                    if (lbl) lbl.innerText = 'Deploy to Live';
+                    return;
+                }
+                let rawTxt = await res.text();
+                let d = {};
+                try {
+                    d = JSON.parse(rawTxt);
+                } catch (parseErr) {
+                    throw new Error(`HTTP ${res.status} — Render may still be restarting. Wait 15s and retry.`);
+                }
                 if (d.status === 'ok') {
                     if (btn) {
                         btn.style.background = '#0ecb81';
@@ -7996,7 +8011,7 @@
                     if (lbl) lbl.innerText = 'Deploy to Live';
                 }
             } catch (err) {
-                alert("Network error triggering live deployment.");
+                alert("Deploy error: " + (err.message || "Network error triggering live deployment."));
                 if (btn) btn.disabled = false;
                 if (lbl) lbl.innerText = 'Deploy to Live';
             }
