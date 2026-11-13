@@ -835,14 +835,10 @@ class PortfolioManager:
 
             if should_route_alpaca and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
                 strat_prof = str(current_profile).lower()
-                if any(x in strat_prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
-                    t_pct = 0.75
-                elif 'test e5' in strat_prof:
-                    t_pct = 0.35
-                elif any(x in strat_prof for x in ['test e', 'test s']):
-                    t_pct = 1.00
-                else:
+                if any(x in strat_prof for x in ['velocity', 'pulse', 'test s']) and 'test s2' not in strat_prof:
                     t_pct = 0.50
+                else:
+                    t_pct = 0.75
 
                 order_slices = int((metadata or {}).get('slices', 1))
                 threading.Thread(
@@ -5279,7 +5275,7 @@ def get_watchlist_scanner():
 
                 st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime)
                 
-                trail_pct = 0.75 if any(x in active_profile.lower() for x in ['test e', 'test tq', 'test s2']) else 1.0
+                trail_pct = 0.50 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
                 
                 results.append({
@@ -5336,7 +5332,7 @@ def get_watchlist_scanner():
             cur = df['Close'].iloc[-1]
             st = engine.score_momentum(df, cur, avg_buy_price=p['avg_price'], highest_price=p['high_water'], profile=p['user'].lower(), regime=regime)
             
-            trail_pct = 0.75 if any(x in p['user'].lower() for x in ['test e', 'test tq', 'test s2']) else 1.0
+            trail_pct = 0.50 if any(x in p['user'].lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
             stop_price = p['high_water'] * (1.0 - (trail_pct / 100.0))
             
             results.append({

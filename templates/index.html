@@ -5554,10 +5554,7 @@
                         }
 
                         let prof = (document.getElementById('userSelect')?.value || '').toLowerCase();
-                        let trailPct = 0.50;
-                        if (prof.includes('test e6') || prof.includes('test e17') || prof.includes('test e22') || prof.includes('test e23') || prof.includes('test e24') || prof.includes('test e25') || prof.includes('test e26') || prof.includes('test e27') || prof.includes('test e28') || prof.includes('test tq') || prof.includes('test s2') || prof.includes('test m')) trailPct = 0.75;
-                        else if (prof.includes('test e5')) trailPct = 0.35;
-                        else if (prof.includes('test e') || prof.includes('test s')) trailPct = 1.00;
+                        let trailPct = (prof.includes('velocity') || prof.includes('pulse') || prof.includes('test s')) ? 0.50 : 0.75;
 
                         let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
                         let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));
