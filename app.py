@@ -428,7 +428,7 @@ class PortfolioManager:
         if self.mongo_uri:
             try:
                 self.client = MongoClient(self.mongo_uri, serverSelectionTimeoutMS=5000)
-                self.collection = self.client['stock_terminal']['portfolio']
+                self.collection = self.client[MONGO_DB_NAME]['portfolio']
             except Exception: self.client = None
         else:
             self.client = None
@@ -493,7 +493,7 @@ class PortfolioManager:
         doc_id = f"client_{clean_user}"
         if self.client:
             try:
-                accounts_col = self.client['stock_terminal']['accounts']
+                accounts_col = self.client[MONGO_DB_NAME]['accounts']
                 # Search by custom _id first, then fallback to username field
                 doc = accounts_col.find_one({"_id": doc_id})
                 if not doc:
@@ -531,7 +531,7 @@ class PortfolioManager:
         doc_id = f"client_{clean_user}"
         if self.client:
             try:
-                accounts_col = self.client['stock_terminal']['accounts']
+                accounts_col = self.client[MONGO_DB_NAME]['accounts']
                 # Try updating by _id first; if not found, update by username
                 res = accounts_col.update_one(
                     {"_id": doc_id},
@@ -1708,7 +1708,7 @@ def global_background_worker():
             # Client profiles
             if portfolio_store.client:
                 try:
-                    accounts_col = portfolio_store.client['stock_terminal']['accounts']
+                    accounts_col = portfolio_store.client[MONGO_DB_NAME]['accounts']
                     for acc in accounts_col.find({"role": "client"}):
                         c_email = acc.get('username')
                         c_store = acc.get('portfolio') or {}
@@ -2191,7 +2191,7 @@ def reconcile_alpaca_positions_and_orders():
 
     if portfolio_store.client:
         try:
-            for acc in portfolio_store.client['stock_terminal']['accounts'].find({"role": "client"}):
+            for acc in portfolio_store.client[MONGO_DB_NAME]['accounts'].find({"role": "client"}):
                 c_p = acc.get('portfolio') or {}
                 c_b = c_p.get('broker') or {}
                 if c_b.get('api_key') and c_b.get('secret_key'):
@@ -2358,7 +2358,7 @@ def api_login():
 
     # 2. Client / Family Account Check
     if portfolio_store.client:
-        accounts_col = portfolio_store.client['stock_terminal']['accounts']
+        accounts_col = portfolio_store.client[MONGO_DB_NAME]['accounts']
         doc = accounts_col.find_one({"username": identifier})
         if doc and check_password_hash(doc.get('password_hash', ''), password):
             session['user'] = doc['username']
@@ -2383,7 +2383,7 @@ def api_register():
     if not portfolio_store.client:
         return jsonify({'status': 'error', 'message': 'Database offline.'}), 500
 
-    accounts_col = portfolio_store.client['stock_terminal']['accounts']
+    accounts_col = portfolio_store.client[MONGO_DB_NAME]['accounts']
     if accounts_col.find_one({"username": username}):
         return jsonify({'status': 'error', 'message': 'Username already taken.'}), 400
 
@@ -2449,7 +2449,7 @@ def view_admin_users_log():
                     start_p = prev_sessions['Close'].iloc[-1] if not prev_sessions.empty else df_lb['Close'].iloc[0]
                 prices[tk] = {'cur': cur_p, 'start': start_p}
 
-            accounts_col = portfolio_store.client['stock_terminal']['accounts']
+            accounts_col = portfolio_store.client[MONGO_DB_NAME]['accounts']
             for doc in accounts_col.find():
                 u = doc.get('username')
                 if not u or u in ['ianldownward@gmail.com', 'ian']: continue
@@ -2586,7 +2586,7 @@ def api_admin_delete_account():
 
     if portfolio_store.client:
         try:
-            accounts_col = portfolio_store.client['stock_terminal']['accounts']
+            accounts_col = portfolio_store.client[MONGO_DB_NAME]['accounts']
             accounts_col.delete_one({"_id": f"client_{username}"})
             accounts_col.delete_one({"username": username})
         except Exception as e:
@@ -5463,7 +5463,7 @@ def api_update_email():
     if not new_email or new_email == old_email:
         return jsonify({'status': 'error', 'message': 'Invalid or unchanged email.'}), 400
     if portfolio_store.client:
-        accounts_col = portfolio_store.client['stock_terminal']['accounts']
+        accounts_col = portfolio_store.client[MONGO_DB_NAME]['accounts']
         if accounts_col.find_one({"username": new_email}):
             return jsonify({'status': 'error', 'message': 'Email already in use.'}), 400
         old_doc = accounts_col.find_one({"username": old_email})
@@ -5492,7 +5492,7 @@ def api_update_password():
         return jsonify({'status': 'error', 'message': 'Missing fields.'}), 400
     curr_user = session.get('user')
     if portfolio_store.client:
-        accounts_col = portfolio_store.client['stock_terminal']['accounts']
+        accounts_col = portfolio_store.client[MONGO_DB_NAME]['accounts']
         doc = accounts_col.find_one({"username": curr_user})
         if doc and check_password_hash(doc.get('password_hash', ''), old_pw):
             accounts_col.update_one(
@@ -5517,7 +5517,7 @@ def get_strategy_stats():
     if not portfolio_store.client:
         return jsonify(default_stats)
         
-    doc = portfolio_store.client['stock_terminal']['accounts'].find_one({"username": PAPER_STATS_ACCOUNT})
+    doc = portfolio_store.client[MONGO_DB_NAME]['accounts'].find_one({"username": PAPER_STATS_ACCOUNT})
     if not doc or 'portfolio' not in doc or 'users' not in doc['portfolio']:
         return jsonify(default_stats)
         
