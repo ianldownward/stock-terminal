@@ -2262,7 +2262,7 @@
         </div>
     </div>
 
-    <!-- GEAR INFO MODAL -->
+    <!-- GEAR & GUARD INFO MODAL -->
     <div class="modal-overlay" id="gearInfoModal" style="display:none; z-index:1300;">
         <div class="modal" style="width: 440px; max-width: 95vw;">
             <h2 style="border-bottom:none; padding-bottom:0; margin-bottom:12px;">
@@ -2277,11 +2277,11 @@
                 
                 <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:10px; border-bottom:1px solid #1a1e28;">
                     <div style="display:flex; flex-direction:column;">
-                        <span style="font-size:10px; color:#8a8a9e; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Allocation Strategy</span>
+                        <span id="gearModalAllocLabel" style="font-size:10px; color:#8a8a9e; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Allocation Strategy</span>
                         <span id="gearModalAlloc" style="font-size:14px; font-weight:800; color:#fff; margin-top:2px;">98% Capital / 1 Position</span>
                     </div>
                     <div style="text-align:right; display:flex; flex-direction:column;">
-                        <span style="font-size:10px; color:#8a8a9e; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Execution Protocol</span>
+                        <span id="gearModalExecLabel" style="font-size:10px; color:#8a8a9e; font-weight:800; text-transform:uppercase; letter-spacing:0.5px;">Execution Protocol</span>
                         <span id="gearModalExec" style="font-size:14px; font-weight:800; color:#fff; margin-top:2px;">Instant Market Fill</span>
                     </div>
                 </div>
@@ -2292,11 +2292,11 @@
                 
                 <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:6px; margin-top:4px;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-size:10.5px; font-weight:800; color:#8a8a9e;">Base Daily Target:</span>
-                        <span id="gearModalTarget" style="font-size:11.5px; font-weight:800; color:#0ecb81;">1.00% / Day</span>
+                        <span id="gearModalTargetLabel" style="font-size:10.5px; font-weight:800; color:#8a8a9e;">Target Multiplier:</span>
+                        <span id="gearModalTarget" style="font-size:11.5px; font-weight:800; color:#0ecb81;">1.00x Base Target</span>
                     </div>
                     <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <span style="font-size:10.5px; font-weight:800; color:#8a8a9e;">Target Asset:</span>
+                        <span id="gearModalAssetLabel" style="font-size:10.5px; font-weight:800; color:#8a8a9e;">Target Asset:</span>
                         <span id="gearModalAsset" style="font-size:11.5px; font-weight:800; color:#fff;">3x Leveraged ETFs (TQQQ/SOXL)</span>
                     </div>
                 </div>
@@ -2551,7 +2551,13 @@
                 <span>IDC TRADING</span>
             </div>
             {% if is_staging %}
-            <span style="background:#ff5364; color:#ffffff; font-size:10px; font-weight:900; padding:3px 8px; border-radius:4px; letter-spacing:1px; border:1px solid #ff5364; box-shadow:0 0 8px rgba(255,83,100,0.5);">STAGING</span>
+            <div style="background:#ff5364; color:#fff; font-size:9px; font-weight:900; padding:2px 6px; border-radius:4px; letter-spacing:1px; margin-left:12px; border:1px solid #ff5364; box-shadow:0 0 8px rgba(255,83,100,0.5);">STAGING</div>
+            {% if user_role == 'admin' %}
+            <button type="button" id="btnDeployStagingToLive" onclick="triggerDeployStagingToLive(this)" style="background:rgba(14,203,129,0.14); color:#0ecb81; border:1px solid #0ecb81; font-size:10px; font-weight:800; padding:3px 9px; border-radius:4px; letter-spacing:0.4px; margin-left:8px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; transition:all 0.15s ease; white-space:nowrap;" title="Merge staging into main and deploy to trade.idchub.co.uk">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"></path><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                <span id="deployLiveBtnLabel">Deploy to Live</span>
+            </button>
+            {% endif %}
             {% endif %}
         </div>
         <div class="header-right" style="position:relative;">
@@ -3078,19 +3084,19 @@
         </details>
 
         <!-- 6. 4-GEAR AUTOMATIC TRANSMISSION HUD -->
-        <div id="executionGearHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:9px 11px; margin-bottom:0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <h3 style="margin:0; font-size:10.5px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Execution Gear</h3>
-                <div style="display:flex; align-items:center; gap:5px;">
-                    <span id="gearNameText" style="font-size:10.5px; font-weight:800; color:#0ecb81;">(35%) Full Power</span>
+        <details class="drawer-details" id="executionGearHud" open style="margin-bottom:0; padding:7px 10px;">
+            <summary>
+                <span>Execution Gear</span>
+                <span style="margin-left:auto; margin-right:6px; display:inline-flex; align-items:center; gap:5px; text-transform:none;">
+                    <span id="gearNameText" style="font-size:10px; font-weight:800; color:#0ecb81;">(35%) Full Power</span>
                     <span style="color:#555e6d; font-size:9px;">•</span>
-                    <span id="gearStageText" style="font-size:11.5px; font-weight:800; color:#fff;">Gear 1</span>
-                </div>
-            </div>
+                    <span id="gearStageText" style="font-size:10.5px; font-weight:800; color:#fff;">Gear 1</span>
+                </span>
+            </summary>
             
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:2px;">
                 <!-- Gear 1 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(1)">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(1)" title="Click for Gear 1 rules">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 1</span>
                     <div id="dialG1" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #0ecb81) var(--dial-pct, 35%), #262b36 0); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3099,7 +3105,7 @@
                     <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$0–$2.5k</span>
                 </div>
                 <!-- Gear 2 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(2)">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(2)" title="Click for Gear 2 rules">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 2</span>
                     <div id="dialG2" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3108,7 +3114,7 @@
                     <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$2.5k–$250k</span>
                 </div>
                 <!-- Gear 3 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(3)">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(3)" title="Click for Gear 3 rules">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 3</span>
                     <div id="dialG3" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3117,7 +3123,7 @@
                     <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$250k–$1M</span>
                 </div>
                 <!-- Gear 4 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(4)">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(4)" title="Click for Gear 4 rules">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 4</span>
                     <div id="dialG4" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3126,18 +3132,18 @@
                     <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$1M+</span>
                 </div>
             </div>
-        </div>
+        </details>
 
         <!-- 7. BUYING BLOCK TIMERS & 3-STRIKE LOCKOUT HUD -->
-        <div id="buyingGuardsHud" style="background:#14171f; border:1px solid #262b36; border-radius:8px; padding:9px 0; margin-bottom:0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:0 11px; margin-bottom:8px;">
-                <h3 style="margin:0; font-size:10.5px; color:#ffd400; text-transform:uppercase; font-weight:800; letter-spacing:0.4px;">Buying Guards</h3>
-                <span id="buyGuardStatusText" style="font-size:10.5px; font-weight:800; color:#0ecb81;">All Clear</span>
-            </div>
+        <details class="drawer-details" id="buyingGuardsHud" open style="margin-bottom:0; padding:7px 10px;">
+            <summary>
+                <span>Buying Guards</span>
+                <span id="buyGuardStatusText" style="margin-left:auto; margin-right:6px; font-size:10px; font-weight:800; color:#0ecb81; text-transform:none;">All Clear</span>
+            </summary>
 
-            <div style="display:flex; justify-content:space-evenly; align-items:center; width:100%; margin-bottom:2px;">
+            <div style="display:flex; justify-content:space-evenly; align-items:center; width:calc(100% + 20px); margin:8px -10px 2px -10px;">
                 <!-- 15-Min Post-Sell Cooldown Circle -->
-                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px;" title="15-minute post-sell cooldown before next buy">
+                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('cooldown')" title="Click for 15-minute cooldown explanation">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">15M COOL</span>
                     <div id="dialCd15" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3147,7 +3153,7 @@
                 </div>
 
                 <!-- Session & 19:45 Curfew Gate Circle -->
-                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px;" title="Active hunting window (14:50–19:45 UK time)">
+                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('curfew')" title="Click for Session & Curfew explanation">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">CURFEW</span>
                     <div id="dialCurfew" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3157,7 +3163,7 @@
                 </div>
 
                 <!-- 3-Strike Loss Lockout Burger Icon (Same 46px height as timer circles) -->
-                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px;" title="Daily 3-Strike Loss Guard (Yellow bars turn grey as strikes are used)">
+                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('strikes')" title="Click for 3-Strike Loss Guard explanation">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">3-STRIKE</span>
                     <div id="strikeBurgerBox" style="width:46px; height:46px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:6px;">
                         <div id="strikeBar1" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
@@ -3167,7 +3173,7 @@
                     <span id="strikeCountText" style="font-size:8px; font-weight:700; color:#ffd400; margin-top:2px; white-space:nowrap;">3 / 3 Left</span>
                 </div>
             </div>
-        </div>
+        </details>
     </div>
     </div> <!-- END app-body-container -->
 
@@ -6259,17 +6265,23 @@
 
         function openGearInfoModal(gearNum) {
             let titleEl = document.getElementById('gearModalTitle');
+            let allocLbl = document.getElementById('gearModalAllocLabel');
             let allocEl = document.getElementById('gearModalAlloc');
+            let execLbl = document.getElementById('gearModalExecLabel');
             let execEl = document.getElementById('gearModalExec');
             let descEl = document.getElementById('gearModalDesc');
+            let targetLabel = document.getElementById('gearModalTargetLabel');
             let tgtEl = document.getElementById('gearModalTarget');
+            let assetLabel = document.getElementById('gearModalAssetLabel');
             let assetEl = document.getElementById('gearModalAsset');
-            let targetLabel = document.getElementById('gearModalTarget').previousElementSibling;
             
             let color = '#8a8a9e';
             let icon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
 
-            targetLabel.innerText = "Target Multiplier:";
+            if (allocLbl) allocLbl.innerText = "Allocation Strategy";
+            if (execLbl) execLbl.innerText = "Execution Protocol";
+            if (targetLabel) targetLabel.innerText = "Target Multiplier:";
+            if (assetLabel) assetLabel.innerText = "Target Asset:";
 
             if (gearNum === 1) {
                 color = '#0ecb81';
@@ -6308,6 +6320,73 @@
             titleEl.style.color = color;
             tgtEl.style.color = color;
             
+            document.getElementById('gearInfoModal').style.display = 'flex';
+        }
+
+        function openGuardInfoModal(guardType) {
+            let titleEl = document.getElementById('gearModalTitle');
+            let allocLbl = document.getElementById('gearModalAllocLabel');
+            let allocEl = document.getElementById('gearModalAlloc');
+            let execLbl = document.getElementById('gearModalExecLabel');
+            let execEl = document.getElementById('gearModalExec');
+            let descEl = document.getElementById('gearModalDesc');
+            let targetLabel = document.getElementById('gearModalTargetLabel');
+            let tgtEl = document.getElementById('gearModalTarget');
+            let assetLabel = document.getElementById('gearModalAssetLabel');
+            let assetEl = document.getElementById('gearModalAsset');
+
+            let shieldIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>';
+            let clockIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+            let strikeIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>';
+
+            let color = '#0ecb81';
+
+            if (guardType === 'cooldown') {
+                let cdVal = document.getElementById('dialCd15-val')?.innerText || 'READY';
+                let isCooling = (cdVal !== 'READY');
+                color = isCooling ? '#ff9900' : '#0ecb81';
+                titleEl.innerHTML = clockIcon + ' 15-Min Post-Sell Cooldown';
+                if (allocLbl) allocLbl.innerText = 'Trigger Event';
+                allocEl.innerText = 'Any Position Exit';
+                if (execLbl) execLbl.innerText = 'Cooldown Timer';
+                execEl.innerText = '15 Minutes (900s)';
+                descEl.innerText = 'Whipsaw protection shield. Immediately after any trade is closed (take-profit, trailing stop, or manual exit), the engine enforces a mandatory 15-minute cooling-off period before opening a new position. This prevents chasing choppy price reversals right after exiting.';
+                if (targetLabel) targetLabel.innerText = 'Applies To:';
+                tgtEl.innerText = 'All Automated Strategies';
+                if (assetLabel) assetLabel.innerText = 'Current Status:';
+                assetEl.innerText = isCooling ? `Cooling Down (${cdVal} remaining)` : 'Ready (No Cooldown Active)';
+            } else if (guardType === 'curfew') {
+                let curfVal = document.getElementById('dialCurfew-val')?.innerText || 'CLOSED';
+                color = curfVal === 'OPEN' ? '#0ecb81' : (curfVal === 'LOCKED' ? '#ff5364' : '#ff9900');
+                titleEl.innerHTML = shieldIcon + ' Session Window & 19:45 Curfew';
+                if (allocLbl) allocLbl.innerText = 'Active Hunting Window';
+                allocEl.innerText = '14:50 – 19:45 UK';
+                if (execLbl) execLbl.innerText = 'Overnight Cash Sweep';
+                execEl.innerText = '20:50 UK (100% Cash)';
+                descEl.innerText = 'Time-of-day volatility gate. New entries are blocked during the turbulent US market open (14:30–14:50 UK) and after the 19:45 UK late-session curfew so trades have enough runway to develop before the 20:50 UK overnight sweep flattens open positions.';
+                if (targetLabel) targetLabel.innerText = 'Opening Lock:';
+                tgtEl.innerText = '14:30 – 14:50 UK (20m)';
+                if (assetLabel) assetLabel.innerText = 'Current Status:';
+                assetEl.innerText = curfVal === 'OPEN' ? 'Open (Entries Permitted)' : (curfVal === 'LOCKED' ? '19:45 Curfew Active (Entries Blocked)' : 'Market Closed / Pre-Open');
+            } else if (guardType === 'strikes') {
+                let st = window._buyGuardsState || { strikes_used: 0, strikes_max: 3 };
+                let used = Math.max(0, Math.min(3, parseInt(st.strikes_used) || 0));
+                let left = Math.max(0, 3 - used);
+                color = used >= 3 ? '#ff5364' : '#ffd400';
+                titleEl.innerHTML = strikeIcon + ' 3-Strike Daily Loss Guard';
+                if (allocLbl) allocLbl.innerText = 'Daily Loss Limit';
+                allocEl.innerText = '3 Losing Trades / Day';
+                if (execLbl) execLbl.innerText = 'Reset Schedule';
+                execEl.innerText = 'Next Trading Morning';
+                descEl.innerText = 'Choppy-market circuit breaker. Each gold bar represents one daily loss allowance. Whenever a strategy closes a trade at a net loss (sell price below entry price), one bar turns grey. On the 3rd loss in a single day, all new buys lock out until tomorrow to protect capital.';
+                if (targetLabel) targetLabel.innerText = 'Strike Trigger:';
+                tgtEl.innerText = 'Realized Trade Loss (Sell < Buy)';
+                if (assetLabel) assetLabel.innerText = 'Current Status:';
+                assetEl.innerText = used >= 3 ? '0 / 3 Strikes Left (Locked for Today)' : `${left} of 3 Strikes Remaining`;
+            }
+
+            titleEl.style.color = color;
+            tgtEl.style.color = color;
             document.getElementById('gearInfoModal').style.display = 'flex';
         }
 
@@ -7880,6 +7959,49 @@
         setInterval(fetchBrokerStatus, 15000);
         setInterval(fetchReadinessScanner, 15000);
         setInterval(updateSessionTimeline, 15000);
+        async function triggerDeployStagingToLive(btn) {
+            if (!confirm("Deploy Staging to Live Site (trade.idchub.co.uk)?\n\nThis will merge 'staging' into 'main' on GitHub and trigger Render to deploy your live production site.")) return;
+            let lbl = document.getElementById('deployLiveBtnLabel');
+            if (btn) btn.disabled = true;
+            if (lbl) lbl.innerText = 'Deploying...';
+
+            try {
+                let res = await fetch('/api/staging/deploy_to_live', { method: 'POST' });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    if (btn) {
+                        btn.style.background = '#0ecb81';
+                        btn.style.color = '#000000';
+                    }
+                    if (lbl) lbl.innerText = 'Deploying Live ✓';
+                    alert("Live Deployment Started!\n\n" + d.message);
+                    setTimeout(() => {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.style.background = 'rgba(14,203,129,0.14)';
+                            btn.style.color = '#0ecb81';
+                        }
+                        if (lbl) lbl.innerText = 'Deploy to Live';
+                    }, 8000);
+                } else if (d.status === 'up_to_date') {
+                    if (lbl) lbl.innerText = 'Up to Date ✓';
+                    alert(d.message);
+                    setTimeout(() => {
+                        if (btn) btn.disabled = false;
+                        if (lbl) lbl.innerText = 'Deploy to Live';
+                    }, 4000);
+                } else {
+                    alert(d.message || "Failed to trigger live deployment.");
+                    if (btn) btn.disabled = false;
+                    if (lbl) lbl.innerText = 'Deploy to Live';
+                }
+            } catch (err) {
+                alert("Network error triggering live deployment.");
+                if (btn) btn.disabled = false;
+                if (lbl) lbl.innerText = 'Deploy to Live';
+            }
+        }
+
         setTimeout(fetchBrokerStatus, 1000);
         setTimeout(fetchReadinessScanner, 1500);
         setTimeout(updateSessionTimeline, 500);
