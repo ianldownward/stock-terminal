@@ -5638,6 +5638,71 @@ def get_strategy_stats():
 
     return jsonify({'stats': stats_out, 'connected': True, 'account': PAPER_STATS_ACCOUNT, **stats_out})
 
+@app.route('/api/staging/deploy_to_live', methods=['POST'])
+@login_required
+def deploy_staging_to_live():
+    """Merges the verified 'staging' branch into 'main' on GitHub to trigger a live Render deployment."""
+    if not is_admin_session():
+        return jsonify({'status': 'error', 'message': 'Administrator access required.'}), 403
+
+    is_staging = (os.environ.get('MONGO_DB_NAME', 'stock_terminal') != 'stock_terminal')
+    if not is_staging:
+        return jsonify({'status': 'error', 'message': 'This action can only be triggered from the Staging environment.'}), 400
+
+    gh_token = os.environ.get('GITHUB_TOKEN', '').strip()
+    gh_repo = os.environ.get('GITHUB_REPO', 'ianldownward/stock-terminal').strip()
+    if not gh_token:
+        return jsonify({
+            'status': 'missing_token',
+            'message': 'GITHUB_TOKEN is not set on stock-terminal-staging yet. Add GITHUB_TOKEN in Render Environment Variables to enable 1-click live deployment.'
+        }), 400
+
+    merge_url = f"https://api.github.com/repos/{gh_repo}/merges"
+    payload = json.dumps({
+        "base": "main",
+        "head": "staging",
+        "commit_message": "Deploy verified staging build to live production"
+    }).encode('utf-8')
+
+    headers = {
+        "Authorization": f"Bearer {gh_token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+        "User-Agent": "IDCTradingTerminal/1.0"
+    }
+
+    try:
+        req = urllib.request.Request(merge_url, data=payload, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            status_code = resp.getcode()
+            body_raw = resp.read().decode('utf-8')
+            if status_code == 204:
+                return jsonify({
+                    'status': 'up_to_date',
+                    'message': 'Live site (main) is already completely up to date with staging!'
+                })
+            res_json = json.loads(body_raw) if body_raw else {}
+            short_sha = (res_json.get('sha') or '')[:7]
+            return jsonify({
+                'status': 'ok',
+                'sha': short_sha,
+                'message': f"Merged staging -> main ({short_sha}). Render is now building trade.idchub.co.uk (~2 mins)."
+            })
+    except urllib.error.HTTPError as he:
+        err_txt = he.read().decode('utf-8', errors='ignore')
+        if he.code == 409:
+            return jsonify({
+                'status': 'error',
+                'message': 'Merge conflict between staging and main. Please resolve in VS Code terminal.'
+            }), 409
+        return jsonify({
+            'status': 'error',
+            'message': f"GitHub API Error ({he.code}): {err_txt}"
+        }), 400
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8095))
     app.run(host='0.0.0.0', port=port, debug=False)
