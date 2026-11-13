@@ -554,17 +554,22 @@ class PortfolioManager:
                 if doc:
                     doc.pop('_id', None)
                     return doc
-            except Exception: pass
+            except Exception:
+                pass
+            initial = {'active_user': 'Vector Hybrid', 'users': {'Vector Hybrid': self.default_user_state('Vector Hybrid')}}
+            self.save_data(initial)
+            return initial
         if os.path.exists(self.filename):
             try:
                 with open(self.filename, 'r') as f:
                     data = json.load(f)
                     if 'users' not in data:
-                        data = {'active_user': 'Ian', 'users': { 'Ian': data }}
+                        data = {'active_user': 'Vector Hybrid', 'users': {'Vector Hybrid': data}}
                         self.save_data(data)
                     return data
-            except Exception: pass
-        initial = {'active_user': 'Ian', 'users': {'Ian': self.default_user_state('Ian')}}
+            except Exception:
+                pass
+        initial = {'active_user': 'Vector Hybrid', 'users': {'Vector Hybrid': self.default_user_state('Vector Hybrid')}}
         self.save_data(initial)
         return initial
 
@@ -579,12 +584,12 @@ class PortfolioManager:
                 self.data['users'] = {}
                 needs_save = True
 
-            # Purge only exact legacy prototype names and leaked emails (preserves user-created tags)
+            # Purge legacy prototype profiles (e.g. Test A, Test C, Test E - Rotator) and leaked emails
             legacy_prototypes = {'test e', 'test s', 'test r', 'test tqm', 'test m', 'test u', 'test w', 'test x', 'test p', 'test t', 'ian', 'sovereign core'}
             existing_users = list(self.data['users'].keys())
             for u in existing_users:
                 u_clean = u.strip().lower()
-                if u_clean in legacy_prototypes or '@' in u_clean:
+                if u_clean in legacy_prototypes or u_clean.startswith('test ') or '@' in u_clean:
                     del self.data['users'][u]
                     needs_save = True
 
