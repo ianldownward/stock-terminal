@@ -1921,9 +1921,11 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
         changed = True
 
     mb_val = float(ud.get('master_budget') or 700.0)
-    non_sync_hist = [tr for tr in hist if not (tr.get('ticker') == 'ALPACASYNC' and tr.get('date_str') == today_str)]
+    # Remove ALL historical ALPACASYNC entries (not just today's) so cross-day drift never double-counts
+    non_sync_hist = [tr for tr in hist if tr.get('ticker') != 'ALPACASYNC']
     if len(non_sync_hist) != len(hist):
         hist = non_sync_hist
+        changed = True
 
     net_real = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
                    for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC'])
@@ -1933,6 +1935,11 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
 
     residual = round(alpaca_equity - local_eq_before_adj, 2) if alpaca_equity > 0 else 0.0
     if abs(residual) >= 0.02:
+        # Anchor ALPACASYNC to the most recent trade's date_str so weekend/after-midnight calibration doesn't invent fake Saturday P&L
+        last_real_date = next(
+            (tr.get('date_str') for tr in hist if tr.get('date_str') and tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC']),
+            today_str
+        )
         hist.insert(0, {
             'id': str(int(time.time() * 1000) + 4),
             'ticker': 'ALPACASYNC',
@@ -1942,7 +1949,7 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
             'price': abs(residual),
             'amount': abs(residual),
             'time': now_lon.strftime('%d %b %H:%M'),
-            'date_str': today_str,
+            'date_str': last_real_date,
             'timestamp': int(now_lon.timestamp()) - 10
         })
         changed = True
@@ -3098,6 +3105,15 @@ def api_sync_alpaca_state():
                 closed_orders = json.loads(r_o.read().decode('utf-8'))
         except Exception:
             pass
+
+        # Clean stale ALPACASYNC adjustments on sibling profiles so shared-account totals stay exact
+        all_profs_map = (c_store.get('users') or {}) if is_client else (portfolio_store.data.get('users') or {})
+        for other_p, other_ud in all_profs_map.items():
+            if other_p != prof_name and isinstance(other_ud, dict):
+                o_hist = other_ud.get('history') or []
+                cleaned_o = [tr for tr in o_hist if tr.get('ticker') != 'ALPACASYNC']
+                if len(cleaned_o) != len(o_hist):
+                    other_ud['history'] = cleaned_o
 
         sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon)
 
