@@ -6704,25 +6704,12 @@
             let dailyRunRate = retPct / daysActive;
             document.getElementById('insightDailyTarget').innerText = `${dailyRunRate >= 0 ? '+' : ''}${dailyRunRate.toFixed(2)}% / Day`;
 
-            // Verified Win Rates and Profit Factors from Database Ledger
-            let wrMap = {
-                'vector': '61.5% (8W / 5L)',
-                'apex': '72.0% (13W / 5L)',
-                'velocity': '40.0% (6W / 9L)',
-                'sovereign': '0.0% (0 Trades)'
-            };
-            let pfMap = {
-                'vector': '3.55',
-                'apex': '3.85',
-                'velocity': '1.20',
-                'sovereign': '1.00'
-            };
-
             let uLower = userKey.toLowerCase();
-            let matchedKey = Object.keys(wrMap).find(k => uLower.includes(k)) || 'ian';
+            let stratKey = uLower.includes('apex') ? 'Apex Precision' : ((uLower.includes('velocity') || uLower.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid');
+            let liveStats = (window._reconStrategyStats && window._reconStrategyStats[stratKey]) ? window._reconStrategyStats[stratKey] : null;
 
-            document.getElementById('insightWinRate').innerText = wrMap[matchedKey];
-            document.getElementById('insightProfitFactor').innerText = pfMap[matchedKey];
+            document.getElementById('insightWinRate').innerText = liveStats ? liveStats.win_rate : '--';
+            document.getElementById('insightProfitFactor').innerText = liveStats ? liveStats.profit_factor : '--';
 
             let dEl = document.getElementById('insightDirectives');
             if (dEl && profileDesc[userKey]) {
@@ -7537,9 +7524,12 @@
                 let profName = chk.getAttribute('data-prof');
                 let profKey = profName.toLowerCase();
                 let pData = (latestLeaderboardData || []).find(l => l.user === profName) || {};
+                let prevAlloc = (window._activeAllocations && window._activeAllocations[profKey]) || {};
+                let sweepChk = document.querySelector(`.dyn-sweep-chk[data-prof="${profName}"]`);
                 allocations[profKey] = {
                     enabled: chk.checked,
-                    budget: parseFloat(pData.budget || 700.0)
+                    budget: parseFloat(pData.budget || prevAlloc.budget || 700.0),
+                    overnight_sweep: sweepChk ? sweepChk.checked : (prevAlloc.overnight_sweep !== undefined ? prevAlloc.overnight_sweep : true)
                 };
             });
 

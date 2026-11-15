@@ -52,7 +52,12 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
         
     with lock:
         now = time.time()
-        # 15s for 1m, 25s for 5m, 180s for daily. Eliminates Yahoo IP rate-limiting across 20+ accounts.
+        # Prune stale cache entries to prevent unbounded RAM growth on 512MB instances
+        if len(YF_CACHE) > 40:
+            stale_keys = [k for k, (ts, _) in list(YF_CACHE.items()) if (now - ts) > 300]
+            for k in stale_keys:
+                YF_CACHE.pop(k, None)
+
         cache_duration = 15 if interval in ['1m', '2m'] else (25 if interval == '5m' else 180)
         
         if cache_key in YF_CACHE:
@@ -64,7 +69,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty:
                 df = df.sort_index()
-                # Reject stale intraday responses (>15 mins old) or single-bar Yahoo outlier glitches (>1.2% jump/drop)
+                # Reject stale intraday responses (>15 mins old) or true bad-tick spikes (>4.5%; 3x ETFs routinely move 1.2-2.5% per bar)
                 if interval in ['1m', '2m', '5m', '15m']:
                     last_ts = df.index[-1]
                     if last_ts.tzinfo is None:
@@ -76,7 +81,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                     if len(df) >= 2:
                         prev_c = float(df['Close'].iloc[-2])
                         last_c = float(df['Close'].iloc[-1])
-                        if prev_c > 0 and abs(last_c - prev_c) / prev_c > 0.012:
+                        if prev_c > 0 and abs(last_c - prev_c) / prev_c > 0.045:
                             if cache_key in YF_CACHE:
                                 c_time, c_df = YF_CACHE[cache_key]
                                 if not c_df.empty and (now - c_time) < 90:
@@ -341,12 +346,24 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
 
         if res_data is not None:
             
-            # Attach native trailing stop order on Alpaca exchange servers after BUY fills
+            # Poll until BUY shares settle on Alpaca (up to 6s) before attaching native exchange trailing stop
             if action.lower() == 'buy' and trail_pct:
-                time.sleep(1) # Brief pause to allow entry fill
+                settled_qty = 0
+                for _ in range(6):
+                    time.sleep(1.0)
+                    try:
+                        req_chk = urllib.request.Request(f"{base_url}/v2/positions/{ticker.upper()}", headers=headers)
+                        with urllib.request.urlopen(req_chk, timeout=4) as r_chk:
+                            pos_d = json.loads(r_chk.read().decode('utf-8'))
+                            settled_qty = int(float(pos_d.get('qty_available') or pos_d.get('qty') or 0))
+                            if settled_qty >= int(shares):
+                                break
+                    except Exception:
+                        pass
+                stop_qty = min(int(shares), settled_qty) if settled_qty > 0 else int(shares)
                 trail_payload = json.dumps({
                     "symbol": ticker.upper(),
-                    "qty": int(shares),
+                    "qty": stop_qty,
                     "side": "sell",
                     "type": "trailing_stop",
                     "trail_percent": round(trail_pct, 2),
@@ -355,7 +372,7 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
                 }).encode('utf-8')
                 req_trail = urllib.request.Request(f"{base_url}/v2/orders", data=trail_payload, headers=headers, method="POST")
                 with urllib.request.urlopen(req_trail, timeout=6):
-                    print(f"[ALPACA TRAIL SECURED] Native {trail_pct}% Stop active on exchange.")
+                    print(f"[ALPACA TRAIL SECURED] Native {trail_pct}% Stop active on exchange ({stop_qty} sh).")
             return res_data
     except urllib.error.HTTPError as he:
         err_body = he.read().decode('utf-8', errors='ignore')
@@ -1497,10 +1514,8 @@ def process_auto_profile(prof_name, client_email=None):
 
         dfs = {}
         def fetch_data_thread(tick): 
-            use_1m = (current_mode == 'reversion') or ('velocity' in active_profile) or ('test s' in active_profile)
-            interval = "1m" if use_1m else "5m"
-            period = "1d" if use_1m else "5d"
-            return tick, fetch_yf_data(tick, period, interval)
+            # Always score momentum on 5d/5m candles so background entries match the UI Readiness bar and avoid 1m noise
+            return tick, fetch_yf_data(tick, "5d", "5m")
 
         with ThreadPoolExecutor(max_workers=4) as ex:
             for tick, df in ex.map(fetch_data_thread, scan_list): dfs[tick] = df
@@ -1751,7 +1766,19 @@ def global_background_worker():
             print(f"Background Loop Error: {e}")
         time.sleep(20) # 20-second high-speed cycle
 
-threading.Thread(target=global_background_worker, daemon=True).start()
+def _start_singleton_workers():
+    """Ensures only ONE Gunicorn worker process runs background trading & reconciliation loops (prevents 2x RAM OOM and duplicate orders)."""
+    try:
+        import fcntl
+        lock_fp = open('/tmp/idc_trading_bg_workers.lock', 'w')
+        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        app._bg_worker_lock_fp = lock_fp  # Keep descriptor open for lifetime of leader process
+    except Exception:
+        return
+    threading.Thread(target=global_background_worker, daemon=True).start()
+    threading.Thread(target=alpaca_reconciliation_worker, daemon=True).start()
+
+_start_singleton_workers()
 
 def match_bot_from_order_id(client_order_id, profiles):
     """Matches Alpaca client_order_id back to the specific bot profile or custom version."""
@@ -2253,7 +2280,19 @@ def alpaca_reconciliation_worker():
             print(f"[RECONCILIATION WORKER ERROR]: {e}")
         time.sleep(25)
 
-threading.Thread(target=alpaca_reconciliation_worker, daemon=True).start()
+def _start_singleton_workers():
+    """Ensures only ONE Gunicorn worker process runs background trading & reconciliation loops (prevents 2x RAM OOM and duplicate orders)."""
+    try:
+        import fcntl
+        lock_fp = open('/tmp/idc_trading_bg_workers.lock', 'w')
+        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        app._bg_worker_lock_fp = lock_fp  # Keep descriptor open for lifetime of leader process
+    except Exception:
+        return
+    threading.Thread(target=global_background_worker, daemon=True).start()
+    threading.Thread(target=alpaca_reconciliation_worker, daemon=True).start()
+
+_start_singleton_workers()
 
 SW_JAVASCRIPT = """
 self.addEventListener('install', (e) => { self.skipWaiting(); });
@@ -3656,11 +3695,21 @@ def get_data():
                 u_data['last_ratchet_date'] = today_str
                 u_data['daily_peak_pct'] = max(0.0, day_pct)
             elif day_pct > float(u_data.get('daily_peak_pct') or 0.0):
-                u_data['daily_peak_pct'] = round(day_pct, 2)
-                if is_client:
-                    portfolio_store.save_client_store(client_name, c_store)
-                else:
-                    portfolio_store.save_data(portfolio_store.data)
+                new_peak_val = round(day_pct, 2)
+                u_data['daily_peak_pct'] = new_peak_val
+                with portfolio_store.trade_lock:
+                    if is_client:
+                        fresh_cs = portfolio_store.get_client_store(client_name) or {}
+                        fresh_u = (fresh_cs.get('users') or {}).get(u)
+                        if isinstance(fresh_u, dict) and new_peak_val > float(fresh_u.get('daily_peak_pct') or 0.0):
+                            fresh_u['daily_peak_pct'] = new_peak_val
+                            portfolio_store.save_client_store(client_name, fresh_cs)
+                    else:
+                        portfolio_store.reload()
+                        fresh_u = (portfolio_store.data.get('users') or {}).get(u)
+                        if isinstance(fresh_u, dict) and new_peak_val > float(fresh_u.get('daily_peak_pct') or 0.0):
+                            fresh_u['daily_peak_pct'] = new_peak_val
+                            portfolio_store.save_data(portfolio_store.data)
 
             peak_pct_today = max(float(u_data.get('daily_peak_pct') or 0.0), day_pct)
             computed_floor = round(int(peak_pct_today * 2) / 2.0, 2) if peak_pct_today >= 2.50 else 0.0
@@ -3821,8 +3870,19 @@ def get_data():
                 if 'holdings' not in ud: ud['holdings'] = {}
                 if t not in ud['holdings']: ud['holdings'][t] = {}
                 ud['holdings'][t]['high_water'] = highest_p
-                if is_client: portfolio_store.save_client_store(client_name, c_store)
-                else: portfolio_store.save_data(portfolio_store.data)
+                with portfolio_store.trade_lock:
+                    if is_client:
+                        fresh_cs = portfolio_store.get_client_store(client_name) or {}
+                        fresh_u = (fresh_cs.get('users') or {}).get(active_name)
+                        if isinstance(fresh_u, dict) and t in (fresh_u.get('holdings') or {}):
+                            fresh_u['holdings'][t]['high_water'] = max(highest_p, float(fresh_u['holdings'][t].get('high_water') or 0.0))
+                            portfolio_store.save_client_store(client_name, fresh_cs)
+                    else:
+                        portfolio_store.reload()
+                        fresh_u = portfolio_store.user_data(req_user if req_user else None)
+                        if isinstance(fresh_u, dict) and t in (fresh_u.get('holdings') or {}):
+                            fresh_u['holdings'][t]['high_water'] = max(highest_p, float(fresh_u['holdings'][t].get('high_water') or 0.0))
+                            portfolio_store.save_data(portfolio_store.data)
 
         if is_momentum:
             df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
