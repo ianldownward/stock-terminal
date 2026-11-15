@@ -3551,12 +3551,12 @@ def get_data():
             if isinstance(u_data, dict):
                 for tr in u_data.get('history', []):
                     tk_sym = tr.get('ticker')
-                    if tk_sym and tk_sym not in ['CALIBRATION', 'CAPITAL_INJECTION']:
+                    if tk_sym and tk_sym not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']:
                         all_user_holds.add(tk_sym)
                 
         prices = {}
         def fetch_lb_price(tick):
-            if not tick or tick in ['CALIBRATION', 'CAPITAL_INJECTION']:
+            if not tick or tick in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']:
                 return tick, 0.0, 0.0
             try:
                 df_lb = fetch_yf_data(tick, "5d", "5m")
