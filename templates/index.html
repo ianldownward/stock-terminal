@@ -6638,12 +6638,16 @@
             drawCompoundingCanvas(window._selectedInsightProfile);
         }
 
-        function openCompoundingModal() {
+        async function openCompoundingModal() {
             let m = document.getElementById('compoundingModal');
             if (m) m.style.display = 'flex';
             renderCompoundPills();
             updateProfileSnapshot(window._selectedInsightProfile);
             drawCompoundingCanvas(window._selectedInsightProfile);
+            if (!window._reconStrategyStats) {
+                await refreshReconStrategyStats();
+                updateProfileSnapshot(window._selectedInsightProfile);
+            }
         }
 
         function closeCompoundingModal() {
