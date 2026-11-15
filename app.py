@@ -1766,20 +1766,6 @@ def global_background_worker():
             print(f"Background Loop Error: {e}")
         time.sleep(20) # 20-second high-speed cycle
 
-def _start_singleton_workers():
-    """Ensures only ONE Gunicorn worker process runs background trading & reconciliation loops (prevents 2x RAM OOM and duplicate orders)."""
-    try:
-        import fcntl
-        lock_fp = open('/tmp/idc_trading_bg_workers.lock', 'w')
-        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        app._bg_worker_lock_fp = lock_fp  # Keep descriptor open for lifetime of leader process
-    except Exception:
-        return
-    threading.Thread(target=global_background_worker, daemon=True).start()
-    threading.Thread(target=alpaca_reconciliation_worker, daemon=True).start()
-
-_start_singleton_workers()
-
 def match_bot_from_order_id(client_order_id, profiles):
     """Matches Alpaca client_order_id back to the specific bot profile or custom version."""
     if not client_order_id:
@@ -2287,6 +2273,8 @@ def _start_singleton_workers():
         lock_fp = open('/tmp/idc_trading_bg_workers.lock', 'w')
         fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         app._bg_worker_lock_fp = lock_fp  # Keep descriptor open for lifetime of leader process
+    except ImportError:
+        pass  # Windows local dev fallback
     except Exception:
         return
     threading.Thread(target=global_background_worker, daemon=True).start()
