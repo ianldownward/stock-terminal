@@ -695,6 +695,10 @@
             padding-top: 10px;
         }
 
+        #swipeHandle { display: none; }
+        @media (max-width: 900px) {
+            #swipeHandle { display: flex !important; }
+        }
         .desktop-only-logo { display: block; }
         .mobile-only-logo { display: none; }
         #mobileBottomControls { display: none; }
@@ -731,7 +735,30 @@
             }
             .header-user-badge, .header-icons { display: none !important; }
             #mobileBurgerBtn, #mobileRefreshBtn { display: inline-flex !important; }
-            .sidebar, .right-drawer, #colResizer { display: none !important; }
+            .sidebar, #colResizer { display: none !important; }
+            .right-drawer {
+                display: flex !important;
+                position: fixed !important;
+                top: 0;
+                right: -85vw;
+                width: 75vw !important;
+                min-width: 280px !important;
+                height: 100vh !important;
+                height: 100dvh !important;
+                z-index: 3000;
+                transition: right 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+                box-shadow: -5px 0 25px rgba(0,0,0,0.8);
+                border-left: 1px solid #262b36;
+                padding: 15px 10px 80px 10px !important;
+                background: #171a21 !important;
+            }
+            .right-drawer.open {
+                right: 0 !important;
+            }
+            .right-drawer .card {
+                margin-bottom: 6px !important;
+                padding: 12px !important;
+            }
             
             .main-content { 
                 width: 100% !important; 
@@ -1686,6 +1713,10 @@
     </style>
 </head>
 <body>
+    <div id="mobileDrawerOverlay" onclick="closeMobileDrawer()" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:2999; backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);"></div>
+    <div id="swipeHandle" onclick="openMobileDrawer()" style="display:none; position:fixed; right:0; top:50%; transform:translateY(-50%); width:16px; height:70px; background:rgba(255, 212, 0, 0.15); border-left:2px solid #ffd400; border-top-left-radius:8px; border-bottom-left-radius:8px; z-index:2998; align-items:center; justify-content:center; color:#ffd400; cursor:pointer; box-shadow:-2px 0 8px rgba(0,0,0,0.3);">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+    </div>
     <div class="modal-overlay" id="journeyModal">
         <div class="modal">
             <h2><span>Trade Journey Flow</span><button class="btn-control" style="padding:4px 8px; font-size:12px" onclick="document.getElementById('journeyModal').style.display='none'">Close</button></h2>
@@ -5631,8 +5662,10 @@
             let stack = document.getElementById('mobileDashboardStack');
             let sidebarTop = document.querySelector('.sidebar-top');
             let metricsGrid = document.querySelector('.metrics-grid');
+            let rightDrawer = document.getElementById('leaderboardCol');
             let profileBox = document.querySelector('.user-profile-box');
             let riskCard = document.getElementById('rotatorHealthCard');
+            let sentimentCard = document.getElementById('sentimentCard');
             let mobLb = document.getElementById('mobLeaderboardCard');
             let mobHeld = document.getElementById('mobHeldShareCard');
 
@@ -5640,21 +5673,28 @@
 
             if (isMobile) {
                 let mobRatchet = document.getElementById('mobProfitRatchetCard');
-                if (profileBox && profileBox.parentElement !== stack) {
-                    stack.prepend(profileBox);
-                }
+                if (profileBox && profileBox.parentElement !== stack) stack.prepend(profileBox);
                 if (mobRatchet && profileBox && mobRatchet.previousElementSibling !== profileBox) {
                     profileBox.insertAdjacentElement('afterend', mobRatchet);
                 }
                 if (mobLb && mobLb.parentElement !== stack) stack.appendChild(mobLb);
                 if (mobHeld && mobHeld.parentElement !== stack) stack.appendChild(mobHeld);
+
+                // Move tactical cards to the top of the swipe drawer
+                if (rightDrawer) {
+                    if (sentimentCard && sentimentCard.parentElement !== rightDrawer) rightDrawer.prepend(sentimentCard);
+                    if (riskCard && riskCard.parentElement !== rightDrawer) rightDrawer.prepend(riskCard);
+                }
             } else {
                 if (sidebarTop && profileBox && profileBox.parentElement !== sidebarTop) {
                     sidebarTop.prepend(profileBox);
-                    if (metricsGrid && riskCard && riskCard.parentElement !== metricsGrid) {
-                        metricsGrid.appendChild(riskCard);
-                    }
                 }
+                // Move tactical cards back to top desktop metrics grid
+                if (metricsGrid) {
+                    if (riskCard && riskCard.parentElement !== metricsGrid) metricsGrid.appendChild(riskCard);
+                    if (sentimentCard && sentimentCard.parentElement !== metricsGrid) metricsGrid.appendChild(sentimentCard);
+                }
+                closeMobileDrawer(); // Ensure closed when resizing back to desktop
             }
             if (tvChart) {
                 let chartDiv = document.getElementById('tvChart');
@@ -8099,6 +8139,55 @@
         setTimeout(fetchBrokerStatus, 1000);
         setTimeout(fetchReadinessScanner, 1500);
         setTimeout(updateSessionTimeline, 500);
+
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        document.addEventListener('touchstart', e => {
+            if (e.changedTouches && e.changedTouches.length > 0) {
+                touchStartX = e.changedTouches[0].screenX;
+            }
+        }, {passive: true});
+        
+        document.addEventListener('touchend', e => {
+            if (e.changedTouches && e.changedTouches.length > 0) {
+                touchEndX = e.changedTouches[0].screenX;
+                handleMobileSwipe();
+            }
+        }, {passive: true});
+        
+        function handleMobileSwipe() {
+            if (window.innerWidth > 900) return;
+            let swipeDist = touchEndX - touchStartX;
+            
+            // Swipe Left from right edge to open
+            if (swipeDist < -40 && touchStartX > window.innerWidth - 60) {
+                openMobileDrawer();
+            }
+            
+            // Swipe Right anywhere to close
+            if (swipeDist > 50) {
+                let drawer = document.getElementById('leaderboardCol');
+                if (drawer && drawer.classList.contains('open')) {
+                    closeMobileDrawer();
+                }
+            }
+        }
+
+        function openMobileDrawer() {
+            if (window.innerWidth > 900) return;
+            let drawer = document.getElementById('leaderboardCol');
+            let overlay = document.getElementById('mobileDrawerOverlay');
+            if (drawer) drawer.classList.add('open');
+            if (overlay) overlay.style.display = 'block';
+        }
+
+        function closeMobileDrawer() {
+            let drawer = document.getElementById('leaderboardCol');
+            let overlay = document.getElementById('mobileDrawerOverlay');
+            if (drawer) drawer.classList.remove('open');
+            if (overlay) overlay.style.display = 'none';
+        }
     </script>
 </body>
 </html>
