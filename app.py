@@ -996,6 +996,55 @@ class MarketScoringEngine:
             'RKLB': 'Rocket Lab USA', 'ASTS': 'AST SpaceMobile', 'LUNR': 'Intuitive Machines',
             'FLY': 'Firefly Aerospace', 'YSS': 'York Space Systems', 'TSAT': 'Telesat Corp', 'MDA': 'MDA Space'
         }
+    def get_macro_pulse(self):
+        global NEWS_CACHE
+        now = time.time()
+        cached = NEWS_CACHE.get('_macro_pulse')
+        if cached and (now - cached.get('ts', 0)) < 45:
+            return cached['data']
+
+        out = {
+            'nq': {'pct': 0.0, 'text': '0.00% ►', 'color': '#8a8a9e'},
+            'es': {'pct': 0.0, 'text': '0.00% ►', 'color': '#8a8a9e'},
+            'vix': {'val': 15.0, 'text': '15.00 Calm', 'color': '#ffb700'}
+        }
+        try:
+            def _fetch_m(sym):
+                return sym, fetch_yf_data(sym, '5d', '1d')
+
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                res_map = dict(ex.map(_fetch_m, ['NQ=F', 'ES=F', '^VIX']))
+
+            for key, sym in [('nq', 'NQ=F'), ('es', 'ES=F')]:
+                df_m = res_map.get(sym)
+                if df_m is not None and len(df_m) >= 2:
+                    prev_c = float(df_m['Close'].iloc[-2])
+                    cur_c = float(df_m['Close'].iloc[-1])
+                    if prev_c > 0:
+                        pct = ((cur_c - prev_c) / prev_c) * 100.0
+                        arrow = '▲' if pct > 0.02 else ('▼' if pct < -0.02 else '►')
+                        col = '#0ecb81' if pct > 0.02 else ('#ff5364' if pct < -0.02 else '#8a8a9e')
+                        sign = '+' if pct > 0 else ''
+                        out[key] = {'pct': round(pct, 2), 'text': f"{sign}{pct:.2f}% {arrow}", 'color': col}
+
+            df_vix = res_map.get('^VIX')
+            if df_vix is not None and not df_vix.empty:
+                v_val = float(df_vix['Close'].iloc[-1])
+                if v_val < 16:
+                    v_lbl, v_col = 'Calm', '#0ecb81'
+                elif v_val < 22:
+                    v_lbl, v_col = 'Normal', '#ffb700'
+                elif v_val < 30:
+                    v_lbl, v_col = 'Elevated', '#ff9900'
+                else:
+                    v_lbl, v_col = 'High Fear', '#ff5364'
+                out['vix'] = {'val': round(v_val, 2), 'text': f"{v_val:.2f} {v_lbl}", 'color': v_col}
+        except Exception:
+            pass
+
+        NEWS_CACHE['_macro_pulse'] = {'ts': now, 'data': out}
+        return out
+
     def check_market_regime(self):
         try:
             df_qqq = fetch_yf_data('QQQ', '5d', '5m')
@@ -1024,6 +1073,318 @@ class MarketScoringEngine:
         except Exception: pass
         return {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
 
+    def evaluate_opening_window(self, df_5m, current_price, ticker, is_inverse, prof, regime, pct_change_5d):
+        """14:30-14:50 UK Opening Correlation Engine:
+        - 14:30-14:33 UK: 3-minute opening spike calibration (lets market-on-open orders settle).
+        - 14:33-14:50 UK (Small Gaps 0.15% to 0.65% 1x-equiv): Gap-Fade Reversal (~80% historical fill odds).
+          * Small Gap Up (+0.15% to +0.65%): Buy SQQQ when index crosses back below 14:30 open.
+          * Small Gap Down (-0.65% to -0.15%): Buy TQQQ/SOXL when index crosses back above 14:30 open.
+        - 14:45-14:50 UK (Big Gaps > 0.65% 1x-equiv): 15-Minute Opening Range Breakout (ORB).
+          * Big Gap Up (> +0.65%): Buy TQQQ/SOXL on breakout above 14:30-14:45 Opening Range High.
+          * Big Gap Down (< -0.65%): Buy SQQQ on breakdown below 14:30-14:45 Opening Range Low.
+        """
+        trade_type = 'SHORT' if is_inverse else 'LONG'
+        now_uk = pd.Timestamp.now(tz='Europe/London')
+        today_uk_str = now_uk.strftime('%Y-%m-%d')
+
+        use_qqq_ref = ticker in ['TQQQ', 'SQQQ']
+        df_ref = fetch_yf_data('QQQ', '5d', '5m') if use_qqq_ref else df_5m
+        if df_ref is None or df_ref.empty:
+            df_ref = df_5m
+
+        df_r = df_ref.copy()
+        if df_r.index.tz is None:
+            df_r.index = df_r.index.tz_localize('UTC')
+        df_r_uk = df_r.index.tz_convert('Europe/London')
+        prev_bars = df_r[df_r_uk.strftime('%Y-%m-%d') < today_uk_str]
+        today_bars = df_r[df_r_uk.strftime('%Y-%m-%d') == today_uk_str]
+
+        df_tk_1m = fetch_yf_data(ticker, '1d', '1m')
+        tk_open_1430 = None
+        if df_tk_1m is not None and not df_tk_1m.empty:
+            df_tk1 = df_tk_1m.copy()
+            if df_tk1.index.tz is None:
+                df_tk1.index = df_tk1.index.tz_localize('UTC')
+            tk1_today = df_tk1[df_tk1.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == today_uk_str]
+            if not tk1_today.empty:
+                tk_open_1430 = float(tk1_today['Open'].iloc[0])
+        if tk_open_1430 is None and not df_5m.empty:
+            df_t5 = df_5m.copy()
+            if df_t5.index.tz is None:
+                df_t5.index = df_t5.index.tz_localize('UTC')
+            t5_today = df_t5[df_t5.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == today_uk_str]
+            if not t5_today.empty:
+                tk_open_1430 = float(t5_today['Open'].iloc[0])
+        if tk_open_1430 is None:
+            tk_open_1430 = current_price
+
+        if prev_bars.empty or today_bars.empty:
+            return {'type': 'Opening Window', 'score': 25, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Window: Syncing 14:30 opening print vs prior close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Sync', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Sync)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Opening Sync'}
+
+        prev_close = float(prev_bars['Close'].iloc[-1])
+        open_1430 = float(today_bars['Open'].iloc[0])
+        cur_ref = float(today_bars['Close'].iloc[-1])
+        if use_qqq_ref:
+            df_qqq_1m = fetch_yf_data('QQQ', '1d', '1m')
+            if df_qqq_1m is not None and not df_qqq_1m.empty:
+                df_q1 = df_qqq_1m.copy()
+                if df_q1.index.tz is None:
+                    df_q1.index = df_q1.index.tz_localize('UTC')
+                q1_today = df_q1[df_q1.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == today_uk_str]
+                if not q1_today.empty:
+                    open_1430 = float(q1_today['Open'].iloc[0])
+                    cur_ref = float(q1_today['Close'].iloc[-1])
+
+        raw_gap_pct = ((open_1430 - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
+        gap_1x_pct = raw_gap_pct if use_qqq_ref else (raw_gap_pct / 3.0)
+        ref_label = 'QQQ' if use_qqq_ref else f'{ticker} (1x eq)'
+
+        if now_uk.minute < 33:
+            return {
+                'type': 'Opening Window',
+                'score': 35,
+                'tranches': 0,
+                'discount': f"{gap_1x_pct:+.2f}%",
+                'reason': f"3m Spike Filter ({ref_label} Gap {gap_1x_pct:+.2f}%): Letting opening bell orders settle until 14:33 UK.",
+                'is_smart': True,
+                'rec_buy': current_price,
+                'rec_sell': current_price,
+                'status': '3m Spike Filter',
+                'color': '#ffd400',
+                'action_main': 'HOLD / WAIT',
+                'action_sub': '(3m Spike Wait)',
+                'action_color': '#ffd400',
+                'regime': regime,
+                'trade_type': trade_type,
+                'health_pct': 0,
+                'health_color': '#ffd400',
+                'health_text': '3m Spike Filter'
+            }
+
+        if 0.15 <= gap_1x_pct <= 0.65:
+            not_filled_yet = (cur_ref > prev_close * 1.0005)
+            crossed_below_open = (cur_ref < open_1430) and (current_price >= tk_open_1430 * 0.9995 if is_inverse else current_price <= tk_open_1430 * 1.0005)
+            if is_inverse and crossed_below_open and not_filled_yet:
+                fade_score = min(92, max(74, round(74 + gap_1x_pct * 25)))
+                return {
+                    'type': 'Opening Gap-Fade',
+                    'score': fade_score,
+                    'tranches': 1,
+                    'discount': f"{gap_1x_pct:+.2f}%",
+                    'reason': f"GAP-FADE SHORT ({ref_label} +{gap_1x_pct:.2f}% gap): Reversed below 14:30 open (${open_1430:.2f}) -> Shorting fade toward ${prev_close:.2f}.",
+                    'is_smart': True,
+                    'rec_buy': round(current_price * 0.995, 2),
+                    'rec_sell': round(current_price * 1.015, 2),
+                    'status': 'Gap-Fade Short',
+                    'color': '#0ecb81',
+                    'action_main': 'BUY',
+                    'action_sub': '(Gap-Fade Short)',
+                    'action_color': '#0ecb81',
+                    'regime': regime,
+                    'trade_type': trade_type,
+                    'health_pct': 0,
+                    'health_color': '#0ecb81',
+                    'health_text': 'Gap-Fade Trigger'
+                }
+            wait_msg = (
+                f"Gap-Fade Watch ({ref_label} +{gap_1x_pct:.2f}%): Watching for drop below ${open_1430:.2f} open to trigger SQQQ fade."
+                if is_inverse else
+                f"Gap-Fade Watch ({ref_label} +{gap_1x_pct:.2f}%): Small gap up favours SQQQ fade over {ticker} long."
+            )
+            return {
+                'type': 'Opening Gap-Fade',
+                'score': 48 if is_inverse else 20,
+                'tranches': 0,
+                'discount': f"{gap_1x_pct:+.2f}%",
+                'reason': wait_msg,
+                'is_smart': True,
+                'rec_buy': current_price,
+                'rec_sell': current_price,
+                'status': 'Gap-Fade Watch',
+                'color': '#ffd400' if is_inverse else '#8a8a9e',
+                'action_main': 'HOLD / WAIT',
+                'action_sub': '(Fade Watch)',
+                'action_color': '#ffd400' if is_inverse else '#8a8a9e',
+                'regime': regime,
+                'trade_type': trade_type,
+                'health_pct': 0,
+                'health_color': '#ffd400',
+                'health_text': 'Gap-Fade Watch'
+            }
+
+        if -0.65 <= gap_1x_pct <= -0.15:
+            not_filled_yet = (cur_ref < prev_close * 0.9995)
+            crossed_above_open = (cur_ref > open_1430) and (current_price >= tk_open_1430 * 0.9995 if not is_inverse else current_price <= tk_open_1430 * 1.0005)
+            if (not is_inverse) and crossed_above_open and not_filled_yet:
+                bounce_score = min(92, max(74, round(74 + abs(gap_1x_pct) * 25)))
+                return {
+                    'type': 'Opening Gap-Bounce',
+                    'score': bounce_score,
+                    'tranches': 1,
+                    'discount': f"{gap_1x_pct:+.2f}%",
+                    'reason': f"GAP-BOUNCE LONG ({ref_label} {gap_1x_pct:.2f}% gap): Reclaimed 14:30 open (${open_1430:.2f}) -> Riding bounce toward ${prev_close:.2f}.",
+                    'is_smart': True,
+                    'rec_buy': round(current_price * 0.995, 2),
+                    'rec_sell': round(current_price * 1.015, 2),
+                    'status': 'Gap-Bounce Long',
+                    'color': '#0ecb81',
+                    'action_main': 'BUY',
+                    'action_sub': '(Gap-Bounce)',
+                    'action_color': '#0ecb81',
+                    'regime': regime,
+                    'trade_type': trade_type,
+                    'health_pct': 0,
+                    'health_color': '#0ecb81',
+                    'health_text': 'Gap-Bounce Trigger'
+                }
+            wait_msg = (
+                f"Gap-Bounce Watch ({ref_label} {gap_1x_pct:.2f}%): Watching for reclaim above ${open_1430:.2f} open to buy {ticker}."
+                if not is_inverse else
+                f"Gap-Bounce Watch ({ref_label} {gap_1x_pct:.2f}%): Small dip favours TQQQ/SOXL bounce over SQQQ."
+            )
+            return {
+                'type': 'Opening Gap-Bounce',
+                'score': 48 if not is_inverse else 20,
+                'tranches': 0,
+                'discount': f"{gap_1x_pct:+.2f}%",
+                'reason': wait_msg,
+                'is_smart': True,
+                'rec_buy': current_price,
+                'rec_sell': current_price,
+                'status': 'Gap-Bounce Watch',
+                'color': '#ffd400' if not is_inverse else '#8a8a9e',
+                'action_main': 'HOLD / WAIT',
+                'action_sub': '(Bounce Watch)',
+                'action_color': '#ffd400' if not is_inverse else '#8a8a9e',
+                'regime': regime,
+                'trade_type': trade_type,
+                'health_pct': 0,
+                'health_color': '#ffd400',
+                'health_text': 'Gap-Bounce Watch'
+            }
+
+        if abs(gap_1x_pct) > 0.65:
+            if now_uk.minute < 45:
+                return {
+                    'type': 'Opening 15m ORB',
+                    'score': 42,
+                    'tranches': 0,
+                    'discount': f"{gap_1x_pct:+.2f}%",
+                    'reason': f"Big Gap ({ref_label} {gap_1x_pct:+.2f}%): Building 15m Opening Range until 14:45 UK for breakout.",
+                    'is_smart': True,
+                    'rec_buy': current_price,
+                    'rec_sell': current_price,
+                    'status': 'Building 15m ORB',
+                    'color': '#ffd400',
+                    'action_main': 'HOLD / WAIT',
+                    'action_sub': '(15m ORB Setup)',
+                    'action_color': '#ffd400',
+                    'regime': regime,
+                    'trade_type': trade_type,
+                    'health_pct': 0,
+                    'health_color': '#ffd400',
+                    'health_text': 'Building 15m ORB'
+                }
+
+            or_bars = today_bars.iloc[:3]
+            or_high = float(or_bars['High'].max())
+            or_low = float(or_bars['Low'].min())
+            df_orb_1m = fetch_yf_data('QQQ' if use_qqq_ref else ticker, '1d', '1m')
+            if df_orb_1m is not None and not df_orb_1m.empty:
+                df_o1 = df_orb_1m.copy()
+                if df_o1.index.tz is None:
+                    df_o1.index = df_o1.index.tz_localize('UTC')
+                o1_uk = df_o1.index.tz_convert('Europe/London')
+                o1_pre45 = df_o1[(o1_uk.strftime('%Y-%m-%d') == today_uk_str) & (o1_uk.hour == 14) & (o1_uk.minute < 45)]
+                if not o1_pre45.empty:
+                    or_high = max(or_high, float(o1_pre45['High'].max()))
+                    or_low = min(or_low, float(o1_pre45['Low'].min()))
+
+            if gap_1x_pct > 0.65 and (not is_inverse) and cur_ref > or_high:
+                return {
+                    'type': 'Opening 15m ORB',
+                    'score': 85,
+                    'tranches': 1,
+                    'discount': f"{gap_1x_pct:+.2f}%",
+                    'reason': f"15M ORB BREAKOUT ({ref_label} +{gap_1x_pct:.2f}% gap): Broke above 15m range high (${or_high:.2f}) -> Riding continuation.",
+                    'is_smart': True,
+                    'rec_buy': round(current_price * 0.995, 2),
+                    'rec_sell': round(current_price * 1.02, 2),
+                    'status': '15m ORB Breakout',
+                    'color': '#0ecb81',
+                    'action_main': 'BUY',
+                    'action_sub': '(15m ORB Long)',
+                    'action_color': '#0ecb81',
+                    'regime': regime,
+                    'trade_type': trade_type,
+                    'health_pct': 0,
+                    'health_color': '#0ecb81',
+                    'health_text': '15m ORB Breakout'
+                }
+            if gap_1x_pct < -0.65 and is_inverse and cur_ref < or_low:
+                return {
+                    'type': 'Opening 15m ORB',
+                    'score': 85,
+                    'tranches': 1,
+                    'discount': f"{gap_1x_pct:+.2f}%",
+                    'reason': f"15M ORB BREAKDOWN ({ref_label} {gap_1x_pct:.2f}% gap): Broke below 15m range low (${or_low:.2f}) -> Riding short continuation.",
+                    'is_smart': True,
+                    'rec_buy': round(current_price * 0.995, 2),
+                    'rec_sell': round(current_price * 1.02, 2),
+                    'status': '15m ORB Breakdown',
+                    'color': '#0ecb81',
+                    'action_main': 'BUY',
+                    'action_sub': '(15m ORB Short)',
+                    'action_color': '#0ecb81',
+                    'regime': regime,
+                    'trade_type': trade_type,
+                    'health_pct': 0,
+                    'health_color': '#0ecb81',
+                    'health_text': '15m ORB Breakdown'
+                }
+
+            return {
+                'type': 'Opening 15m ORB',
+                'score': 45,
+                'tranches': 0,
+                'discount': f"{gap_1x_pct:+.2f}%",
+                'reason': f"15m ORB Ready ({ref_label} {gap_1x_pct:+.2f}%): Watching ${or_low:.2f} – ${or_high:.2f} range breakout.",
+                'is_smart': True,
+                'rec_buy': current_price,
+                'rec_sell': current_price,
+                'status': '15m ORB Watch',
+                'color': '#ffd400',
+                'action_main': 'HOLD / WAIT',
+                'action_sub': '(15m ORB Watch)',
+                'action_color': '#ffd400',
+                'regime': regime,
+                'trade_type': trade_type,
+                'health_pct': 0,
+                'health_color': '#ffd400',
+                'health_text': '15m ORB Watch'
+            }
+
+        return {
+            'type': 'Opening Window',
+            'score': 25,
+            'tranches': 0,
+            'discount': f"{gap_1x_pct:+.2f}%",
+            'reason': f"Flat Open ({ref_label} {gap_1x_pct:+.2f}% gap < 0.15%): No overnight gap edge — awaiting 14:50 trend window.",
+            'is_smart': True,
+            'rec_buy': current_price,
+            'rec_sell': current_price,
+            'status': 'Flat Open Wait',
+            'color': '#8a8a9e',
+            'action_main': 'HOLD / WAIT',
+            'action_sub': '(Flat Open)',
+            'action_color': '#8a8a9e',
+            'regime': regime,
+            'trade_type': trade_type,
+            'health_pct': 0,
+            'health_color': '#8a8a9e',
+            'health_text': 'Flat Open Wait'
+        }
+
     def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test e', regime=None, overnight_sweep=True):
         if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         ticker = getattr(df_5m, 'name', '')
@@ -1048,7 +1409,7 @@ class MarketScoringEngine:
         peak_gain_pct = ((highest_price - avg_buy_price) / avg_buy_price * 100.0) if avg_buy_price > 0 and highest_price > 0 else 0.0
 
         # Standardized Production Trailing Stops
-        if any(x in prof for x in ['velocity', 'test s']):
+        if any(x in prof for x in ['velocity', 'pulse', 'test s']):
             trail_pct, hard_pct = 0.50, -0.50
         else:
             trail_pct, hard_pct = 0.75, -0.75
@@ -1083,7 +1444,7 @@ class MarketScoringEngine:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
             # DYNAMIC 0.50% STEP-RATCHET FLOOR (MOVES UP INDEFINITELY EVERY +0.50% FROM +2.50%)
-            if any(x in prof for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
+            if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
                 # Indefinite 0.50% steps: 2.5% -> 3.0% -> 3.5% -> 4.0% -> 4.5% -> 5.0%...
                 floor_pct = round(int(peak_pnl_pct * 2) / 2.0, 2)
                 profit_floor_price = avg_buy_price * (1.0 + (floor_pct / 100.0))
@@ -1112,7 +1473,7 @@ class MarketScoringEngine:
                     }
 
             # VELOCITY CHOKE ON RUNNERS: Choke trail to 0.40% once peak reaches >= +1.20%
-            if any(x in prof for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 1.20:
+            if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 1.20:
                 trail_pct = 0.40
 
             # TIERED CHOKE-TRAIL, RATCHET PROFIT FLOORS & 18:30 BANK-AND-WALK
@@ -1188,7 +1549,7 @@ class MarketScoringEngine:
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "OVERNIGHT SWEEP: Blocking new entries before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
         # OVERRIDE: QUICK 1.2% TARGET FOR TIGHT TARGET PROFILES ONLY (EXCLUDES S2 WHICH USES VELOCITY RATCHET)
-        if any(x in prof for x in ['test u', 'test s']) and 'test s2' not in prof and is_3x_etf and avg_buy_price > 0:
+        if any(x in prof for x in ['velocity', 'pulse', 'test u', 'test s']) and 'test s2' not in prof and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             if pnl_pct >= 1.20:
                 return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#ffd400', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#ffd400', 'health_text': 'Target Hit (Selling)'}
@@ -1201,9 +1562,16 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: ${highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
-        # ASSET & REGIME ELIGIBILITY GATES (Evaluated before technical setup so UI reports exact status)
+        # ASSET ELIGIBILITY GATE (Long-Only enforcement before any entry engine)
         if is_inverse and 'apex' in prof:
             return {'type': 'Intraday Momentum', 'score': 15, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "Apex Precision is Long-Only (TQQQ/SOXL). Inverse ETFs disabled.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Long-Only Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Long-Only)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
+        # OPENING WINDOW ENGINE (14:30 - 14:50 UK): Overnight Gap-Fade Reversal + 15m Opening Range Breakout (ORB)
+        if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']) and is_3x_etf:
+            if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
+                open_res = self.evaluate_opening_window(df_5m, current_price, ticker, is_inverse, prof, regime, pct_change_5d)
+                if open_res is not None:
+                    return open_res
 
         reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
         if is_inverse and reg_score > 35:
@@ -1239,10 +1607,10 @@ class MarketScoringEngine:
             if not near_range_high and vol_ratio < 1.15:
                 return {'type': 'Intraday Momentum', 'score': 42, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Chop Shield: Mid-range consolidation (${current_price:.2f} vs ${recent_high_6:.2f} high) on {vol_ratio:.1f}x vol.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Range Chop Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Breakout)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # UNIVERSAL 14:30 - 14:50 BST OPENING MORATORIUM (Blocks opening whipsaws across all bots)
-            if any(x in prof for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
+            # 14:30 - 14:50 UK is governed exclusively by evaluate_opening_window() above
+            if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
                 if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:50 BST for opening range confirmation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
+                    return {'type': 'Intraday Momentum', 'score': 30, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Window: Awaiting Gap-Fade cross or 15m ORB trigger.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Window', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Window)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Opening Window'}
 
             # TEST E17: 19:45 BST LATE-SESSION CURFEW
             if 'test e17' in prof and (now_uk.hour > 19 or (now_uk.hour == 19 and now_uk.minute >= 45)):
@@ -1556,6 +1924,10 @@ def process_auto_profile(prof_name, client_email=None):
                 if df is None or df.empty: continue
                 df.name = t
                 cur = float(df['Close'].iloc[-1])
+                if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
+                    df_1m_open = fetch_yf_data(t, "1d", "1m")
+                    if df_1m_open is not None and not df_1m_open.empty:
+                        cur = float(df_1m_open['Close'].iloc[-1])
                 sh = resolve_shares(t)
                 # Prefer Alpaca's real-time position quote when holding shares so Yahoo lag cannot trigger false stops
                 if sh > 0:
@@ -3395,7 +3767,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
         period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
@@ -3440,7 +3812,7 @@ def get_directives():
     dirs = []
     if scan_list:
         regime = engine.check_market_regime()
-        is_momentum = any(x in active_profile for x in ['test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         
         dfs = {}
         def fetch_t(tick): 
@@ -3454,6 +3826,7 @@ def get_directives():
         for t in scan_list:
             df = dfs.get(t)
             if df is None or df.empty: continue
+            df.name = t
             cur = df['Close'].iloc[-1]
             sh = portfolio_store.get_shares(t)
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
@@ -3483,7 +3856,7 @@ def get_directives():
             
             if st['action_main'] == 'BUY' and sh == 0 and rem_cash >= 20:
                 if not is_momentum or is_open:
-                    allocation = 0.98 if any(x in active_profile for x in ['test e', 'test s', 'test u', 'test w', 'test x']) else (0.33 if is_momentum else 0.20)
+                    allocation = 0.98 if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'pulse', 'test e', 'test s', 'test u', 'test w', 'test x']) else (0.33 if is_momentum else 0.20)
                     bs = int(min(rem_cash, total_eq * allocation) // cps) 
                     if bs > 0: dirs.append({'ticker': t, 'action': 'BUY', 'shares': bs, 'price': cur, 'amount': bs * cps, 'score': st['score']})
             elif st['action_main'] == 'SELL' and sh > 0:
@@ -3865,6 +4238,7 @@ def get_data():
 
         engine = MarketScoringEngine()
         regime = engine.check_market_regime()
+        macro_pulse = engine.get_macro_pulse()
 
         if t == 'ALL_SHARES':
             t = 'TQQQ'
@@ -3877,7 +4251,7 @@ def get_data():
                 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '$0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data,
                 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime,
-                'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '', 'is_rotator_profile': is_rotator
+                'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '', 'is_rotator_profile': is_rotator, 'macro_pulse': macro_pulse
             }})
 
         df_chart = df.copy()
@@ -3933,7 +4307,13 @@ def get_data():
         if is_momentum:
             df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
             if df_score is None or df_score.empty: df_score = df
-            st = engine.score_momentum(df_score, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
+            df_score.name = t
+            score_px = last_p
+            if now_lon.weekday() < 5 and now_lon.hour == 14 and 30 <= now_lon.minute < 50:
+                df_1m_ui = fetch_yf_data(t, "1d", "1m")
+                if df_1m_ui is not None and not df_1m_ui.empty:
+                    score_px = float(df_1m_ui['Close'].iloc[-1])
+            st = engine.score_momentum(df_score, score_px, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
@@ -4069,7 +4449,8 @@ def get_data():
             'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG'),
             'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator,
-            'buy_guards': buy_guards
+            'buy_guards': buy_guards,
+            'macro_pulse': macro_pulse
         }})
     except Exception as e:
         import traceback
@@ -5379,7 +5760,10 @@ def get_watchlist_scanner():
         n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_dict.get('history', []) if t.get('ticker') == tk)
         return max(0, i_s + n_s)
 
-    # MOBILE SCOPE: Scan ONLY the active profile's own watchlist
+    now_uk_scan = pd.Timestamp.now(tz='Europe/London')
+    is_open_win_scan = (now_uk_scan.weekday() < 5 and now_uk_scan.hour == 14 and 30 <= now_uk_scan.minute < 50)
+
+    # MOBILE & ACTIVE PROFILE SCOPE: Scan ONLY the active profile's own watchlist
     if scope in ['active', 'local', 'profile']:
         prof_wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
         holds = ud.get('holdings') or {}
@@ -5392,7 +5776,12 @@ def get_watchlist_scanner():
             try:
                 df = fetch_yf_data(tick, "5d", "5m")
                 if df.empty: continue
-                cur = df['Close'].iloc[-1]
+                df.name = tick
+                cur = float(df['Close'].iloc[-1])
+                if is_open_win_scan:
+                    df_1m_s = fetch_yf_data(tick, "1d", "1m")
+                    if df_1m_s is not None and not df_1m_s.empty:
+                        cur = float(df_1m_s['Close'].iloc[-1])
                 sh = resolve_scanner_shares(ud, tick)
                 is_held = (sh > 0)
                 
@@ -5402,7 +5791,7 @@ def get_watchlist_scanner():
                     if buys: avg_p = buys[0].get('price', 0.0)
                     high_p = (holds.get(tick) or {}).get('high_water', cur)
 
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime)
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
                 
                 trail_pct = 0.50 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
@@ -5415,6 +5804,7 @@ def get_watchlist_scanner():
                     'is_held': is_held,
                     'score': st.get('score', 0),
                     'target_score': 65,
+                    'status': st.get('status', ''),
                     'health_pct': st.get('health_pct', 0),
                     'health_text': st.get('health_text', ''),
                     'reason': st.get('reason', ''),
@@ -5458,7 +5848,8 @@ def get_watchlist_scanner():
         try:
             df = fetch_yf_data(p['ticker'], "5d", "5m")
             if df.empty: continue
-            cur = df['Close'].iloc[-1]
+            df.name = p['ticker']
+            cur = float(df['Close'].iloc[-1])
             st = engine.score_momentum(df, cur, avg_buy_price=p['avg_price'], highest_price=p['high_water'], profile=p['user'].lower(), regime=regime)
             
             trail_pct = 0.50 if any(x in p['user'].lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
@@ -5487,7 +5878,12 @@ def get_watchlist_scanner():
         try:
             df = fetch_yf_data(tick, "5d", "5m")
             if df.empty: return None
-            cur = df['Close'].iloc[-1]
+            df.name = tick
+            cur = float(df['Close'].iloc[-1])
+            if is_open_win_scan:
+                df_1m_c = fetch_yf_data(tick, "1d", "1m")
+                if df_1m_c is not None and not df_1m_c.empty:
+                    cur = float(df_1m_c['Close'].iloc[-1])
             st = engine.score_momentum(df, cur, avg_buy_price=0.0, highest_price=cur, profile=active_profile.lower(), regime=regime)
             return {
                 'ticker': tick,
