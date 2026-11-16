@@ -1100,16 +1100,23 @@ class MarketScoringEngine:
         today_bars = df_r[df_r_uk.strftime('%Y-%m-%d') == today_uk_str]
 
         df_tk_1m = fetch_yf_data(ticker, '1d', '1m')
-        tk_open_1430 = current_price
+        tk_open_1430 = None
         if df_tk_1m is not None and not df_tk_1m.empty:
-            tk_open_1430 = float(df_tk_1m['Open'].iloc[0])
-        elif not df_5m.empty:
+            df_tk1 = df_tk_1m.copy()
+            if df_tk1.index.tz is None:
+                df_tk1.index = df_tk1.index.tz_localize('UTC')
+            tk1_today = df_tk1[df_tk1.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == today_uk_str]
+            if not tk1_today.empty:
+                tk_open_1430 = float(tk1_today['Open'].iloc[0])
+        if tk_open_1430 is None and not df_5m.empty:
             df_t5 = df_5m.copy()
             if df_t5.index.tz is None:
                 df_t5.index = df_t5.index.tz_localize('UTC')
             t5_today = df_t5[df_t5.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == today_uk_str]
             if not t5_today.empty:
                 tk_open_1430 = float(t5_today['Open'].iloc[0])
+        if tk_open_1430 is None:
+            tk_open_1430 = current_price
 
         if prev_bars.empty or today_bars.empty:
             return {'type': 'Opening Window', 'score': 25, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Window: Syncing 14:30 opening print vs prior close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Sync', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Sync)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Opening Sync'}
@@ -1120,8 +1127,13 @@ class MarketScoringEngine:
         if use_qqq_ref:
             df_qqq_1m = fetch_yf_data('QQQ', '1d', '1m')
             if df_qqq_1m is not None and not df_qqq_1m.empty:
-                open_1430 = float(df_qqq_1m['Open'].iloc[0])
-                cur_ref = float(df_qqq_1m['Close'].iloc[-1])
+                df_q1 = df_qqq_1m.copy()
+                if df_q1.index.tz is None:
+                    df_q1.index = df_q1.index.tz_localize('UTC')
+                q1_today = df_q1[df_q1.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == today_uk_str]
+                if not q1_today.empty:
+                    open_1430 = float(q1_today['Open'].iloc[0])
+                    cur_ref = float(q1_today['Close'].iloc[-1])
 
         raw_gap_pct = ((open_1430 - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
         gap_1x_pct = raw_gap_pct if use_qqq_ref else (raw_gap_pct / 3.0)
@@ -1151,7 +1163,7 @@ class MarketScoringEngine:
 
         if 0.15 <= gap_1x_pct <= 0.65:
             not_filled_yet = (cur_ref > prev_close * 1.0005)
-            crossed_below_open = (cur_ref < open_1430) and (current_price > tk_open_1430 if is_inverse else current_price < tk_open_1430)
+            crossed_below_open = (cur_ref < open_1430) and (current_price >= tk_open_1430 if is_inverse else current_price <= tk_open_1430)
             if is_inverse and crossed_below_open and not_filled_yet:
                 fade_score = min(92, max(74, round(74 + gap_1x_pct * 25)))
                 return {
@@ -1202,7 +1214,7 @@ class MarketScoringEngine:
 
         if -0.65 <= gap_1x_pct <= -0.15:
             not_filled_yet = (cur_ref < prev_close * 0.9995)
-            crossed_above_open = (cur_ref > open_1430) and (current_price > tk_open_1430 if not is_inverse else current_price < tk_open_1430)
+            crossed_above_open = (cur_ref > open_1430) and (current_price >= tk_open_1430 if not is_inverse else current_price <= tk_open_1430)
             if (not is_inverse) and crossed_above_open and not_filled_yet:
                 bounce_score = min(92, max(74, round(74 + abs(gap_1x_pct) * 25)))
                 return {
@@ -1277,6 +1289,16 @@ class MarketScoringEngine:
             or_bars = today_bars.iloc[:3]
             or_high = float(or_bars['High'].max())
             or_low = float(or_bars['Low'].min())
+            df_orb_1m = fetch_yf_data('QQQ' if use_qqq_ref else ticker, '1d', '1m')
+            if df_orb_1m is not None and not df_orb_1m.empty:
+                df_o1 = df_orb_1m.copy()
+                if df_o1.index.tz is None:
+                    df_o1.index = df_o1.index.tz_localize('UTC')
+                o1_uk = df_o1.index.tz_convert('Europe/London')
+                o1_pre45 = df_o1[(o1_uk.strftime('%Y-%m-%d') == today_uk_str) & (o1_uk.hour == 14) & (o1_uk.minute < 45)]
+                if not o1_pre45.empty:
+                    or_high = max(or_high, float(o1_pre45['High'].max()))
+                    or_low = min(or_low, float(o1_pre45['Low'].min()))
 
             if gap_1x_pct > 0.65 and (not is_inverse) and cur_ref > or_high:
                 return {
@@ -1585,10 +1607,10 @@ class MarketScoringEngine:
             if not near_range_high and vol_ratio < 1.15:
                 return {'type': 'Intraday Momentum', 'score': 42, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Chop Shield: Mid-range consolidation (${current_price:.2f} vs ${recent_high_6:.2f} high) on {vol_ratio:.1f}x vol.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Range Chop Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Breakout)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # UNIVERSAL 14:30 - 14:50 BST OPENING MORATORIUM (Blocks opening whipsaws across all bots)
+            # 14:30 - 14:50 UK is governed exclusively by evaluate_opening_window() above
             if any(x in prof for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
                 if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Moratorium: Waiting until 14:50 BST for opening range confirmation.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Lock', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Lock)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Opening Lock'}
+                    return {'type': 'Intraday Momentum', 'score': 30, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': 'Opening Window: Awaiting Gap-Fade cross or 15m ORB trigger.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Opening Window', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Opening Window)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Opening Window'}
 
             # TEST E17: 19:45 BST LATE-SESSION CURFEW
             if 'test e17' in prof and (now_uk.hour > 19 or (now_uk.hour == 19 and now_uk.minute >= 45)):
@@ -3804,6 +3826,7 @@ def get_directives():
         for t in scan_list:
             df = dfs.get(t)
             if df is None or df.empty: continue
+            df.name = t
             cur = df['Close'].iloc[-1]
             sh = portfolio_store.get_shares(t)
             cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
@@ -4228,7 +4251,7 @@ def get_data():
                 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '$0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data,
                 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime,
-                'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '', 'is_rotator_profile': is_rotator
+                'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '', 'is_rotator_profile': is_rotator, 'macro_pulse': macro_pulse
             }})
 
         df_chart = df.copy()
@@ -4284,7 +4307,13 @@ def get_data():
         if is_momentum:
             df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
             if df_score is None or df_score.empty: df_score = df
-            st = engine.score_momentum(df_score, last_p, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
+            df_score.name = t
+            score_px = last_p
+            if now_lon.weekday() < 5 and now_lon.hour == 14 and 30 <= now_lon.minute < 50:
+                df_1m_ui = fetch_yf_data(t, "1d", "1m")
+                if df_1m_ui is not None and not df_1m_ui.empty:
+                    score_px = float(df_1m_ui['Close'].iloc[-1])
+            st = engine.score_momentum(df_score, score_px, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
@@ -5731,7 +5760,10 @@ def get_watchlist_scanner():
         n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in u_dict.get('history', []) if t.get('ticker') == tk)
         return max(0, i_s + n_s)
 
-    # MOBILE SCOPE: Scan ONLY the active profile's own watchlist
+    now_uk_scan = pd.Timestamp.now(tz='Europe/London')
+    is_open_win_scan = (now_uk_scan.weekday() < 5 and now_uk_scan.hour == 14 and 30 <= now_uk_scan.minute < 50)
+
+    # MOBILE & ACTIVE PROFILE SCOPE: Scan ONLY the active profile's own watchlist
     if scope in ['active', 'local', 'profile']:
         prof_wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
         holds = ud.get('holdings') or {}
@@ -5744,7 +5776,12 @@ def get_watchlist_scanner():
             try:
                 df = fetch_yf_data(tick, "5d", "5m")
                 if df.empty: continue
-                cur = df['Close'].iloc[-1]
+                df.name = tick
+                cur = float(df['Close'].iloc[-1])
+                if is_open_win_scan:
+                    df_1m_s = fetch_yf_data(tick, "1d", "1m")
+                    if df_1m_s is not None and not df_1m_s.empty:
+                        cur = float(df_1m_s['Close'].iloc[-1])
                 sh = resolve_scanner_shares(ud, tick)
                 is_held = (sh > 0)
                 
@@ -5754,7 +5791,7 @@ def get_watchlist_scanner():
                     if buys: avg_p = buys[0].get('price', 0.0)
                     high_p = (holds.get(tick) or {}).get('high_water', cur)
 
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime)
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
                 
                 trail_pct = 0.50 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
@@ -5767,6 +5804,7 @@ def get_watchlist_scanner():
                     'is_held': is_held,
                     'score': st.get('score', 0),
                     'target_score': 65,
+                    'status': st.get('status', ''),
                     'health_pct': st.get('health_pct', 0),
                     'health_text': st.get('health_text', ''),
                     'reason': st.get('reason', ''),

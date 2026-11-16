@@ -6384,17 +6384,17 @@
                 assetEl.innerText = isCooling ? `Cooling Down (${cdVal} remaining)` : 'Ready (No Cooldown Active)';
             } else if (guardType === 'curfew') {
                 let curfVal = document.getElementById('dialCurfew-val')?.innerText || 'CLOSED';
-                color = curfVal === 'OPEN' ? '#0ecb81' : (curfVal === 'LOCKED' ? '#ff5364' : '#ff9900');
+                color = (curfVal === 'OPEN' || curfVal === 'GAP/ORB') ? '#0ecb81' : (curfVal === 'LOCKED' ? '#ff5364' : '#ffd400');
                 titleEl.innerHTML = shieldIcon + ' Session Window & 19:45 Curfew';
-                if (allocLbl) allocLbl.innerText = 'Active Hunting Window';
-                allocEl.innerText = '14:50 – 19:45 UK';
-                if (execLbl) execLbl.innerText = 'Overnight Cash Sweep';
-                execEl.innerText = '20:50 UK (100% Cash)';
-                descEl.innerText = 'Time-of-day volatility gate. New entries are blocked during the turbulent US market open (14:30–14:50 UK) and after the 19:45 UK late-session curfew so trades have enough runway to develop before the 20:50 UK overnight sweep flattens open positions.';
-                if (targetLabel) targetLabel.innerText = 'Opening Lock:';
-                tgtEl.innerText = '14:30 – 14:50 UK (20m)';
+                if (allocLbl) allocLbl.innerText = 'Gap-Fade & ORB Window';
+                allocEl.innerText = '14:33 – 14:50 UK';
+                if (execLbl) execLbl.innerText = 'Trend Hunting Window';
+                execEl.innerText = '14:50 – 19:45 UK';
+                descEl.innerText = 'Two-phase session schedule: After a 3-minute opening spike filter (14:30–14:33 UK), the Opening Gap-Fade & 15m ORB engine trades overnight gap reversals (SQQQ on small gap-ups, TQQQ/SOXL on small gap-downs) and 15-minute breakouts on big gaps until 14:50 UK, followed by standard EMA trend hunting until the 19:45 UK curfew.';
+                if (targetLabel) targetLabel.innerText = 'Overnight Cash Sweep:';
+                tgtEl.innerText = '20:50 UK (100% Cash)';
                 if (assetLabel) assetLabel.innerText = 'Current Status:';
-                assetEl.innerText = curfVal === 'OPEN' ? 'Open (Entries Permitted)' : (curfVal === 'LOCKED' ? '19:45 Curfew Active (Entries Blocked)' : 'Market Closed / Pre-Open');
+                assetEl.innerText = curfVal === 'GAP/ORB' ? 'Opening Gap-Fade & ORB Active' : (curfVal === 'OPEN' ? 'Trend Window Open' : (curfVal === 'LOCKED' ? '19:45 Curfew Active' : 'Market Closed / Pre-Open'));
             } else if (guardType === 'strikes') {
                 let st = window._buyGuardsState || { strikes_used: 0, strikes_max: 3 };
                 let used = Math.max(0, Math.min(3, parseInt(st.strikes_used) || 0));
@@ -7914,14 +7914,18 @@
                         label = `<span style="color:${color}; font-weight:800;">RISK: ${valPct}%</span> <span style="font-size:9px; color:#8a8a9e;">(Stop $${it.stop_price})</span>`;
                     } else {
                         let isReady = valPct >= 65;
+                        let stTxt = String(it.status || '');
+                        let isOpenPhase = /Spike|Gap-|ORB|Flat Open|Long-Only/i.test(stTxt);
                         color = isReady ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#4a5060');
-                        label = isReady ? `<span style="color:#0ecb81; font-weight:900;">READY ${valPct}</span> <span style="font-size:9px; color:#ffd400;">(65+)</span>` : `<span style="color:#e1e3e6; font-weight:700;">${valPct}</span> <span style="font-size:9px; color:#8a8a9e;">/ 65</span>`;
+                        let phasePill = (!isReady && isOpenPhase) ? `<span style="font-size:8.5px; color:${valPct >= 40 ? '#ffd400' : '#8a8a9e'}; margin-right:4px; font-weight:700;">${stTxt} •</span>` : '';
+                        label = isReady ? `<span style="color:#0ecb81; font-weight:900;">READY ${valPct}</span> <span style="font-size:9px; color:#ffd400;">(65+)</span>` : `${phasePill}<span style="color:#e1e3e6; font-weight:700;">${valPct}</span> <span style="font-size:9px; color:#8a8a9e;">/ 65</span>`;
                     }
                     
                     let botBadge = (isHeld && it.user_tag) ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(${it.user_tag})</span>` : (isHeld ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(H)</span>` : '');
+                    let reasonTip = String(it.reason || '').replace(/"/g, '"');
 
                     return `
-                    <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:5px; padding:4px 7px; cursor:pointer;" onclick="selectStock('${it.ticker}')">
+                    <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:5px; padding:4px 7px; cursor:pointer;" title="${reasonTip}" onclick="selectStock('${it.ticker}')">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
                             <span style="font-weight:bold; font-size:10.5px; color:#fff;">${it.ticker} ${botBadge}</span>
                             <span style="font-size:9.5px;">${label}</span>
