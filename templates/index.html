@@ -2835,7 +2835,7 @@
                 <div class="top-nav-row2">
                     <div class="controls">
                         <label>Range:</label>
-                        <select id="periodSelect" onchange="updateIntervals(); fetchData(false);">
+                        <select id="periodSelect" onchange="window._userHasPannedChart=false; window._chartEverFitted=false; updateIntervals(); fetchData(false);">
                             <option value="1d" selected>1 Day</option>
                             <option value="5d">5 Days</option>
                             <option value="1mo">1 Month</option>
@@ -2843,7 +2843,7 @@
                             <option value="1y">1 Year</option>
                         </select>
                         <label>Interval:</label>
-                        <select id="intervalSelect" onchange="fetchData(false);">
+                        <select id="intervalSelect" onchange="window._userHasPannedChart=false; window._chartEverFitted=false; fetchData(false);">
                             <option value="1m">1 Min</option>
                             <option value="5m" selected>5 Mins</option>
                             <option value="15m">15 Mins</option>
@@ -5963,14 +5963,14 @@
             document.querySelectorAll('#mobileBottomControls .mobile-ctrl-group:nth-child(1) .m-btn').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
             let sel = document.getElementById('periodSelect');
-            if (sel) { sel.value = val; updateIntervals(); fetchData(false); }
+            if (sel) { sel.value = val; window._userHasPannedChart = false; window._chartEverFitted = false; updateIntervals(); fetchData(false); }
         }
 
         function setMobileInterval(val, btn) {
             document.querySelectorAll('#mobileBottomControls .mobile-ctrl-group:nth-child(2) .m-btn').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
             let sel = document.getElementById('intervalSelect');
-            if (sel) { sel.value = val; fetchData(false); }
+            if (sel) { sel.value = val; window._userHasPannedChart = false; window._chartEverFitted = false; fetchData(false); }
         }
 
         function setMobileStyle(val, btn) {
@@ -6082,6 +6082,7 @@
                 let pauseBtn = document.getElementById('pauseBtnLabel');
 
                 window._activeAllocations = d.allocations || {};
+                if (d.mode) window._savedBrokerMode = d.mode;
                 if (d.api_key) window._savedApiKey = d.api_key;
                 if (d.secret_key) window._savedSecretKey = d.secret_key;
 
@@ -7425,8 +7426,10 @@
 
         function openSettingsModal(targetTab = 'bots') {
             switchSettingsTab(targetTab || 'bots');
-            let currentMode = document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
-            updateAlpacaInstructions(currentMode);
+            let savedMode = window._savedBrokerMode || document.querySelector('input[name="settingBrokerMode"]:checked')?.value || 'paper';
+            let modeRadio = document.querySelector(`input[name="settingBrokerMode"][value="${savedMode}"]`);
+            if (modeRadio) modeRadio.checked = true;
+            updateAlpacaInstructions(savedMode);
             fetchBrokerStatus();
             syncAlertStateUI();
 
@@ -7524,7 +7527,11 @@
             localStorage.removeItem('alpaca_api_secret');
 
             let allocations = {};
-            document.querySelectorAll('.dyn-alloc-chk').forEach(chk => {
+            let allocChks = document.querySelectorAll('.dyn-alloc-chk');
+            if (allocChks.length === 0 && window._activeAllocations && Object.keys(window._activeAllocations).length > 0) {
+                allocations = Object.assign({}, window._activeAllocations);
+            }
+            allocChks.forEach(chk => {
                 let profName = chk.getAttribute('data-prof');
                 let profKey = profName.toLowerCase();
                 let pData = (latestLeaderboardData || []).find(l => l.user === profName) || {};
@@ -7999,6 +8006,7 @@
         setInterval(fetchBrokerStatus, 15000);
         setInterval(fetchReadinessScanner, 15000);
         setInterval(updateSessionTimeline, 15000);
+        setInterval(updateMarketClocks, 15000);
         async function triggerDeployStagingToLive(btn) {
             if (!confirm("Deploy Staging to Live Site (trade.idchub.co.uk)?\n\nThis will merge 'staging' into 'main' on GitHub and trigger Render to deploy your live production site.")) return;
             let lbl = document.getElementById('deployLiveBtnLabel');
