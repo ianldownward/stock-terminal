@@ -5465,6 +5465,16 @@
                     if (textEl) textEl.innerText = `${p.metrics.regime.state || 'Room Temp'}`; 
                 }
 
+                if (p.metrics && p.metrics.macro_pulse) {
+                    let mp = p.metrics.macro_pulse;
+                    let nqEl = document.getElementById('macroNqVal');
+                    let esEl = document.getElementById('macroEsVal');
+                    let vixEl = document.getElementById('macroVixVal');
+                    if (nqEl && mp.nq) { nqEl.innerText = mp.nq.text; nqEl.style.color = mp.nq.color; }
+                    if (esEl && mp.es) { esEl.innerText = mp.es.text; esEl.style.color = mp.es.color; }
+                    if (vixEl && mp.vix) { vixEl.innerText = mp.vix.text; vixEl.style.color = mp.vix.color; }
+                }
+
                 // UPDATE EXECUTION GEAR HUD (4-DIAL VERSION)
                 let gearStageEl = document.getElementById('gearStageText');
                 let gearNameEl = document.getElementById('gearNameText');

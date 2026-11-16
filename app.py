@@ -996,6 +996,55 @@ class MarketScoringEngine:
             'RKLB': 'Rocket Lab USA', 'ASTS': 'AST SpaceMobile', 'LUNR': 'Intuitive Machines',
             'FLY': 'Firefly Aerospace', 'YSS': 'York Space Systems', 'TSAT': 'Telesat Corp', 'MDA': 'MDA Space'
         }
+    def get_macro_pulse(self):
+        global NEWS_CACHE
+        now = time.time()
+        cached = NEWS_CACHE.get('_macro_pulse')
+        if cached and (now - cached.get('ts', 0)) < 45:
+            return cached['data']
+
+        out = {
+            'nq': {'pct': 0.0, 'text': '0.00% ►', 'color': '#8a8a9e'},
+            'es': {'pct': 0.0, 'text': '0.00% ►', 'color': '#8a8a9e'},
+            'vix': {'val': 15.0, 'text': '15.00 Calm', 'color': '#ffb700'}
+        }
+        try:
+            def _fetch_m(sym):
+                return sym, fetch_yf_data(sym, '5d', '1d')
+
+            with ThreadPoolExecutor(max_workers=3) as ex:
+                res_map = dict(ex.map(_fetch_m, ['NQ=F', 'ES=F', '^VIX']))
+
+            for key, sym in [('nq', 'NQ=F'), ('es', 'ES=F')]:
+                df_m = res_map.get(sym)
+                if df_m is not None and len(df_m) >= 2:
+                    prev_c = float(df_m['Close'].iloc[-2])
+                    cur_c = float(df_m['Close'].iloc[-1])
+                    if prev_c > 0:
+                        pct = ((cur_c - prev_c) / prev_c) * 100.0
+                        arrow = '▲' if pct > 0.02 else ('▼' if pct < -0.02 else '►')
+                        col = '#0ecb81' if pct > 0.02 else ('#ff5364' if pct < -0.02 else '#8a8a9e')
+                        sign = '+' if pct > 0 else ''
+                        out[key] = {'pct': round(pct, 2), 'text': f"{sign}{pct:.2f}% {arrow}", 'color': col}
+
+            df_vix = res_map.get('^VIX')
+            if df_vix is not None and not df_vix.empty:
+                v_val = float(df_vix['Close'].iloc[-1])
+                if v_val < 16:
+                    v_lbl, v_col = 'Calm', '#0ecb81'
+                elif v_val < 22:
+                    v_lbl, v_col = 'Normal', '#ffb700'
+                elif v_val < 30:
+                    v_lbl, v_col = 'Elevated', '#ff9900'
+                else:
+                    v_lbl, v_col = 'High Fear', '#ff5364'
+                out['vix'] = {'val': round(v_val, 2), 'text': f"{v_val:.2f} {v_lbl}", 'color': v_col}
+        except Exception:
+            pass
+
+        NEWS_CACHE['_macro_pulse'] = {'ts': now, 'data': out}
+        return out
+
     def check_market_regime(self):
         try:
             df_qqq = fetch_yf_data('QQQ', '5d', '5m')
@@ -3865,6 +3914,7 @@ def get_data():
 
         engine = MarketScoringEngine()
         regime = engine.check_market_regime()
+        macro_pulse = engine.get_macro_pulse()
 
         if t == 'ALL_SHARES':
             t = 'TQQQ'
@@ -4069,7 +4119,8 @@ def get_data():
             'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG'),
             'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator,
-            'buy_guards': buy_guards
+            'buy_guards': buy_guards,
+            'macro_pulse': macro_pulse
         }})
     except Exception as e:
         import traceback
