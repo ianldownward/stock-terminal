@@ -1616,7 +1616,11 @@
         }
         #tvChart, #chartCanvas { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; }
         #chartCanvas { pointer-events: none; z-index: 5; }
-        #loader { 
+        #chartFullscreenBtn { position: absolute; bottom: 15px; right: 15px; z-index: 10; background: #1b202c; border: 1px solid #262b36; color: #8a8a9e; width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0.7; transition: all 0.2s ease; padding: 0; }
+        #chartFullscreenBtn:hover { opacity: 1; color: #ffd400; border-color: #ffd400; background: #222938; }
+        body.light-mode #chartFullscreenBtn { background: #f8f9fb; border-color: #d8dce6; color: #4a5265; }
+        body.light-mode #chartFullscreenBtn:hover { background: #eef2f8; border-color: #ffb700; color: #ffb700; }
+        #loader {
             display: none; 
             position: absolute; 
             top: 50%; 
@@ -2995,6 +2999,9 @@
             <div id="loader">Fetching...</div>
             <div id="tvChart"></div>
             <canvas id="chartCanvas"></canvas>
+            <button id="chartFullscreenBtn" onclick="toggleFullScreen()" title="Full Screen">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+            </button>
         </div>
 
         <!-- LIVE FINANCIAL WIRE & MACRO CALENDAR TAPE -->
@@ -5742,6 +5749,27 @@
             window.addEventListener('resize', () => { 
                 checkMobileLayout();
             });
+
+            window.resetChartView = function() {
+                if (tvChart) {
+                    window._userHasPannedChart = false;
+                    window._chartEverFitted = false;
+                    tvChart.timeScale().fitContent();
+                    tvChart.priceScale('right').applyOptions({ autoScale: true });
+                }
+            };
+
+            let lastTap = 0;
+            c.addEventListener('touchend', function(e) {
+                let currentTime = new Date().getTime();
+                let tapLength = currentTime - lastTap;
+                if (tapLength < 300 && tapLength > 0) {
+                    window.resetChartView();
+                    e.preventDefault();
+                }
+                lastTap = currentTime;
+            });
+            c.addEventListener('dblclick', window.resetChartView);
         }
 
         async function initTerminal() {
