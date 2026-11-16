@@ -7533,7 +7533,7 @@
                 allocations[profKey] = {
                     enabled: chk.checked,
                     budget: parseFloat(pData.budget || prevAlloc.budget || 700.0),
-                    overnight_sweep: sweepChk ? sweepChk.checked : (prevAlloc.overnight_sweep !== undefined ? prevAlloc.overnight_sweep : true)
+                    overnight_sweep: sweepChk ? sweepChk.checked : (pData.overnight_sweep !== undefined ? pData.overnight_sweep : (prevAlloc.overnight_sweep !== undefined ? prevAlloc.overnight_sweep : true))
                 };
             });
 
