@@ -1306,6 +1306,30 @@ class MarketScoringEngine:
 
 portfolio_store = PortfolioManager()
 
+def update_user_state_atomic(prof_name, client_email, mutator_fn):
+    """Thread-safe read-modify-write under trade_lock so parallel bots never overwrite each other's MongoDB state."""
+    is_client = bool(client_email and client_email.strip().lower() not in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()])
+    with portfolio_store.trade_lock:
+        if is_client:
+            fresh_cs = portfolio_store.get_client_store(client_email)
+            if not isinstance(fresh_cs, dict):
+                return False
+            fresh_ud = (fresh_cs.get('users') or {}).get(prof_name)
+            if not isinstance(fresh_ud, dict):
+                return False
+            if mutator_fn(fresh_ud) is not False:
+                portfolio_store.save_client_store(client_email, fresh_cs)
+                return True
+        else:
+            portfolio_store.reload()
+            fresh_ud = (portfolio_store.data.get('users') or {}).get(prof_name)
+            if not isinstance(fresh_ud, dict):
+                return False
+            if mutator_fn(fresh_ud) is not False:
+                portfolio_store.save_data(portfolio_store.data)
+                return True
+    return False
+
 def process_auto_profile(prof_name, client_email=None):
     try:
         is_client = bool(client_email and client_email.strip().lower() not in [ADMIN_USER.lower(), ADMIN_ALIAS.lower()])
@@ -1453,10 +1477,14 @@ def process_auto_profile(prof_name, client_email=None):
                 ud['daily_peak_pct'] = observed_peak_pct
                 if ud.get('ratchet_floor_override') is not None and observed_peak_pct >= (float(ud['ratchet_floor_override']) + 0.6):
                     ud['ratchet_floor_override'] = None
-                if is_client:
-                    portfolio_store.save_client_store(client_email, c_store)
-                else:
-                    portfolio_store.save_data(portfolio_store.data)
+                def _mut_peak(f_ud, pk=observed_peak_pct):
+                    if pk <= float(f_ud.get('daily_peak_pct') or 0.0):
+                        return False
+                    f_ud['daily_peak_pct'] = pk
+                    if f_ud.get('ratchet_floor_override') is not None and pk >= (float(f_ud['ratchet_floor_override']) + 0.6):
+                        f_ud['ratchet_floor_override'] = None
+                    return True
+                update_user_state_atomic(prof_name, client_email, _mut_peak)
 
             daily_peak = float(ud.get('daily_peak_pct') or 0.0)
 
@@ -1574,10 +1602,16 @@ def process_auto_profile(prof_name, client_email=None):
                     if t not in ud['holdings']: ud['holdings'][t] = {}
                     if highest_p > stored_hw:
                         ud['holdings'][t]['high_water'] = highest_p
-                        if is_client:
-                            portfolio_store.save_client_store(client_email, c_store)
-                        else:
-                            portfolio_store.save_data(portfolio_store.data)
+                        def _mut_hw(f_ud, sym=t, hw_val=highest_p):
+                            h_map = f_ud.get('holdings')
+                            if not isinstance(h_map, dict) or sym not in h_map:
+                                return False
+                            cur_hw = float(h_map[sym].get('high_water') or 0.0)
+                            if hw_val <= cur_hw:
+                                return False
+                            h_map[sym]['high_water'] = hw_val
+                            return True
+                        update_user_state_atomic(prof_name, client_email, _mut_hw)
 
                 # Determine effective scoring profile based on active mode
                 eff_profile = active_profile
@@ -1670,10 +1704,11 @@ def process_auto_profile(prof_name, client_email=None):
                     })
             ud['ratchet_locked'] = True
             ud['locked_floor_val'] = daily_floor_locked
-            if is_client:
-                portfolio_store.save_client_store(client_email, c_store)
-            else:
-                portfolio_store.save_data(portfolio_store.data)
+            def _mut_ratchet_lock(f_ud, fl=daily_floor_locked):
+                f_ud['ratchet_locked'] = True
+                f_ud['locked_floor_val'] = fl
+                return True
+            update_user_state_atomic(prof_name, client_email, _mut_ratchet_lock)
             is_curfew_active = True
 
         if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
@@ -1698,19 +1733,13 @@ def process_auto_profile(prof_name, client_email=None):
                     metadata={'status': d.get('status', 'Manual/EOD'), 'reason': d.get('reason', ''), 'highest_price': d.get('highest_price', 0.0), 'slices': d.get('slices', 1)},
                     client_email=client_email
                 )
-                # Stamp 15-minute cooldown on fresh user state so execute_trade history is never overwritten
+                # Stamp 15-minute cooldown atomically on fresh user state so execute_trade history is never overwritten
                 if executed and d['action'] == 'SELL':
-                    if is_client:
-                        fresh_cs = portfolio_store.get_client_store(client_email)
-                        fresh_ud = (fresh_cs.get('users') or {}).get(prof_name)
-                        if isinstance(fresh_ud, dict):
-                            fresh_ud.setdefault('cooldowns', {})[d['ticker']] = int(time.time()) + 900
-                            portfolio_store.save_client_store(client_email, fresh_cs)
-                    else:
-                        fresh_ud = portfolio_store.user_data(prof_name)
-                        if isinstance(fresh_ud, dict):
-                            fresh_ud.setdefault('cooldowns', {})[d['ticker']] = int(time.time()) + 900
-                            portfolio_store.save_data(portfolio_store.data)
+                    cd_until = int(time.time()) + 900
+                    def _mut_cd(f_ud, sym=d['ticker'], exp_ts=cd_until):
+                        f_ud.setdefault('cooldowns', {})[sym] = exp_ts
+                        return True
+                    update_user_state_atomic(prof_name, client_email, _mut_cd)
     except Exception: pass
 
 def global_background_worker():
@@ -3133,21 +3162,38 @@ def api_sync_alpaca_state():
         except Exception:
             pass
 
-        # Clean stale ALPACASYNC adjustments on sibling profiles so shared-account totals stay exact
-        all_profs_map = (c_store.get('users') or {}) if is_client else (portfolio_store.data.get('users') or {})
-        for other_p, other_ud in all_profs_map.items():
-            if other_p != prof_name and isinstance(other_ud, dict):
-                o_hist = other_ud.get('history') or []
-                cleaned_o = [tr for tr in o_hist if tr.get('ticker') != 'ALPACASYNC']
-                if len(cleaned_o) != len(o_hist):
-                    other_ud['history'] = cleaned_o
+        with portfolio_store.trade_lock:
+            if is_client:
+                c_store = portfolio_store.get_client_store(client_name)
+                users = c_store.setdefault('users', {})
+                ud = users.setdefault(prof_name, portfolio_store.default_user_state(prof_name))
+            else:
+                portfolio_store.reload()
+                ud = portfolio_store.user_data(prof_name)
 
-        sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon)
+            ud['master_budget'] = alpaca_last_equity
+            ud['daily_peak_pct'] = max(0.0, today_pct)
+            ud['ratchet_locked'] = False
+            ud['is_locked'] = False
+            ud['manual_locked_day'] = None
+            ud['ratchet_floor_override'] = None
+            ud['locked_floor_val'] = None
 
-        if is_client:
-            portfolio_store.save_client_store(client_name, c_store)
-        else:
-            portfolio_store.save_data(portfolio_store.data)
+            # Clean stale ALPACASYNC adjustments on sibling profiles so shared-account totals stay exact
+            all_profs_map = (c_store.get('users') or {}) if is_client else (portfolio_store.data.get('users') or {})
+            for other_p, other_ud in all_profs_map.items():
+                if other_p != prof_name and isinstance(other_ud, dict):
+                    o_hist = other_ud.get('history') or []
+                    cleaned_o = [tr for tr in o_hist if tr.get('ticker') != 'ALPACASYNC']
+                    if len(cleaned_o) != len(o_hist):
+                        other_ud['history'] = cleaned_o
+
+            sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon)
+
+            if is_client:
+                portfolio_store.save_client_store(client_name, c_store)
+            else:
+                portfolio_store.save_data(portfolio_store.data)
 
         return jsonify({
             'status': 'ok',
@@ -3557,12 +3603,22 @@ def get_data():
         init_manual = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos.values())
         cash_balance = mb + net_history - init_manual
 
+        alp_live_px_map = {}
+        if alpaca_acc and isinstance(alpaca_acc.get('positions'), list):
+            for ap in alpaca_acc['positions']:
+                sym_a = (ap.get('symbol') or '').upper()
+                px_a = float(ap.get('current_price') or 0.0)
+                if sym_a and px_a > 0:
+                    alp_live_px_map[sym_a] = px_a
+
         tot_own = 0.0
         for tk in active_holds:
             sh_c = resolve_profile_shares(ud, tk)
             df_c = pnl_dfs_5m.get(tk)
-            if df_c is not None and not df_c.empty:
+            cur_p = alp_live_px_map.get(tk, 0.0)
+            if cur_p <= 0 and df_c is not None and not df_c.empty:
                 cur_p = float(df_c['Close'].iloc[-1])
+            if cur_p > 0:
                 div = 100.0 if str(tk).endswith('.L') and cur_p > 100 else 1.0
                 tot_own += round(sh_c * (cur_p / div), 2)
         total_equity = cash_balance + tot_own
@@ -3608,6 +3664,8 @@ def get_data():
 
         with ThreadPoolExecutor(max_workers=6) as ex:
             for tick, cur_d, start_d in ex.map(fetch_lb_price, all_user_holds): 
+                if tick in alp_live_px_map and alp_live_px_map[tick] > 0:
+                    cur_d = alp_live_px_map[tick]
                 prices[tick] = {'cur': cur_d, 'start': start_d}
 
         usd_gbp_rate = 0.7499
