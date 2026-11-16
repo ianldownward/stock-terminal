@@ -3168,16 +3168,16 @@
             </div>
         </details>
 
-        <!-- 7. BUYING BLOCK TIMERS & 3-STRIKE LOCKOUT HUD -->
+        <!-- 7. BUYING BLOCK TIMERS, 3-STRIKE & RATCHET LOCK HUD -->
         <details class="drawer-details" id="buyingGuardsHud" open style="margin-bottom:0; padding:7px 10px;">
             <summary>
                 <span>Buying Guards</span>
                 <span id="buyGuardStatusText" style="margin-left:auto; margin-right:6px; font-size:10px; font-weight:800; color:#0ecb81; text-transform:none;">All Clear</span>
             </summary>
 
-            <div style="display:flex; justify-content:space-evenly; align-items:center; width:calc(100% + 20px); margin:8px -10px 2px -10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:2px;">
                 <!-- 15-Min Post-Sell Cooldown Circle -->
-                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('cooldown')" title="Click for 15-minute cooldown explanation">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('cooldown')" title="Click for 15-minute cooldown explanation">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">15M COOL</span>
                     <div id="dialCd15" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3187,7 +3187,7 @@
                 </div>
 
                 <!-- Session & 19:45 Curfew Gate Circle -->
-                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('curfew')" title="Click for Session & Curfew explanation">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('curfew')" title="Click for Session & Curfew explanation">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">CURFEW</span>
                     <div id="dialCurfew" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3197,7 +3197,7 @@
                 </div>
 
                 <!-- 3-Strike Loss Lockout Burger Icon (Same 46px height as timer circles) -->
-                <div style="width:52px; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('strikes')" title="Click for 3-Strike Loss Guard explanation">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('strikes')" title="Click for 3-Strike Loss Guard explanation">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">3-STRIKE</span>
                     <div id="strikeBurgerBox" style="width:46px; height:46px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:6px;">
                         <div id="strikeBar1" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
@@ -3205,6 +3205,19 @@
                         <div id="strikeBar3" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
                     </div>
                     <span id="strikeCountText" style="font-size:8px; font-weight:700; color:#ffd400; margin-top:2px; white-space:nowrap;">3 / 3 Left</span>
+                </div>
+
+                <!-- Profit Ratchet Lock Padlock Icon (Thick Outlined Style, Unlocked Grey -> Locked Yellow + %) -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('ratchet')" title="Click for Profit Ratchet Lock explanation">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">RATCHET</span>
+                    <div id="ratchetLockBox" style="width:46px; height:46px; display:flex; align-items:center; justify-content:center;">
+                        <svg id="ratchetLockSvg" width="46" height="46" viewBox="0 0 46 46" fill="none" style="overflow:visible; transition:filter 0.3s ease;">
+                            <path id="ratchetLockShackle" d="M15 20V13a8 8 0 0 1 16 0v2.5" stroke="#555e6d" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" fill="none" style="transition:stroke 0.3s ease;" />
+                            <rect id="ratchetLockBody" x="6" y="20" width="34" height="22" rx="4.5" ry="4.5" stroke="#555e6d" stroke-width="3.2" stroke-linejoin="round" fill="none" style="transition:stroke 0.3s ease, fill 0.3s ease;" />
+                            <text id="ratchetLockPctText" x="23" y="34.5" text-anchor="middle" font-size="9.5" font-weight="900" fill="#ffd400" style="display:none; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">2.5%</text>
+                        </svg>
+                    </div>
+                    <span id="ratchetLockSubText" style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px; white-space:nowrap;">Unlocked</span>
                 </div>
             </div>
         </details>
@@ -5457,7 +5470,13 @@
                 let dayCol = dayVal >= 0 ? '#0ecb81' : '#ff5364';
                 let dayPct = activeLb.daily_pct || 0;
                 
+                let isRatchetLockedGuard = Boolean(activeLb.is_locked && !activeLb.is_manually_locked);
+                let ratchetLockedFloorVal = isRatchetLockedGuard
+                    ? ((activeLb.active_floor && activeLb.active_floor > 0) ? parseFloat(activeLb.active_floor) : Math.max(2.5, Math.floor((dayPct || 2.5) * 2) / 2))
+                    : 0;
+                window._ratchetLockGuardState = { locked: isRatchetLockedGuard, floor: ratchetLockedFloorVal };
                 updateProfitRatchetHUD(dayPct, Boolean(activeLb.is_locked), parseFloat(activeLb.active_floor) || 0);
+                if (typeof renderBuyingGuardsCircles === 'function') renderBuyingGuardsCircles();
                 
                 let pctStr = `(${dayVal >= 0 ? '+' : ''}${dayPct.toFixed(2)}%)`;
                 let tValEl = document.getElementById('mEquityTodayVal');
@@ -6458,6 +6477,24 @@
                 tgtEl.innerText = 'Realized Trade Loss (Sell < Buy)';
                 if (assetLabel) assetLabel.innerText = 'Current Status:';
                 assetEl.innerText = used >= 3 ? '0 / 3 Strikes Left (Locked for Today)' : `${left} of 3 Strikes Remaining`;
+            } else if (guardType === 'ratchet') {
+                let rState = window._ratchetLockGuardState || { locked: false, floor: 0 };
+                let isLocked = Boolean(rState.locked && rState.floor > 0);
+                let flStr = isLocked ? `${rState.floor % 1 === 0 ? rState.floor.toFixed(0) : rState.floor.toFixed(1)}%` : '2.5%';
+                let lockSvgIcon = isLocked
+                    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>'
+                    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
+                color = isLocked ? '#ffd400' : '#8a8a9e';
+                titleEl.innerHTML = lockSvgIcon + ' Profit Ratchet Lock';
+                if (allocLbl) allocLbl.innerText = 'Activation Threshold';
+                allocEl.innerText = '+2.5% Daily Gain';
+                if (execLbl) execLbl.innerText = 'Step Increment';
+                execEl.innerText = '+0.5% Trailing Floors';
+                descEl.innerText = 'Automated profit-bank lock. Once daily gains reach +2.5%, the ratchet arms a trailing safety floor that steps up every +0.5% (2.5%, 3.0%, 3.5%, 4.0%+). If price pulls back to that floor, the engine liquidates to cash and locks out further entries for the day.';
+                if (targetLabel) targetLabel.innerText = 'Override Option:';
+                tgtEl.innerText = 'Step Down 0.5% on Profile Card';
+                if (assetLabel) assetLabel.innerText = 'Current Status:';
+                assetEl.innerText = isLocked ? `Ratchet Locked at +${flStr} (Cash Protected)` : 'Unlocked (Arms at +2.5% Daily Gain)';
             }
 
             titleEl.style.color = color;
@@ -7156,9 +7193,56 @@
                 sText.style.color = used >= 3 ? '#ff5364' : '#ffd400';
             }
 
+            // 4th Guard Icon: Profit Ratchet Lock (Unlocked Grey vs Locked Yellow + %)
+            let rState = window._ratchetLockGuardState || { locked: false, floor: 0 };
+            let isRatchetLocked = Boolean(rState.locked && rState.floor > 0);
+            let rSvg = document.getElementById('ratchetLockSvg');
+            let rShackle = document.getElementById('ratchetLockShackle');
+            let rBody = document.getElementById('ratchetLockBody');
+            let rPctTxt = document.getElementById('ratchetLockPctText');
+            let rSubTxt = document.getElementById('ratchetLockSubText');
+            let unlockedStroke = isLight ? '#9aa3b2' : '#555e6d';
+            let lockedYellow = isLight ? '#ffb700' : '#ffd400';
+            let rPctStr = '';
+
+            if (rShackle && rBody) {
+                if (isRatchetLocked) {
+                    let fl = parseFloat(rState.floor) || 2.5;
+                    rPctStr = `${fl % 1 === 0 ? fl.toFixed(0) : fl.toFixed(1)}%`;
+                    rShackle.setAttribute('d', 'M15 20V13a8 8 0 0 1 16 0v7');
+                    rShackle.setAttribute('stroke', lockedYellow);
+                    rBody.setAttribute('stroke', lockedYellow);
+                    rBody.setAttribute('fill', 'rgba(255, 212, 0, 0.08)');
+                    if (rSvg) rSvg.style.filter = 'drop-shadow(0 0 5px rgba(255, 212, 0, 0.4))';
+                    if (rPctTxt) {
+                        rPctTxt.textContent = rPctStr;
+                        rPctTxt.setAttribute('fill', lockedYellow);
+                        rPctTxt.style.display = 'block';
+                    }
+                    if (rSubTxt) {
+                        rSubTxt.innerText = 'Locked';
+                        rSubTxt.style.color = lockedYellow;
+                    }
+                } else {
+                    rShackle.setAttribute('d', 'M15 20V13a8 8 0 0 1 16 0v2.5');
+                    rShackle.setAttribute('stroke', unlockedStroke);
+                    rBody.setAttribute('stroke', unlockedStroke);
+                    rBody.setAttribute('fill', 'none');
+                    if (rSvg) rSvg.style.filter = 'none';
+                    if (rPctTxt) rPctTxt.style.display = 'none';
+                    if (rSubTxt) {
+                        rSubTxt.innerText = 'Unlocked';
+                        rSubTxt.style.color = isLight ? '#555e6d' : '#8a8a9e';
+                    }
+                }
+            }
+
             let hdrStatus = document.getElementById('buyGuardStatusText');
             if (hdrStatus) {
-                if (used >= 3) {
+                if (isRatchetLocked) {
+                    hdrStatus.innerText = `Ratchet ${rPctStr} Locked`;
+                    hdrStatus.style.color = lockedYellow;
+                } else if (used >= 3) {
                     hdrStatus.innerText = '3-Strike Lockout';
                     hdrStatus.style.color = '#ff5364';
                 } else if (rem15 > 0) {
