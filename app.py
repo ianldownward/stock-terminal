@@ -1300,13 +1300,13 @@ class MarketScoringEngine:
                     or_high = max(or_high, float(o1_pre45['High'].max()))
                     or_low = min(or_low, float(o1_pre45['Low'].min()))
 
-            if gap_1x_pct > 0.65 and (not is_inverse) and cur_ref > or_high:
+            if (not is_inverse) and cur_ref > or_high:
                 return {
                     'type': 'Opening 15m ORB',
                     'score': 85,
                     'tranches': 1,
                     'discount': f"{gap_1x_pct:+.2f}%",
-                    'reason': f"15M ORB BREAKOUT ({ref_label} +{gap_1x_pct:.2f}% gap): Broke above 15m range high (${or_high:.2f}) -> Riding continuation.",
+                    'reason': f"15M ORB BREAKOUT ({ref_label} {gap_1x_pct:+.2f}% gap): Broke above 15m range high (${or_high:.2f}) -> Riding breakout.",
                     'is_smart': True,
                     'rec_buy': round(current_price * 0.995, 2),
                     'rec_sell': round(current_price * 1.02, 2),
@@ -1321,13 +1321,13 @@ class MarketScoringEngine:
                     'health_color': '#0ecb81',
                     'health_text': '15m ORB Breakout'
                 }
-            if gap_1x_pct < -0.65 and is_inverse and cur_ref < or_low:
+            if is_inverse and cur_ref < or_low:
                 return {
                     'type': 'Opening 15m ORB',
                     'score': 85,
                     'tranches': 1,
                     'discount': f"{gap_1x_pct:+.2f}%",
-                    'reason': f"15M ORB BREAKDOWN ({ref_label} {gap_1x_pct:.2f}% gap): Broke below 15m range low (${or_low:.2f}) -> Riding short continuation.",
+                    'reason': f"15M ORB BREAKDOWN ({ref_label} {gap_1x_pct:+.2f}% gap): Broke below 15m range low (${or_low:.2f}) -> Riding breakdown.",
                     'is_smart': True,
                     'rec_buy': round(current_price * 0.995, 2),
                     'rec_sell': round(current_price * 1.02, 2),
@@ -1399,11 +1399,24 @@ class MarketScoringEngine:
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
         now_uk = pd.Timestamp.now(tz='Europe/London')
 
-        ema9 = df_5m['Close'].ewm(span=9, adjust=False).mean().iloc[-1]
-        ema21 = df_5m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]
-        delta = df_5m['Close'].diff()
-        rs = (delta.where(delta > 0, 0)).rolling(14).mean() / (-delta.where(delta < 0, 0)).rolling(14).mean()
-        rsi = 100 - (100 / (1 + rs.iloc[-1])) if not rs.empty else 50
+        ema_src = df_5m['Close']
+        try:
+            df_s5 = df_5m.copy()
+            if df_s5.index.tz is None:
+                df_s5.index = df_s5.index.tz_localize('UTC')
+            today_s5 = df_s5[df_s5.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_uk.strftime('%Y-%m-%d')]
+            if len(today_s5) >= 4:
+                ema_src = today_s5['Close']
+        except Exception:
+            ema_src = df_5m['Close']
+
+        ema9 = ema_src.ewm(span=9, adjust=False).mean().iloc[-1]
+        ema21 = ema_src.ewm(span=21, adjust=False).mean().iloc[-1]
+        delta = ema_src.diff()
+        gain_s = (delta.where(delta > 0, 0)).rolling(14, min_periods=2).mean()
+        loss_s = (-delta.where(delta < 0, 0)).rolling(14, min_periods=2).mean()
+        rs = gain_s / loss_s.replace(0, float('nan'))
+        rsi = float((100 - (100 / (1 + rs))).fillna(58.0).iloc[-1]) if not rs.empty else 55.0
 
         # DYNAMIC ASSET-SPECIFIC TRAILING STOPS & HARD STOPS
         peak_gain_pct = ((highest_price - avg_buy_price) / avg_buy_price * 100.0) if avg_buy_price > 0 and highest_price > 0 else 0.0
