@@ -1603,10 +1603,18 @@ class MarketScoringEngine:
         swing_low_6 = float(df_5m['Low'].tail(6).min()) if 'Low' in df_5m.columns and len(df_5m) >= 6 else current_price
         bounce_from_low_pct = ((current_price - swing_low_6) / swing_low_6 * 100.0) if swing_low_6 > 0 else 0.0
 
-        has_ema_trend = (ema9 > ema21) and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
-        has_v_reclaim = is_3x_etf and (current_price > ema9) and (current_price > ema21) and (ema9 > prev_ema9) and two_green_bars and (bounce_from_low_pct >= 0.90)
+        prior_high_10 = float(df_5m['High'].iloc[-11:-1].max()) if 'High' in df_5m.columns and len(df_5m) >= 11 else 0.0
+        at_double_top = (
+            prior_high_10 > 0
+            and current_price <= prior_high_10
+            and ((prior_high_10 - current_price) / prior_high_10 * 100.0) < 0.25
+            and bounce_from_low_pct > 0.90
+        )
 
-        if (has_ema_trend or has_v_reclaim) and rsi < 78:
+        has_ema_trend = (ema9 > ema21) and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
+        has_v_reclaim = is_3x_etf and (current_price > ema9) and (ema9 > prev_ema9) and two_green_bars and (bounce_from_low_pct >= 0.65)
+
+        if (has_ema_trend or has_v_reclaim) and not at_double_top and rsi < 78:
             vol_20ma = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
             cur_vol = max(df_5m['Volume'].iloc[-1], df_5m['Volume'].iloc[-2]) if len(df_5m) >= 2 else df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
