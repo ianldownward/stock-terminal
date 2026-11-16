@@ -3419,7 +3419,7 @@
             let trailHtml = '';
             let beCatchHtml = '';
 
-            let trailParam = (profName.includes('velocity') || profName.includes('pulse') || profName.includes('test s')) ? 0.50 : 0.75;
+            let trailParam = (profName.includes('velocity') || profName.includes('pulse') || profName.includes('test s')) ? 0.65 : 0.75;
 
             if (shOwned > 0 && curPrice > 0) {
                 let peakPrice = (holdsDict[heldTicker]?.high_water) || curPrice;
@@ -5602,7 +5602,7 @@
                         }
 
                         let prof = (document.getElementById('userSelect')?.value || '').toLowerCase();
-                        let trailPct = (prof.includes('velocity') || prof.includes('pulse') || prof.includes('test s')) ? 0.50 : 0.75;
+                        let trailPct = (prof.includes('velocity') || prof.includes('pulse') || prof.includes('test s')) ? 0.65 : 0.75;
 
                         let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
                         let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));

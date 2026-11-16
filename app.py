@@ -5826,7 +5826,7 @@ def get_watchlist_scanner():
 
                 st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
                 
-                trail_pct = 0.50 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
+                trail_pct = 0.65 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
                 
                 results.append({
@@ -5885,7 +5885,7 @@ def get_watchlist_scanner():
             cur = float(df['Close'].iloc[-1])
             st = engine.score_momentum(df, cur, avg_buy_price=p['avg_price'], highest_price=p['high_water'], profile=p['user'].lower(), regime=regime)
             
-            trail_pct = 0.50 if any(x in p['user'].lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
+            trail_pct = 0.65 if any(x in p['user'].lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
             stop_price = p['high_water'] * (1.0 - (trail_pct / 100.0))
             
             results.append({
