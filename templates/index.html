@@ -4998,7 +4998,7 @@
                         </div>
                     `;
                 } else if (isLocked) {
-                    let stepVal = lb.active_floor || (Math.floor((lb.daily_pct || 2.5) * 2) / 2);
+                    let stepVal = (lb.active_floor && lb.active_floor > 0) ? lb.active_floor : Math.max(2.5, Math.floor((lb.daily_pct || 2.5) * 2) / 2);
                     let targetPctStr = `${stepVal % 1 === 0 ? stepVal.toFixed(0) : stepVal.toFixed(1)}%`;
 
                     tickerUnderName = `

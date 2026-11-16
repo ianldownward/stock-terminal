@@ -2411,7 +2411,7 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
             ud['daily_peak_pct'] = max(0.0, true_today_pct)
             changed = True
         if ud.get('manual_locked_day') != today_str and (ud.get('ratchet_locked') or ud.get('is_locked')):
-            if true_today_pct < 2.50 and ud.get('ratchet_floor_override') is None:
+            if true_today_pct < 2.25 and ud.get('ratchet_floor_override') is None:
                 ud['ratchet_locked'] = False
                 ud['is_locked'] = False
                 ud['locked_floor_val'] = None
@@ -4180,13 +4180,22 @@ def get_data():
                             portfolio_store.save_data(portfolio_store.data)
 
             peak_pct_today = max(float(u_data.get('daily_peak_pct') or 0.0), day_pct)
-            computed_floor = round(int(peak_pct_today * 2) / 2.0, 2) if peak_pct_today >= 2.50 else 0.0
-            active_floor_val = float(u_data.get('ratchet_floor_override')) if u_data.get('ratchet_floor_override') is not None else computed_floor
+            stored_locked_floor = float(u_data.get('locked_floor_val') or 0.0)
+            computed_floor = round(int(peak_pct_today * 2) / 2.0, 2) if peak_pct_today >= 2.50 else stored_locked_floor
 
             has_override = (u_data.get('ratchet_floor_override') is not None)
             is_manually_locked = (u_data.get('manual_locked_day') == today_str)
             is_ratchet_locked = bool(u_data.get('ratchet_locked') and len(user_holds) == 0)
             is_locked = is_manually_locked or is_ratchet_locked or (len(user_holds) == 0 and day_pct >= 2.50 and not has_override)
+
+            if has_override:
+                active_floor_val = float(u_data.get('ratchet_floor_override'))
+            elif computed_floor > 0:
+                active_floor_val = computed_floor
+            elif is_ratchet_locked:
+                active_floor_val = 2.5
+            else:
+                active_floor_val = 0.0
 
             leaderboard.append({
                 'user': u, 
