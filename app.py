@@ -1577,11 +1577,6 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: ${highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
-        # ASSET ELIGIBILITY GATE: Apex Precision trades SQQQ only in deep bear capitulation (sentiment <= 28)
-        reg_score_pre = regime.get('score', 50) if isinstance(regime, dict) else 50
-        if is_inverse and 'apex' in prof and reg_score_pre > 28:
-            return {'type': 'Intraday Momentum', 'score': 15, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Apex Bear Gate: SQQQ requires deep bear sentiment (≤28, currently {reg_score_pre}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Apex Bear Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Bear Gate)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
-
         # OPENING WINDOW ENGINE (14:30 - 14:50 UK): Overnight Gap-Fade Reversal + 15m Opening Range Breakout (ORB)
         if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']) and is_3x_etf:
             if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:

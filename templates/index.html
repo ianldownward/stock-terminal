@@ -1996,7 +1996,7 @@
                             <div style="font-size:10px; font-weight:700; color:#0ecb81; margin-top:2px;">The Breakout Sniper</div>
                             
                             <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
-                                Long-only 3x bull ETF engine (TQQQ/SOXL) with 1.2x volume & anti-chase entry gates, tiered profit floors, and 18:30 Bank-and-Walk.
+                                Bi-directional 3x ETF breakout engine (TQQQ/SOXL/SQQQ) with volume & anti-chase entry gates, tiered profit floors, and 18:30 Bank-and-Walk.
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
@@ -3587,7 +3587,7 @@
 
         const profileDesc = {
             'Vector Hybrid': 'Production Desk #1: Flagship 3x leveraged ETF momentum engine. Shifts from opening elasticity to trend momentum. Harvests daily gains at +2.20% and moves 100% to cash.',
-            'Apex Precision': 'Production Desk #2: Long-Only Institutional Breakout Engine (TQQQ/SOXL). Filters entries with 1.2x volume surge and <=0.65% 9-EMA anti-chase gates, locking tiered profit floors and Bank-and-Walk at 18:30 BST.',
+            'Apex Precision': 'Production Desk #2: Bi-Directional Institutional Breakout Engine (TQQQ/SOXL/SQQQ). Filters entries with volume surge and 9-EMA anti-chase gates, locking tiered profit floors and Bank-and-Walk at 18:30 BST.',
             'Velocity Pulse': 'Production Desk #3: High-speed index scalper. Enters short-duration momentum bursts with a rapid +1.20% take-profit harvest target.',
             'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
@@ -7330,7 +7330,7 @@
                             <input type="radio" name="guideStrat" value="Apex Precision" ${guideState.strategy === 'Apex Precision' ? 'checked' : ''} style="accent-color:#ffd400;">
                             <div>
                                 <span style="font-weight:800; color:${guideState.strategy === 'Apex Precision' ? '#ffd400' : '#fff'};">Apex Precision</span>
-                                <div style="font-size:11px; color:#8a8a9e;">Long-only 3x bull ETF sniper (TQQQ/SOXL). Uses 1.2x volume & anti-chase gates with tiered profit floors.</div>
+                                <div style="font-size:11px; color:#8a8a9e;">Bi-directional 3x ETF sniper (TQQQ/SOXL/SQQQ). Uses volume & anti-chase gates with tiered profit floors.</div>
                             </div>
                         </label>
                         <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Velocity Pulse' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Velocity Pulse'; renderAssistStep();">
