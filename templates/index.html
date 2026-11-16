@@ -3560,9 +3560,10 @@
                 pfEl.innerText = liveS ? liveS.profit_factor : '--';
 
                 let curEq = activeLb.equity || budget;
+                let baseB = activeLb.epoch_budget || budget;
                 let days = Math.max(1, activeLb.days_active || 1);
-                let gainPct = ((curEq - budget) / budget) * 100.0;
-                let dailyRate = gainPct / days;
+                let gainPct = ((curEq - baseB) / baseB) * 100.0;
+                let dailyRate = (activeLb.daily_avg_pct !== undefined) ? parseFloat(activeLb.daily_avg_pct) : (gainPct / days);
                 rrEl.innerText = `${dailyRate >= 0 ? '+' : ''}${dailyRate.toFixed(2)}% / Day`;
             }
         }
@@ -5466,13 +5467,13 @@
                 if (tValEl) { tValEl.innerText = `${dayVal >= 0 ? '+' : '-'}$${Math.abs(dayVal).toFixed(2)}`; tValEl.style.color = dayCol; }
                 if (tPctEl) { tPctEl.innerText = pctStr; tPctEl.style.color = dayCol; }
                 
-                // True Multi-Day Average: Matches Today on Day 1, then averages total return across active trading days
-                let initialCapital = activeLb.budget || 500.0;
+                // True Multi-Day Average: Synced to backend PERFORMANCE_START_DATE (starts from this morning)
+                let initialCapital = activeLb.epoch_budget || activeLb.budget || 500.0;
                 let totalProfitSinceStart = parseFloat(totEqVal) - initialCapital;
-                let histEntries = (globalPortfolioData.history || []).filter(h => !['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'].includes(h.ticker));
+                let histEntries = (globalPortfolioData.history || []).filter(h => (h.date_str || '') >= '2026-11-16' && !['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'].includes(h.ticker));
                 let recordedDates = Array.from(new Set(histEntries.map(h => h.date_str).filter(Boolean)));
-                let activeTradingDays = Math.max(1, recordedDates.length);
-                let trueDailyAvgPct = (activeTradingDays === 1) ? dayPct : ((totalProfitSinceStart / initialCapital * 100.0) / activeTradingDays);
+                let activeTradingDays = Math.max(1, activeLb.days_active || recordedDates.length);
+                let trueDailyAvgPct = (activeLb.daily_avg_pct !== undefined) ? parseFloat(activeLb.daily_avg_pct) : ((activeTradingDays === 1) ? dayPct : ((totalProfitSinceStart / initialCapital * 100.0) / activeTradingDays));
                 let dAvgCol = trueDailyAvgPct >= 0 ? '#0ecb81' : '#ff5364';
                 let dAvgStr = `${trueDailyAvgPct >= 0 ? '+' : ''}${trueDailyAvgPct.toFixed(2)}%`;
 
@@ -6761,9 +6762,9 @@
 
             document.getElementById('insightBudget').innerText = `$${budget.toFixed(2)}`;
             
-            // True Daily Average Return across active days
+            // True Daily Average Return across active days since reset morning
             let daysActive = Math.max(1, lb.days_active || 1);
-            let dailyRunRate = retPct / daysActive;
+            let dailyRunRate = (lb.daily_avg_pct !== undefined) ? parseFloat(lb.daily_avg_pct) : (retPct / daysActive);
             document.getElementById('insightDailyTarget').innerText = `${dailyRunRate >= 0 ? '+' : ''}${dailyRunRate.toFixed(2)}% / Day`;
 
             let uLower = userKey.toLowerCase();
