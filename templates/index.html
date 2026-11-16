@@ -3306,14 +3306,21 @@
             let timeline = [
                 { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Data Prep & Warmup", nextTarget: 14*3600 + 30*60, nextLabel: "14:30 GAP-FADE IN" },
                 { start: 14*60 + 30, end: 14*60 + 50, label: "14:30 – 14:50 • Opening Gap-Fade & ORB", nextTarget: 14*3600 + 50*60, nextLabel: "TREND WINDOW IN" },
-                { start: 14*60 + 50, end: 20*60, label: "14:50 – 20:00 • Trend Hunting & Harvest", nextTarget: 20*3600, nextLabel: "CURFEW IN" },
-                { start: 20*60, end: 20*60 + 50, label: "20:00 – 20:50 • Late-Day Curfew", nextTarget: 20*3600 + 50*60, nextLabel: "OVERNIGHT SWEEP IN" },
+                { start: 14*60 + 50, end: 19*60 + 45, label: "14:50 – 19:45 • Trend Hunting & Harvest", nextTarget: 19*3600 + 45*60, nextLabel: "CURFEW IN" },
+                { start: 19*60 + 45, end: 20*60 + 50, label: "19:45 – 20:50 • Late-Day Curfew", nextTarget: 20*3600 + 50*60, nextLabel: "OVERNIGHT SWEEP IN" },
                 { start: 20*60 + 50, end: 21*60, label: "20:50 • Overnight Sweep", nextTarget: 21*3600, nextLabel: "US CLOSE IN" },
                 { start: 21*60, end: 24*60, label: "21:00 • US Market Close", nextTarget: 24*3600 + 8*3600, nextLabel: "WARMUP IN" }
             ];
 
             let html = '';
             let nextText = "MARKET CLOSED";
+            if (!isWeekend && curMins < 8*60) {
+                let diff = Math.max(0, 8*3600 - curSecs);
+                let hRem = String(Math.floor(diff / 3600)).padStart(2, '0');
+                let mRem = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+                let sRem = String(diff % 60).padStart(2, '0');
+                nextText = `WARMUP IN ${hRem}:${mRem}:${sRem}`;
+            }
             
             for (let step of timeline) {
                 let isActive = !isWeekend && (curMins >= step.start && curMins < step.end);
