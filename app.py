@@ -853,7 +853,7 @@ class PortfolioManager:
             if should_route_alpaca and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
                 strat_prof = str(current_profile).lower()
                 if any(x in strat_prof for x in ['velocity', 'pulse', 'test s']) and 'test s2' not in strat_prof:
-                    t_pct = 0.50
+                    t_pct = 0.65
                 else:
                     t_pct = 0.75
 
