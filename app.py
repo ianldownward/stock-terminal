@@ -1410,8 +1410,10 @@ class MarketScoringEngine:
         except Exception:
             ema_src = df_5m['Close']
 
-        ema9 = ema_src.ewm(span=9, adjust=False).mean().iloc[-1]
-        ema21 = ema_src.ewm(span=21, adjust=False).mean().iloc[-1]
+        ema9_series = ema_src.ewm(span=9, adjust=False).mean()
+        ema9 = float(ema9_series.iloc[-1])
+        prev_ema9 = float(ema9_series.iloc[-2]) if len(ema9_series) >= 2 else ema9
+        ema21 = float(ema_src.ewm(span=21, adjust=False).mean().iloc[-1])
         delta = ema_src.diff()
         gain_s = (delta.where(delta > 0, 0)).rolling(14, min_periods=2).mean()
         loss_s = (-delta.where(delta < 0, 0)).rolling(14, min_periods=2).mean()
@@ -1590,9 +1592,21 @@ class MarketScoringEngine:
         if is_inverse and reg_score > 35:
             return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in capitulation freeze (≤35 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-        # ENTRY LOGIC: Intraday EMA alignment (RSI ceiling raised to 78 so sustained trends aren't locked out)
+        # ENTRY LOGIC: Intraday EMA alignment + V-Reversal Dual-EMA Reclaim Hook (RSI ceiling raised to 78)
         intraday_pct = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0.5
-        if ema9 > ema21 and current_price > ema9 and rsi < 78 and intraday_pct >= -1.50:
+        bar_is_green = (current_price >= float(df_5m['Open'].iloc[-1])) if 'Open' in df_5m.columns else True
+        two_green_bars = (
+            len(df_5m) >= 2 and 'Open' in df_5m.columns
+            and current_price > float(df_5m['Open'].iloc[-1])
+            and float(df_5m['Close'].iloc[-2]) > float(df_5m['Open'].iloc[-2])
+        )
+        swing_low_6 = float(df_5m['Low'].tail(6).min()) if 'Low' in df_5m.columns and len(df_5m) >= 6 else current_price
+        bounce_from_low_pct = ((current_price - swing_low_6) / swing_low_6 * 100.0) if swing_low_6 > 0 else 0.0
+
+        has_ema_trend = (ema9 > ema21) and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
+        has_v_reclaim = is_3x_etf and (current_price > ema9) and (current_price > ema21) and (ema9 > prev_ema9) and two_green_bars and (bounce_from_low_pct >= 0.90)
+
+        if (has_ema_trend or has_v_reclaim) and rsi < 78:
             vol_20ma = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
             cur_vol = max(df_5m['Volume'].iloc[-1], df_5m['Volume'].iloc[-2]) if len(df_5m) >= 2 else df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
