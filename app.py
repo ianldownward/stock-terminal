@@ -20,6 +20,7 @@ ADMIN_HASH = generate_password_hash(ADMIN_PW)
 
 # The account used to feed live performance stats into the public Strategy Wizard
 PAPER_STATS_ACCOUNT = "ian_paper@gmail.com"
+PERFORMANCE_START_DATE = "2026-11-16"  # Baseline reset date: all profiles treat this morning as Day 1
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'stock_terminal')
 
 def is_admin_session():
@@ -4133,16 +4134,27 @@ def get_data():
             day_pct = round((day_diff / tot_eq_start * 100.0), 2) if tot_eq_start > 0 else 0.0
             day_col = '#0ecb81' if day_diff > 0 else ('#ff5364' if day_diff < 0 else '#8a8a9e')
 
-            trade_dates = sorted(list(set(tr.get('date_str') for tr in hist_lb if tr.get('date_str') and tr.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC'])))
-            start_date = trade_dates[0] if trade_dates else today_str
+            nh_before_epoch = sum(
+                -float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
+                for tr in hist_lb
+                if (tr.get('date_str') or '') < PERFORMANCE_START_DATE and tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION']
+            )
+            epoch_budget = max(50.0, mb_lb + nh_before_epoch - im_lb)
+
+            trade_dates = sorted(list(set(
+                tr.get('date_str') for tr in hist_lb
+                if tr.get('date_str') and tr.get('date_str') >= PERFORMANCE_START_DATE
+                and tr.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
+            )))
+            start_date = max(trade_dates[0], PERFORMANCE_START_DATE) if trade_dates else max(today_str, PERFORMANCE_START_DATE)
             active_days = max(1, len(pd.bdate_range(start_date, today_str)))
 
             if active_days == 1:
                 daily_avg_pct = day_pct
                 daily_avg_val = day_diff
             else:
-                cum_gain_val = tot_eq_now - mb_lb
-                cum_gain_pct = (cum_gain_val / mb_lb * 100.0) if mb_lb > 0 else 0.0
+                cum_gain_val = tot_eq_now - epoch_budget
+                cum_gain_pct = (cum_gain_val / epoch_budget * 100.0) if epoch_budget > 0 else 0.0
                 daily_avg_pct = round(cum_gain_pct / active_days, 2)
                 daily_avg_val = round(cum_gain_val / active_days, 2)
 
@@ -4179,7 +4191,8 @@ def get_data():
             leaderboard.append({
                 'user': u, 
                 'equity': round(tot_eq_now, 2), 
-                'budget': mb_lb, 
+                'budget': mb_lb,
+                'epoch_budget': round(epoch_budget, 2),
                 'overnight_sweep': bool(u_data.get('overnight_sweep', True)),
                 'daily_pnl': day_diff,
                 'daily_pct': day_pct,
@@ -6186,7 +6199,7 @@ def get_strategy_stats():
                     if b['shares'] <= 0:
                         q.pop(0)
 
-                if matched_sh > 0:
+                if matched_sh > 0 and (t.get('date_str') or '') >= PERFORMANCE_START_DATE:
                     sell_proceeds = amt * (matched_sh / sh)
                     diff = round(sell_proceeds - cost_basis, 2)
                     if diff >= 0:
@@ -6200,10 +6213,16 @@ def get_strategy_stats():
         wr = (wins / tot_trades * 100.0) if tot_trades > 0 else 0.0
         pf = (win_val / loss_val) if loss_val > 0 else (round(win_val, 2) if win_val > 0 else 0.0)
 
-        trade_dates = sorted(list(set([tr.get('date_str') for tr in hist if tr.get('date_str')])))
+        now_lon = pd.Timestamp.now(tz='Europe/London')
+        today_s_stat = now_lon.strftime('%Y-%m-%d')
+        trade_dates = sorted(list(set([
+            tr.get('date_str') for tr in hist
+            if tr.get('date_str') and tr.get('date_str') >= PERFORMANCE_START_DATE
+            and tr.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
+        ])))
         if trade_dates:
-            now_lon = pd.Timestamp.now(tz='Europe/London')
-            days_active = max(1, len(pd.bdate_range(trade_dates[0], now_lon.strftime('%Y-%m-%d'))))
+            s_dt = max(trade_dates[0], PERFORMANCE_START_DATE)
+            days_active = max(1, len(pd.bdate_range(s_dt, today_s_stat)))
         else:
             days_active = 1
 
