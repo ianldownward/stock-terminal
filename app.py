@@ -1425,7 +1425,7 @@ class MarketScoringEngine:
 
         # Standardized Production Trailing Stops
         if any(x in prof for x in ['velocity', 'pulse', 'test s']):
-            trail_pct, hard_pct = 0.50, -0.50
+            trail_pct, hard_pct = 0.65, -0.65
         else:
             trail_pct, hard_pct = 0.75, -0.75
 
@@ -1577,9 +1577,10 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"HARD STOP LOSS TRIPPED ({pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Stop Loss', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Stop Loss)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
             return {'type': 'Intraday Momentum', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f"RIDING TREND. High Water Mark: ${highest_price:.2f} (Stop: {trail_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Trailing Stop Active', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Winner)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': health_pct, 'health_color': health_color, 'health_text': health_text}
 
-        # ASSET ELIGIBILITY GATE (Long-Only enforcement before any entry engine)
-        if is_inverse and 'apex' in prof:
-            return {'type': 'Intraday Momentum', 'score': 15, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "Apex Precision is Long-Only (TQQQ/SOXL). Inverse ETFs disabled.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Long-Only Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Long-Only)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+        # ASSET ELIGIBILITY GATE: Apex Precision trades SQQQ only in deep bear capitulation (sentiment <= 28)
+        reg_score_pre = regime.get('score', 50) if isinstance(regime, dict) else 50
+        if is_inverse and 'apex' in prof and reg_score_pre > 28:
+            return {'type': 'Intraday Momentum', 'score': 15, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Apex Bear Gate: SQQQ requires deep bear sentiment (≤28, currently {reg_score_pre}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Apex Bear Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Bear Gate)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
         # OPENING WINDOW ENGINE (14:30 - 14:50 UK): Overnight Gap-Fade Reversal + 15m Opening Range Breakout (ORB)
         if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']) and is_3x_etf:
@@ -1611,18 +1612,19 @@ class MarketScoringEngine:
             and bounce_from_low_pct > 0.90
         )
 
-        has_ema_trend = (ema9 > ema21) and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
-        has_v_reclaim = is_3x_etf and (current_price > ema9) and (ema9 > prev_ema9) and two_green_bars and (bounce_from_low_pct >= 0.65)
+        exhausted_bounce = is_3x_etf and (bounce_from_low_pct > 1.10)
+        has_ema_trend = (ema9 > ema21) and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50) and not exhausted_bounce
+        has_v_reclaim = is_3x_etf and (current_price > ema9) and (ema9 > prev_ema9) and two_green_bars and (0.65 <= bounce_from_low_pct <= 1.10)
 
         if (has_ema_trend or has_v_reclaim) and not at_double_top and rsi < 78:
             vol_20ma = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
             cur_vol = max(df_5m['Volume'].iloc[-1], df_5m['Volume'].iloc[-2]) if len(df_5m) >= 2 else df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
 
-            # DYNAMIC ANTI-CHASE: 0.65% for Apex Precision, 1.15% for Vector Hybrid / Velocity Pulse, 0.35% for single stocks
+            # DYNAMIC ANTI-CHASE: 0.95% for Apex Precision, 1.15% for Vector Hybrid / Velocity Pulse, 0.35% for single stocks
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
             if any(x in prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
-                max_extension = 0.65 if is_3x_etf else 0.35
+                max_extension = 0.95 if is_3x_etf else 0.35
             else:
                 early_session = (now_uk.hour == 14 and now_uk.minute >= 50) or (now_uk.hour == 15 and now_uk.minute < 20)
                 max_extension = (1.45 if early_session else 1.15) if is_3x_etf else 0.50
@@ -1634,8 +1636,8 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 40, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"E12 Momentum Filter: RSI ({rsi:.1f}) below 50. Entry blocked.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low RSI Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI < 50)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # Relative volume & range-chop filter
-            if any(x in prof for x in ['apex', 'test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 1.20:
-                return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 1.2x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+            if any(x in prof for x in ['apex', 'test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 0.85:
+                return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 0.85x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # Sideways consolidation shield for Vector Hybrid / Velocity Pulse: block low-volume mid-range chop
             recent_high_6 = float(df_5m['High'].tail(6).max()) if 'High' in df_5m.columns and len(df_5m) >= 6 else current_price
