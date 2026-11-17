@@ -1177,10 +1177,14 @@ class MarketScoringEngine:
                 'health_text': '3m Spike Filter'
             }
 
+        tk_1m_confirmed = True
+        if df_tk_1m is not None and not df_tk_1m.empty and len(df_tk_1m) >= 2:
+            tk_1m_confirmed = (current_price > float(df_tk_1m['Open'].iloc[-1])) and (current_price > float(df_tk_1m['Close'].iloc[-2]))
+
         if 0.15 <= gap_1x_pct <= 0.65:
             not_filled_yet = (cur_ref > prev_close * 1.0005)
-            crossed_below_open = (cur_ref < open_1430) and (current_price >= tk_open_1430 * 0.9995 if is_inverse else current_price <= tk_open_1430 * 1.0005)
-            if is_inverse and crossed_below_open and not_filled_yet:
+            crossed_below_open = (cur_ref <= open_1430 * 0.9992) and (current_price >= tk_open_1430 * 1.0010 if is_inverse else current_price <= tk_open_1430 * 0.9990)
+            if is_inverse and crossed_below_open and not_filled_yet and tk_1m_confirmed:
                 fade_score = min(92, max(74, round(74 + gap_1x_pct * 25)))
                 return {
                     'type': 'Opening Gap-Fade',
@@ -1230,8 +1234,8 @@ class MarketScoringEngine:
 
         if -0.65 <= gap_1x_pct <= -0.15:
             not_filled_yet = (cur_ref < prev_close * 0.9995)
-            crossed_above_open = (cur_ref > open_1430) and (current_price >= tk_open_1430 * 0.9995 if not is_inverse else current_price <= tk_open_1430 * 1.0005)
-            if (not is_inverse) and crossed_above_open and not_filled_yet:
+            crossed_above_open = (cur_ref >= open_1430 * 1.0008) and (current_price >= tk_open_1430 * 1.0010 if not is_inverse else current_price <= tk_open_1430 * 0.9990)
+            if (not is_inverse) and crossed_above_open and not_filled_yet and tk_1m_confirmed:
                 bounce_score = min(92, max(74, round(74 + abs(gap_1x_pct) * 25)))
                 return {
                     'type': 'Opening Gap-Bounce',
@@ -1604,31 +1608,48 @@ class MarketScoringEngine:
         if is_inverse and reg_score > 45:
             return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in cooling/bear regime (≤45 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-        # ENTRY LOGIC: Intraday EMA alignment + V-Reversal Dual-EMA Reclaim Hook (Anti-Chase handled via 9-EMA extension gate)
+        # ENTRY LOGIC: Rising 9/21-EMA Alignment + Session-High / 1H-Shelf Breakout Confirmation
         intraday_pct = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0.5
-        bar_is_green = (current_price >= float(df_5m['Open'].iloc[-1])) if 'Open' in df_5m.columns else True
+        prev_close_5m = float(df_5m['Close'].iloc[-2]) if len(df_5m) >= 2 else current_price
+        bar_is_green = (
+            (current_price > float(df_5m['Open'].iloc[-1]) and current_price > prev_close_5m)
+            if 'Open' in df_5m.columns else (current_price > prev_close_5m)
+        )
         two_green_bars = (
             len(df_5m) >= 2 and 'Open' in df_5m.columns
             and current_price > float(df_5m['Open'].iloc[-1])
+            and current_price > prev_close_5m
             and float(df_5m['Close'].iloc[-2]) > float(df_5m['Open'].iloc[-2])
         )
         swing_low_6 = float(df_5m['Low'].tail(6).min()) if 'Low' in df_5m.columns and len(df_5m) >= 6 else current_price
         bounce_from_low_pct = ((current_price - swing_low_6) / swing_low_6 * 100.0) if swing_low_6 > 0 else 0.0
 
-        prior_high_10 = float(df_5m['High'].iloc[-11:-1].max()) if 'High' in df_5m.columns and len(df_5m) >= 11 else 0.0
+        prior_high_12 = float(df_5m['High'].iloc[-13:-1].max()) if 'High' in df_5m.columns and len(df_5m) >= 13 else 0.0
+        session_high = float(today_s5['High'].iloc[:-1].max()) if ('High' in df_5m.columns and 'today_s5' in locals() and len(today_s5) >= 2) else prior_high_12
+        below_session_high_pct = ((session_high - current_price) / session_high * 100.0) if session_high > 0 else 0.0
+        breaks_1h_shelf = (prior_high_12 > 0 and current_price > prior_high_12)
+
         at_double_top = (
-            prior_high_10 > 0
-            and current_price <= prior_high_10
-            and ((prior_high_10 - current_price) / prior_high_10 * 100.0) < 0.25
-            and bounce_from_low_pct > 0.90
+            prior_high_12 > 0
+            and current_price <= prior_high_12
+            and ((prior_high_12 - current_price) / prior_high_12 * 100.0) < 0.25
+            and bounce_from_low_pct > 0.85
         )
+        # Block lower-high dead-cat bounces trapped below today's session high unless breaking a 1-hour resistance shelf
+        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 0.15) and (not breaks_1h_shelf)
 
-        has_ema_trend = (ema9 > ema21) and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
-        has_v_reclaim = is_3x_etf and (current_price > ema9) and (ema9 > prev_ema9) and two_green_bars and (0.55 <= bounce_from_low_pct <= 1.85)
+        ema_spread_pct = ((ema9 - ema21) / ema21 * 100.0) if ema21 > 0 else 0.0
+        ema_rising = (ema9 > prev_ema9) and (ema_spread_pct >= (0.12 if is_3x_etf else 0.05))
 
-        if (has_ema_trend or has_v_reclaim) and not at_double_top and rsi < (92 if is_3x_etf else 78):
+        has_ema_trend = (ema9 > ema21) and ema_rising and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
+        has_v_reclaim = is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 1.85)
+
+        if (has_ema_trend or has_v_reclaim) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
             vol_20ma = df_5m['Volume'].tail(20).median() if len(df_5m) >= 20 else 1.0
-            cur_vol = max(df_5m['Volume'].iloc[-1], df_5m['Volume'].iloc[-2]) if len(df_5m) >= 2 else df_5m['Volume'].iloc[-1]
+            secs_in_bar = max(45, (now_uk.minute % 5) * 60 + now_uk.second)
+            raw_cur_vol = float(df_5m['Volume'].iloc[-1])
+            proj_cur_vol = min(raw_cur_vol * (300.0 / secs_in_bar), raw_cur_vol * 2.5)
+            cur_vol = max(raw_cur_vol, proj_cur_vol)
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
 
             # DYNAMIC ANTI-CHASE: 0.95% for Apex Precision, 1.15% for Vector Hybrid / Velocity Pulse, 0.35% for single stocks
@@ -1645,9 +1666,9 @@ class MarketScoringEngine:
             if 'test e12' in prof and rsi < 50:
                 return {'type': 'Intraday Momentum', 'score': 40, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"E12 Momentum Filter: RSI ({rsi:.1f}) below 50. Entry blocked.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low RSI Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI < 50)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # Relative volume & range-chop filter
-            if any(x in prof for x in ['apex', 'test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 0.85:
-                return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Volume ({vol_ratio:.1f}x) below 0.85x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+            # Relative volume & range-chop filter (uses current bar volume pace so stale prior-bar spikes don't trigger stalled entries)
+            if any(x in prof for x in ['apex', 'test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 0.95:
+                return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Current Bar Volume ({vol_ratio:.1f}x) below 0.95x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # Sideways consolidation shield for Vector Hybrid / Velocity Pulse: block low-volume mid-range chop
             recent_high_6 = float(df_5m['High'].tail(6).max()) if 'High' in df_5m.columns and len(df_5m) >= 6 else current_price
