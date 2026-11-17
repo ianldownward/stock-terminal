@@ -1467,12 +1467,12 @@ class MarketScoringEngine:
                 if current_price <= s2_floor:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"S2 VELOCITY FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Velocity Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Velocity Lock (+{pnl_pct:.2f}%)"}
 
-            # SIMULATION-OPTIMIZED BREAKEVEN LOCK (+0.18% LOCK ONCE +0.50% PEAK HIT)
-            # Protects early winning turns from turning into losses across Vector Hybrid and Apex Precision
-            if any(x in prof for x in ['vector', 'apex', 'tqm', 'tq']) and peak_pnl_pct >= 0.50:
-                breakeven_price = avg_buy_price * 1.0018  # Locks +0.18% minimum profit
+            # 3X-CALIBRATED BREAKEVEN-PLUS LOCK (+0.35% LOCK ONCE +1.10% PEAK HIT)
+            # Gives full -0.75% trailing room during early 3x ETF wiggles so runners are never shaken out at +0.50%
+            if any(x in prof for x in ['vector', 'apex', 'tqm', 'tq']) and peak_pnl_pct >= 1.10:
+                breakeven_price = avg_buy_price * 1.0035  # Locks +0.35% minimum profit while preserving 0.75% pullback room
                 if current_price <= breakeven_price:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.18%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.35%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
             # DYNAMIC 0.50% STEP-RATCHET FLOOR (MOVES UP INDEFINITELY EVERY +0.50% FROM +2.50%)
             if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
