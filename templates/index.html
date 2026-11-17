@@ -5722,6 +5722,7 @@
             let rightDrawer = document.getElementById('leaderboardCol');
             let profileBox = document.querySelector('.user-profile-box');
             let riskCard = document.getElementById('rotatorHealthCard');
+            let ratchetCard = document.getElementById('profitRatchetCard');
             let sentimentCard = document.getElementById('sentimentCard');
             let mobLb = document.getElementById('mobLeaderboardCard');
             let mobHeld = document.getElementById('mobHeldShareCard');
@@ -5737,19 +5738,56 @@
                 if (mobLb && mobLb.parentElement !== stack) stack.appendChild(mobLb);
                 if (mobHeld && mobHeld.parentElement !== stack) stack.appendChild(mobHeld);
 
-                // Move tactical cards to the top of the swipe drawer
+                // Order mobile right-drawer column cards
                 if (rightDrawer) {
-                    if (sentimentCard && sentimentCard.parentElement !== rightDrawer) rightDrawer.prepend(sentimentCard);
-                    if (riskCard && riskCard.parentElement !== rightDrawer) rightDrawer.prepend(riskCard);
+                    const mobileOrderIds = [
+                        'rotatorHealthCard',
+                        'sentimentCard',
+                        'watchlistDrawer',
+                        'buyingGuardsHud',
+                        'timelineDrawer',
+                        'safeguardsDrawer',
+                        'botKpiDrawer',
+                        'macroRadarDrawer',
+                        'executionGearHud'
+                    ];
+                    mobileOrderIds.forEach(id => {
+                        let el = document.getElementById(id);
+                        if (el) rightDrawer.appendChild(el);
+                    });
                 }
             } else {
                 if (sidebarTop && profileBox && profileBox.parentElement !== sidebarTop) {
                     sidebarTop.prepend(profileBox);
                 }
-                // Move tactical cards back to top desktop metrics grid
+                // Move tactical cards back to top desktop metrics grid in original order
                 if (metricsGrid) {
-                    if (riskCard && riskCard.parentElement !== metricsGrid) metricsGrid.appendChild(riskCard);
-                    if (sentimentCard && sentimentCard.parentElement !== metricsGrid) metricsGrid.appendChild(sentimentCard);
+                    if (riskCard) {
+                        if (ratchetCard && ratchetCard.parentElement === metricsGrid) {
+                            metricsGrid.insertBefore(riskCard, ratchetCard);
+                        } else if (riskCard.parentElement !== metricsGrid) {
+                            metricsGrid.appendChild(riskCard);
+                        }
+                    }
+                    if (sentimentCard && sentimentCard.parentElement !== metricsGrid) {
+                        metricsGrid.appendChild(sentimentCard);
+                    }
+                }
+                // Restore original desktop right-drawer panel order
+                if (rightDrawer) {
+                    const desktopOrderIds = [
+                        'watchlistDrawer',
+                        'timelineDrawer',
+                        'safeguardsDrawer',
+                        'macroRadarDrawer',
+                        'botKpiDrawer',
+                        'executionGearHud',
+                        'buyingGuardsHud'
+                    ];
+                    desktopOrderIds.forEach(id => {
+                        let el = document.getElementById(id);
+                        if (el) rightDrawer.appendChild(el);
+                    });
                 }
                 closeMobileDrawer(); // Ensure closed when resizing back to desktop
             }
