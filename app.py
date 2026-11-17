@@ -1,4 +1,5 @@
-import os, json, time, urllib.request, threading, re
+import os, json, time, urllib.request, threading, re, socket, gc
+socket.setdefaulttimeout(12)
 import xml.etree.ElementTree as ET
 import pandas as pd
 import yfinance as yf
@@ -54,8 +55,8 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
     with lock:
         now = time.time()
         # Prune stale cache entries to prevent unbounded RAM growth on 512MB instances
-        if len(YF_CACHE) > 40:
-            stale_keys = [k for k, (ts, _) in list(YF_CACHE.items()) if (now - ts) > 300]
+        if len(YF_CACHE) > 24:
+            stale_keys = [k for k, (ts, _) in list(YF_CACHE.items()) if (now - ts) > 180]
             for k in stale_keys:
                 YF_CACHE.pop(k, None)
 
@@ -67,7 +68,10 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                 return df.copy()
 
         try:
-            df = yf.Ticker(ticker).history(period=period, interval=interval)
+            try:
+                df = yf.Ticker(ticker).history(period=period, interval=interval, timeout=8)
+            except TypeError:
+                df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty:
                 df = df.sort_index()
                 # Reject stale intraday responses (>15 mins old) or true bad-tick spikes (>4.5%; 3x ETFs routinely move 1.2-2.5% per bar)
@@ -2199,6 +2203,7 @@ def global_background_worker():
 
         except Exception as e: 
             print(f"Background Loop Error: {e}")
+        gc.collect()
         time.sleep(20) # 20-second high-speed cycle
 
 def match_bot_from_order_id(client_order_id, profiles):
