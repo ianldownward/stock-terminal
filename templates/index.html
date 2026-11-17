@@ -1616,10 +1616,14 @@
         }
         #tvChart, #chartCanvas { position: absolute; top: 10px; left: 10px; right: 10px; bottom: 10px; }
         #chartCanvas { pointer-events: none; z-index: 5; }
-        #chartFullscreenBtn { position: absolute; bottom: 15px; right: 15px; z-index: 10; background: #1b202c; border: 1px solid #262b36; color: #8a8a9e; width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0.7; transition: all 0.2s ease; padding: 0; }
-        #chartFullscreenBtn:hover { opacity: 1; color: #ffd400; border-color: #ffd400; background: #222938; }
-        body.light-mode #chartFullscreenBtn { background: #f8f9fb; border-color: #d8dce6; color: #4a5265; }
-        body.light-mode #chartFullscreenBtn:hover { background: #eef2f8; border-color: #ffb700; color: #ffb700; }
+        #chartFullscreenBtn { position: absolute; bottom: 28px; right: 54px; z-index: 15; background: rgba(27, 32, 44, 0.88); border: 1px solid #262b36; color: #e1e3e6; width: 34px; height: 34px; border-radius: 7px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0.85; transition: all 0.2s ease; padding: 0; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+        #chartFullscreenBtn:hover, #chartFullscreenBtn.active { opacity: 1; color: #ffd400; border-color: #ffd400; background: #222938; }
+        body.light-mode #chartFullscreenBtn { background: rgba(248, 249, 251, 0.92); border-color: #d8dce6; color: #4a5265; }
+        body.light-mode #chartFullscreenBtn:hover, body.light-mode #chartFullscreenBtn.active { background: #eef2f8; border-color: #ffb700; color: #ffb700; }
+        body.chart-fullscreen-mode .chart-container { position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100vh !important; height: 100dvh !important; z-index: 4000 !important; border-radius: 0 !important; border: none !important; margin: 0 !important; padding: 0 !important; }
+        body.chart-fullscreen-mode #tvChart, body.chart-fullscreen-mode #chartCanvas { top: env(safe-area-inset-top, 6px) !important; left: 4px !important; right: 4px !important; bottom: env(safe-area-inset-bottom, 6px) !important; }
+        body.chart-fullscreen-mode #chartLegend { top: calc(env(safe-area-inset-top, 6px) + 8px) !important; }
+        body.chart-fullscreen-mode #chartFullscreenBtn { bottom: calc(env(safe-area-inset-bottom, 12px) + 26px) !important; right: 54px !important; }
         #loader {
             display: none; 
             position: absolute; 
@@ -2999,8 +3003,9 @@
             <div id="loader">Fetching...</div>
             <div id="tvChart"></div>
             <canvas id="chartCanvas"></canvas>
-            <button id="chartFullscreenBtn" onclick="toggleFullScreen()" title="Full Screen">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+            <button id="chartFullscreenBtn" onclick="event.stopPropagation(); toggleChartFullScreen()" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()" title="Toggle Chart Full Screen">
+                <svg id="chartFsExpandIcon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+                <svg id="chartFsCompressIcon" style="display:none;" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>
             </button>
         </div>
 
@@ -3874,7 +3879,33 @@
             document.body.classList.add('light-mode');
         }
 
+        function toggleChartFullScreen(forceState) {
+            let isFs = (forceState !== undefined)
+                ? Boolean(forceState)
+                : !document.body.classList.contains('chart-fullscreen-mode');
+            document.body.classList.toggle('chart-fullscreen-mode', isFs);
+
+            let btn = document.getElementById('chartFullscreenBtn');
+            let expIcon = document.getElementById('chartFsExpandIcon');
+            let cmpIcon = document.getElementById('chartFsCompressIcon');
+            if (btn) btn.classList.toggle('active', isFs);
+            if (expIcon) expIcon.style.display = isFs ? 'none' : 'block';
+            if (cmpIcon) cmpIcon.style.display = isFs ? 'block' : 'none';
+
+            requestAnimationFrame(() => {
+                let chartDiv = document.getElementById('tvChart');
+                if (tvChart && chartDiv) {
+                    tvChart.applyOptions({ width: chartDiv.clientWidth, height: chartDiv.clientHeight });
+                }
+                if (typeof drawTradeMarkers === 'function') drawTradeMarkers();
+            });
+        }
+
         function toggleFullScreen() {
+            if (window.innerWidth <= 900) {
+                toggleChartFullScreen();
+                return;
+            }
             let elem = document.documentElement;
             if (!document.fullscreenElement && !document.webkitFullscreenElement) { 
                 if (elem.requestFullscreen) elem.requestFullscreen(); 
@@ -3884,7 +3915,6 @@
                 else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); 
             }
         }
-
         function toggleShowTrades() { 
             showTrades = !showTrades; 
             let btn = document.getElementById('btnShowTrades'); 
@@ -5759,16 +5789,61 @@
                 }
             };
 
-            let lastTap = 0;
-            c.addEventListener('touchend', function(e) {
-                let currentTime = new Date().getTime();
-                let tapLength = currentTime - lastTap;
-                if (tapLength < 300 && tapLength > 0) {
-                    window.resetChartView();
-                    e.preventDefault();
+            let lastTapTime = 0;
+            let lastTapX = 0;
+            let lastTapY = 0;
+            let tapStartX = 0;
+            let tapStartY = 0;
+            let isTapCandidate = false;
+
+            c.addEventListener('touchstart', function(e) {
+                if (e.touches && e.touches.length === 1) {
+                    isTapCandidate = true;
+                    tapStartX = e.touches[0].clientX;
+                    tapStartY = e.touches[0].clientY;
+                } else {
+                    // Multi-touch (pinch-to-zoom) is never a double-tap reset
+                    isTapCandidate = false;
+                    lastTapTime = 0;
                 }
-                lastTap = currentTime;
-            });
+            }, { passive: true });
+
+            c.addEventListener('touchmove', function(e) {
+                if (!e.touches || e.touches.length !== 1) {
+                    isTapCandidate = false;
+                    return;
+                }
+                let dx = e.touches[0].clientX - tapStartX;
+                let dy = e.touches[0].clientY - tapStartY;
+                if (Math.hypot(dx, dy) > 10) {
+                    isTapCandidate = false;
+                }
+            }, { passive: true });
+
+            c.addEventListener('touchend', function(e) {
+                if (!isTapCandidate || (e.touches && e.touches.length > 0)) {
+                    isTapCandidate = false;
+                    return;
+                }
+                isTapCandidate = false;
+                let touch = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0] : null;
+                if (!touch) return;
+
+                let now = Date.now();
+                let dt = now - lastTapTime;
+                let dist = Math.hypot(touch.clientX - lastTapX, touch.clientY - lastTapY);
+
+                if (dt > 40 && dt < 300 && dist < 45) {
+                    window.resetChartView();
+                    lastTapTime = 0;
+                    if (e.cancelable) e.preventDefault();
+                } else {
+                    lastTapTime = now;
+                    lastTapX = touch.clientX;
+                    lastTapY = touch.clientY;
+                }
+            }, { passive: false });
+
             c.addEventListener('dblclick', window.resetChartView);
         }
 
