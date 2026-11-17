@@ -1635,16 +1635,32 @@ class MarketScoringEngine:
             and ((prior_high_12 - current_price) / prior_high_12 * 100.0) < 0.25
             and bounce_from_low_pct > 0.85
         )
-        # Block lower-high dead-cat bounces trapped below today's session high unless breaking a 1-hour resistance shelf
-        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 0.15) and (not breaks_1h_shelf)
+        session_low = float(today_s5['Low'].min()) if ('Low' in df_5m.columns and 'today_s5' in locals() and len(today_s5) >= 2) else swing_low_6
+        swing_low_4 = float(df_5m['Low'].tail(4).min()) if 'Low' in df_5m.columns and len(df_5m) >= 4 else swing_low_6
+        session_drop_pct = ((session_high - session_low) / session_high * 100.0) if session_high > 0 else 0.0
+        fresh_session_bottom = (session_low > 0 and swing_low_4 <= session_low * 1.0015)
 
         ema_spread_pct = ((ema9 - ema21) / ema21 * 100.0) if ema21 > 0 else 0.0
         ema_rising = (ema9 > prev_ema9) and (ema_spread_pct >= (0.12 if is_3x_etf else 0.05))
 
+        # Capitulation V-Reversal: after >=2.5% intraday selloff to a fresh session low, price reclaims rising 9-EMA on 2 green bars
+        has_cap_vreversal = (
+            is_3x_etf
+            and (now_uk.hour < 18)
+            and (session_drop_pct >= 2.50)
+            and fresh_session_bottom
+            and (current_price > ema9)
+            and (ema9 > prev_ema9)
+            and two_green_bars
+        )
+
+        # Block lower-high dead-cat bounces trapped below today's session high unless breaking a 1-hour shelf or launching a fresh capitulation V-reversal
+        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 0.15) and (not breaks_1h_shelf) and (not has_cap_vreversal)
+
         has_ema_trend = (ema9 > ema21) and ema_rising and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
         has_v_reclaim = is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 1.85)
 
-        if (has_ema_trend or has_v_reclaim) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
+        if (has_ema_trend or has_v_reclaim or has_cap_vreversal) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
             vol_20ma = df_5m['Volume'].tail(20).median() if len(df_5m) >= 20 else 1.0
             secs_in_bar = max(45, (now_uk.minute % 5) * 60 + now_uk.second)
             raw_cur_vol = float(df_5m['Volume'].iloc[-1])
@@ -1652,13 +1668,17 @@ class MarketScoringEngine:
             cur_vol = max(raw_cur_vol, proj_cur_vol)
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
 
-            # DYNAMIC ANTI-CHASE: 0.95% for Apex Precision, 1.15% for Vector Hybrid / Velocity Pulse, 0.35% for single stocks
+            if has_cap_vreversal and vol_ratio < 1.30:
+                return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"V-Reversal Watch: Reclaimed EMAs off low, awaiting >=1.30x volume ({vol_ratio:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
+            # DYNAMIC ANTI-CHASE: tighter after 18:00 UK to avoid late-day range tops
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
+            late_chop_window = (now_uk.hour >= 18)
             if any(x in prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
-                max_extension = 0.95 if is_3x_etf else 0.35
+                max_extension = (0.65 if late_chop_window else 0.95) if is_3x_etf else 0.35
             else:
                 early_session = (now_uk.hour == 14 and now_uk.minute >= 50) or (now_uk.hour == 15 and now_uk.minute < 20)
-                max_extension = (1.45 if early_session else 1.15) if is_3x_etf else 0.50
+                max_extension = (0.65 if late_chop_window else (1.45 if early_session else 1.15)) if is_3x_etf else 0.50
 
             if ema_extension_pct > max_extension:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max {max_extension:.2f}%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
