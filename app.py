@@ -1790,7 +1790,7 @@ def process_auto_profile(prof_name, client_email=None):
         # Isolated total equity & intra-candle peak equity calculation
         now_uk = pd.Timestamp.now(tz='Europe/London')
         today_str = now_uk.strftime('%Y-%m-%d')
-        trades_today = [tr for tr in hist if tr.get('date_str') == today_str]
+        trades_today = [tr for tr in hist if tr.get('date_str') == today_str and tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC']]
         net_cash_today = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in trades_today)
         cash_start = cash_balance - net_cash_today
 
@@ -2369,43 +2369,49 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
 
     alpaca_equity = round(float(acc.get('portfolio_value') or acc.get('equity') or 0.0), 2)
     alpaca_last_equity = round(float(acc.get('last_equity') or 0.0), 2)
-    if alpaca_last_equity > 0 and abs(float(ud.get('master_budget') or 0.0) - alpaca_last_equity) >= 0.01:
-        ud['master_budget'] = alpaca_last_equity
-        changed = True
-
     mb_val = float(ud.get('master_budget') or 700.0)
-    # Remove ALL historical ALPACASYNC entries (not just today's) so cross-day drift never double-counts
-    non_sync_hist = [tr for tr in hist if tr.get('ticker') != 'ALPACASYNC']
-    if len(non_sync_hist) != len(hist):
-        hist = non_sync_hist
+    if mb_val <= 0 and alpaca_last_equity > 0:
+        ud['master_budget'] = alpaca_last_equity
+        mb_val = alpaca_last_equity
         changed = True
 
-    net_real = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
-                   for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC'])
-    init_man = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos.values())
-    open_mv = sum(round(float(p.get('market_value') or 0.0), 2) for p in alpaca_pos_map.values())
-    local_eq_before_adj = round(mb_val + net_real - init_man + open_mv, 2)
+    # Skip residual equity calibration while an order is still settling (<90s) so cash + open position never double-count
+    has_unsettled_trade = any(
+        tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC']
+        and (now_ts_sync - int(tr.get('timestamp') or 0)) < 90
+        for tr in hist
+    )
 
-    residual = round(alpaca_equity - local_eq_before_adj, 2) if alpaca_equity > 0 else 0.0
-    if abs(residual) >= 0.02:
-        # Anchor ALPACASYNC to the most recent trade's date_str so weekend/after-midnight calibration doesn't invent fake Saturday P&L
-        last_real_date = next(
-            (tr.get('date_str') for tr in hist if tr.get('date_str') and tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC']),
-            today_str
-        )
-        hist.insert(0, {
-            'id': str(int(time.time() * 1000) + 4),
-            'ticker': 'ALPACASYNC',
-            'trade_type': 'LONG',
-            'action': 'SELL' if residual >= 0 else 'BUY',
-            'shares': 0,
-            'price': abs(residual),
-            'amount': abs(residual),
-            'time': now_lon.strftime('%d %b %H:%M'),
-            'date_str': last_real_date,
-            'timestamp': int(now_lon.timestamp()) - 10
-        })
-        changed = True
+    if not has_unsettled_trade:
+        # Remove ALL historical ALPACASYNC entries so cross-day drift never double-counts
+        non_sync_hist = [tr for tr in hist if tr.get('ticker') != 'ALPACASYNC']
+        if len(non_sync_hist) != len(hist):
+            hist = non_sync_hist
+            changed = True
+
+        net_real = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
+                       for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC'])
+        init_man = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos.values())
+        open_mv = sum(round(float(p.get('market_value') or 0.0), 2) for p in alpaca_pos_map.values())
+        local_eq_before_adj = round(mb_val + net_real - init_man + open_mv, 2)
+
+        residual = round(alpaca_equity - local_eq_before_adj, 2) if alpaca_equity > 0 else 0.0
+        if abs(residual) >= 0.02:
+            # Anchor ALPACASYNC before PERFORMANCE_START_DATE so historical Alpaca baseline drift never distorts TODAY or DAILY AVG
+            pre_epoch_date = (pd.Timestamp(PERFORMANCE_START_DATE) - pd.Timedelta(days=1)).strftime('%Y-%m-%d')
+            hist.insert(0, {
+                'id': str(int(time.time() * 1000) + 4),
+                'ticker': 'ALPACASYNC',
+                'trade_type': 'LONG',
+                'action': 'SELL' if residual >= 0 else 'BUY',
+                'shares': 0,
+                'price': abs(residual),
+                'amount': abs(residual),
+                'time': now_lon.strftime('%d %b %H:%M'),
+                'date_str': pre_epoch_date,
+                'timestamp': int(now_lon.timestamp()) - 10
+            })
+            changed = True
 
     ud['history'] = hist
 
@@ -4106,7 +4112,7 @@ def get_data():
             im_lb = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos_lb.values())
             cash_now = mb_lb + nh_lb - im_lb
             
-            trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str]
+            trades_today = [tr for tr in hist_lb if tr.get('date_str') == today_str and tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC']]
             net_cash_today = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0) 
                                  for tr in trades_today)
             cash_start = cash_now - net_cash_today
