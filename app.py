@@ -1671,7 +1671,7 @@ class MarketScoringEngine:
             if has_cap_vreversal and vol_ratio < 1.30:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"V-Reversal Watch: Reclaimed EMAs off low, awaiting >=1.30x volume ({vol_ratio:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # DYNAMIC ANTI-CHASE: tighter after 18:00 UK to avoid late-day range tops
+            # DYNAMIC ANTI-CHASE: tighter after 18:00 UK to avoid late-day range tops; allow 1.65% on fresh 1H-shelf breakouts
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
             late_chop_window = (now_uk.hour >= 18)
             if any(x in prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
@@ -1679,6 +1679,8 @@ class MarketScoringEngine:
             else:
                 early_session = (now_uk.hour == 14 and now_uk.minute >= 50) or (now_uk.hour == 15 and now_uk.minute < 20)
                 max_extension = (0.65 if late_chop_window else (1.45 if early_session else 1.15)) if is_3x_etf else 0.50
+            if is_3x_etf and breaks_1h_shelf and not late_chop_window:
+                max_extension = max(max_extension, 1.65)
 
             if ema_extension_pct > max_extension:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max {max_extension:.2f}%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
