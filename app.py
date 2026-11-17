@@ -1054,17 +1054,28 @@ class MarketScoringEngine:
         try:
             df_qqq = fetch_yf_data('QQQ', '5d', '5m')
             if not df_qqq.empty and len(df_qqq) >= 21:
-                ema9 = df_qqq['Close'].ewm(span=9, adjust=False).mean()
-                ema21 = df_qqq['Close'].ewm(span=21, adjust=False).mean()
+                now_uk_r = pd.Timestamp.now(tz='Europe/London')
+                df_q_tmp = df_qqq.copy()
+                if df_q_tmp.index.tz is None:
+                    df_q_tmp.index = df_q_tmp.index.tz_localize('UTC')
+                today_q = df_q_tmp[df_q_tmp.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_uk_r.strftime('%Y-%m-%d')]
+                q_src = today_q['Close'] if len(today_q) >= 4 else df_qqq['Close']
+
+                ema9 = q_src.ewm(span=9, adjust=False).mean()
+                ema21 = q_src.ewm(span=21, adjust=False).mean()
                 delta = df_qqq['Close'].diff()
                 gain = delta.where(delta > 0, 0).rolling(14).mean()
                 loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-                rs = gain / loss
-                rsi = 100 - (100 / (1 + rs)).fillna(50)
-                scores = (50 + (ema9 > ema21).astype(int)*50 - 25 + (rsi - 50)*0.5).clip(0, 100).round(1)
+                rs = gain / loss.replace(0, float('nan'))
+                rsi_full = (100 - (100 / (1 + rs))).fillna(50)
+                rsi_aligned = rsi_full.reindex(q_src.index).fillna(50)
+                scores = (50 + (ema9 > ema21).astype(int)*50 - 25 + (rsi_aligned - 50)*0.5).clip(0, 100).round(1)
                 
                 score = int(scores.iloc[-1])
-                sparkline = [round(x, 1) for x in scores.tail(78).tolist()]
+                ema9_5d = df_qqq['Close'].ewm(span=9, adjust=False).mean()
+                ema21_5d = df_qqq['Close'].ewm(span=21, adjust=False).mean()
+                scores_5d = (50 + (ema9_5d > ema21_5d).astype(int)*50 - 25 + (rsi_full - 50)*0.5).clip(0, 100).round(1)
+                sparkline = [round(x, 1) for x in scores_5d.tail(78).tolist()]
                 
                 if score <= 20: state, color, code = "Deep Freeze (Capitulation)", "#ffd400", "BEAR_FREEZE"
                 elif score <= 40: state, color, code = "Cooling (Pullback)", "#ff9900", "BEAR"
@@ -1419,7 +1430,7 @@ class MarketScoringEngine:
         ema9 = float(ema9_series.iloc[-1])
         prev_ema9 = float(ema9_series.iloc[-2]) if len(ema9_series) >= 2 else ema9
         ema21 = float(ema_src.ewm(span=21, adjust=False).mean().iloc[-1])
-        delta = ema_src.diff()
+        delta = df_5m['Close'].diff()
         gain_s = (delta.where(delta > 0, 0)).rolling(14, min_periods=2).mean()
         loss_s = (-delta.where(delta < 0, 0)).rolling(14, min_periods=2).mean()
         rs = gain_s / loss_s.replace(0, float('nan'))
@@ -1590,10 +1601,10 @@ class MarketScoringEngine:
                     return open_res
 
         reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
-        if is_inverse and reg_score > 35:
-            return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in capitulation freeze (≤35 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+        if is_inverse and reg_score > 45:
+            return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in cooling/bear regime (≤45 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-        # ENTRY LOGIC: Intraday EMA alignment + V-Reversal Dual-EMA Reclaim Hook (RSI ceiling raised to 78)
+        # ENTRY LOGIC: Intraday EMA alignment + V-Reversal Dual-EMA Reclaim Hook (Anti-Chase handled via 9-EMA extension gate)
         intraday_pct = ((current_price - df_5m['Close'].iloc[-12]) / df_5m['Close'].iloc[-12]) * 100.0 if len(df_5m) >= 12 else 0.5
         bar_is_green = (current_price >= float(df_5m['Open'].iloc[-1])) if 'Open' in df_5m.columns else True
         two_green_bars = (
@@ -1612,12 +1623,11 @@ class MarketScoringEngine:
             and bounce_from_low_pct > 0.90
         )
 
-        exhausted_bounce = is_3x_etf and (bounce_from_low_pct > 1.10)
-        has_ema_trend = (ema9 > ema21) and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50) and not exhausted_bounce
-        has_v_reclaim = is_3x_etf and (current_price > ema9) and (ema9 > prev_ema9) and two_green_bars and (0.65 <= bounce_from_low_pct <= 1.10)
+        has_ema_trend = (ema9 > ema21) and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
+        has_v_reclaim = is_3x_etf and (current_price > ema9) and (ema9 > prev_ema9) and two_green_bars and (0.55 <= bounce_from_low_pct <= 1.85)
 
-        if (has_ema_trend or has_v_reclaim) and not at_double_top and rsi < 78:
-            vol_20ma = df_5m['Volume'].tail(20).mean() if len(df_5m) >= 20 else 1.0
+        if (has_ema_trend or has_v_reclaim) and not at_double_top and rsi < (92 if is_3x_etf else 78):
+            vol_20ma = df_5m['Volume'].tail(20).median() if len(df_5m) >= 20 else 1.0
             cur_vol = max(df_5m['Volume'].iloc[-1], df_5m['Volume'].iloc[-2]) if len(df_5m) >= 2 else df_5m['Volume'].iloc[-1]
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
 
