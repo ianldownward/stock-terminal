@@ -5985,23 +5985,26 @@
                         let dStr = new Date(ts * 1000).toISOString().split('T')[0];
                         let foundIdx = masterData.findIndex(b => b.time === dStr);
                         if (foundIdx !== -1) { matchTime = masterData[foundIdx].time; matchIdx = foundIdx; }
-                        else {
+                        else if (dStr >= masterData[0].time) {
                             for (let i = 0; i < masterData.length; i++) {
                                 if (masterData[i].time >= dStr) { matchTime = masterData[i].time; matchIdx = i; break; }
                             }
                         }
                     } else {
-                        for (let i = masterData.length - 1; i >= 0; i--) {
-                            let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
-                            if (cTime <= ts) {
-                                matchTime = masterData[i].time;
-                                matchIdx = i;
-                                break;
+                        let firstT = typeof masterData[0].time === 'number' ? masterData[0].time : (new Date(masterData[0].time).getTime() / 1000);
+                        if (ts >= firstT - 300) {
+                            for (let i = masterData.length - 1; i >= 0; i--) {
+                                let cTime = typeof masterData[i].time === 'number' ? masterData[i].time : (new Date(masterData[i].time).getTime() / 1000);
+                                if (cTime <= ts) {
+                                    matchTime = masterData[i].time;
+                                    matchIdx = i;
+                                    break;
+                                }
                             }
-                        }
-                        if (!matchTime && masterData.length > 0) {
-                            let firstT = typeof masterData[0].time === 'number' ? masterData[0].time : (new Date(masterData[0].time).getTime() / 1000);
-                            if (ts >= firstT - 86400 * 7) { matchTime = masterData[0].time; matchIdx = 0; }
+                            if (!matchTime && masterData.length > 0) {
+                                matchTime = masterData[0].time;
+                                matchIdx = 0;
+                            }
                         }
                     }
 
