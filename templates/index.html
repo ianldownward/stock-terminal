@@ -3129,58 +3129,7 @@
             </div>
         </details>
 
-        <!-- 6. 4-GEAR AUTOMATIC TRANSMISSION HUD -->
-        <details class="drawer-details" id="executionGearHud" open style="margin-bottom:0; padding:7px 10px;">
-            <summary>
-                <span>Execution Gear</span>
-                <span style="margin-left:auto; margin-right:6px; display:inline-flex; align-items:center; gap:5px; text-transform:none;">
-                    <span id="gearNameText" style="font-size:10px; font-weight:800; color:#0ecb81;">(35%) Full Power</span>
-                    <span style="color:#555e6d; font-size:9px;">•</span>
-                    <span id="gearStageText" style="font-size:10.5px; font-weight:800; color:#fff;">Gear 1</span>
-                </span>
-            </summary>
-            
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:2px;">
-                <!-- Gear 1 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(1)" title="Click for Gear 1 rules">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 1</span>
-                    <div id="dialG1" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #0ecb81) var(--dial-pct, 35%), #262b36 0); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialG1-val" style="position:relative; font-size:12px; font-weight:800; color:#fff;">35%</span>
-                    </div>
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$0–$2.5k</span>
-                </div>
-                <!-- Gear 2 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(2)" title="Click for Gear 2 rules">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 2</span>
-                    <div id="dialG2" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialG2-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
-                    </div>
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$2.5k–$250k</span>
-                </div>
-                <!-- Gear 3 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(3)" title="Click for Gear 3 rules">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 3</span>
-                    <div id="dialG3" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialG3-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
-                    </div>
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$250k–$1M</span>
-                </div>
-                <!-- Gear 4 -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(4)" title="Click for Gear 4 rules">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 4</span>
-                    <div id="dialG4" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
-                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
-                        <span id="dialG4-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
-                    </div>
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$1M+</span>
-                </div>
-            </div>
-        </details>
-
-        <!-- 7. BUYING BLOCK TIMERS, 3-STRIKE & RATCHET LOCK HUD -->
+        <!-- 6. BUYING BLOCK TIMERS, 3-STRIKE & RATCHET LOCK HUD -->
         <details class="drawer-details" id="buyingGuardsHud" open style="margin-bottom:0; padding:7px 10px;">
             <summary>
                 <span>Buying Guards</span>
@@ -3230,6 +3179,57 @@
                         </svg>
                     </div>
                     <span id="ratchetLockSubText" style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px; white-space:nowrap;">Unlocked</span>
+                </div>
+            </div>
+        </details>
+
+        <!-- 7. 4-GEAR AUTOMATIC TRANSMISSION HUD -->
+        <details class="drawer-details" id="executionGearHud" open style="margin-bottom:0; padding:7px 10px;">
+            <summary>
+                <span>Execution Gear</span>
+                <span style="margin-left:auto; margin-right:6px; display:inline-flex; align-items:center; gap:5px; text-transform:none;">
+                    <span id="gearNameText" style="font-size:10px; font-weight:800; color:#0ecb81;">(35%) Full Power</span>
+                    <span style="color:#555e6d; font-size:9px;">•</span>
+                    <span id="gearStageText" style="font-size:10.5px; font-weight:800; color:#fff;">Gear 1</span>
+                </span>
+            </summary>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:2px;">
+                <!-- Gear 1 -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(1)" title="Click for Gear 1 rules">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 1</span>
+                    <div id="dialG1" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #0ecb81) var(--dial-pct, 35%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG1-val" style="position:relative; font-size:12px; font-weight:800; color:#fff;">35%</span>
+                    </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$0–$2.5k</span>
+                </div>
+                <!-- Gear 2 -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(2)" title="Click for Gear 2 rules">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 2</span>
+                    <div id="dialG2" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG2-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
+                    </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$2.5k–$250k</span>
+                </div>
+                <!-- Gear 3 -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(3)" title="Click for Gear 3 rules">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 3</span>
+                    <div id="dialG3" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG3-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
+                    </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$250k–$1M</span>
+                </div>
+                <!-- Gear 4 -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGearInfoModal(4)" title="Click for Gear 4 rules">
+                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6;">GEAR 4</span>
+                    <div id="dialG4" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(var(--dial-color, #555e6d) var(--dial-pct, 0%), #262b36 0); transition: background 0.3s ease;">
+                        <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
+                        <span id="dialG4-val" style="position:relative; font-size:12px; font-weight:800; color:#8a8a9e;">0%</span>
+                    </div>
+                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px;">$1M+</span>
                 </div>
             </div>
         </details>
@@ -5781,8 +5781,8 @@
                         'safeguardsDrawer',
                         'macroRadarDrawer',
                         'botKpiDrawer',
-                        'executionGearHud',
-                        'buyingGuardsHud'
+                        'buyingGuardsHud',
+                        'executionGearHud'
                     ];
                     desktopOrderIds.forEach(id => {
                         let el = document.getElementById(id);
