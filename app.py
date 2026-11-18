@@ -1748,15 +1748,17 @@ class MarketScoringEngine:
         has_v_reclaim = post_open_ready and is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 1.85)
 
         if (has_ema_trend or has_v_reclaim or has_cap_vreversal or has_arch_reclaim) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
-            # Live 1-minute micro-trend confirmation: block entries if the live 1m bar is already red or below a falling 1m 9-EMA
+            # Completed 1-minute candle confirmation: evaluate on last closed 1m bar so Live, Staging & Recon stay deterministic
             if is_3x_etf:
                 df_1m_ent = fetch_yf_data(ticker, "1d", "1m")
-                if df_1m_ent is not None and not df_1m_ent.empty and len(df_1m_ent) >= 3:
+                if df_1m_ent is not None and not df_1m_ent.empty and len(df_1m_ent) >= 4:
                     e9_1m_ent = df_1m_ent['Close'].ewm(span=9, adjust=False).mean()
-                    bar_1m_green = (current_price > float(df_1m_ent['Open'].iloc[-1])) and (current_price >= float(df_1m_ent['Close'].iloc[-2]))
-                    ema_1m_up = (current_price > float(e9_1m_ent.iloc[-1])) and (float(e9_1m_ent.iloc[-1]) >= float(e9_1m_ent.iloc[-2]))
-                    if not (bar_1m_green and ema_1m_up):
-                        return {'type': 'Intraday Momentum', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': '1m Micro-Trend Filter: Awaiting green 1m candle & rising 1m 9-EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Confirm Wait', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(1m Confirm)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+                    prev_1m_close = float(df_1m_ent['Close'].iloc[-2])
+                    prev_1m_open = float(df_1m_ent['Open'].iloc[-2])
+                    closed_1m_green = (prev_1m_close > prev_1m_open) and (current_price >= prev_1m_open)
+                    ema_1m_up = (prev_1m_close > float(e9_1m_ent.iloc[-2])) and (float(e9_1m_ent.iloc[-2]) >= float(e9_1m_ent.iloc[-3]))
+                    if not (closed_1m_green and ema_1m_up):
+                        return {'type': 'Intraday Momentum', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': '1m Confirm Filter: Awaiting closed green 1m candle & rising 1m 9-EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Confirm Wait', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(1m Confirm)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             vol_20ma = df_5m['Volume'].tail(20).median() if len(df_5m) >= 20 else 1.0
             secs_in_bar = max(90, (now_uk.minute % 5) * 60 + now_uk.second)
@@ -2333,16 +2335,18 @@ def global_background_worker():
 
             portfolio_store.reload()
             
-            # 2. Collect all active strategy targets across admin and clients
-            strategy_tasks = []
+            # 2. Collect active strategy targets in strict priority tiers (Live Primary -> Live Clients -> Background Recon)
+            live_admin_tasks = []
+            live_client_tasks = []
+            recon_tasks = []
 
-            # Admin profiles
+            # Priority 1: Primary Live Admin profiles
             for prof_name in list(portfolio_store.data.get('users', {}).keys()):
                 p_lower = prof_name.lower()
                 if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
-                    strategy_tasks.append((prof_name, None))
+                    live_admin_tasks.append((prof_name, None))
 
-            # Client profiles
+            # Priority 2 & 3: Live Client accounts first, background Recon (ian_paper@gmail.com) strictly last
             if portfolio_store.client:
                 try:
                     accounts_col = portfolio_store.client[MONGO_DB_NAME]['accounts']
@@ -2351,22 +2355,33 @@ def global_background_worker():
                         c_store = acc.get('portfolio') or {}
                         if not c_store.get('is_configured'): continue
                         users_dict = c_store.get('users') or {}
+                        is_recon_acc = (str(c_email or '').strip().lower() == PAPER_STATS_ACCOUNT.lower())
                         for p_name in list(users_dict.keys()):
                             p_low = p_name.lower()
                             if any(k in p_low for k in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
-                                strategy_tasks.append((p_name, c_email))
+                                if is_recon_acc:
+                                    recon_tasks.append((p_name, c_email))
+                                else:
+                                    live_client_tasks.append((p_name, c_email))
                 except Exception as ex_c:
                     print(f"Client Background Scan Error: {ex_c}")
 
-            # 3. Parallel Execution: All 20 accounts evaluate and execute simultaneously
-            if strategy_tasks:
-                def execute_task(task):
-                    p_n, c_m = task
-                    process_auto_profile(p_n, client_email=c_m)
+            def execute_task(task):
+                p_n, c_m = task
+                process_auto_profile(p_n, client_email=c_m)
 
-                worker_pool_size = min(12, len(strategy_tasks))
-                with ThreadPoolExecutor(max_workers=worker_pool_size) as ex:
-                    list(ex.map(execute_task, strategy_tasks))
+            # 3. Priority-Ordered Execution: Live Admin runs first with zero lock contention
+            if live_admin_tasks:
+                with ThreadPoolExecutor(max_workers=min(4, len(live_admin_tasks))) as ex:
+                    list(ex.map(execute_task, live_admin_tasks))
+
+            if live_client_tasks:
+                with ThreadPoolExecutor(max_workers=min(8, len(live_client_tasks))) as ex:
+                    list(ex.map(execute_task, live_client_tasks))
+
+            if recon_tasks:
+                with ThreadPoolExecutor(max_workers=min(4, len(recon_tasks))) as ex:
+                    list(ex.map(execute_task, recon_tasks))
 
         except Exception as e: 
             print(f"Background Loop Error: {e}")
@@ -2374,7 +2389,10 @@ def global_background_worker():
         now_uk_w = pd.Timestamp.now(tz='Europe/London')
         w_mins = now_uk_w.hour * 60 + now_uk_w.minute
         is_us_open_w = (now_uk_w.weekday() < 5) and ((14 * 60 + 30) <= w_mins < (21 * 60))
-        time.sleep(8 if is_us_open_w else 20) # 8-second fast execution cycle during US market hours
+        # Wall-clock aligned sleep (:00, :10, :20, :30, :40, :50) so Live & Staging evaluate identical candles simultaneously
+        step_sec = 10.0 if is_us_open_w else 20.0
+        sleep_sec = max(1.0, step_sec - (time.time() % step_sec))
+        time.sleep(sleep_sec)
 
 def match_bot_from_order_id(client_order_id, profiles):
     """Matches Alpaca client_order_id back to the specific bot profile or custom version."""
@@ -2889,9 +2907,15 @@ def reconcile_alpaca_positions_and_orders():
         except Exception: pass
 
     if account_targets:
-        pool_size = min(8, len(account_targets))
-        with ThreadPoolExecutor(max_workers=pool_size) as ex:
-            list(ex.map(reconcile_single_target, account_targets))
+        # Always reconcile Live Admin first, then Live Clients, and background Recon (ian_paper@gmail.com) last
+        live_targets = [t for t in account_targets if str(t.get('client_email') or '').strip().lower() != PAPER_STATS_ACCOUNT.lower()]
+        recon_targets = [t for t in account_targets if str(t.get('client_email') or '').strip().lower() == PAPER_STATS_ACCOUNT.lower()]
+        if live_targets:
+            with ThreadPoolExecutor(max_workers=min(6, len(live_targets))) as ex:
+                list(ex.map(reconcile_single_target, live_targets))
+        if recon_targets:
+            with ThreadPoolExecutor(max_workers=min(4, len(recon_targets))) as ex:
+                list(ex.map(reconcile_single_target, recon_targets))
 
 
 def alpaca_reconciliation_worker():
