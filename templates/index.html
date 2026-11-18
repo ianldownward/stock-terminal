@@ -6116,13 +6116,15 @@
                             ctx.restore();
                         }
 
-                        // 2. Buy marker and stacked text
+                        let isLossExit = Boolean(openBuy && p < openBuy.price);
+
+                        // 2. Buy marker and stacked text (place above X if sell is below buy so labels never cross)
                         if (buyPt) {
                             drawThinX(buyPt.x, buyPt.y);
-                            drawStackedText(buyPt.x, buyPt.y, ['BUY', `$${openBuy.price.toFixed(2)}`], false);
+                            drawStackedText(buyPt.x, buyPt.y, ['BUY', `$${openBuy.price.toFixed(2)}`], isLossExit);
                         }
 
-                        // 3. Sell marker and stacked text with return %
+                        // 3. Sell marker and stacked text with return % (place below X on loss exits)
                         if (sellPt) {
                             drawThinX(sellPt.x, sellPt.y);
                             let pnlText = '';
@@ -6130,7 +6132,7 @@
                                 let pct = ((p - openBuy.price) / openBuy.price) * 100.0;
                                 pnlText = `(${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
                             }
-                            drawStackedText(sellPt.x, sellPt.y, ['SELL', `$${p.toFixed(2)}`, pnlText].filter(Boolean), true);
+                            drawStackedText(sellPt.x, sellPt.y, ['SELL', `$${p.toFixed(2)}`, pnlText].filter(Boolean), !isLossExit);
                         }
 
                         openBuy = null;
