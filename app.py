@@ -1181,6 +1181,48 @@ class MarketScoringEngine:
         if df_tk_1m is not None and not df_tk_1m.empty and len(df_tk_1m) >= 2:
             tk_1m_confirmed = (current_price > float(df_tk_1m['Open'].iloc[-1])) and (current_price > float(df_tk_1m['Close'].iloc[-2]))
 
+        # OPENING BREAKAWAY OVERRIDE (14:33 - 14:50 UK): Catch explosive >=1.25% surges off today's session low above the 3m opening range
+        if df_tk_1m is not None and not df_tk_1m.empty:
+            df_tk1_b = df_tk_1m.copy()
+            if df_tk1_b.index.tz is None:
+                df_tk1_b.index = df_tk1_b.index.tz_localize('UTC')
+            tk1_b_uk = df_tk1_b.index.tz_convert('Europe/London')
+            tk1_b_today = df_tk1_b[tk1_b_uk.strftime('%Y-%m-%d') == today_uk_str]
+            if len(tk1_b_today) >= 4:
+                sess_low_1m = float(tk1_b_today['Low'].min())
+                open_3m_bars = tk1_b_today[tk1_b_uk[tk1_b_uk.strftime('%Y-%m-%d') == today_uk_str].minute < 33]
+                open_3m_high = float(open_3m_bars['High'].max()) if not open_3m_bars.empty else float(tk1_b_today['High'].iloc[:3].max())
+                surge_from_low_pct = ((current_price - sess_low_1m) / sess_low_1m * 100.0) if sess_low_1m > 0 else 0.0
+                two_green_1m = (
+                    current_price > float(tk1_b_today['Open'].iloc[-1])
+                    and float(tk1_b_today['Close'].iloc[-2]) > float(tk1_b_today['Open'].iloc[-2])
+                    and current_price > float(tk1_b_today['Close'].iloc[-2])
+                )
+                vol_med_1m = float(tk1_b_today['Volume'].iloc[:-1].median()) if len(tk1_b_today) >= 4 else 1.0
+                cur_vol_1m = float(tk1_b_today['Volume'].iloc[-1])
+                if (1.25 <= surge_from_low_pct <= 3.80) and (current_price > open_3m_high) and two_green_1m and (vol_med_1m <= 0 or cur_vol_1m >= vol_med_1m * 1.10):
+                    brk_score = min(94, max(80, round(76 + surge_from_low_pct * 6)))
+                    return {
+                        'type': 'Opening Breakaway',
+                        'score': brk_score,
+                        'tranches': 1,
+                        'discount': f"+{surge_from_low_pct:.2f}%",
+                        'reason': f"OPENING BREAKAWAY ({ticker} +{surge_from_low_pct:.2f}% off ${sess_low_1m:.2f} low): Cleared 3m range (${open_3m_high:.2f}) on 2 green 1m bars.",
+                        'is_smart': True,
+                        'rec_buy': round(current_price * 0.995, 2),
+                        'rec_sell': round(current_price * 1.02, 2),
+                        'status': 'Opening Breakaway',
+                        'color': '#0ecb81',
+                        'action_main': 'BUY',
+                        'action_sub': '(Opening Breakaway)',
+                        'action_color': '#0ecb81',
+                        'regime': regime,
+                        'trade_type': trade_type,
+                        'health_pct': 0,
+                        'health_color': '#0ecb81',
+                        'health_text': 'Opening Breakaway'
+                    }
+
         if 0.15 <= gap_1x_pct <= 0.65:
             not_filled_yet = (cur_ref > prev_close * 1.0005)
             crossed_below_open = (cur_ref <= open_1430 * 0.9992) and (current_price >= tk_open_1430 * 1.0010 if is_inverse else current_price <= tk_open_1430 * 0.9990)
@@ -1605,7 +1647,8 @@ class MarketScoringEngine:
                     return open_res
 
         reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
-        if is_inverse and reg_score > 45:
+        intraday_session_gain = ((current_price - float(today_s5['Open'].iloc[0])) / float(today_s5['Open'].iloc[0]) * 100.0) if ('Open' in df_5m.columns and 'today_s5' in locals() and not today_s5.empty and float(today_s5['Open'].iloc[0]) > 0) else 0.0
+        if is_inverse and reg_score > 45 and intraday_session_gain < 0.90:
             return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in cooling/bear regime (≤45 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
         # ENTRY LOGIC: Rising 9/21-EMA Alignment + Session-High / 1H-Shelf Breakout Confirmation
