@@ -473,7 +473,7 @@ class PortfolioManager:
             'notified_signals': {},
             'settings': {
                 'period': '1d', 
-                'interval': '1m' if any(x in prof for x in ['test s', 'test r', 'test tqm']) else '5m', 
+                'interval': '1m' if any(x in prof for x in ['1m reversal', 'pulse 1m', 'test s', 'test r', 'test tqm']) else '5m',
                 'style': 'candlestick', 
                 'refresh': '10000', 
                 'ntfy_topic': ''
@@ -1452,9 +1452,74 @@ class MarketScoringEngine:
             'health_text': 'Flat Open Wait'
         }
 
+    def score_pulse_1m_reversal(self, ticker, current_price, avg_buy_price=0.0, highest_price=0.0, regime=None, overnight_sweep=True):
+        """1-Minute Pure Candle Reversal (Pulse 1M Reversal) across TQQQ, SOXL & SQQQ:
+        - Entry (GO): Red (-4) -> Smaller Red (-3) -> Green (-2) on completed 1-minute candles.
+        - Exit (STOP): First completed 1-minute Red candle (-2) (or 20:50 UK overnight sweep).
+        """
+        if regime is None:
+            regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
+        is_inverse = ticker in ['SQQQ', '3SUS.L']
+        trade_type = 'SHORT' if is_inverse else 'LONG'
+        now_uk = pd.Timestamp.now(tz='Europe/London')
+
+        df_1m = fetch_yf_data(ticker, "1d", "1m")
+        if df_1m is None or df_1m.empty or len(df_1m) < 6:
+            return {'type': '1m Reversal', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Awaiting 1m candle history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(1m Data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'No Data'}
+
+        pct_change_1d = ((current_price - float(df_1m['Close'].iloc[0])) / float(df_1m['Close'].iloc[0])) * 100.0 if float(df_1m['Close'].iloc[0]) > 0 else 0.0
+
+        # Holding position: SELL immediately on the first completed red 1-minute candle (or 20:50 UK overnight sweep)
+        if avg_buy_price > 0:
+            pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+            pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
+
+            if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
+                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'OVERNIGHT SWEEP: Liquidating to 100% cash.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
+
+            c_prev = float(df_1m['Close'].iloc[-2])
+            o_prev = float(df_1m['Open'].iloc[-2])
+            if c_prev < o_prev:
+                return {'type': '1m Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M RED STOP {pnl_str}: 1m candle closed red (${o_prev:.2f} -> ${c_prev:.2f}).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Red Stop', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(1m Red Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'1m Red Stop {pnl_str}'}
+
+            return {'type': '1m Reversal', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f'RIDING GREEN 1M WAVE {pnl_str}: Holding until first closed red 1m candle.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 1m Green', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 1m Green)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 85, 'health_color': '#0ecb81', 'health_text': f'Riding 1m Green {pnl_str}'}
+
+        if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
+            return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'OVERNIGHT SWEEP: Blocking new entries before close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
+
+        if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 33:
+            return {'type': 'Opening Window', 'score': 30, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': '3m Spike Filter: Letting opening bell orders settle until 14:33 UK.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '3m Spike Filter', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(3m Spike Wait)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': '3m Spike Filter'}
+
+        # Pure candle entry across all 3 tickers (TQQQ, SOXL, SQQQ): Red (-4) -> Smaller Red (-3) -> Green (-2)
+        b_r1_o, b_r1_c = float(df_1m['Open'].iloc[-4]), float(df_1m['Close'].iloc[-4])
+        b_r2_o, b_r2_c = float(df_1m['Open'].iloc[-3]), float(df_1m['Close'].iloc[-3])
+        b_g1_o, b_g1_c = float(df_1m['Open'].iloc[-2]), float(df_1m['Close'].iloc[-2])
+
+        r1_body = b_r1_o - b_r1_c
+        r2_body = b_r2_o - b_r2_c
+        g1_body = b_g1_c - b_g1_o
+
+        red1_ok = (b_r1_c < b_r1_o) and (r1_body > 0)
+        red2_ok = (b_r2_c < b_r2_o) and (0 < r2_body < r1_body)
+        grn1_ok = (b_g1_c > b_g1_o) and (g1_body > 0)
+
+        if red1_ok and red2_ok and grn1_ok:
+            bounce_pct = ((b_g1_c - b_g1_o) / b_g1_o * 100.0) if b_g1_o > 0 else 0.0
+            buy_score = min(98, max(75, round(78 + bounce_pct * 20)))
+            return {'type': '1m Reversal', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M GO TRIGGER: Red (-${r1_body:.2f}) -> Smaller Red (-${r2_body:.2f}) -> Green (+${g1_body:.2f}).', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Reversal Go', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m Reversal Go)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Reversal Go'}
+
+        if red1_ok and red2_ok:
+            return {'type': '1m Reversal', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': '1m Exhaustion Ready: Red -> Smaller Red printed, awaiting Green 1m candle to Go.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Green', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Green)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Awaiting Green'}
+
+        return {'type': '1m Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m candles for Red -> Smaller Red -> Green (Go).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1m Pattern)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
     def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test e', regime=None, overnight_sweep=True):
         if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         ticker = getattr(df_5m, 'name', '')
+        prof = profile.lower()
+        if any(x in prof for x in ['1m reversal', 'pulse 1m']):
+            return self.score_pulse_1m_reversal(ticker, current_price, avg_buy_price=avg_buy_price, highest_price=highest_price, regime=regime, overnight_sweep=overnight_sweep)
+
         is_inverse = ticker in ['SQQQ', '3SUS.L']
         is_3x_etf = ticker in ['TQQQ', 'SOXL', 'NVDL', 'CONL', 'MSTX', 'BITX', 'SQQQ', '3SUS.L']
         trade_type = 'SHORT' if is_inverse else 'LONG'
@@ -1462,7 +1527,6 @@ class MarketScoringEngine:
         if df_5m.empty or len(df_5m) < 21:
             return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Insufficient intraday price history.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Tranche 0)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'No Data'}
 
-        prof = profile.lower()
         pct_change_5d = ((current_price - df_5m['Close'].iloc[0]) / df_5m['Close'].iloc[0]) * 100.0
         now_uk = pd.Timestamp.now(tz='Europe/London')
 
@@ -1685,16 +1749,17 @@ class MarketScoringEngine:
         )
         session_low = float(today_s5['Low'].min()) if ('Low' in df_5m.columns and 'today_s5' in locals() and len(today_s5) >= 2) else swing_low_6
         swing_low_4 = float(df_5m['Low'].tail(4).min()) if 'Low' in df_5m.columns and len(df_5m) >= 4 else swing_low_6
+        swing_low_8 = float(df_5m['Low'].tail(8).min()) if 'Low' in df_5m.columns and len(df_5m) >= 8 else swing_low_4
         session_drop_pct = ((session_high - session_low) / session_high * 100.0) if session_high > 0 else 0.0
-        fresh_session_bottom = (session_low > 0 and swing_low_4 <= session_low * 1.0015)
+        fresh_session_bottom = (session_low > 0 and swing_low_8 <= session_low * 1.0020)
 
         ema_spread_pct = ((ema9 - ema21) / ema21 * 100.0) if ema21 > 0 else 0.0
         ema_rising = (ema9 > prev_ema9) and (ema_spread_pct >= (0.12 if is_3x_etf else 0.05))
 
-        # Capitulation V-Reversal: after >=2.2% intraday selloff to a fresh session low, price surges >=0.85% off the bottom on 2 green 5m bars + rising 1m 9/21-EMA
+        # Capitulation V-Reversal: after >=2.0% intraday selloff to a fresh session low, price surges >=0.75% off the bottom on 2 green 5m bars + rising 1m 9/21-EMA
         bounce_from_session_low_pct = ((current_price - session_low) / session_low * 100.0) if session_low > 0 else 0.0
         fast_1m_reclaim = False
-        if is_3x_etf and (now_uk.hour < 18) and (session_drop_pct >= 2.20) and fresh_session_bottom and two_green_bars and (0.85 <= bounce_from_session_low_pct <= 2.65):
+        if is_3x_etf and (now_uk.hour < 19) and (session_drop_pct >= 2.00) and fresh_session_bottom and two_green_bars and (0.75 <= bounce_from_session_low_pct <= 3.10):
             if (current_price > ema9) and (ema9 > prev_ema9):
                 fast_1m_reclaim = True
             else:
@@ -1715,27 +1780,27 @@ class MarketScoringEngine:
 
         has_cap_vreversal = (
             is_3x_etf
-            and (now_uk.hour < 18)
-            and (session_drop_pct >= 2.20)
+            and (now_uk.hour < 19)
+            and (session_drop_pct >= 2.00)
             and fresh_session_bottom
-            and (0.85 <= bounce_from_session_low_pct <= 2.65)
+            and (0.75 <= bounce_from_session_low_pct <= 3.10)
             and two_green_bars
             and fast_1m_reclaim
         )
 
-        # Higher-Low Arch Reclaim: catch U-shaped recoveries mid-arch once a higher low holds above session bottom and 9/21-EMAs turn up
+        # Higher-Low Arch Reclaim: catch U-shaped recoveries mid-arch once a higher low holds above session bottom and 9-EMA turns up
         post_open_ready = (not is_3x_etf) or ('today_s5' not in locals()) or (len(today_s5) >= 6) or (session_high > 0 and current_price > session_high)
         has_higher_low = (session_low > 0 and swing_low_4 >= session_low * 1.0020)
+        ema9_catching_up = (ema9 > prev_ema9) and (ema9 >= ema21 * 0.9985)
         has_arch_reclaim = (
             post_open_ready
             and is_3x_etf
             and (now_uk.hour < 19)
-            and (session_drop_pct >= 0.90)
+            and (session_drop_pct >= 1.10)
             and has_higher_low
-            and (0.45 <= bounce_from_session_low_pct <= 1.65)
+            and (0.65 <= bounce_from_session_low_pct <= 2.40)
             and (below_session_high_pct >= 0.25)
-            and (ema9 > ema21)
-            and ema_rising
+            and ema9_catching_up
             and (current_price > ema9)
             and two_green_bars
         )
@@ -1745,7 +1810,7 @@ class MarketScoringEngine:
 
         # Require 2-bar follow-through (or 1h-shelf breakout) + at least 6 completed today bars (14:55+ UK) so 14:50 gap-distorted EMAs don't fire
         has_ema_trend = post_open_ready and (ema9 > ema21) and ema_rising and (current_price > ema9) and (two_green_bars or (bar_is_green and breaks_1h_shelf)) and (intraday_pct >= -1.50)
-        has_v_reclaim = post_open_ready and is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 1.85)
+        has_v_reclaim = post_open_ready and is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 2.85)
 
         if (has_ema_trend or has_v_reclaim or has_cap_vreversal or has_arch_reclaim) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
             # Completed 1-minute candle confirmation: evaluate on last closed 1m bar so Live, Staging & Recon stay deterministic
@@ -2021,7 +2086,7 @@ def process_auto_profile(prof_name, client_email=None):
         # TOTAL DAILY ACCOUNT STEP-RATCHET (Monitors the big header % on your screen)
         force_daily_floor_sell = False
         daily_floor_locked = 0.0
-        if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
+        if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
             if ud.get('last_ratchet_date') != today_str:
                 ud['last_ratchet_date'] = today_str
                 ud['daily_peak_pct'] = 0.0
@@ -2253,10 +2318,11 @@ def process_auto_profile(prof_name, client_email=None):
         if today_stops_cnt >= 3:
             is_curfew_active = True
 
-        # 15-Minute Post-Sell Cooldown (ignores internal ALPACASYNC/CALIBRATION entries)
+        # Post-Sell Cooldown: 60s (1 candle) for Pulse 1M Reversal so it repeats cleanly; 15 mins (900s) for 5m profiles
+        cd_duration = 60 if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else 900
         real_hist_for_cd = [h for h in hist if h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]
         if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
-            if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < 900:
+            if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < cd_duration:
                 buys = []
 
         # Emergency Shutdown: If circuit breaker tripped or curfew active, block ALL buys
@@ -2312,9 +2378,9 @@ def process_auto_profile(prof_name, client_email=None):
                     metadata={'status': d.get('status', 'Manual/EOD'), 'reason': d.get('reason', ''), 'highest_price': d.get('highest_price', 0.0), 'slices': d.get('slices', 1)},
                     client_email=client_email
                 )
-                # Stamp 15-minute cooldown atomically on fresh user state so execute_trade history is never overwritten
+                # Stamp post-sell cooldown atomically on fresh user state so execute_trade history is never overwritten
                 if executed and d['action'] == 'SELL':
-                    cd_until = int(time.time()) + 900
+                    cd_until = int(time.time()) + cd_duration
                     def _mut_cd(f_ud, sym=d['ticker'], exp_ts=cd_until):
                         f_ud.setdefault('cooldowns', {})[sym] = exp_ts
                         return True
@@ -2343,7 +2409,7 @@ def global_background_worker():
             # Priority 1: Primary Live Admin profiles
             for prof_name in list(portfolio_store.data.get('users', {}).keys()):
                 p_lower = prof_name.lower()
-                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
+                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
                     live_admin_tasks.append((prof_name, None))
 
             # Priority 2 & 3: Live Client accounts first, background Recon (ian_paper@gmail.com) strictly last
@@ -2358,7 +2424,7 @@ def global_background_worker():
                         is_recon_acc = (str(c_email or '').strip().lower() == PAPER_STATS_ACCOUNT.lower())
                         for p_name in list(users_dict.keys()):
                             p_low = p_name.lower()
-                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'tqm', 'tq', 'test s']):
+                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
                                 if is_recon_acc:
                                     recon_tasks.append((p_name, c_email))
                                 else:
@@ -3185,7 +3251,7 @@ def view_admin_users_log():
                 users_dict = c_store.get('users') or {}
                 
                 prof_tds = ""
-                for target_prof in ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse']:
+                for target_prof in ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal']:
                     matched_k = next((k for k in users_dict.keys() if target_prof.lower() in k.lower()), None)
                     if matched_k:
                         ud = users_dict[matched_k]
@@ -3285,6 +3351,7 @@ def view_admin_users_log():
                             <th style='padding:12px; border-left:1px solid #262b36;'>Vector Hybrid</th>
                             <th style='padding:12px; border-left:1px solid #262b36;'>Apex Precision</th>
                             <th style='padding:12px; border-left:1px solid #262b36;'>Velocity Pulse</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>Pulse 1M Reversal</th>
                             <th style='padding:12px; border-left:1px solid #262b36; text-align:right;'>Action</th>
                         </tr>
                     </thead>
@@ -4028,8 +4095,8 @@ def get_score():
     try:
         active_profile = portfolio_store.active_username().strip().lower()
         is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
-        interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
-        period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
+        interval = "1m" if any(x in active_profile for x in ['1m reversal', 'pulse 1m', 'test p', 'test t']) else "5m"
+        period = "1d" if any(x in active_profile for x in ['1m reversal', 'pulse 1m', 'test p', 'test t']) else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         df.name = t
@@ -4699,11 +4766,12 @@ def get_data():
             h for h in hist
             if h.get('ticker') and h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
         ]
+        cd_total_guard = 60 if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else 900
         cd_15m_rem = 0
         if real_hist_guard and real_hist_guard[0].get('action') == 'SELL':
             last_sell_ts = int(real_hist_guard[0].get('timestamp') or 0)
             if last_sell_ts > 0:
-                cd_15m_rem = max(0, 900 - (now_ts_guard - last_sell_ts))
+                cd_15m_rem = max(0, cd_total_guard - (now_ts_guard - last_sell_ts))
 
         guard_loss_stops = 0
         for idx_g, h in enumerate(hist):
@@ -4719,7 +4787,7 @@ def get_data():
 
         buy_guards = {
             'cd_15m_rem': cd_15m_rem,
-            'cd_15m_total': 900,
+            'cd_15m_total': cd_total_guard,
             'strikes_used': min(3, guard_loss_stops),
             'strikes_max': 3,
             'server_ts': now_ts_guard
@@ -6348,7 +6416,8 @@ def get_strategy_stats():
     default_stats = {
         'Vector Hybrid': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'Apex Precision': {'win_rate': '72.0%', 'profit_factor': '3.85', 'daily_pace': '+1.42%'},
-        'Velocity Pulse': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
+        'Velocity Pulse': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
+        'Pulse 1M Reversal': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
     }
     if not portfolio_store.client:
         return jsonify({'stats': default_stats, 'connected': False, 'account': PAPER_STATS_ACCOUNT, **default_stats})
@@ -6379,6 +6448,7 @@ def get_strategy_stats():
 
     stats_out = {}
     strategy_aliases = {
+        'Pulse 1M Reversal': ['1m reversal', 'pulse 1m'],
         'Vector Hybrid': ['vector'],
         'Apex Precision': ['apex'],
         'Velocity Pulse': ['velocity', 'pulse']

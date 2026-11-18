@@ -2037,6 +2037,28 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Strategy 4: Pulse 1M Reversal -->
+                    <div id="cardStratPulse1M" onclick="selectWizardStrategy('Pulse 1M Reversal')" style="background:#13161c; border:2px solid #262b36; border-radius:8px; padding:14px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:15px; font-weight:800; color:#fff;" id="titleStratPulse1M">Pulse 1M Reversal</span>
+                                <input type="radio" name="wizardStratChoice" value="Pulse 1M Reversal" style="accent-color:#ffd400; cursor:pointer;">
+                            </div>
+                            <div style="font-size:10px; font-weight:700; color:#38bdf8; margin-top:2px;">1m Exhaustion Reversal Scalper</div>
+                            
+                            <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
+                                Scans TQQQ, SOXL & SQQQ on 1-minute candles: enters on Red → Smaller Red → Green (Go) and exits immediately on the first Red 1m candle (Stop).
+                            </div>
+                            
+                            <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
+                                <div>• Profit Factor: <b id="wiz-pf-Pulse1M" style="color:#0ecb81; font-size:12px;">--</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-Pulse1M" style="color:#fff;">--</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-Pulse1M" style="color:#0ecb81;">--</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
@@ -3579,7 +3601,7 @@
             if (wrEl && pfEl && rrEl) {
                 if (!window._reconStrategyStats) refreshReconStrategyStats();
                 let rStats = window._reconStrategyStats || {};
-                let stratKey = profName.includes('apex') ? 'Apex Precision' : ((profName.includes('velocity') || profName.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid');
+                let stratKey = (profName.includes('1m reversal') || profName.includes('pulse 1m')) ? 'Pulse 1M Reversal' : (profName.includes('apex') ? 'Apex Precision' : ((profName.includes('velocity') || profName.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid'));
                 let liveS = rStats[stratKey];
                 wrEl.innerText = liveS ? liveS.win_rate : '--';
                 pfEl.innerText = liveS ? liveS.profit_factor : '--';
@@ -3615,6 +3637,7 @@
             'Vector Hybrid': 'Production Desk #1: Flagship 3x leveraged ETF momentum engine. Shifts from opening elasticity to trend momentum. Harvests daily gains at +2.20% and moves 100% to cash.',
             'Apex Precision': 'Production Desk #2: Bi-Directional Institutional Breakout Engine (TQQQ/SOXL/SQQQ). Filters entries with volume surge and 9-EMA anti-chase gates, locking tiered profit floors and Bank-and-Walk at 18:30 BST.',
             'Velocity Pulse': 'Production Desk #3: High-speed index scalper. Enters short-duration momentum bursts with a rapid +1.20% take-profit harvest target.',
+            'Pulse 1M Reversal': 'Production Desk #4: Pure 1-minute exhaustion reversal scalper across TQQQ, SOXL & SQQQ. Enters on Red -> Smaller Red -> Green (Go) and exits immediately on the first Red 1m candle (Stop).',
             'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
 
@@ -4545,8 +4568,8 @@
                         badge.innerText = `● Recon Account Offline (${data.account || 'ian_paper@gmail.com'})`;
                     }
                 }
-                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse'].forEach(strat => {
-                    let sId = strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0];
+                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal'].forEach(strat => {
+                    let sId = strat === 'Pulse 1M Reversal' ? 'Pulse1M' : (strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0]);
                     let wrEl = document.getElementById(`wiz-wr-${sId}`);
                     let pfEl = document.getElementById(`wiz-pf-${sId}`);
                     let dpEl = document.getElementById(`wiz-dp-${sId}`);
@@ -4574,10 +4597,10 @@
 
         function selectWizardStrategy(method) {
             selectedWizardMethod = method;
-            ['Vector', 'Apex', 'Pulse'].forEach(k => {
+            ['Vector', 'Apex', 'Pulse', 'Pulse1M'].forEach(k => {
                 let card = document.getElementById(`cardStrat${k}`);
                 let title = document.getElementById(`titleStrat${k}`);
-                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse');
+                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse') || (k === 'Pulse1M' && method === 'Pulse 1M Reversal');
                 if (card) card.style.borderColor = isMatch ? '#ffd400' : '#262b36';
                 if (title) title.style.color = isMatch ? '#ffd400' : '#ffffff';
             });
@@ -6778,6 +6801,7 @@
             'Vector Hybrid': '+2.20% Bank & Walk',
             'Apex Precision': '+2.80% Tiered Bank & Walk',
             'Velocity Pulse': '+3.00% Take Profit',
+            'Pulse 1M Reversal': '1m Red-Red-Green Reversal',
             'Sovereign Core': 'Manual Execution'
         };
 
@@ -6951,7 +6975,7 @@
             document.getElementById('insightDailyTarget').innerText = `${dailyRunRate >= 0 ? '+' : ''}${dailyRunRate.toFixed(2)}% / Day`;
 
             let uLower = userKey.toLowerCase();
-            let stratKey = uLower.includes('apex') ? 'Apex Precision' : ((uLower.includes('velocity') || uLower.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid');
+            let stratKey = (uLower.includes('1m reversal') || uLower.includes('pulse 1m')) ? 'Pulse 1M Reversal' : (uLower.includes('apex') ? 'Apex Precision' : ((uLower.includes('velocity') || uLower.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid'));
             let liveStats = (window._reconStrategyStats && window._reconStrategyStats[stratKey]) ? window._reconStrategyStats[stratKey] : null;
 
             document.getElementById('insightWinRate').innerText = liveStats ? liveStats.win_rate : '--';
@@ -7569,6 +7593,13 @@
                             <div>
                                 <span style="font-weight:800; color:${guideState.strategy === 'Velocity Pulse' ? '#ffd400' : '#fff'};">Velocity Pulse</span>
                                 <div style="font-size:11px; color:#8a8a9e;">Rapid index scalper. Captures quick +1.20% bursts and returns to cash.</div>
+                            </div>
+                        </label>
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Pulse 1M Reversal' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Pulse 1M Reversal'; renderAssistStep();">
+                            <input type="radio" name="guideStrat" value="Pulse 1M Reversal" ${guideState.strategy === 'Pulse 1M Reversal' ? 'checked' : ''} style="accent-color:#ffd400;">
+                            <div>
+                                <span style="font-weight:800; color:${guideState.strategy === 'Pulse 1M Reversal' ? '#ffd400' : '#fff'};">Pulse 1M Reversal</span>
+                                <div style="font-size:11px; color:#8a8a9e;">Pure 1m exhaustion reversal scalper across TQQQ, SOXL & SQQQ. Enters on Red → Smaller Red → Green (Go) and exits on first Red 1m candle (Stop).</div>
                             </div>
                         </label>
                     </div>
