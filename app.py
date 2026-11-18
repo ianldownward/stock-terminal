@@ -924,10 +924,12 @@ class PortfolioManager:
 
             push_message = f"${cost_per_sh:.2f} (Total ${tot_amt:.2f}){pnl_line}"
 
-            send_native_web_push(
-                title=push_title,
-                message=push_message
-            )
+            # Only send iPhone push alerts for primary admin account (silence background recon/client accounts)
+            if not is_client:
+                send_native_web_push(
+                    title=push_title,
+                    message=push_message
+                )
             # 2. Legacy fallback if topic configured
             ntfy_topic = (ud.get('settings') or {}).get('ntfy_topic', '')
             if ntfy_topic: send_push_notification(ntfy_topic, push_title, push_message)
@@ -1721,15 +1723,31 @@ class MarketScoringEngine:
             and fast_1m_reclaim
         )
 
-        # Block lower-high dead-cat bounces trapped below today's session high (1h shelf only counts when within 0.45% of session high)
-        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 0.15) and (not (breaks_1h_shelf and below_session_high_pct <= 0.45)) and (not has_cap_vreversal)
+        # Higher-Low Arch Reclaim: catch U-shaped recoveries mid-arch once a higher low holds above session bottom and 9/21-EMAs turn up
+        post_open_ready = (not is_3x_etf) or ('today_s5' not in locals()) or (len(today_s5) >= 6) or (session_high > 0 and current_price > session_high)
+        has_higher_low = (session_low > 0 and swing_low_4 >= session_low * 1.0020)
+        has_arch_reclaim = (
+            post_open_ready
+            and is_3x_etf
+            and (now_uk.hour < 19)
+            and (session_drop_pct >= 0.90)
+            and has_higher_low
+            and (0.45 <= bounce_from_session_low_pct <= 1.65)
+            and (below_session_high_pct >= 0.25)
+            and (ema9 > ema21)
+            and ema_rising
+            and (current_price > ema9)
+            and two_green_bars
+        )
+
+        # Block lower-high dead-cat bounces trapped below today's session high unless breaking a 1h shelf, V-reversing, or launching a confirmed Higher-Low Arch Reclaim
+        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 0.15) and (not (breaks_1h_shelf and below_session_high_pct <= 0.45)) and (not has_cap_vreversal) and (not has_arch_reclaim)
 
         # Require 2-bar follow-through (or 1h-shelf breakout) + at least 6 completed today bars (14:55+ UK) so 14:50 gap-distorted EMAs don't fire
-        post_open_ready = (not is_3x_etf) or ('today_s5' not in locals()) or (len(today_s5) >= 6) or (session_high > 0 and current_price > session_high)
         has_ema_trend = post_open_ready and (ema9 > ema21) and ema_rising and (current_price > ema9) and (two_green_bars or (bar_is_green and breaks_1h_shelf)) and (intraday_pct >= -1.50)
         has_v_reclaim = post_open_ready and is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 1.85)
 
-        if (has_ema_trend or has_v_reclaim or has_cap_vreversal) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
+        if (has_ema_trend or has_v_reclaim or has_cap_vreversal or has_arch_reclaim) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
             # Live 1-minute micro-trend confirmation: block entries if the live 1m bar is already red or below a falling 1m 9-EMA
             if is_3x_etf:
                 df_1m_ent = fetch_yf_data(ticker, "1d", "1m")
@@ -1774,7 +1792,7 @@ class MarketScoringEngine:
             # Sideways consolidation shield for Vector Hybrid / Velocity Pulse: block low-volume mid-range chop
             recent_high_6 = float(df_5m['High'].tail(6).max()) if 'High' in df_5m.columns and len(df_5m) >= 6 else current_price
             near_range_high = (recent_high_6 > 0 and current_price >= recent_high_6 * 0.9975)
-            if not near_range_high and vol_ratio < 1.15:
+            if not near_range_high and not (has_arch_reclaim and vol_ratio >= 0.95) and vol_ratio < 1.15:
                 return {'type': 'Intraday Momentum', 'score': 42, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Chop Shield: Mid-range consolidation (${current_price:.2f} vs ${recent_high_6:.2f} high) on {vol_ratio:.1f}x vol.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Range Chop Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Breakout)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # 14:30 - 14:50 UK is governed exclusively by evaluate_opening_window() above
