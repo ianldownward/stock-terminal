@@ -60,7 +60,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             for k in stale_keys:
                 YF_CACHE.pop(k, None)
 
-        cache_duration = 15 if interval in ['1m', '2m'] else (25 if interval == '5m' else 180)
+        cache_duration = 8 if interval in ['1m', '2m'] else (15 if interval == '5m' else 180)
         
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
@@ -856,11 +856,9 @@ class PortfolioManager:
                         break
 
             if should_route_alpaca and not is_paused and global_broker.get('api_key') and global_broker.get('secret_key') and not (metadata and metadata.get('source') == 'alpaca_sync'):
-                strat_prof = str(current_profile).lower()
-                if any(x in strat_prof for x in ['velocity', 'pulse', 'test s']) and 'test s2' not in strat_prof:
-                    t_pct = 0.65
-                else:
-                    t_pct = 0.75
+                # Use a 2.50% disaster-only exchange stop on Alpaca so sub-second 3x ETF spread flickers never snipe positions;
+                # IDC's 8-second candle engine manages the exact 0.65%/0.75% trailing stop, breakeven lock, and ratchet floors.
+                t_pct = 2.50
 
                 order_slices = int((metadata or {}).get('slices', 1))
                 threading.Thread(
@@ -1181,7 +1179,7 @@ class MarketScoringEngine:
         if df_tk_1m is not None and not df_tk_1m.empty and len(df_tk_1m) >= 2:
             tk_1m_confirmed = (current_price > float(df_tk_1m['Open'].iloc[-1])) and (current_price > float(df_tk_1m['Close'].iloc[-2]))
 
-        # OPENING BREAKAWAY OVERRIDE (14:33 - 14:50 UK): Catch explosive >=1.25% surges off today's session low above the 3m opening range
+        # OPENING BREAKAWAY OVERRIDE (14:33 - 14:50 UK): Catch explosive >=1.20% surges off today's session low above the 3m opening range
         if df_tk_1m is not None and not df_tk_1m.empty:
             df_tk1_b = df_tk_1m.copy()
             if df_tk1_b.index.tz is None:
@@ -1190,17 +1188,22 @@ class MarketScoringEngine:
             tk1_b_today = df_tk1_b[tk1_b_uk.strftime('%Y-%m-%d') == today_uk_str]
             if len(tk1_b_today) >= 4:
                 sess_low_1m = float(tk1_b_today['Low'].min())
+                sess_high_1m = float(tk1_b_today['High'].max())
                 open_3m_bars = tk1_b_today[tk1_b_uk[tk1_b_uk.strftime('%Y-%m-%d') == today_uk_str].minute < 33]
                 open_3m_high = float(open_3m_bars['High'].max()) if not open_3m_bars.empty else float(tk1_b_today['High'].iloc[:3].max())
                 surge_from_low_pct = ((current_price - sess_low_1m) / sess_low_1m * 100.0) if sess_low_1m > 0 else 0.0
-                two_green_1m = (
-                    current_price > float(tk1_b_today['Open'].iloc[-1])
-                    and float(tk1_b_today['Close'].iloc[-2]) > float(tk1_b_today['Open'].iloc[-2])
-                    and current_price > float(tk1_b_today['Close'].iloc[-2])
-                )
+                drop_from_high_pct = ((sess_high_1m - current_price) / sess_high_1m * 100.0) if sess_high_1m > 0 else 0.0
+                bar1_green = (current_price > float(tk1_b_today['Open'].iloc[-1])) and (current_price > float(tk1_b_today['Close'].iloc[-2]))
+                two_green_1m = bar1_green and (float(tk1_b_today['Close'].iloc[-2]) > float(tk1_b_today['Open'].iloc[-2]))
+                ema9_1m_s = tk1_b_today['Close'].ewm(span=9, adjust=False).mean()
+                ema21_1m_s = tk1_b_today['Close'].ewm(span=21, adjust=False).mean()
+                ema1m_aligned = (current_price > float(ema9_1m_s.iloc[-1])) and (float(ema9_1m_s.iloc[-1]) > float(ema21_1m_s.iloc[-1])) and (float(ema9_1m_s.iloc[-1]) > float(ema9_1m_s.iloc[-2]))
                 vol_med_1m = float(tk1_b_today['Volume'].iloc[:-1].median()) if len(tk1_b_today) >= 4 else 1.0
-                cur_vol_1m = float(tk1_b_today['Volume'].iloc[-1])
-                if (1.25 <= surge_from_low_pct <= 3.80) and (current_price > open_3m_high) and two_green_1m and (vol_med_1m <= 0 or cur_vol_1m >= vol_med_1m * 1.10):
+                secs_in_1m = max(10, now_uk.second)
+                raw_vol_1m = float(tk1_b_today['Volume'].iloc[-1])
+                proj_vol_1m = min(raw_vol_1m * (60.0 / secs_in_1m), raw_vol_1m * 3.0)
+                cur_vol_1m = max(raw_vol_1m, proj_vol_1m)
+                if (1.20 <= surge_from_low_pct <= 4.00) and (drop_from_high_pct <= 0.30) and (current_price > open_3m_high) and (two_green_1m or (bar1_green and ema1m_aligned)) and (vol_med_1m <= 0 or cur_vol_1m >= vol_med_1m * 1.05):
                     brk_score = min(94, max(80, round(76 + surge_from_low_pct * 6)))
                     return {
                         'type': 'Opening Breakaway',
@@ -1485,11 +1488,8 @@ class MarketScoringEngine:
         # DYNAMIC ASSET-SPECIFIC TRAILING STOPS & HARD STOPS
         peak_gain_pct = ((highest_price - avg_buy_price) / avg_buy_price * 100.0) if avg_buy_price > 0 and highest_price > 0 else 0.0
 
-        # Standardized Production Trailing Stops
-        if any(x in prof for x in ['velocity', 'pulse', 'test s']):
-            trail_pct, hard_pct = 0.65, -0.65
-        else:
-            trail_pct, hard_pct = 0.75, -0.75
+        # Standardized Production Trailing Stops (0.75% across 3x ETFs prevents premature wiggle stop-outs)
+        trail_pct, hard_pct = 0.75, -0.75
 
         health_pct, health_color, health_text = 0, "#8a8a9e", "Scanning..."
 
@@ -1689,32 +1689,65 @@ class MarketScoringEngine:
         ema_spread_pct = ((ema9 - ema21) / ema21 * 100.0) if ema21 > 0 else 0.0
         ema_rising = (ema9 > prev_ema9) and (ema_spread_pct >= (0.12 if is_3x_etf else 0.05))
 
-        # Capitulation V-Reversal: after >=2.5% intraday selloff to a fresh session low, price reclaims rising 9-EMA on 2 green bars
+        # Capitulation V-Reversal: after >=2.2% intraday selloff to a fresh session low, price surges >=0.85% off the bottom on 2 green 5m bars + rising 1m 9/21-EMA
+        bounce_from_session_low_pct = ((current_price - session_low) / session_low * 100.0) if session_low > 0 else 0.0
+        fast_1m_reclaim = False
+        if is_3x_etf and (now_uk.hour < 18) and (session_drop_pct >= 2.20) and fresh_session_bottom and two_green_bars and (0.85 <= bounce_from_session_low_pct <= 2.65):
+            if (current_price > ema9) and (ema9 > prev_ema9):
+                fast_1m_reclaim = True
+            else:
+                df_vr_1m = fetch_yf_data(ticker, "1d", "1m")
+                if df_vr_1m is not None and not df_vr_1m.empty and len(df_vr_1m) >= 5:
+                    df_vr1 = df_vr_1m.copy()
+                    if df_vr1.index.tz is None:
+                        df_vr1.index = df_vr1.index.tz_localize('UTC')
+                    vr1_today = df_vr1[df_vr1.index.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_uk.strftime('%Y-%m-%d')]
+                    if len(vr1_today) >= 4:
+                        e9_1m = vr1_today['Close'].ewm(span=9, adjust=False).mean()
+                        e21_1m = vr1_today['Close'].ewm(span=21, adjust=False).mean()
+                        fast_1m_reclaim = (
+                            current_price > float(e9_1m.iloc[-1])
+                            and float(e9_1m.iloc[-1]) > float(e21_1m.iloc[-1])
+                            and float(e9_1m.iloc[-1]) > float(e9_1m.iloc[-2])
+                        )
+
         has_cap_vreversal = (
             is_3x_etf
             and (now_uk.hour < 18)
-            and (session_drop_pct >= 2.50)
+            and (session_drop_pct >= 2.20)
             and fresh_session_bottom
-            and (current_price > ema9)
-            and (ema9 > prev_ema9)
+            and (0.85 <= bounce_from_session_low_pct <= 2.65)
             and two_green_bars
+            and fast_1m_reclaim
         )
 
-        # Block lower-high dead-cat bounces trapped below today's session high unless breaking a 1-hour shelf or launching a fresh capitulation V-reversal
-        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 0.15) and (not breaks_1h_shelf) and (not has_cap_vreversal)
+        # Block lower-high dead-cat bounces trapped below today's session high (1h shelf only counts when within 0.45% of session high)
+        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 0.15) and (not (breaks_1h_shelf and below_session_high_pct <= 0.45)) and (not has_cap_vreversal)
 
-        has_ema_trend = (ema9 > ema21) and ema_rising and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
-        has_v_reclaim = is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 1.85)
+        # Require 2-bar follow-through (or 1h-shelf breakout) + at least 6 completed today bars (14:55+ UK) so 14:50 gap-distorted EMAs don't fire
+        post_open_ready = (not is_3x_etf) or ('today_s5' not in locals()) or (len(today_s5) >= 6) or (session_high > 0 and current_price > session_high)
+        has_ema_trend = post_open_ready and (ema9 > ema21) and ema_rising and (current_price > ema9) and (two_green_bars or (bar_is_green and breaks_1h_shelf)) and (intraday_pct >= -1.50)
+        has_v_reclaim = post_open_ready and is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 1.85)
 
         if (has_ema_trend or has_v_reclaim or has_cap_vreversal) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
+            # Live 1-minute micro-trend confirmation: block entries if the live 1m bar is already red or below a falling 1m 9-EMA
+            if is_3x_etf:
+                df_1m_ent = fetch_yf_data(ticker, "1d", "1m")
+                if df_1m_ent is not None and not df_1m_ent.empty and len(df_1m_ent) >= 3:
+                    e9_1m_ent = df_1m_ent['Close'].ewm(span=9, adjust=False).mean()
+                    bar_1m_green = (current_price > float(df_1m_ent['Open'].iloc[-1])) and (current_price >= float(df_1m_ent['Close'].iloc[-2]))
+                    ema_1m_up = (current_price > float(e9_1m_ent.iloc[-1])) and (float(e9_1m_ent.iloc[-1]) >= float(e9_1m_ent.iloc[-2]))
+                    if not (bar_1m_green and ema_1m_up):
+                        return {'type': 'Intraday Momentum', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': '1m Micro-Trend Filter: Awaiting green 1m candle & rising 1m 9-EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Confirm Wait', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(1m Confirm)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
             vol_20ma = df_5m['Volume'].tail(20).median() if len(df_5m) >= 20 else 1.0
-            secs_in_bar = max(45, (now_uk.minute % 5) * 60 + now_uk.second)
+            secs_in_bar = max(90, (now_uk.minute % 5) * 60 + now_uk.second)
             raw_cur_vol = float(df_5m['Volume'].iloc[-1])
-            proj_cur_vol = min(raw_cur_vol * (300.0 / secs_in_bar), raw_cur_vol * 2.5)
+            proj_cur_vol = min(raw_cur_vol * (300.0 / secs_in_bar), raw_cur_vol * 2.0)
             cur_vol = max(raw_cur_vol, proj_cur_vol)
             vol_ratio = (cur_vol / vol_20ma) if vol_20ma > 0 else 1.0
 
-            if has_cap_vreversal and vol_ratio < 1.30:
+            if has_cap_vreversal and vol_ratio < 1.15:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"V-Reversal Watch: Reclaimed EMAs off low, awaiting >=1.30x volume ({vol_ratio:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # DYNAMIC ANTI-CHASE: tighter after 18:00 UK to avoid late-day range tops; allow 1.65% on fresh 1H-shelf breakouts
@@ -1923,7 +1956,7 @@ def process_auto_profile(prof_name, client_email=None):
                     candle_hi = cp
                     if not cur_df.empty and 'High' in cur_df.columns and buy_ts_h > 0:
                         try:
-                            post_df_h = cur_df[cur_df.index.astype('int64') // 10**9 >= buy_ts_h]
+                            post_df_h = cur_df[cur_df.index.astype('int64') // 10**9 >= (buy_ts_h + 60)]
                             if not post_df_h.empty:
                                 candle_hi = float(post_df_h['High'].max())
                         except Exception:
@@ -2066,15 +2099,32 @@ def process_auto_profile(prof_name, client_email=None):
                     if df_1m_open is not None and not df_1m_open.empty:
                         cur = float(df_1m_open['Close'].iloc[-1])
                 sh = resolve_shares(t)
-                # Prefer Alpaca's real-time position quote when holding shares so Yahoo lag cannot trigger false stops
+                stale_pre_buy_quote = False
+                # Prefer Alpaca's real-time position quote when holding shares; fallback to fresh 1m quote (never lagging 5m close)
                 if sh > 0:
+                    alp_pos_cur = 0.0
                     b_cfg = (c_store.get('broker') or {}) if is_client else (portfolio_store.data.get('broker') or {})
                     if b_cfg.get('api_key') and b_cfg.get('secret_key'):
                         live_acc = get_live_alpaca_account(str(b_cfg['api_key']).strip(), str(b_cfg['secret_key']).strip(), b_cfg.get('mode', 'paper'))
                         if live_acc and isinstance(live_acc.get('positions'), list):
                             alp_pos_cur = next((float(p.get('current_price') or 0) for p in live_acc['positions'] if (p.get('symbol') or '').upper() == t), 0.0)
-                            if alp_pos_cur > 0:
-                                cur = alp_pos_cur
+                    df_1m_hold = fetch_yf_data(t, "1d", "1m")
+                    yf_1m_cur = float(df_1m_hold['Close'].iloc[-1]) if (df_1m_hold is not None and not df_1m_hold.empty) else 0.0
+                    if alp_pos_cur > 0 and yf_1m_cur > 0:
+                        # Blend/clamp raw Alpaca last-print within 0.25% of 1m candle close to filter sub-second spread flickers
+                        if abs(alp_pos_cur - yf_1m_cur) / yf_1m_cur <= 0.0025:
+                            cur = alp_pos_cur
+                        else:
+                            cur = yf_1m_cur
+                    elif alp_pos_cur > 0:
+                        cur = alp_pos_cur
+                    elif yf_1m_cur > 0:
+                        cur = yf_1m_cur
+                        t_buys_chk = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
+                        b_ts_chk = int(t_buys_chk[0].get('timestamp') or 0) if t_buys_chk else 0
+                        last_bar_ts = int(df_1m_hold.index[-1].timestamp())
+                        if b_ts_chk > 0 and (last_bar_ts + 60) < b_ts_chk:
+                            stale_pre_buy_quote = True
                 cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
                 vo = sh * cps
 
@@ -2096,7 +2146,7 @@ def process_auto_profile(prof_name, client_email=None):
                         hw_src = df_1m_hw if (df_1m_hw is not None and not df_1m_hw.empty) else df
                         if not hw_src.empty and 'High' in hw_src.columns:
                             try:
-                                post_buy_df = hw_src[hw_src.index.astype('int64') // 10**9 >= buy_ts]
+                                post_buy_df = hw_src[hw_src.index.astype('int64') // 10**9 >= (buy_ts + 60)]
                                 candle_high = float(post_buy_df['High'].max()) if not post_buy_df.empty else cur
                             except Exception:
                                 candle_high = cur
@@ -2137,7 +2187,7 @@ def process_auto_profile(prof_name, client_email=None):
                 if sh > 0:
                     held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
 
-                if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE:
+                if st['action_main'] == 'SELL' and sh > 0 and vo >= MIN_BUY_VALUE and not stale_pre_buy_quote:
                     if is_open or 'test a' in active_profile:
                         dirs.append({'ticker': t, 'action': 'SELL', 'shares': sh, 'price': cur, 'amount': round(vo, 2), 'status': st.get('status', ''), 'reason': st.get('reason', ''), 'highest_price': highest_p})
                 elif st['action_main'] == 'BUY':
@@ -2303,7 +2353,10 @@ def global_background_worker():
         except Exception as e: 
             print(f"Background Loop Error: {e}")
         gc.collect()
-        time.sleep(20) # 20-second high-speed cycle
+        now_uk_w = pd.Timestamp.now(tz='Europe/London')
+        w_mins = now_uk_w.hour * 60 + now_uk_w.minute
+        is_us_open_w = (now_uk_w.weekday() < 5) and ((14 * 60 + 30) <= w_mins < (21 * 60))
+        time.sleep(8 if is_us_open_w else 20) # 8-second fast execution cycle during US market hours
 
 def match_bot_from_order_id(client_order_id, profiles):
     """Matches Alpaca client_order_id back to the specific bot profile or custom version."""
@@ -2712,26 +2765,47 @@ def reconcile_single_target(target):
                 active_tickers = list(set([tr.get('ticker') for tr in h_list if chk_shares(tr.get('ticker')) > 0]))
                 for tk in active_tickers:
                     recent_buy_tr = next((tr for tr in h_list if tr.get('ticker') == tk and tr.get('action') == 'BUY'), None)
-                    if recent_buy_tr and (int(time.time()) - int(recent_buy_tr.get('timestamp') or 0)) < 75:
+                    buy_t_stamp = int(recent_buy_tr.get('timestamp') or 0) if recent_buy_tr else 0
+                    if recent_buy_tr and (int(time.time()) - buy_t_stamp) < 90:
                         continue
                     if alpaca_holdings.get(tk, 0) == 0:
-                        local_sh = chk_shares(tk)
-                        if local_sh > 0:
-                            df_p = fetch_yf_data(tk, "1d", "1m")
-                            cur_p = df_p['Close'].iloc[-1] if not df_p.empty else 1.0
-                            portfolio_store.execute_trade(
-                                ticker=tk,
-                                action_type='SELL',
-                                shares=local_sh,
-                                price=cur_p,
-                                username=prof,
-                                metadata={
-                                    'status': 'Alpaca Reconciled Flat',
-                                    'reason': 'Alpaca confirmed 0 shares',
-                                    'source': 'alpaca_sync'
-                                },
-                                client_email=c_email
-                            )
+                        # Only close locally if Alpaca actually executed a filled SELL order for this symbol after our BUY
+                        alp_sell_fill = None
+                        for o in (closed_orders or []):
+                            if o.get('status') == 'filled' and (o.get('symbol') or '').upper() == tk and (o.get('side') or '').lower() == 'sell':
+                                o_ts = 0
+                                try:
+                                    if o.get('filled_at'):
+                                        o_ts = int(pd.Timestamp(o['filled_at']).timestamp())
+                                    elif o.get('created_at'):
+                                        o_ts = int(pd.Timestamp(o['created_at']).timestamp())
+                                except Exception:
+                                    o_ts = 0
+                                if buy_t_stamp == 0 or o_ts >= (buy_t_stamp - 15):
+                                    alp_sell_fill = o
+                                    break
+                        if alp_sell_fill is not None:
+                            local_sh = chk_shares(tk)
+                            if local_sh > 0:
+                                fill_px = float(alp_sell_fill.get('filled_avg_price') or 0.0)
+                                if fill_px <= 0:
+                                    df_p = fetch_yf_data(tk, "1d", "1m")
+                                    fill_px = float(df_p['Close'].iloc[-1]) if not df_p.empty else 1.0
+                                portfolio_store.execute_trade(
+                                    ticker=tk,
+                                    action_type='SELL',
+                                    shares=local_sh,
+                                    price=round(fill_px, 2),
+                                    username=prof,
+                                    metadata={
+                                        'status': 'Alpaca Reconciled Flat',
+                                        'reason': 'Synced Alpaca exchange stop/exit fill',
+                                        'alpaca_order_id': alp_sell_fill.get('id'),
+                                        'price_reconciled': True,
+                                        'source': 'alpaca_sync'
+                                    },
+                                    client_email=c_email
+                                )
 
         for p in live_pos:
             tk = p['symbol'].upper()
@@ -4447,7 +4521,7 @@ def get_data():
                 df_check = df_1m_chk if (df_1m_chk is not None and not df_1m_chk.empty) else (pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m"))
                 if df_check is not None and not df_check.empty and 'High' in df_check.columns:
                     try:
-                        post_buy_df = df_check[df_check.index.astype('int64') // 10**9 >= buy_ts]
+                        post_buy_df = df_check[df_check.index.astype('int64') // 10**9 >= (buy_ts + 60)]
                         candle_high = float(post_buy_df['High'].max()) if not post_buy_df.empty else last_p
                     except Exception: candle_high = last_p
                 else: candle_high = last_p
