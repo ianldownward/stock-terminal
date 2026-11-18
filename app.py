@@ -1667,7 +1667,10 @@ class MarketScoringEngine:
         swing_low_6 = float(df_5m['Low'].tail(6).min()) if 'Low' in df_5m.columns and len(df_5m) >= 6 else current_price
         bounce_from_low_pct = ((current_price - swing_low_6) / swing_low_6 * 100.0) if swing_low_6 > 0 else 0.0
 
-        prior_high_12 = float(df_5m['High'].iloc[-13:-1].max()) if 'High' in df_5m.columns and len(df_5m) >= 13 else 0.0
+        if 'High' in df_5m.columns and 'today_s5' in locals() and len(today_s5) >= 2:
+            prior_high_12 = float(today_s5['High'].iloc[:-1].tail(12).max())
+        else:
+            prior_high_12 = float(df_5m['High'].iloc[-13:-1].max()) if 'High' in df_5m.columns and len(df_5m) >= 13 else 0.0
         session_high = float(today_s5['High'].iloc[:-1].max()) if ('High' in df_5m.columns and 'today_s5' in locals() and len(today_s5) >= 2) else prior_high_12
         below_session_high_pct = ((session_high - current_price) / session_high * 100.0) if session_high > 0 else 0.0
         breaks_1h_shelf = (prior_high_12 > 0 and current_price > prior_high_12)
