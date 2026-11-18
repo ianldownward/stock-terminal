@@ -2179,7 +2179,8 @@ def process_auto_profile(prof_name, client_email=None):
                 if df is None or df.empty: continue
                 df.name = t
                 cur = float(df['Close'].iloc[-1])
-                if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50:
+                is_pulse_1m = any(x in active_profile for x in ['1m reversal', 'pulse 1m'])
+                if is_pulse_1m or (now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
                     df_1m_open = fetch_yf_data(t, "1d", "1m")
                     if df_1m_open is not None and not df_1m_open.empty:
                         cur = float(df_1m_open['Close'].iloc[-1])
@@ -2309,13 +2310,14 @@ def process_auto_profile(prof_name, client_email=None):
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
-        # DEFENSIVE CHOP SHIELDS & COOLDOWNS FOR ACTIVE FLEET
+        # DEFENSIVE CHOP SHIELDS & COOLDOWNS FOR ACTIVE FLEET (Exempt Pulse 1M Reversal so it repeats freely until 20:50 sweep)
+        is_pulse_1m_prof = any(x in active_profile for x in ['1m reversal', 'pulse 1m'])
         cur_mins = now_uk.hour * 60 + now_uk.minute
-        if cur_mins >= (19 * 60 + 45):
+        if not is_pulse_1m_prof and cur_mins >= (19 * 60 + 45):
             is_curfew_active = True
 
-        # Three-Strike Loss Lockout
-        if today_stops_cnt >= 3:
+        # Three-Strike Loss Lockout (5m profiles only)
+        if not is_pulse_1m_prof and today_stops_cnt >= 3:
             is_curfew_active = True
 
         # Post-Sell Cooldown: 60s (1 candle) for Pulse 1M Reversal so it repeats cleanly; 15 mins (900s) for 5m profiles
@@ -4143,8 +4145,8 @@ def get_directives():
         
         dfs = {}
         def fetch_t(tick): 
-            interval = "1m" if any(x in active_profile for x in ['test p', 'test t']) else "5m"
-            period = "1d" if any(x in active_profile for x in ['test p', 'test t']) else "5d"
+            interval = "1m" if any(x in active_profile for x in ['1m reversal', 'pulse 1m', 'test p', 'test t']) else "5m"
+            period = "1d" if any(x in active_profile for x in ['1m reversal', 'pulse 1m', 'test p', 'test t']) else "5d"
             return tick, fetch_yf_data(tick, period if is_momentum else "1y", interval if is_momentum else "1d")
             
         with ThreadPoolExecutor(max_workers=4) as ex:
