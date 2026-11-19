@@ -2048,7 +2048,7 @@
                             <div style="font-size:10px; font-weight:700; color:#38bdf8; margin-top:2px;">1m Exhaustion Reversal Scalper</div>
                             
                             <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
-                                Scans TQQQ, SOXL & SQQQ on 1-minute candles: enters on Red → Smaller Red → Green (Go) and exits immediately on the first Red 1m candle (Stop).
+                                Scans TQQQ, SOXL & SQQQ on 1-minute candles: enters on Red → Smaller Red → Green (Go) with Fast-Bail exit protection (-0.45% stop, -0.25% live red bail, +0.40% BE lock).
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
@@ -3516,14 +3516,16 @@
                     let pnlP = entryP > 0 ? ((curPrice - entryP) / entryP * 100.0) : 0.0;
                     let barIsGreen = liveChg >= 0;
                     let barCol = barIsGreen ? '#0ecb81' : '#ff5364';
+                    let fastStopP = entryP * 0.9955;
+                    let beLockP = entryP * 1.0040;
                     trailHtml = `
                         <div style="display:flex; flex-direction:column; gap:3px; padding:5px 0; border-bottom:1px solid #1a1e28;">
                             <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:800;">
-                                <span style="color:#8a8a9e;">2. 1M RED CANDLE EXIT</span>
+                                <span style="color:#8a8a9e;">2. 1M FAST-BAIL EXIT</span>
                                 <span style="color:${barCol};">${barIsGreen ? 'LIVE BAR GREEN' : 'LIVE BAR RED'} (${liveChg >= 0 ? '+' : ''}$${liveChg.toFixed(2)})</span>
                             </div>
                             <div style="background:#14171f; border:1px solid ${barCol}; border-radius:4px; padding:3px 6px; text-align:center; font-size:8.5px; font-weight:800; color:${barCol};">
-                                Entry $${entryP.toFixed(2)} • ${pnlP >= 0 ? '+' : ''}${pnlP.toFixed(2)}% • Exits on 1st Closed Red Bar
+                                Entry $${entryP.toFixed(2)} (${pnlP >= 0 ? '+' : ''}${pnlP.toFixed(2)}%) • Stop $${fastStopP.toFixed(2)} • BE $${beLockP.toFixed(2)}
                             </div>
                         </div>
                     `;
@@ -3725,7 +3727,7 @@
             'Vector Hybrid': 'Production Desk #1: Flagship 3x leveraged ETF momentum engine. Shifts from opening elasticity to trend momentum. Harvests daily gains at +2.20% and moves 100% to cash.',
             'Apex Precision': 'Production Desk #2: Bi-Directional Institutional Breakout Engine (TQQQ/SOXL/SQQQ). Filters entries with volume surge and 9-EMA anti-chase gates, locking tiered profit floors and Bank-and-Walk at 18:30 BST.',
             'Velocity Pulse': 'Production Desk #3: High-speed index scalper. Enters short-duration momentum bursts with a rapid +1.20% take-profit harvest target.',
-            'Pulse 1M Reversal': 'Production Desk #4: Pure 1-minute exhaustion reversal scalper across TQQQ, SOXL & SQQQ. Enters on Red -> Smaller Red -> Green (Go) and exits immediately on the first Red 1m candle (Stop).',
+            'Pulse 1M Reversal': 'Production Desk #4: 1-minute exhaustion reversal scalper across TQQQ, SOXL & SQQQ. Enters on Red -> Smaller Red -> Green (Go) with Fast-Bail exit protection (-0.45% stop, -0.25% live red bail, +0.40% BE lock, +0.75% peak choke).',
             'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
 
@@ -6852,33 +6854,40 @@
 
             let color = '#0ecb81';
 
+            let activeProfGuard = (document.getElementById('userSelect')?.value || '').toLowerCase();
+            let isP1MGuard = activeProfGuard.includes('1m reversal') || activeProfGuard.includes('pulse 1m');
+
             if (guardType === 'cooldown') {
                 let cdVal = document.getElementById('dialCd15-val')?.innerText || 'READY';
                 let isCooling = (cdVal !== 'READY');
                 color = isCooling ? '#ff9900' : '#0ecb81';
-                titleEl.innerHTML = clockIcon + ' 15-Min Post-Sell Cooldown';
+                titleEl.innerHTML = clockIcon + (isP1MGuard ? ' 60-Sec (1-Bar) Post-Sell Cooldown' : ' 15-Min Post-Sell Cooldown');
                 if (allocLbl) allocLbl.innerText = 'Trigger Event';
                 allocEl.innerText = 'Any Position Exit';
                 if (execLbl) execLbl.innerText = 'Cooldown Timer';
-                execEl.innerText = '15 Minutes (900s)';
-                descEl.innerText = 'Whipsaw protection shield. Immediately after any trade is closed (take-profit, trailing stop, or manual exit), the engine enforces a mandatory 15-minute cooling-off period before opening a new position. This prevents chasing choppy price reversals right after exiting.';
+                execEl.innerText = isP1MGuard ? '60 Seconds (1 Candle)' : '15 Minutes (900s)';
+                descEl.innerText = isP1MGuard
+                    ? '1-bar anti-reentry buffer. Immediately after closing a 1-minute scalp, the engine waits 60 seconds (1 completed 1m candle) so it never re-enters the exact same bar before a fresh Red -> Smaller Red -> Green setup forms.'
+                    : 'Whipsaw protection shield. Immediately after any trade is closed (take-profit, trailing stop, or manual exit), the engine enforces a mandatory 15-minute cooling-off period before opening a new position. This prevents chasing choppy price reversals right after exiting.';
                 if (targetLabel) targetLabel.innerText = 'Applies To:';
-                tgtEl.innerText = 'All Automated Strategies';
+                tgtEl.innerText = isP1MGuard ? 'Pulse 1M Reversal' : 'All 5m Automated Strategies';
                 if (assetLabel) assetLabel.innerText = 'Current Status:';
                 assetEl.innerText = isCooling ? `Cooling Down (${cdVal} remaining)` : 'Ready (No Cooldown Active)';
             } else if (guardType === 'curfew') {
                 let curfVal = document.getElementById('dialCurfew-val')?.innerText || 'CLOSED';
-                color = (curfVal === 'OPEN' || curfVal === 'GAP/ORB') ? '#0ecb81' : (curfVal === 'LOCKED' ? '#ff5364' : '#ffd400');
-                titleEl.innerHTML = shieldIcon + ' Session Window & 19:45 Curfew';
-                if (allocLbl) allocLbl.innerText = 'Gap-Fade & ORB Window';
-                allocEl.innerText = '14:33 – 14:50 UK';
-                if (execLbl) execLbl.innerText = 'Trend Hunting Window';
-                execEl.innerText = '14:50 – 19:45 UK';
-                descEl.innerText = 'Two-phase session schedule: After a 3-minute opening spike filter (14:30–14:33 UK), the Opening Gap-Fade & 15m ORB engine trades overnight gap reversals (SQQQ on small gap-ups, TQQQ/SOXL on small gap-downs) and 15-minute breakouts on big gaps until 14:50 UK, followed by standard EMA trend hunting until the 19:45 UK curfew.';
+                color = (curfVal === 'OPEN' || curfVal === 'GAP/ORB' || curfVal === 'ACTIVE') ? '#0ecb81' : (curfVal === 'LOCKED' ? '#ff5364' : '#ffd400');
+                titleEl.innerHTML = shieldIcon + (isP1MGuard ? ' Continuous 1m Session Window' : ' Session Window & 19:45 Curfew');
+                if (allocLbl) allocLbl.innerText = isP1MGuard ? '2-Bar Opening Seed' : 'Gap-Fade & ORB Window';
+                allocEl.innerText = isP1MGuard ? '14:30 – 14:32 UK' : '14:33 – 14:50 UK';
+                if (execLbl) execLbl.innerText = isP1MGuard ? 'Live 1m Hunting Window' : 'Trend Hunting Window';
+                execEl.innerText = isP1MGuard ? '14:32 – 20:50 UK' : '14:50 – 19:45 UK';
+                descEl.innerText = isP1MGuard
+                    ? 'After seeding the first two regular-session 1-minute bars (14:30 & 14:31 UK), Pulse 1M Reversal hunts Red -> Smaller Red -> Green reversals continuously until the 20:50 UK overnight cash sweep (exempt from the 19:45 curfew and 3-strike cap).'
+                    : 'Two-phase session schedule: After a 3-minute opening spike filter (14:30–14:33 UK), the Opening Gap-Fade & 15m ORB engine trades overnight gap reversals (SQQQ on small gap-ups, TQQQ/SOXL on small gap-downs) and 15-minute breakouts on big gaps until 14:50 UK, followed by standard EMA trend hunting until the 19:45 UK curfew.';
                 if (targetLabel) targetLabel.innerText = 'Overnight Cash Sweep:';
                 tgtEl.innerText = '20:50 UK (100% Cash)';
                 if (assetLabel) assetLabel.innerText = 'Current Status:';
-                assetEl.innerText = curfVal === 'GAP/ORB' ? 'Opening Gap-Fade & ORB Active' : (curfVal === 'OPEN' ? 'Trend Window Open' : (curfVal === 'LOCKED' ? '19:45 Curfew Active' : 'Market Closed / Pre-Open'));
+                assetEl.innerText = curfVal === 'ACTIVE' ? 'Live 1m Reversal Window Active' : (curfVal === 'GAP/ORB' ? 'Opening Gap-Fade & ORB Active' : (curfVal === 'OPEN' ? 'Trend Window Open' : (curfVal === 'LOCKED' ? '19:45 Curfew Active' : 'Market Closed / Pre-Open')));
             } else if (guardType === 'strikes') {
                 let st = window._buyGuardsState || { strikes_used: 0, strikes_max: 3 };
                 let used = Math.max(0, Math.min(3, parseInt(st.strikes_used) || 0));
