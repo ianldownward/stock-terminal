@@ -24,6 +24,23 @@ PAPER_STATS_ACCOUNT = "ian_paper@gmail.com"
 PERFORMANCE_START_DATE = "2026-11-16"  # Baseline reset date: all profiles treat this morning as Day 1
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'stock_terminal')
 
+def _sanitize_json_payload(obj):
+    import math
+    if obj is None or isinstance(obj, (bool, int, str)):
+        return obj
+    if isinstance(obj, float):
+        return 0.0 if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {str(k): _sanitize_json_payload(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [_sanitize_json_payload(v) for v in obj]
+    if hasattr(obj, 'item'):
+        try:
+            return _sanitize_json_payload(obj.item())
+        except Exception:
+            return str(obj)
+    return str(obj)
+
 def is_admin_session():
     u = (session.get('email') or session.get('user') or '').strip().lower()
     return (session.get('role') == 'admin') or (u in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian'])
@@ -4519,7 +4536,9 @@ def get_data():
         source_for_holds = (c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})
         for u, u_data in source_for_holds.items():
             if isinstance(u_data, dict):
-                for tr in u_data.get('history', []):
+                for tr in (u_data.get('history') or []):
+                    if not isinstance(tr, dict):
+                        continue
                     tk_sym = tr.get('ticker')
                     if tk_sym and tk_sym not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']:
                         all_user_holds.add(tk_sym)
@@ -4571,7 +4590,7 @@ def get_data():
             warm_tasks.add((pre_t, pre_p, pre_i))
             warm_tasks.add((pre_t, "1d", "1m"))
 
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        with ThreadPoolExecutor(max_workers=4) as ex:
             list(ex.map(lambda args: fetch_yf_data(args[0], args[1], args[2]), warm_tasks))
             for tick, cur_d, start_d in ex.map(fetch_lb_price, all_user_holds): 
                 if tick in alp_live_px_map and alp_live_px_map[tick] > 0:
@@ -5013,7 +5032,7 @@ def get_data():
             'server_ts': now_ts_guard
         }
 
-        return jsonify({'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
+        return jsonify(_sanitize_json_payload({'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
             'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if str(t).endswith('.L') and last_p>100 else f"${last_p:.2f}",
             'discount': st.get('discount', '--'), 'buy_score': f"{st.get('score', 0)} / 100", 'tranches': st.get('tranches', 0),
             'status': st.get('status', '--'), 'color': st.get('color', '#8a8a9e'), 'reason': st.get('reason', ''),
@@ -5025,7 +5044,7 @@ def get_data():
             'buy_guards': buy_guards,
             'macro_pulse': macro_pulse,
             'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p) if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else None
-        }})
+        }}))
     except Exception as e:
         import traceback
         traceback.print_exc()
