@@ -73,6 +73,9 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             except TypeError:
                 df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                df = df.dropna(subset=[c for c in ['Open', 'High', 'Low', 'Close'] if c in df.columns])
                 df = df.sort_index()
                 # Reject stale intraday responses (>15 mins old) or true bad-tick spikes (>4.5%; 3x ETFs routinely move 1.2-2.5% per bar)
                 if interval in ['1m', '2m', '5m', '15m']:
@@ -1483,9 +1486,11 @@ class MarketScoringEngine:
             ts_utc = tail_df.index[idx_i]
             ts_uk = ts_utc.tz_convert('Europe/London')
             bar_ts = int(ts_utc.timestamp())
+            if pd.isna(row.get('Open')) or pd.isna(row.get('Close')):
+                continue
             o_p = round(float(row['Open']), 2)
-            h_p = round(float(row['High']), 2)
-            l_p = round(float(row['Low']), 2)
+            h_p = round(float(row['High']) if pd.notna(row.get('High')) else max(o_p, float(row['Close'])), 2)
+            l_p = round(float(row['Low']) if pd.notna(row.get('Low')) else min(o_p, float(row['Close'])), 2)
             c_p = round(float(row['Close']), 2)
             if idx_i == n_rows - 1 and current_price > 0:
                 c_p = round(float(current_price), 2)
@@ -4450,9 +4455,12 @@ def get_data():
         init_pos = ud.get('initial_positions') or {}
 
         def resolve_profile_shares(profile_ud, tk):
-            i_sh = int((profile_ud.get('initial_positions', {}).get(tk) or {}).get('shares') or 0)
+            if not isinstance(profile_ud, dict) or not tk:
+                return 0
+            i_pos_map = profile_ud.get('initial_positions') or {}
+            i_sh = int((i_pos_map.get(tk) or {}).get('shares') or 0)
             n_sh = sum(int(tr.get('shares') or 0) if tr.get('action') == 'BUY' else -int(tr.get('shares') or 0) 
-                       for tr in profile_ud.get('history', []) if tr.get('ticker') == tk)
+                       for tr in (profile_ud.get('history') or []) if tr.get('ticker') == tk)
             return max(0, i_sh + n_sh)
 
         active_holds = list(set([tr.get('ticker') for tr in hist if resolve_profile_shares(ud, tr.get('ticker')) > 0]))
@@ -4822,7 +4830,8 @@ def get_data():
         df_chart.name = t
         data = [{'time': i.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(i.timestamp()), 
                  'open': round(float(r['Open']),2), 'high': round(float(r['High']),2), 'low': round(float(r['Low']),2), 'close': round(float(r['Close']),2)} 
-                for i, r in df_chart.iterrows()]
+                for i, r in df_chart.iterrows()
+                if pd.notna(r.get('Open')) and pd.notna(r.get('High')) and pd.notna(r.get('Low')) and pd.notna(r.get('Close'))]
         seen = set(); data = [x for x in data if x['time'] not in seen and not seen.add(x['time'])]
         last_p = round(data[-1]['close'], 2) if data else 0.0
 
@@ -4951,7 +4960,7 @@ def get_data():
         try:
             if is_momentum:
                 ema21_series = df['Close'].ewm(span=21, adjust=False).mean()
-                ema21_dict = {idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp()): val for idx, val in ema21_series.items()}
+                ema21_dict = {idx.strftime('%Y-%m-%d') if req_i in ['1d','5d','1wk','1mo','3mo'] else int(idx.timestamp()): float(val) for idx, val in ema21_series.items() if pd.notna(val)}
                 for d in data:
                     if d['time'] in ema21_dict: mathLine.append({'time': d['time'], 'value': round(ema21_dict[d['time']], 2)})
             else:
