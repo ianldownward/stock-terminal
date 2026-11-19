@@ -505,7 +505,7 @@ class PortfolioManager:
             'notified_signals': {},
             'settings': {
                 'period': '1d', 
-                'interval': '1m' if any(x in prof for x in ['1m reversal', 'pulse 1m', 'test s', 'test r', 'test tqm']) else '5m',
+                'interval': '1m' if any(x in prof for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'test s', 'test r', 'test tqm']) else '5m',
                 'style': 'candlestick', 
                 'refresh': '10000', 
                 'ntfy_topic': ''
@@ -1484,8 +1484,21 @@ class MarketScoringEngine:
             'health_text': 'Flat Open Wait'
         }
 
-    def get_pulse_1m_snapshot(self, ticker, hist=None, current_price=0.0):
-        """Returns last 5 completed 1m bars + live bar with pattern roles and BUY/SELL annotations for Pulse 1M Reversal."""
+    def _is_1m_family(self, prof_str):
+        p = str(prof_str or '').lower()
+        return any(x in p for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap'])
+
+    def _get_1m_variant(self, prof_str):
+        p = str(prof_str or '').lower()
+        if any(x in p for x in ['micro-shelf', 'micro shelf']):
+            return 'shelf'
+        if any(x in p for x in ['ema-9 snap', 'ema9 snap', 'ema 9 snap']):
+            return 'ema9'
+        return 'reversal'
+
+    def get_pulse_1m_snapshot(self, ticker, hist=None, current_price=0.0, profile='pulse 1m'):
+        """Returns last 5 completed 1m bars + live bar with strategy-specific pattern roles and BUY/SELL annotations."""
+        variant = self._get_1m_variant(profile)
         df_1m = fetch_yf_data(ticker, "1d", "1m")
         if df_1m is None or df_1m.empty or len(df_1m) < 6:
             df_1m = fetch_yf_data(ticker, "5d", "1m")
@@ -1575,7 +1588,58 @@ class MarketScoringEngine:
         stage_txt = 'Scanning 1m'
         stage_col = '#8a8a9e'
         step_idx = 0
-        if len(dir_bars) >= 3:
+        if variant == 'shelf':
+            if len(closed_bars) >= 5:
+                box_bars = closed_bars[-5:-1]
+                brk_bar = closed_bars[-1]
+                box_hi = max(b['high'] for b in box_bars)
+                box_lo = min(b['low'] for b in box_bars)
+                box_pct = ((box_hi - box_lo) / box_lo * 100.0) if box_lo > 0 else 9.9
+                for b_bx in box_bars:
+                    if b_bx['tag'] != 'DOJI':
+                        b_bx['tag'] = 'BOX'
+                if box_pct <= 0.35 and brk_bar['is_green'] and brk_bar['close'] > box_hi:
+                    brk_bar['tag'] = 'BRK GRN'
+                    stage_txt = '3/3 BREAK GO'
+                    stage_col = '#0ecb81'
+                    step_idx = 3
+                elif box_pct <= 0.35:
+                    stage_txt = '2/3 COILING'
+                    stage_col = '#ffd400'
+                    step_idx = 2
+                elif box_pct <= 0.55:
+                    stage_txt = '1/3 TIGHT BOX'
+                    stage_col = '#ff9900'
+                    step_idx = 1
+        elif variant == 'ema9':
+            if len(df_1m) >= 22 and len(closed_bars) >= 2:
+                e9_s = df_1m['Close'].iloc[:-1].ewm(span=9, adjust=False).mean()
+                e21_s = df_1m['Close'].iloc[:-1].ewm(span=21, adjust=False).mean()
+                e9_now = float(e9_s.iloc[-1])
+                e9_prev = float(e9_s.iloc[-2])
+                e21_now = float(e21_s.iloc[-1])
+                c_prev2 = closed_bars[-2]
+                c_prev1 = closed_bars[-1]
+                trend_up = (e9_now > e21_now) and (e9_now >= e9_prev)
+                dipped_9 = (not c_prev2['is_green']) and (c_prev2['low'] <= e9_prev * 1.0008) and (c_prev2['close'] > e21_now)
+                snapped_9 = c_prev1['is_green'] and (c_prev1['close'] > e9_now) and (c_prev1['close'] > c_prev2['high'])
+                if dipped_9 and c_prev2['tag'] != 'DOJI':
+                    c_prev2['tag'] = 'DIP RED'
+                if trend_up and dipped_9 and snapped_9:
+                    c_prev1['tag'] = 'SNAP GRN'
+                    stage_txt = '3/3 SNAP GO'
+                    stage_col = '#0ecb81'
+                    step_idx = 3
+                elif trend_up and ((not c_prev1['is_green']) and (c_prev1['low'] <= e9_now * 1.0008) and (c_prev1['close'] > e21_now)):
+                    c_prev1['tag'] = 'DIP RED'
+                    stage_txt = '2/3 9-EMA DIP'
+                    stage_col = '#ffd400'
+                    step_idx = 2
+                elif trend_up:
+                    stage_txt = '1/3 EMA TREND'
+                    stage_col = '#ff9900'
+                    step_idx = 1
+        elif len(dir_bars) >= 3:
             c1, c2, c3 = dir_bars[-3], dir_bars[-2], dir_bars[-1]
             if (not c1['is_green']) and (not c2['is_green']) and (0 < c2['body'] < c1['body']) and c3['is_green']:
                 stage_txt = '3/3 GO TRIGGER'
@@ -1614,11 +1678,8 @@ class MarketScoringEngine:
             'avg_pct': avg_pct
         }
 
-    def score_pulse_1m_reversal(self, ticker, current_price, avg_buy_price=0.0, highest_price=0.0, regime=None, overnight_sweep=True, buy_timestamp=0):
-        """1-Minute Pure Candle Reversal (Pulse 1M Reversal) across TQQQ, SOXL & SQQQ:
-        - Entry (GO): Red (-4) -> Smaller Red (-3) -> Green (-2) on completed 1-minute candles.
-        - Exit (STOP): First completed 1-minute Red candle (-2) that closes AFTER entry (or 20:50 UK overnight sweep).
-        """
+    def score_pulse_1m_reversal(self, ticker, current_price, avg_buy_price=0.0, highest_price=0.0, regime=None, overnight_sweep=True, buy_timestamp=0, variant='reversal'):
+        """1-Minute Tactical Scalp Engine across TQQQ, SOXL & SQQQ (variants: 'reversal', 'shelf', 'ema9') with 3s Fast-Bail Exit Shield."""
         if regime is None:
             regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         is_inverse = ticker in ['SQQQ', '3SUS.L']
@@ -1711,9 +1772,54 @@ class MarketScoringEngine:
         if is_us_reg_live and len(today_reg_1m) < 4:
             return {'type': '1m Reversal', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': "Building today's 1m candle history (awaiting 4 regular-session bars).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Seeding 1m', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeding 1m)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Seeding 1m'}
 
-        # Pure candle entry across all 3 tickers (TQQQ, SOXL, SQQQ): Red -> Smaller Red -> Green on completed non-doji bars
         src_1m = today_reg_1m if len(today_reg_1m) >= 4 else df_1m
         closed_src = src_1m.iloc[:-1]
+
+        # VARIANT B: MICRO-SHELF 1M (4-bar tight <=0.35% 1m box above rising 9-EMA -> green breakout bar)
+        if variant == 'shelf':
+            if len(closed_src) >= 6:
+                e9_sh = closed_src['Close'].ewm(span=9, adjust=False).mean()
+                e9_now = float(e9_sh.iloc[-1])
+                e9_prev = float(e9_sh.iloc[-2])
+                shelf_df = closed_src.iloc[-5:-1]
+                brk_bar = closed_src.iloc[-1]
+                shelf_hi = float(shelf_df['High'].max())
+                shelf_lo = float(shelf_df['Low'].min())
+                box_pct = ((shelf_hi - shelf_lo) / shelf_lo * 100.0) if shelf_lo > 0 else 9.9
+                brk_o, brk_c = float(brk_bar['Open']), float(brk_bar['Close'])
+                brk_green = (brk_c > brk_o) and (brk_c > shelf_hi) and (current_price >= shelf_hi) and (e9_now >= e9_prev * 0.9995)
+                if box_pct <= 0.35 and brk_green:
+                    brk_pct = ((brk_c - shelf_hi) / shelf_hi * 100.0) if shelf_hi > 0 else 0.0
+                    buy_score = min(98, max(76, round(80 + brk_pct * 25)))
+                    return {'type': 'Micro-Shelf 1M', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M SHELF BREAKOUT: Cleared 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}, {box_pct:.2f}% tight) on green 1m bar.', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Shelf Break', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m Shelf Break)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Shelf Break'}
+                if box_pct <= 0.35 and current_price >= shelf_lo:
+                    return {'type': 'Micro-Shelf 1M', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1m Micro-Shelf Coiling: Tight {box_pct:.2f}% 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}), awaiting breakout above ${shelf_hi:.2f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Coiling Box', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Coiling Box)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Coiling Box'}
+            return {'type': 'Micro-Shelf 1M', 'score': 12, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m candles for tight 4-bar consolidation box breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Shelf)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
+        # VARIANT C: EMA-9 SNAP 1M (1m 9>21 EMA uptrend -> 1-bar red pullback to 9-EMA -> green snap bar above 9-EMA & prior red high)
+        if variant == 'ema9':
+            if len(closed_src) >= 10:
+                e9_s = closed_src['Close'].ewm(span=9, adjust=False).mean()
+                e21_s = closed_src['Close'].ewm(span=21, adjust=False).mean()
+                e9_now, e9_prev = float(e9_s.iloc[-1]), float(e9_s.iloc[-2])
+                e21_now = float(e21_s.iloc[-1])
+                dip_bar = closed_src.iloc[-2]
+                snap_bar = closed_src.iloc[-1]
+                dip_o, dip_c, dip_l, dip_h = float(dip_bar['Open']), float(dip_bar['Close']), float(dip_bar['Low']), float(dip_bar['High'])
+                snp_o, snp_c = float(snap_bar['Open']), float(snap_bar['Close'])
+                trend_up = (e9_now > e21_now) and (e9_now >= e9_prev)
+                dipped_9 = (dip_c < dip_o) and (dip_l <= e9_prev * 1.0008) and (dip_c > e21_now)
+                snapped_9 = (snp_c > snp_o) and (snp_c > e9_now) and (snp_c > dip_h) and (current_price >= e9_now)
+                if trend_up and dipped_9 and snapped_9:
+                    snap_pct = ((snp_c - snp_o) / snp_o * 100.0) if snp_o > 0 else 0.0
+                    buy_score = min(98, max(76, round(80 + snap_pct * 22)))
+                    return {'type': 'EMA-9 Snap 1M', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M EMA-9 SNAP: Bounced off 9-EMA (${e9_now:.2f}) and cleared dip high (${dip_h:.2f}).', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m EMA-9 Snap', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m EMA-9 Snap)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m EMA-9 Snap'}
+                last_b = closed_src.iloc[-1]
+                if trend_up and float(last_b['Close']) < float(last_b['Open']) and float(last_b['Low']) <= e9_now * 1.0008 and float(last_b['Close']) > e21_now:
+                    return {'type': 'EMA-9 Snap 1M', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1m 9-EMA Pullback: Dipped to ${float(last_b["Low"]):.2f} near 9-EMA (${e9_now:.2f}), awaiting green snap bar.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '9-EMA Dip Ready', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(9-EMA Dip)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': '9-EMA Dip Ready'}
+            return {'type': 'EMA-9 Snap 1M', 'score': 12, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m 9/21-EMA uptrend for pullback bounce off 9-EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 9-EMA Dip)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
+        # VARIANT A: PULSE 1M REVERSAL (Red -> Smaller Red -> Green on completed non-doji bars)
         non_doji_src = closed_src[closed_src['Close'] != closed_src['Open']]
         if len(non_doji_src) >= 3:
             b_r1_o, b_r1_c = float(non_doji_src['Open'].iloc[-3]), float(non_doji_src['Close'].iloc[-3])
@@ -1746,8 +1852,8 @@ class MarketScoringEngine:
         if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         ticker = getattr(df_5m, 'name', '')
         prof = profile.lower()
-        if any(x in prof for x in ['1m reversal', 'pulse 1m']):
-            return self.score_pulse_1m_reversal(ticker, current_price, avg_buy_price=avg_buy_price, highest_price=highest_price, regime=regime, overnight_sweep=overnight_sweep, buy_timestamp=buy_timestamp)
+        if self._is_1m_family(prof):
+            return self.score_pulse_1m_reversal(ticker, current_price, avg_buy_price=avg_buy_price, highest_price=highest_price, regime=regime, overnight_sweep=overnight_sweep, buy_timestamp=buy_timestamp, variant=self._get_1m_variant(prof))
 
         is_inverse = ticker in ['SQQQ', '3SUS.L']
         is_3x_etf = ticker in ['TQQQ', 'SOXL', 'NVDL', 'CONL', 'MSTX', 'BITX', 'SQQQ', '3SUS.L']
@@ -2196,7 +2302,7 @@ def process_auto_profile(prof_name, client_email=None):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_auto_profile = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         if not is_auto_profile: return
 
         # TEST B: PASSIVE BUY-AND-HOLD BENCHMARK
@@ -2308,8 +2414,8 @@ def process_auto_profile(prof_name, client_email=None):
         daily_pnl_pct = (daily_pnl / sod_equity) * 100.0 if sod_equity > 0 else 0.0
         peak_daily_pnl_pct = ((peak_total_equity - sod_equity) / sod_equity) * 100.0 if sod_equity > 0 else daily_pnl_pct
 
-        # Maximum allowable daily drawdown (-5.0% for Pulse 1M Reversal; -2.5% for 5m bots)
-        is_p1m_risk = any(x in active_profile for x in ['1m reversal', 'pulse 1m'])
+        # Maximum allowable daily drawdown (-5.0% for 1m bots; -2.5% for 5m bots)
+        is_p1m_risk = engine._is_1m_family(active_profile)
         CIRCUIT_BREAKER_PCT = -5.00 if is_p1m_risk else -2.50
         circuit_breaker_tripped = (daily_pnl_pct <= CIRCUIT_BREAKER_PCT)
 
@@ -2429,7 +2535,7 @@ def process_auto_profile(prof_name, client_email=None):
                 if df is None or df.empty: continue
                 df.name = t
                 cur = float(df['Close'].iloc[-1])
-                is_pulse_1m = any(x in active_profile for x in ['1m reversal', 'pulse 1m'])
+                is_pulse_1m = engine._is_1m_family(active_profile)
                 if is_pulse_1m or (now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
                     df_1m_open = fetch_yf_data(t, "1d", "1m")
                     if df_1m_open is not None and not df_1m_open.empty:
@@ -2565,8 +2671,8 @@ def process_auto_profile(prof_name, client_email=None):
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
-        # DEFENSIVE CHOP SHIELDS & COOLDOWNS FOR ACTIVE FLEET (Exempt Pulse 1M Reversal so it repeats freely until 20:50 sweep)
-        is_pulse_1m_prof = any(x in active_profile for x in ['1m reversal', 'pulse 1m'])
+        # DEFENSIVE CHOP SHIELDS & COOLDOWNS FOR ACTIVE FLEET (Exempt 1m bots so they repeat freely until 20:50 sweep)
+        is_pulse_1m_prof = engine._is_1m_family(active_profile)
         cur_mins = now_uk.hour * 60 + now_uk.minute
         if not is_pulse_1m_prof and cur_mins >= (19 * 60 + 45):
             is_curfew_active = True
@@ -2575,8 +2681,8 @@ def process_auto_profile(prof_name, client_email=None):
         if not is_pulse_1m_prof and today_stops_cnt >= 3:
             is_curfew_active = True
 
-        # Post-Sell Cooldown: 60s (1 candle) for Pulse 1M Reversal so it repeats cleanly; 15 mins (900s) for 5m profiles
-        cd_duration = 60 if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else 900
+        # Post-Sell Cooldown: 60s (1 candle) for 1m bots; 15 mins (900s) for 5m profiles
+        cd_duration = 60 if engine._is_1m_family(active_profile) else 900
         real_hist_for_cd = [h for h in hist if h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]
         if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
             if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < cd_duration:
@@ -2666,7 +2772,7 @@ def global_background_worker():
             # Priority 1: Primary Live Admin profiles
             for prof_name in list(portfolio_store.data.get('users', {}).keys()):
                 p_lower = prof_name.lower()
-                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
+                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'tqm', 'tq', 'test s']):
                     live_admin_tasks.append((prof_name, None))
 
             # Priority 2 & 3: Live Client accounts first, background Recon (ian_paper@gmail.com) strictly last
@@ -2681,7 +2787,7 @@ def global_background_worker():
                         is_recon_acc = (str(c_email or '').strip().lower() == PAPER_STATS_ACCOUNT.lower())
                         for p_name in list(users_dict.keys()):
                             p_low = p_name.lower()
-                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
+                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'tqm', 'tq', 'test s']):
                                 if is_recon_acc:
                                     recon_tasks.append((p_name, c_email))
                                 else:
@@ -2731,7 +2837,9 @@ def match_bot_from_order_id(client_order_id, profiles):
         p_clean = p.lower().replace(' ', '_').replace('(', '').replace(')', '')
         if p_clean in coid_clean:
             return p
-    # Prefix fallbacks (check 1m reversal before generic 'pulse' so Pulse 1M Reversal never routes to Velocity Pulse)
+    # Prefix fallbacks (check 1m strategies before generic 'pulse' so Pulse 1M Reversal never routes to Velocity Pulse)
+    if 'micro_shelf' in coid_clean or 'microshelf' in coid_clean: return 'Micro-Shelf 1M'
+    if 'ema9_snap' in coid_clean or 'ema_9_snap' in coid_clean: return 'EMA-9 Snap 1M'
     if '1m_reversal' in coid_clean or 'pulse_1m' in coid_clean: return 'Pulse 1M Reversal'
     if 'vector' in coid_clean: return 'Vector Hybrid'
     if 'apex' in coid_clean: return 'Apex Precision'
@@ -2937,7 +3045,7 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
         if ud.get('last_ratchet_date') == today_str and float(ud.get('daily_peak_pct') or 0.0) > true_today_pct + 0.15:
             ud['daily_peak_pct'] = max(0.0, true_today_pct)
             changed = True
-        is_p1m_sync = any(x in str(ud.get('method') or '').lower() for x in ['1m reversal', 'pulse 1m']) or (ud.get('settings') or {}).get('interval') == '1m'
+        is_p1m_sync = any(x in str(ud.get('method') or '').lower() for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap']) or (ud.get('settings') or {}).get('interval') == '1m'
         min_unlock_pct = 4.75 if is_p1m_sync else 2.25
         if ud.get('manual_locked_day') != today_str and (ud.get('ratchet_locked') or ud.get('is_locked')):
             if true_today_pct < min_unlock_pct and ud.get('ratchet_floor_override') is None:
@@ -3533,7 +3641,7 @@ def view_admin_users_log():
                 users_dict = c_store.get('users') or {}
                 
                 prof_tds = ""
-                for target_prof in ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal']:
+                for target_prof in ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal', 'Micro-Shelf 1M', 'EMA-9 Snap 1M']:
                     matched_k = next((k for k in users_dict.keys() if target_prof.lower() in k.lower()), None)
                     if matched_k:
                         ud = users_dict[matched_k]
@@ -3634,6 +3742,10 @@ def view_admin_users_log():
                             <th style='padding:12px; border-left:1px solid #262b36;'>Apex Precision</th>
                             <th style='padding:12px; border-left:1px solid #262b36;'>Velocity Pulse</th>
                             <th style='padding:12px; border-left:1px solid #262b36;'>Pulse 1M Reversal</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>Micro-Shelf 1M</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>EMA-9 Snap 1M</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>Micro-Shelf 1M</th>
+                            <th style='padding:12px; border-left:1px solid #262b36;'>EMA-9 Snap 1M</th>
                             <th style='padding:12px; border-left:1px solid #262b36; text-align:right;'>Action</th>
                         </tr>
                     </thead>
@@ -3876,7 +3988,7 @@ def step_down_override_route():
     cur_eq_est = max(0.0, mb_cur + nh_cur - im_cur)
     cur_day_pct = ((cur_eq_est - mb_cur) / mb_cur * 100.0) if mb_cur > 0 else 0.0
 
-    is_p1m_ov = any(x in prof_name.lower() for x in ['1m reversal', 'pulse 1m'])
+    is_p1m_ov = any(x in prof_name.lower() for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap'])
     r_start_ov = 5.0 if is_p1m_ov else 2.5
     r_step_ov = 5.0 if is_p1m_ov else 0.5
     raw_floor = ud.get('locked_floor_val') if ud.get('locked_floor_val') is not None else (
@@ -4379,7 +4491,7 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
-        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         interval = "1m" if any(x in active_profile for x in ['1m reversal', 'pulse 1m', 'test p', 'test t']) else "5m"
         period = "1d" if any(x in active_profile for x in ['1m reversal', 'pulse 1m', 'test p', 'test t']) else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
@@ -4813,7 +4925,7 @@ def get_data():
                             fresh_u['daily_peak_pct'] = new_peak_val
                             portfolio_store.save_data(portfolio_store.data)
 
-            is_p1m_lb = any(x in u.lower() for x in ['1m reversal', 'pulse 1m'])
+            is_p1m_lb = any(x in u.lower() for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap'])
             r_start_lb = 5.00 if is_p1m_lb else 2.50
             r_step_lb = 5.00 if is_p1m_lb else 0.50
             peak_pct_today = max(float(u_data.get('daily_peak_pct') or 0.0), day_pct)
@@ -5111,7 +5223,7 @@ def get_data():
             h for h in hist
             if h.get('ticker') and h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
         ]
-        cd_total_guard = 60 if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else 900
+        cd_total_guard = 60 if engine._is_1m_family(active_profile) else 900
         cd_15m_rem = 0
         if real_hist_guard and real_hist_guard[0].get('action') == 'SELL':
             last_sell_ts = int(real_hist_guard[0].get('timestamp') or 0)
@@ -5149,7 +5261,7 @@ def get_data():
                 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG'),
                 'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator,
                 'buy_guards': buy_guards, 'macro_pulse': macro_pulse,
-                'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p) if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else None
+                'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p, profile=active_profile) if engine._is_1m_family(active_profile) else None
             }
         }))
     except Exception as e:
@@ -6488,7 +6600,7 @@ def get_watchlist_scanner():
                 if df.empty: continue
                 df.name = tick
                 cur = float(df['Close'].iloc[-1])
-                is_p1m_active = any(x in active_profile.lower() for x in ['1m reversal', 'pulse 1m'])
+                is_p1m_active = engine._is_1m_family(active_profile)
                 if is_p1m_active or is_open_win_scan:
                     df_1m_s = fetch_yf_data(tick, "1d", "1m")
                     if df_1m_s is not None and not df_1m_s.empty:
@@ -6509,7 +6621,7 @@ def get_watchlist_scanner():
                 trail_pct = 0.65 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
                 
-                p1m_snap = engine.get_pulse_1m_snapshot(tick, hist=hist, current_price=cur) if any(x in active_profile.lower() for x in ['1m reversal', 'pulse 1m']) else None
+                p1m_snap = engine.get_pulse_1m_snapshot(tick, hist=hist, current_price=cur, profile=active_profile) if engine._is_1m_family(active_profile) else None
                 results.append({
                     'ticker': tick,
                     'user_tag': '',
@@ -6779,7 +6891,9 @@ def get_strategy_stats():
         'Vector Hybrid': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'Apex Precision': {'win_rate': '72.0%', 'profit_factor': '3.85', 'daily_pace': '+1.42%'},
         'Velocity Pulse': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
-        'Pulse 1M Reversal': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
+        'Pulse 1M Reversal': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
+        'Micro-Shelf 1M': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
+        'EMA-9 Snap 1M': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
     }
     if not portfolio_store.client:
         return jsonify({'stats': default_stats, 'connected': False, 'account': PAPER_STATS_ACCOUNT, **default_stats})
@@ -6811,6 +6925,8 @@ def get_strategy_stats():
     stats_out = {}
     strategy_aliases = {
         'Pulse 1M Reversal': ['1m reversal', 'pulse 1m'],
+        'Micro-Shelf 1M': ['micro-shelf', 'micro shelf'],
+        'EMA-9 Snap 1M': ['ema-9 snap', 'ema9 snap', 'ema 9 snap'],
         'Vector Hybrid': ['vector'],
         'Apex Precision': ['apex'],
         'Velocity Pulse': ['velocity', 'pulse']

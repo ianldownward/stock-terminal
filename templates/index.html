@@ -2059,6 +2059,50 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Strategy 5: Micro-Shelf 1M -->
+                    <div id="cardStratMicroShelf" onclick="selectWizardStrategy('Micro-Shelf 1M')" style="background:#13161c; border:2px solid #262b36; border-radius:8px; padding:14px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:15px; font-weight:800; color:#fff;" id="titleStratMicroShelf">Micro-Shelf 1M</span>
+                                <input type="radio" name="wizardStratChoice" value="Micro-Shelf 1M" style="accent-color:#ffd400; cursor:pointer;">
+                            </div>
+                            <div style="font-size:10px; font-weight:700; color:#38bdf8; margin-top:2px;">1m Tight Box Breakout Scalper</div>
+                            
+                            <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
+                                Detects a tight 4-bar sideways consolidation box (≤0.35%) above a rising 1m 9-EMA and fires on the green breakout bar with Fast-Bail exit protection.
+                            </div>
+                            
+                            <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
+                                <div>• Profit Factor: <b id="wiz-pf-MicroShelf" style="color:#0ecb81; font-size:12px;">--</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-MicroShelf" style="color:#fff;">--</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-MicroShelf" style="color:#0ecb81;">--</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Strategy 6: EMA-9 Snap 1M -->
+                    <div id="cardStratEma9Snap" onclick="selectWizardStrategy('EMA-9 Snap 1M')" style="background:#13161c; border:2px solid #262b36; border-radius:8px; padding:14px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:15px; font-weight:800; color:#fff;" id="titleStratEma9Snap">EMA-9 Snap 1M</span>
+                                <input type="radio" name="wizardStratChoice" value="EMA-9 Snap 1M" style="accent-color:#ffd400; cursor:pointer;">
+                            </div>
+                            <div style="font-size:10px; font-weight:700; color:#38bdf8; margin-top:2px;">1m Trend Pullback Snap Scalper</div>
+                            
+                            <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
+                                Rides established 1m 9/21-EMA uptrends: buys when a red pullback dips to the 9-EMA and immediately snaps green back above the 9-EMA & dip high.
+                            </div>
+                            
+                            <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
+                                <div>• Profit Factor: <b id="wiz-pf-Ema9Snap" style="color:#0ecb81; font-size:12px;">--</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-Ema9Snap" style="color:#fff;">--</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-Ema9Snap" style="color:#0ecb81;">--</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
@@ -3270,10 +3314,30 @@
     </div> <!-- END app-body-container -->
 
     <script>
+        function is1mFamilyProfile(name) {
+            let p = String(name || '').toLowerCase();
+            return p.includes('1m reversal') || p.includes('pulse 1m') || p.includes('micro-shelf') || p.includes('micro shelf') || p.includes('ema-9 snap') || p.includes('ema9 snap') || p.includes('ema 9 snap');
+        }
+        function get1mVariant(name) {
+            let p = String(name || '').toLowerCase();
+            if (p.includes('micro-shelf') || p.includes('micro shelf')) return 'shelf';
+            if (p.includes('ema-9 snap') || p.includes('ema9 snap') || p.includes('ema 9 snap')) return 'ema9';
+            return 'reversal';
+        }
+        function getStrategyStatsKey(name) {
+            let p = String(name || '').toLowerCase();
+            if (p.includes('micro-shelf') || p.includes('micro shelf')) return 'Micro-Shelf 1M';
+            if (p.includes('ema-9 snap') || p.includes('ema9 snap') || p.includes('ema 9 snap')) return 'EMA-9 Snap 1M';
+            if (p.includes('1m reversal') || p.includes('pulse 1m')) return 'Pulse 1M Reversal';
+            if (p.includes('apex')) return 'Apex Precision';
+            if (p.includes('velocity') || p.includes('pulse')) return 'Velocity Pulse';
+            return 'Vector Hybrid';
+        }
+
         function updateProfitRatchetHUD(dayPct, isProfileLocked = false, activeFloor = 0) {
             let pct = parseFloat(dayPct) || 0.0;
             let activeProfLow = (document.getElementById('userSelect')?.value || '').toLowerCase();
-            let isPulse1M = activeProfLow.includes('1m reversal') || activeProfLow.includes('pulse 1m');
+            let isPulse1M = is1mFamilyProfile(activeProfLow);
             let rStart = isPulse1M ? 5.0 : 2.5;
             let rStep = isPulse1M ? 5.0 : 0.5;
             let warnOffset = isPulse1M ? 0.5 : 0.1;
@@ -3407,7 +3471,7 @@
             let curMins = hour * 60 + minute;
             
             let activeProfTl = (document.getElementById('userSelect')?.value || '').toLowerCase();
-            let isP1MTl = activeProfTl.includes('1m reversal') || activeProfTl.includes('pulse 1m');
+            let isP1MTl = is1mFamilyProfile(activeProfTl);
             let timeline = isP1MTl ? [
                 { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Pre-Market Warmup", nextTarget: 14*3600 + 30*60, nextLabel: "14:30 OPEN IN" },
                 { start: 14*60 + 30, end: 14*60 + 32, label: "14:30 – 14:32 • 2-Bar Pattern Seeding", nextTarget: 14*3600 + 32*60, nextLabel: "1M HUNT IN" },
@@ -3476,8 +3540,8 @@
                 return;
             }
 
-            // 1. Calculate Daily Loss Shield (Circuit Breaker: -5.0% for Pulse 1M Reversal; -2.5% for 5m bots)
-            let isPulse1MShield = profName.includes('1m reversal') || profName.includes('pulse 1m');
+            // 1. Calculate Daily Loss Shield (Circuit Breaker: -5.0% for 1m bots; -2.5% for 5m bots)
+            let isPulse1MShield = is1mFamilyProfile(profName);
             let cbRatio = isPulse1MShield ? 0.05 : 0.025;
             let cbHaltText = isPulse1MShield ? '-5.0% Halt' : '-2.5% Halt';
             let activeLb = (latestLeaderboardData || []).find(l => l.user && l.user.toLowerCase().includes(profName)) || {};
@@ -3691,7 +3755,7 @@
             if (wrEl && pfEl && rrEl) {
                 if (!window._reconStrategyStats) refreshReconStrategyStats();
                 let rStats = window._reconStrategyStats || {};
-                let stratKey = (profName.includes('1m reversal') || profName.includes('pulse 1m')) ? 'Pulse 1M Reversal' : (profName.includes('apex') ? 'Apex Precision' : ((profName.includes('velocity') || profName.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid'));
+                let stratKey = getStrategyStatsKey(profName);
                 let liveS = rStats[stratKey];
                 wrEl.innerText = liveS ? liveS.win_rate : '--';
                 pfEl.innerText = liveS ? liveS.profit_factor : '--';
@@ -3728,6 +3792,8 @@
             'Apex Precision': 'Production Desk #2: Bi-Directional Institutional Breakout Engine (TQQQ/SOXL/SQQQ). Filters entries with volume surge and 9-EMA anti-chase gates, locking tiered profit floors and Bank-and-Walk at 18:30 BST.',
             'Velocity Pulse': 'Production Desk #3: High-speed index scalper. Enters short-duration momentum bursts with a rapid +1.20% take-profit harvest target.',
             'Pulse 1M Reversal': 'Production Desk #4: 1-minute exhaustion reversal scalper across TQQQ, SOXL & SQQQ. Enters on Red -> Smaller Red -> Green (Go) with Fast-Bail exit protection (-0.45% stop, -0.25% live red bail, +0.40% BE lock, +0.75% peak choke).',
+            'Micro-Shelf 1M': 'Production Desk #5: 1-minute tight consolidation breakout scalper across TQQQ, SOXL & SQQQ. Enters on green breakout above a 4-bar <=0.35% box with Fast-Bail exit protection.',
+            'EMA-9 Snap 1M': 'Production Desk #6: 1-minute trend pullback scalper across TQQQ, SOXL & SQQQ. Enters when a 9/21-EMA uptrend dips to the 9-EMA and snaps green back above the 9-EMA & dip high.',
             'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
 
@@ -3829,7 +3895,7 @@
         // Smart Step-Down Override: Steps the floor down (5.0% for Pulse 1M Reversal; 0.5% for 5m bots) and reactivates trading
         async function stepDownUnlockProfile(userKey, currentFloor, e) {
             if (e) e.stopPropagation();
-            let isP1M = (userKey || '').toLowerCase().includes('1m reversal') || (userKey || '').toLowerCase().includes('pulse 1m');
+            let isP1M = is1mFamilyProfile(userKey);
             let stepSize = isP1M ? 5.0 : 0.5;
             let nextFloor = Math.max(0.0, currentFloor - stepSize);
             let msg = `Step-Down Override for ${userKey}:\n\nStep the safety floor down to +${nextFloor.toFixed(1)}% and resume automated trading?\n\nIf the account pulls back to +${nextFloor.toFixed(1)}%, it will liquidate and lock at +${nextFloor.toFixed(1)}%.`;
@@ -4660,8 +4726,8 @@
                         badge.innerText = `● Recon Account Offline (${data.account || 'ian_paper@gmail.com'})`;
                     }
                 }
-                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal'].forEach(strat => {
-                    let sId = strat === 'Pulse 1M Reversal' ? 'Pulse1M' : (strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0]);
+                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal', 'Micro-Shelf 1M', 'EMA-9 Snap 1M'].forEach(strat => {
+                    let sId = strat === 'Pulse 1M Reversal' ? 'Pulse1M' : (strat === 'Micro-Shelf 1M' ? 'MicroShelf' : (strat === 'EMA-9 Snap 1M' ? 'Ema9Snap' : (strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0])));
                     let wrEl = document.getElementById(`wiz-wr-${sId}`);
                     let pfEl = document.getElementById(`wiz-pf-${sId}`);
                     let dpEl = document.getElementById(`wiz-dp-${sId}`);
@@ -4689,10 +4755,10 @@
 
         function selectWizardStrategy(method) {
             selectedWizardMethod = method;
-            ['Vector', 'Apex', 'Pulse', 'Pulse1M'].forEach(k => {
+            ['Vector', 'Apex', 'Pulse', 'Pulse1M', 'MicroShelf', 'Ema9Snap'].forEach(k => {
                 let card = document.getElementById(`cardStrat${k}`);
                 let title = document.getElementById(`titleStrat${k}`);
-                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse') || (k === 'Pulse1M' && method === 'Pulse 1M Reversal');
+                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse') || (k === 'Pulse1M' && method === 'Pulse 1M Reversal') || (k === 'MicroShelf' && method === 'Micro-Shelf 1M') || (k === 'Ema9Snap' && method === 'EMA-9 Snap 1M');
                 if (card) card.style.borderColor = isMatch ? '#ffd400' : '#262b36';
                 if (title) title.style.color = isMatch ? '#ffd400' : '#ffffff';
             });
@@ -4991,7 +5057,7 @@
 
         function applyDefaultIntervalForProfile(username) {
             let low = (username || '').toLowerCase();
-            let isP1M = low.includes('1m reversal') || low.includes('pulse 1m');
+            let isP1M = is1mFamilyProfile(low);
             let targetInt = isP1M ? '1m' : '5m';
 
             let pSel = document.getElementById('periodSelect');
@@ -5191,7 +5257,7 @@
                         </div>
                     `;
                 } else if (isLocked) {
-                    let isP1MLb = (lb.user || '').toLowerCase().includes('1m reversal') || (lb.user || '').toLowerCase().includes('pulse 1m');
+                    let isP1MLb = is1mFamilyProfile(lb.user);
                     let rStartLb = isP1MLb ? 5.0 : 2.5;
                     let rStepLb = isP1MLb ? 5.0 : 0.5;
                     let stepVal = (lb.active_floor && lb.active_floor > 0) ? lb.active_floor : Math.max(rStartLb, Math.floor((lb.daily_pct || rStartLb) / rStepLb) * rStepLb);
@@ -5521,8 +5587,15 @@
                     }
                     if (!window._userHasPannedChart && !window._chartEverFitted) {
                         window._chartEverFitted = true;
-                        tvChart.timeScale().applyOptions({ rightOffset: 35 });
-                        tvChart.timeScale().fitContent();
+                        let activeProfZoom = document.getElementById('userSelect')?.value || '';
+                        let curShZoom = (globalPortfolioData && globalPortfolioData.holdings && currentTicker && globalPortfolioData.holdings[currentTicker])
+                            ? (parseInt(globalPortfolioData.holdings[currentTicker].shares) || 0) : 0;
+                        if (is1mFamilyProfile(activeProfZoom) && curShZoom > 0 && cleanData.length > 35) {
+                            tvChart.timeScale().setVisibleLogicalRange({ from: cleanData.length - 35, to: cleanData.length + 6 });
+                        } else {
+                            tvChart.timeScale().applyOptions({ rightOffset: 35 });
+                            tvChart.timeScale().fitContent();
+                        }
                     }
 
                     if (tvSeries) {
@@ -5676,7 +5749,7 @@
                 let dayCol = dayVal >= 0 ? '#0ecb81' : '#ff5364';
                 let dayPct = activeLb.daily_pct || 0;
                 
-                let isP1MFetch = activeProf.toLowerCase().includes('1m reversal') || activeProf.toLowerCase().includes('pulse 1m');
+                let isP1MFetch = is1mFamilyProfile(activeProf);
                 let rStartFetch = isP1MFetch ? 5.0 : 2.5;
                 let rStepFetch = isP1MFetch ? 5.0 : 0.5;
                 let isRatchetLockedGuard = Boolean(activeLb.is_locked && !activeLb.is_manually_locked);
@@ -5927,6 +6000,7 @@
 
         function selectStock(ticker) {
             currentTicker = ticker;
+            window._manualTickerLockUntil = Date.now() + 30000;
             window._userHasPannedChart = false;
             window._chartEverFitted = false;
             fetchData(false);
@@ -5973,7 +6047,7 @@
 
                 // Order mobile right-drawer column cards
                 if (rightDrawer) {
-                    let isP1MMob = ((document.getElementById('userSelect')?.value || '').toLowerCase().includes('1m reversal') || (document.getElementById('userSelect')?.value || '').toLowerCase().includes('pulse 1m'));
+                    let isP1MMob = is1mFamilyProfile(document.getElementById('userSelect')?.value || '');
                     if (riskCard) riskCard.style.display = isP1MMob ? 'none' : '';
                     const mobileOrderIds = [
                         'pulse1mSequenceDrawer',
@@ -6462,7 +6536,7 @@
             try {
                 let activeUser = document.getElementById('userSelect')?.value || '';
                 let shortProfName = getShortProfileName(activeUser);
-                let isP1MModalWl = activeUser.toLowerCase().includes('1m reversal') || activeUser.toLowerCase().includes('pulse 1m');
+                let isP1MModalWl = is1mFamilyProfile(activeUser);
                 if (titleEl) titleEl.innerText = isP1MModalWl ? '1m Pattern Scanner' : (shortProfName ? `${shortProfName} Watchlist` : 'Watchlist');
 
                 // Request ONLY the active profile's own watchlist on mobile
@@ -6855,7 +6929,7 @@
             let color = '#0ecb81';
 
             let activeProfGuard = (document.getElementById('userSelect')?.value || '').toLowerCase();
-            let isP1MGuard = activeProfGuard.includes('1m reversal') || activeProfGuard.includes('pulse 1m');
+            let isP1MGuard = is1mFamilyProfile(activeProfGuard);
 
             if (guardType === 'cooldown') {
                 let cdVal = document.getElementById('dialCd15-val')?.innerText || 'READY';
@@ -6905,7 +6979,7 @@
                 assetEl.innerText = used >= 3 ? '0 / 3 Strikes Left (Locked for Today)' : `${left} of 3 Strikes Remaining`;
             } else if (guardType === 'ratchet') {
                 let activeProfModal = (document.getElementById('userSelect')?.value || '').toLowerCase();
-                let isP1MModal = activeProfModal.includes('1m reversal') || activeProfModal.includes('pulse 1m');
+                let isP1MModal = is1mFamilyProfile(activeProfModal);
                 let rStartTxt = isP1MModal ? '5.0%' : '2.5%';
                 let rStepTxt = isP1MModal ? '5.0%' : '0.5%';
                 let rExamples = isP1MModal ? '5%, 10%, 15%, 20%+' : '2.5%, 3.0%, 3.5%, 4.0%+';
@@ -7064,6 +7138,8 @@
             'Apex Precision': '+2.80% Tiered Bank & Walk',
             'Velocity Pulse': '+3.00% Take Profit',
             'Pulse 1M Reversal': '1m Red-Red-Green Reversal',
+            'Micro-Shelf 1M': '1m Tight Box Breakout',
+            'EMA-9 Snap 1M': '1m 9-EMA Pullback Snap',
             'Sovereign Core': 'Manual Execution'
         };
 
@@ -7237,7 +7313,7 @@
             document.getElementById('insightDailyTarget').innerText = `${dailyRunRate >= 0 ? '+' : ''}${dailyRunRate.toFixed(2)}% / Day`;
 
             let uLower = userKey.toLowerCase();
-            let stratKey = (uLower.includes('1m reversal') || uLower.includes('pulse 1m')) ? 'Pulse 1M Reversal' : (uLower.includes('apex') ? 'Apex Precision' : ((uLower.includes('velocity') || uLower.includes('pulse')) ? 'Velocity Pulse' : 'Vector Hybrid'));
+            let stratKey = getStrategyStatsKey(userKey);
             let liveStats = (window._reconStrategyStats && window._reconStrategyStats[stratKey]) ? window._reconStrategyStats[stratKey] : null;
 
             document.getElementById('insightWinRate').innerText = liveStats ? liveStats.win_rate : '--';
@@ -7511,7 +7587,7 @@
             let st = window._buyGuardsState;
             if (!st) return;
             let activeProfBg = (document.getElementById('userSelect')?.value || '').toLowerCase();
-            let isP1MBg = activeProfBg.includes('1m reversal') || activeProfBg.includes('pulse 1m');
+            let isP1MBg = is1mFamilyProfile(activeProfBg);
 
             let strikeColBg = document.getElementById('strikeGuardCol');
             let guardsRowBg = document.getElementById('buyingGuardsRow');
@@ -7926,7 +8002,21 @@
                             <input type="radio" name="guideStrat" value="Pulse 1M Reversal" ${guideState.strategy === 'Pulse 1M Reversal' ? 'checked' : ''} style="accent-color:#ffd400;">
                             <div>
                                 <span style="font-weight:800; color:${guideState.strategy === 'Pulse 1M Reversal' ? '#ffd400' : '#fff'};">Pulse 1M Reversal</span>
-                                <div style="font-size:11px; color:#8a8a9e;">Pure 1m exhaustion reversal scalper across TQQQ, SOXL & SQQQ. Enters on Red → Smaller Red → Green (Go) and exits on first Red 1m candle (Stop).</div>
+                                <div style="font-size:11px; color:#8a8a9e;">1m exhaustion reversal scalper across TQQQ, SOXL & SQQQ with Fast-Bail exit protection.</div>
+                            </div>
+                        </label>
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'Micro-Shelf 1M' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='Micro-Shelf 1M'; renderAssistStep();">
+                            <input type="radio" name="guideStrat" value="Micro-Shelf 1M" ${guideState.strategy === 'Micro-Shelf 1M' ? 'checked' : ''} style="accent-color:#ffd400;">
+                            <div>
+                                <span style="font-weight:800; color:${guideState.strategy === 'Micro-Shelf 1M' ? '#ffd400' : '#fff'};">Micro-Shelf 1M</span>
+                                <div style="font-size:11px; color:#8a8a9e;">1m tight 4-bar consolidation box breakout scalper across TQQQ, SOXL & SQQQ.</div>
+                            </div>
+                        </label>
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'EMA-9 Snap 1M' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='EMA-9 Snap 1M'; renderAssistStep();">
+                            <input type="radio" name="guideStrat" value="EMA-9 Snap 1M" ${guideState.strategy === 'EMA-9 Snap 1M' ? 'checked' : ''} style="accent-color:#ffd400;">
+                            <div>
+                                <span style="font-weight:800; color:${guideState.strategy === 'EMA-9 Snap 1M' ? '#ffd400' : '#fff'};">EMA-9 Snap 1M</span>
+                                <div style="font-size:11px; color:#8a8a9e;">1m 9-EMA trend pullback snap scalper across TQQQ, SOXL & SQQQ.</div>
                             </div>
                         </label>
                     </div>
@@ -8574,9 +8664,9 @@
 
                 let tagCol = '#8a8a9e';
                 let tagBg = 'transparent';
-                if (b.tag === 'BIG RED') { tagCol = '#ff5364'; tagBg = 'rgba(255,83,100,0.14)'; }
-                else if (b.tag === 'SML RED') { tagCol = '#ffd400'; tagBg = 'rgba(255,212,0,0.16)'; }
-                else if (b.tag === 'GO GRN') { tagCol = '#0ecb81'; tagBg = 'rgba(14,203,129,0.18)'; }
+                if (b.tag === 'BIG RED' || b.tag === 'DIP RED') { tagCol = '#ff5364'; tagBg = 'rgba(255,83,100,0.14)'; }
+                else if (b.tag === 'SML RED' || b.tag === 'BOX') { tagCol = '#ffd400'; tagBg = 'rgba(255,212,0,0.16)'; }
+                else if (b.tag === 'GO GRN' || b.tag === 'BRK GRN' || b.tag === 'SNAP GRN') { tagCol = '#0ecb81'; tagBg = 'rgba(14,203,129,0.18)'; }
                 else if (b.tag === 'STOP RED') { tagCol = '#ff5364'; tagBg = 'rgba(255,83,100,0.18)'; }
                 else if (b.tag === 'LIVE') { tagCol = '#38bdf8'; tagBg = 'rgba(56,189,248,0.14)'; }
 
@@ -8656,7 +8746,26 @@
                 });
                 
                 let activeProfScan = (document.getElementById('userSelect')?.value || '').toLowerCase();
-                let isP1MScan = activeProfScan.includes('1m reversal') || activeProfScan.includes('pulse 1m');
+                let isP1MScan = is1mFamilyProfile(activeProfScan);
+                let p1mVariantScan = get1mVariant(activeProfScan);
+                let stepLbls = p1mVariantScan === 'shelf'
+                    ? ['1. TIGHT BOX', '2. COILING', '3. BRK GO']
+                    : (p1mVariantScan === 'ema9' ? ['1. EMA TREND', '2. 9-EMA DIP', '3. SNAP GO'] : ['1. BIG RED', '2. SML RED', '3. GRN GO']);
+                let mobStepLbls = p1mVariantScan === 'shelf'
+                    ? ['BOX', 'COIL', 'BRK']
+                    : (p1mVariantScan === 'ema9' ? ['EMA', 'DIP', 'SNAP'] : ['BIG', 'SML', 'GO']);
+
+                if (isP1MScan && (!window._manualTickerLockUntil || Date.now() > window._manualTickerLockUntil)) {
+                    let heldIt = items.find(x => x.is_held);
+                    let hotIt = !heldIt ? items.find(x => !x.is_held && (parseInt((x.p1m_snap || {}).step_idx) || 0) >= 2) : null;
+                    let focusTk = heldIt ? heldIt.ticker : (hotIt ? hotIt.ticker : null);
+                    if (focusTk && focusTk !== currentTicker) {
+                        currentTicker = focusTk;
+                        window._userHasPannedChart = false;
+                        window._chartEverFitted = false;
+                        fetchData(true);
+                    }
+                }
 
                 let html = items.map(it => {
                     let isHeld = it.is_held;
@@ -8688,9 +8797,9 @@
                                 <span style="font-size:9px;">${sBadge}</span>
                             </div>
                             <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:3px; text-align:center; font-size:7.5px; font-weight:800;">
-                                <div style="background:${s1Bg}; color:${step >= 1 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">1. BIG RED</div>
-                                <div style="background:${s2Bg}; color:${step >= 2 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">2. SML RED</div>
-                                <div style="background:${s3Bg}; color:${step >= 3 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">3. GRN GO</div>
+                                <div style="background:${s1Bg}; color:${step >= 1 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">${stepLbls[0]}</div>
+                                <div style="background:${s2Bg}; color:${step >= 2 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">${stepLbls[1]}</div>
+                                <div style="background:${s3Bg}; color:${step >= 3 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">${stepLbls[2]}</div>
                             </div>
                         </div>`;
                     }
@@ -8751,9 +8860,9 @@
                                         <span style="font-size:8.5px; font-weight:900; color:${stageCol}; letter-spacing:0.2px;">${shortStage}</span>
                                     </div>
                                     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:2px; text-align:center; font-size:6.5px; font-weight:900; margin-top:2px;">
-                                        <div style="background:${s1Bg}; color:${step >= 1 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">BIG</div>
-                                        <div style="background:${s2Bg}; color:${step >= 2 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">SML</div>
-                                        <div style="background:${s3Bg}; color:${step >= 3 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">GO</div>
+                                        <div style="background:${s1Bg}; color:${step >= 1 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">${mobStepLbls[0]}</div>
+                                        <div style="background:${s2Bg}; color:${step >= 2 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">${mobStepLbls[1]}</div>
+                                        <div style="background:${s3Bg}; color:${step >= 3 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">${mobStepLbls[2]}</div>
                                     </div>
                                 </div>
                             `;
