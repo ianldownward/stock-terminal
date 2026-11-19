@@ -1452,6 +1452,128 @@ class MarketScoringEngine:
             'health_text': 'Flat Open Wait'
         }
 
+    def get_pulse_1m_snapshot(self, ticker, hist=None, current_price=0.0):
+        """Returns last 5 completed 1m bars + live bar with pattern roles and BUY/SELL annotations for Pulse 1M Reversal."""
+        df_1m = fetch_yf_data(ticker, "1d", "1m")
+        if df_1m is None or df_1m.empty or len(df_1m) < 6:
+            df_1m = fetch_yf_data(ticker, "5d", "1m")
+        if df_1m is None or df_1m.empty or len(df_1m) < 3:
+            return {'bars': [], 'pattern_stage': 'Awaiting 1m Data', 'stage_color': '#8a8a9e', 'last_bar_chg': 0.0, 'last_bar_pct': 0.0, 'live_bar_chg': 0.0, 'avg_body': 0.0, 'avg_pct': 0.0, 'step_idx': 0}
+
+        tail_df = df_1m.tail(6).copy()
+        if tail_df.index.tz is None:
+            tail_df.index = tail_df.index.tz_localize('UTC')
+        else:
+            tail_df.index = tail_df.index.tz_convert('UTC')
+
+        tk_trades = []
+        for tr in (hist or []):
+            if (tr.get('ticker') or '').upper() == ticker.upper() and tr.get('action') in ['BUY', 'SELL']:
+                tk_trades.append({
+                    'action': tr.get('action'),
+                    'price': float(tr.get('price') or 0.0),
+                    'ts': int(tr.get('timestamp') or 0),
+                    'time': tr.get('time', '')
+                })
+
+        raw_bars = []
+        n_rows = len(tail_df)
+        for idx_i in range(n_rows):
+            row = tail_df.iloc[idx_i]
+            ts_utc = tail_df.index[idx_i]
+            ts_uk = ts_utc.tz_convert('Europe/London')
+            bar_ts = int(ts_utc.timestamp())
+            o_p = round(float(row['Open']), 2)
+            h_p = round(float(row['High']), 2)
+            l_p = round(float(row['Low']), 2)
+            c_p = round(float(row['Close']), 2)
+            if idx_i == n_rows - 1 and current_price > 0:
+                c_p = round(float(current_price), 2)
+                h_p = max(h_p, c_p)
+                l_p = min(l_p, c_p)
+            is_live = (idx_i == n_rows - 1)
+            is_green = (c_p >= o_p)
+            body = round(abs(c_p - o_p), 4)
+
+            bar_annots = []
+            for tr in tk_trades:
+                if bar_ts <= tr['ts'] < (bar_ts + 60):
+                    bar_annots.append({'action': tr['action'], 'price': tr['price']})
+
+            raw_bars.append({
+                'ts': bar_ts,
+                'time_uk': ts_uk.strftime('%H:%M'),
+                'open': o_p,
+                'high': h_p,
+                'low': l_p,
+                'close': c_p,
+                'is_green': is_green,
+                'is_live': is_live,
+                'body': body,
+                'tag': 'LIVE' if is_live else ('GREEN' if is_green else 'RED'),
+                'annots': bar_annots
+            })
+
+        closed_bars = [b for b in raw_bars if not b['is_live']]
+        for j in range(len(closed_bars)):
+            b = closed_bars[j]
+            if not b['is_green']:
+                if j + 1 < len(closed_bars) and (not closed_bars[j + 1]['is_green']) and (0 < closed_bars[j + 1]['body'] < b['body']):
+                    b['tag'] = 'BIG RED'
+                elif j > 0 and (not closed_bars[j - 1]['is_green']) and (0 < b['body'] < closed_bars[j - 1]['body']):
+                    b['tag'] = 'SML RED'
+                elif j > 0 and closed_bars[j - 1]['is_green']:
+                    b['tag'] = 'STOP RED'
+                else:
+                    b['tag'] = 'RED'
+            else:
+                if j >= 2 and closed_bars[j - 1]['tag'] == 'SML RED':
+                    b['tag'] = 'GO GRN'
+                else:
+                    b['tag'] = 'GREEN'
+
+        stage_txt = 'Scanning 1m'
+        stage_col = '#8a8a9e'
+        step_idx = 0
+        if len(closed_bars) >= 3:
+            c1, c2, c3 = closed_bars[-3], closed_bars[-2], closed_bars[-1]
+            if (not c1['is_green']) and (not c2['is_green']) and (0 < c2['body'] < c1['body']) and c3['is_green']:
+                stage_txt = '3/3 GO TRIGGER'
+                stage_col = '#0ecb81'
+                step_idx = 3
+            elif (not c2['is_green']) and (not c3['is_green']) and (0 < c3['body'] < c2['body']):
+                stage_txt = '2/3 AWAITING GREEN'
+                stage_col = '#ffd400'
+                step_idx = 2
+            elif not c3['is_green']:
+                stage_txt = '1/3 BIG RED'
+                stage_col = '#ff9900'
+                step_idx = 1
+            else:
+                stage_txt = 'GREEN WAVE'
+                stage_col = '#38bdf8'
+                step_idx = 0
+
+        last_closed = closed_bars[-1] if closed_bars else raw_bars[-1]
+        live_b = raw_bars[-1]
+        last_chg = round(last_closed['close'] - last_closed['open'], 2)
+        last_pct = round((last_chg / last_closed['open'] * 100.0), 2) if last_closed['open'] > 0 else 0.0
+        live_chg = round(live_b['close'] - live_b['open'], 2)
+        avg_body = round(sum(b['body'] for b in closed_bars) / max(1, len(closed_bars)), 2)
+        avg_pct = round(sum((b['body'] / b['open'] * 100.0) if b['open'] > 0 else 0.0 for b in closed_bars) / max(1, len(closed_bars)), 2)
+
+        return {
+            'bars': raw_bars,
+            'pattern_stage': stage_txt,
+            'stage_color': stage_col,
+            'step_idx': step_idx,
+            'last_bar_chg': last_chg,
+            'last_bar_pct': last_pct,
+            'live_bar_chg': live_chg,
+            'avg_body': avg_body,
+            'avg_pct': avg_pct
+        }
+
     def score_pulse_1m_reversal(self, ticker, current_price, avg_buy_price=0.0, highest_price=0.0, regime=None, overnight_sweep=True):
         """1-Minute Pure Candle Reversal (Pulse 1M Reversal) across TQQQ, SOXL & SQQQ:
         - Entry (GO): Red (-4) -> Smaller Red (-3) -> Green (-2) on completed 1-minute candles.
@@ -4817,7 +4939,8 @@ def get_data():
             'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG'),
             'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator,
             'buy_guards': buy_guards,
-            'macro_pulse': macro_pulse
+            'macro_pulse': macro_pulse,
+            'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p) if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else None
         }})
     except Exception as e:
         import traceback
@@ -6163,6 +6286,7 @@ def get_watchlist_scanner():
                 trail_pct = 0.65 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
                 
+                p1m_snap = engine.get_pulse_1m_snapshot(tick, hist=hist, current_price=cur) if any(x in active_profile.lower() for x in ['1m reversal', 'pulse 1m']) else None
                 results.append({
                     'ticker': tick,
                     'user_tag': '',
@@ -6177,7 +6301,8 @@ def get_watchlist_scanner():
                     'reason': st.get('reason', ''),
                     'action_main': st.get('action_main', 'HOLD'),
                     'stop_price': round(stop_price, 2),
-                    'peak_price': round(high_p, 2)
+                    'peak_price': round(high_p, 2),
+                    'p1m_snap': p1m_snap
                 })
             except Exception: pass
 

@@ -3083,9 +3083,20 @@
 
     <!-- RIGHT DRAWER: TACTICAL EXECUTION ENGINE & BROKER HUD -->
     <div class="right-drawer" id="leaderboardCol" style="width: 310px; min-width: 250px; max-width: 500px; padding: 8px 10px; overflow-y: auto; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px;">
+        <!-- 0. BESPOKE PULSE 1M CANDLE SEQUENCE RADAR (ONLY VISIBLE ON PULSE 1M REVERSAL) -->
+        <details class="drawer-details" id="pulse1mSequenceDrawer" open style="display:none; margin-bottom:0; padding:7px 10px;">
+            <summary>
+                <span id="p1mSeqTitle">1m Candle Sequence</span>
+                <span id="p1mSeqBadge" style="margin-left:auto; margin-right:6px; font-size:9.5px; font-weight:800; color:#ffd400; text-transform:none;">Scanning 1m</span>
+            </summary>
+            <div id="p1mSeqCanvasBox" style="margin-top:6px;">
+                <div style="color:#787e8e; font-size:10px; text-align:center; padding:12px;">Loading 1m candle sequence...</div>
+            </div>
+        </details>
+
         <!-- 1. 3-ASSET STRATEGY READINESS -->
         <details class="drawer-details" id="watchlistDrawer" open style="margin-bottom:0; padding:7px 10px;">
-            <summary>Strategy Readiness (3x Universe)</summary>
+            <summary id="watchlistDrawerTitle">Strategy Readiness (3x Universe)</summary>
             <div style="margin-top:6px; display:flex; flex-direction:column; gap:4px;">
                 <div id="readinessUI" style="display:flex; flex-direction:column; gap:4px;">
                     <div style="color:#787e8e; font-size:10.5px; text-align:center; padding:8px;">Scanning strategy tickers...</div>
@@ -3113,20 +3124,20 @@
             </div>
         </details>
 
-        <!-- 4. MACRO RADAR & FUTURES PULSE (NQ / ES / VIX) -->
+        <!-- 4. MACRO RADAR & FUTURES PULSE (NQ / ES / VIX — OR 1M SCALP PULSE ON PULSE 1M REVERSAL) -->
         <details class="drawer-details" id="macroRadarDrawer" open style="margin-bottom:0; padding:7px 10px;">
-            <summary>Macro Radar & Futures Pulse</summary>
-            <div style="margin-top:5px; display:grid; grid-template-columns: repeat(3, 1fr); gap:5px; text-align:center;">
+            <summary id="macroRadarTitle">Macro Radar & Futures Pulse</summary>
+            <div id="macroRadarGrid" style="margin-top:5px; display:grid; grid-template-columns: repeat(3, 1fr); gap:5px; text-align:center;">
                 <div style="background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:4px 2px;">
-                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">NQ (Nasdaq)</div>
+                    <div id="macroCol1Label" style="font-size:8.5px; color:#8a8a9e; font-weight:700;">NQ (Nasdaq)</div>
                     <div id="macroNqVal" style="font-size:10.5px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.42% ▲</div>
                 </div>
                 <div style="background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:4px 2px;">
-                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">ES (S&P 500)</div>
+                    <div id="macroCol2Label" style="font-size:8.5px; color:#8a8a9e; font-weight:700;">ES (S&P 500)</div>
                     <div id="macroEsVal" style="font-size:10.5px; font-weight:800; color:#0ecb81; margin-top:2px;">+0.28% ▲</div>
                 </div>
                 <div style="background:#0f1115; border:1px solid #262b36; border-radius:5px; padding:4px 2px;">
-                    <div style="font-size:8.5px; color:#8a8a9e; font-weight:700;">VIX Index</div>
+                    <div id="macroCol3Label" style="font-size:8.5px; color:#8a8a9e; font-weight:700;">VIX Index</div>
                     <div id="macroVixVal" style="font-size:10.5px; font-weight:800; color:#ffb700; margin-top:2px;">14.85 Calm</div>
                 </div>
             </div>
@@ -3159,19 +3170,19 @@
             </summary>
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:2px;">
-                <!-- 15-Min Post-Sell Cooldown Circle -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('cooldown')" title="Click for 15-minute cooldown explanation">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">15M COOL</span>
+                <!-- Post-Sell Cooldown Circle (60s for Pulse 1M Reversal; 15m for 5m bots) -->
+                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('cooldown')" title="Click for post-sell cooldown explanation">
+                    <span id="dialCd15-title" style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">15M COOL</span>
                     <div id="dialCd15" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
                         <span id="dialCd15-val" style="position:relative; font-size:10px; font-weight:800; color:#0ecb81; font-family:monospace;">READY</span>
                     </div>
-                    <span style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px; white-space:nowrap;">Post-Sell</span>
+                    <span id="dialCd15-sub" style="font-size:8px; font-weight:700; color:#8a8a9e; margin-top:2px; white-space:nowrap;">Post-Sell</span>
                 </div>
 
-                <!-- Session & 19:45 Curfew Gate Circle -->
+                <!-- Session & Curfew Gate Circle -->
                 <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('curfew')" title="Click for Session & Curfew explanation">
-                    <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">CURFEW</span>
+                    <span id="dialCurfew-title" style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">CURFEW</span>
                     <div id="dialCurfew" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
                         <span id="dialCurfew-val" style="position:relative; font-size:9.5px; font-weight:800; color:#8a8a9e; font-family:monospace;">CLOSED</span>
@@ -3395,7 +3406,15 @@
             let curSecs = hour * 3600 + minute * 60 + second;
             let curMins = hour * 60 + minute;
             
-            let timeline = [
+            let activeProfTl = (document.getElementById('userSelect')?.value || '').toLowerCase();
+            let isP1MTl = activeProfTl.includes('1m reversal') || activeProfTl.includes('pulse 1m');
+            let timeline = isP1MTl ? [
+                { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Pre-Market Data Warmup", nextTarget: 14*3600 + 30*60, nextLabel: "14:30 OPEN IN" },
+                { start: 14*60 + 30, end: 14*60 + 33, label: "14:30 – 14:33 • 3m Opening Spike Filter", nextTarget: 14*3600 + 33*60, nextLabel: "1M HUNT IN" },
+                { start: 14*60 + 33, end: 20*60 + 50, label: "14:33 – 20:50 • Continuous 1m Hunting", nextTarget: 20*3600 + 50*60, nextLabel: "20:50 SWEEP IN" },
+                { start: 20*60 + 50, end: 21*60, label: "20:50 • Overnight Cash Sweep", nextTarget: 21*3600, nextLabel: "US CLOSE IN" },
+                { start: 21*60, end: 24*60, label: "21:00 • US Market Close", nextTarget: 24*3600 + 8*3600, nextLabel: "WARMUP IN" }
+            ] : [
                 { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Data Prep & Warmup", nextTarget: 14*3600 + 30*60, nextLabel: "14:30 GAP-FADE IN" },
                 { start: 14*60 + 30, end: 14*60 + 50, label: "14:30 – 14:50 • Opening Gap-Fade & ORB", nextTarget: 14*3600 + 50*60, nextLabel: "TREND WINDOW IN" },
                 { start: 14*60 + 50, end: 19*60 + 45, label: "14:50 – 19:45 • Trend Hunting & Harvest", nextTarget: 19*3600 + 45*60, nextLabel: "CURFEW IN" },
@@ -3471,7 +3490,7 @@
             let cushionPct = Math.max(0, Math.min(100, (cushionLeft / maxLoss) * 100));
             let shieldColor = cushionPct > 60 ? '#0ecb81' : (cushionPct > 25 ? '#ffb700' : '#ff5364');
 
-            // 2. Trailing Stop Radar with Dynamic Start/End Figures
+            // 2. Trailing Stop Radar (or 1m Red Candle Stop for Pulse 1M Reversal)
             let uData = (globalPortfolioData && globalPortfolioData.users && globalPortfolioData.users[profName]) ? globalPortfolioData.users[profName] : (globalPortfolioData || {});
             let activeHolds = activeLb.active_holds || [];
             let heldTicker = activeHolds.length > 0 ? activeHolds[0] : (activeLb.held_ticker || currentTicker || '');
@@ -3482,6 +3501,53 @@
 
             let trailHtml = '';
             let beCatchHtml = '';
+
+            if (isPulse1MShield) {
+                let p1mData = (metrics && metrics.pulse_1m_bars) ? metrics.pulse_1m_bars : null;
+                let liveChg = p1mData ? (parseFloat(p1mData.live_bar_chg) || 0) : 0;
+                if (shOwned > 0 && curPrice > 0) {
+                    let hist = uData.history || [];
+                    let tBuy = hist.find(tr => tr.ticker === heldTicker && tr.action === 'BUY');
+                    let entryP = tBuy ? (parseFloat(tBuy.price) || curPrice) : curPrice;
+                    let pnlP = entryP > 0 ? ((curPrice - entryP) / entryP * 100.0) : 0.0;
+                    let barIsGreen = liveChg >= 0;
+                    let barCol = barIsGreen ? '#0ecb81' : '#ff5364';
+                    trailHtml = `
+                        <div style="display:flex; flex-direction:column; gap:3px; padding:5px 0; border-bottom:1px solid #1a1e28;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:800;">
+                                <span style="color:#8a8a9e;">2. 1M RED CANDLE EXIT</span>
+                                <span style="color:${barCol};">${barIsGreen ? 'LIVE BAR GREEN' : 'LIVE BAR RED'} (${liveChg >= 0 ? '+' : ''}$${liveChg.toFixed(2)})</span>
+                            </div>
+                            <div style="background:#14171f; border:1px solid ${barCol}; border-radius:4px; padding:3px 6px; text-align:center; font-size:8.5px; font-weight:800; color:${barCol};">
+                                Entry $${entryP.toFixed(2)} • ${pnlP >= 0 ? '+' : ''}${pnlP.toFixed(2)}% • Exits on 1st Closed Red Bar
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    trailHtml = `
+                        <div style="display:flex; flex-direction:column; gap:2px; padding:3px 0; border-bottom:1px solid #1a1e28;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:800;">
+                                <span style="color:#8a8a9e;">2. 1M RED CANDLE EXIT</span>
+                                <span style="color:#5a5f70;">100% CASH</span>
+                            </div>
+                            <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:2px 5px; text-align:center; font-size:8px; font-weight:700; color:#5a5f70;">
+                                IDLE • Sells immediately on 1st closed Red 1m candle
+                            </div>
+                        </div>
+                    `;
+                }
+                beCatchHtml = `
+                    <div style="display:flex; flex-direction:column; gap:2px; padding-top:3px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:800;">
+                            <span style="color:#8a8a9e;">3. +5% STEP RATCHET</span>
+                            <span style="color:#0ecb81;">5% → 10% → 15%+</span>
+                        </div>
+                        <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:2px 5px; text-align:center; font-size:8px; font-weight:700; color:#5a5f70;">
+                            Arms at +5.0% daily gain • Steps every +5.0% (No 3-strike cap)
+                        </div>
+                    </div>
+                `;
+            } else {
 
             let trailParam = (profName.includes('velocity') || profName.includes('pulse') || profName.includes('test s')) ? 0.65 : 0.75;
 
@@ -3575,6 +3641,7 @@
                         </div>
                     </div>
                 `;
+            }
             }
 
             let isSweepEnabled = true;
@@ -5608,14 +5675,58 @@
                     if (textEl) textEl.innerText = `${p.metrics.regime.state || 'Room Temp'}`; 
                 }
 
-                if (p.metrics && p.metrics.macro_pulse) {
-                    let mp = p.metrics.macro_pulse;
+                let p1mDrawer = document.getElementById('pulse1mSequenceDrawer');
+                let wlTitleEl = document.getElementById('watchlistDrawerTitle');
+                let macroTitleEl = document.getElementById('macroRadarTitle');
+                let mCol1Lbl = document.getElementById('macroCol1Label');
+                let mCol2Lbl = document.getElementById('macroCol2Label');
+                let mCol3Lbl = document.getElementById('macroCol3Label');
+
+                if (isP1MFetch) {
+                    if (p1mDrawer) p1mDrawer.style.display = '';
+                    if (wlTitleEl) wlTitleEl.innerText = '1m Pattern Scanner (3x Universe)';
+                    if (macroTitleEl) macroTitleEl.innerText = `1m Scalp Pulse (${currentTicker || 'SOXL'})`;
+                    if (typeof renderPulse1MSequenceRadar === 'function') {
+                        renderPulse1MSequenceRadar(p.metrics ? p.metrics.pulse_1m_bars : null, currentTicker || 'SOXL', globalPortfolioData.history || [], shOwned > 0);
+                    }
+                    let snap1m = p.metrics ? p.metrics.pulse_1m_bars : null;
                     let nqEl = document.getElementById('macroNqVal');
                     let esEl = document.getElementById('macroEsVal');
                     let vixEl = document.getElementById('macroVixVal');
-                    if (nqEl && mp.nq) { nqEl.innerText = mp.nq.text; nqEl.style.color = mp.nq.color; }
-                    if (esEl && mp.es) { esEl.innerText = mp.es.text; esEl.style.color = mp.es.color; }
-                    if (vixEl && mp.vix) { vixEl.innerText = mp.vix.text; vixEl.style.color = mp.vix.color; }
+                    if (mCol1Lbl) mCol1Lbl.innerText = 'Last Closed 1m';
+                    if (mCol2Lbl) mCol2Lbl.innerText = 'Live 1m Bar';
+                    if (mCol3Lbl) mCol3Lbl.innerText = 'Avg 1m Move';
+                    if (snap1m && nqEl && esEl && vixEl) {
+                        let lc = parseFloat(snap1m.last_bar_chg) || 0;
+                        let lp = parseFloat(snap1m.last_bar_pct) || 0;
+                        nqEl.innerText = `${lc >= 0 ? '+' : '-'}$${Math.abs(lc).toFixed(2)} (${lp >= 0 ? '+' : ''}${lp.toFixed(2)}%)`;
+                        nqEl.style.color = lc >= 0 ? '#0ecb81' : '#ff5364';
+
+                        let lvc = parseFloat(snap1m.live_bar_chg) || 0;
+                        esEl.innerText = `${lvc >= 0 ? '+' : '-'}$${Math.abs(lvc).toFixed(2)} ${lvc >= 0 ? '▲' : '▼'}`;
+                        esEl.style.color = lvc >= 0 ? '#0ecb81' : '#ff5364';
+
+                        let ab = parseFloat(snap1m.avg_body) || 0;
+                        let ap = parseFloat(snap1m.avg_pct) || 0;
+                        vixEl.innerText = `$${ab.toFixed(2)} (${ap.toFixed(2)}%)`;
+                        vixEl.style.color = '#ffb700';
+                    }
+                } else {
+                    if (p1mDrawer) p1mDrawer.style.display = 'none';
+                    if (wlTitleEl) wlTitleEl.innerText = 'Strategy Readiness (3x Universe)';
+                    if (macroTitleEl) macroTitleEl.innerText = 'Macro Radar & Futures Pulse';
+                    if (mCol1Lbl) mCol1Lbl.innerText = 'NQ (Nasdaq)';
+                    if (mCol2Lbl) mCol2Lbl.innerText = 'ES (S&P 500)';
+                    if (mCol3Lbl) mCol3Lbl.innerText = 'VIX Index';
+                    if (p.metrics && p.metrics.macro_pulse) {
+                        let mp = p.metrics.macro_pulse;
+                        let nqEl = document.getElementById('macroNqVal');
+                        let esEl = document.getElementById('macroEsVal');
+                        let vixEl = document.getElementById('macroVixVal');
+                        if (nqEl && mp.nq) { nqEl.innerText = mp.nq.text; nqEl.style.color = mp.nq.color; }
+                        if (esEl && mp.es) { esEl.innerText = mp.es.text; esEl.style.color = mp.es.color; }
+                        if (vixEl && mp.vix) { vixEl.innerText = mp.vix.text; vixEl.style.color = mp.vix.color; }
+                    }
                 }
 
                 // UPDATE EXECUTION GEAR HUD (4-DIAL VERSION)
@@ -5788,15 +5899,18 @@
 
                 // Order mobile right-drawer column cards
                 if (rightDrawer) {
+                    let isP1MMob = ((document.getElementById('userSelect')?.value || '').toLowerCase().includes('1m reversal') || (document.getElementById('userSelect')?.value || '').toLowerCase().includes('pulse 1m'));
+                    if (riskCard) riskCard.style.display = isP1MMob ? 'none' : '';
                     const mobileOrderIds = [
+                        'pulse1mSequenceDrawer',
                         'rotatorHealthCard',
-                        'sentimentCard',
                         'watchlistDrawer',
                         'buyingGuardsHud',
                         'timelineDrawer',
                         'safeguardsDrawer',
-                        'botKpiDrawer',
                         'macroRadarDrawer',
+                        'botKpiDrawer',
+                        'sentimentCard',
                         'executionGearHud'
                     ];
                     mobileOrderIds.forEach(id => {
@@ -5811,6 +5925,7 @@
                 // Move tactical cards back to top desktop metrics grid in original order
                 if (metricsGrid) {
                     if (riskCard) {
+                        riskCard.style.display = '';
                         if (ratchetCard && ratchetCard.parentElement === metricsGrid) {
                             metricsGrid.insertBefore(riskCard, ratchetCard);
                         } else if (riskCard.parentElement !== metricsGrid) {
@@ -5824,6 +5939,7 @@
                 // Restore original desktop right-drawer panel order
                 if (rightDrawer) {
                     const desktopOrderIds = [
+                        'pulse1mSequenceDrawer',
                         'watchlistDrawer',
                         'timelineDrawer',
                         'safeguardsDrawer',
@@ -7278,6 +7394,14 @@
         function renderBuyingGuardsCircles() {
             let st = window._buyGuardsState;
             if (!st) return;
+            let activeProfBg = (document.getElementById('userSelect')?.value || '').toLowerCase();
+            let isP1MBg = activeProfBg.includes('1m reversal') || activeProfBg.includes('pulse 1m');
+
+            let cdTitleEl = document.getElementById('dialCd15-title');
+            let cdSubEl = document.getElementById('dialCd15-sub');
+            if (cdTitleEl) cdTitleEl.innerText = isP1MBg ? '60S COOL' : '15M COOL';
+            if (cdSubEl) cdSubEl.innerText = isP1MBg ? '1-Bar' : 'Post-Sell';
+
             let elapsed = Math.floor((Date.now() - st.syncedAtMs) / 1000);
             let rem15 = Math.max(0, (st.cd_15m_rem || 0) - elapsed);
 
@@ -7285,7 +7409,8 @@
             let v15 = document.getElementById('dialCd15-val');
             if (d15 && v15) {
                 if (rem15 > 0) {
-                    let pct15 = Math.max(2, Math.min(100, (rem15 / (st.cd_15m_total || 900)) * 100));
+                    let totalCd = isP1MBg ? 60 : (st.cd_15m_total || 900);
+                    let pct15 = Math.max(2, Math.min(100, (rem15 / totalCd) * 100));
                     d15.style.background = `conic-gradient(#ff9900 ${pct15}%, #262b36 0)`;
                     v15.innerText = formatCountdownMMSS(rem15);
                     v15.style.color = '#ff9900';
@@ -7327,46 +7452,82 @@
             let isHuntOpen = !isWknd && curSecs >= huntStartSecs && curSecs < curfewSecs;
             let isCurfewLock = !isWknd && curSecs >= curfewSecs && curSecs < closeSecs;
 
+            let curfTitleEl = document.getElementById('dialCurfew-title');
+            if (curfTitleEl) curfTitleEl.innerText = isP1MBg ? 'SESSION' : 'CURFEW';
+
             let dCurf = document.getElementById('dialCurfew');
             let vCurf = document.getElementById('dialCurfew-val');
             let subCurf = document.getElementById('dialCurfew-sub');
+            let sweepSecs = 20 * 3600 + 50 * 60;
             if (dCurf && vCurf) {
-                if (isSpikeCalib) {
-                    let remSpike = spikeEndSecs - curSecs;
-                    let pctSpike = Math.max(4, Math.min(100, (remSpike / 180) * 100));
-                    dCurf.style.background = `conic-gradient(#ffd400 ${pctSpike}%, #262b36 0)`;
-                    vCurf.innerText = formatCountdownMMSS(remSpike);
-                    vCurf.style.color = '#ffd400';
-                    vCurf.style.fontSize = '10px';
-                    if (subCurf) subCurf.innerText = '3m Filter';
-                } else if (isGapFadeOpen) {
-                    let remGap = huntStartSecs - curSecs;
-                    let pctGap = Math.max(4, Math.min(100, (remGap / 1020) * 100));
-                    dCurf.style.background = `conic-gradient(#0ecb81 ${pctGap}%, #262b36 0)`;
-                    vCurf.innerText = 'GAP/ORB';
-                    vCurf.style.color = '#0ecb81';
-                    vCurf.style.fontSize = '9px';
-                    if (subCurf) subCurf.innerText = 'Ends 14:50';
-                } else if (isHuntOpen) {
-                    let remHunt = curfewSecs - curSecs;
-                    let pctHunt = Math.max(4, Math.min(100, (remHunt / (curfewSecs - huntStartSecs)) * 100));
-                    dCurf.style.background = `conic-gradient(#0ecb81 ${pctHunt}%, #262b36 0)`;
-                    vCurf.innerText = 'OPEN';
-                    vCurf.style.color = '#0ecb81';
-                    vCurf.style.fontSize = '10px';
-                    if (subCurf) subCurf.innerText = 'Ends 19:45';
-                } else if (isCurfewLock) {
-                    dCurf.style.background = 'conic-gradient(#ff5364 100%, #262b36 0)';
-                    vCurf.innerText = 'LOCKED';
-                    vCurf.style.color = '#ff5364';
-                    vCurf.style.fontSize = '9px';
-                    if (subCurf) subCurf.innerText = '19:45 Cutoff';
+                if (isP1MBg) {
+                    if (isSpikeCalib) {
+                        let remSpike = spikeEndSecs - curSecs;
+                        let pctSpike = Math.max(4, Math.min(100, (remSpike / 180) * 100));
+                        dCurf.style.background = `conic-gradient(#ffd400 ${pctSpike}%, #262b36 0)`;
+                        vCurf.innerText = formatCountdownMMSS(remSpike);
+                        vCurf.style.color = '#ffd400';
+                        vCurf.style.fontSize = '10px';
+                        if (subCurf) subCurf.innerText = '3m Filter';
+                    } else if (!isWknd && curSecs >= spikeEndSecs && curSecs < sweepSecs) {
+                        let remSess = sweepSecs - curSecs;
+                        let pctSess = Math.max(4, Math.min(100, (remSess / (sweepSecs - spikeEndSecs)) * 100));
+                        dCurf.style.background = `conic-gradient(#0ecb81 ${pctSess}%, #262b36 0)`;
+                        vCurf.innerText = 'ACTIVE';
+                        vCurf.style.color = '#0ecb81';
+                        vCurf.style.fontSize = '9.5px';
+                        if (subCurf) subCurf.innerText = 'Until 20:50';
+                    } else if (!isWknd && curSecs >= sweepSecs && curSecs < closeSecs) {
+                        dCurf.style.background = 'conic-gradient(#ff9900 100%, #262b36 0)';
+                        vCurf.innerText = 'SWEEP';
+                        vCurf.style.color = '#ff9900';
+                        vCurf.style.fontSize = '9px';
+                        if (subCurf) subCurf.innerText = '100% Cash';
+                    } else {
+                        dCurf.style.background = 'conic-gradient(#262b36 0%, #262b36 100%)';
+                        vCurf.innerText = 'CLOSED';
+                        vCurf.style.color = '#8a8a9e';
+                        vCurf.style.fontSize = '9px';
+                        if (subCurf) subCurf.innerText = '14:33–20:50';
+                    }
                 } else {
-                    dCurf.style.background = 'conic-gradient(#262b36 0%, #262b36 100%)';
-                    vCurf.innerText = 'CLOSED';
-                    vCurf.style.color = '#8a8a9e';
-                    vCurf.style.fontSize = '9px';
-                    if (subCurf) subCurf.innerText = '14:30–19:45';
+                    if (isSpikeCalib) {
+                        let remSpike = spikeEndSecs - curSecs;
+                        let pctSpike = Math.max(4, Math.min(100, (remSpike / 180) * 100));
+                        dCurf.style.background = `conic-gradient(#ffd400 ${pctSpike}%, #262b36 0)`;
+                        vCurf.innerText = formatCountdownMMSS(remSpike);
+                        vCurf.style.color = '#ffd400';
+                        vCurf.style.fontSize = '10px';
+                        if (subCurf) subCurf.innerText = '3m Filter';
+                    } else if (isGapFadeOpen) {
+                        let remGap = huntStartSecs - curSecs;
+                        let pctGap = Math.max(4, Math.min(100, (remGap / 1020) * 100));
+                        dCurf.style.background = `conic-gradient(#0ecb81 ${pctGap}%, #262b36 0)`;
+                        vCurf.innerText = 'GAP/ORB';
+                        vCurf.style.color = '#0ecb81';
+                        vCurf.style.fontSize = '9px';
+                        if (subCurf) subCurf.innerText = 'Ends 14:50';
+                    } else if (isHuntOpen) {
+                        let remHunt = curfewSecs - curSecs;
+                        let pctHunt = Math.max(4, Math.min(100, (remHunt / (curfewSecs - huntStartSecs)) * 100));
+                        dCurf.style.background = `conic-gradient(#0ecb81 ${pctHunt}%, #262b36 0)`;
+                        vCurf.innerText = 'OPEN';
+                        vCurf.style.color = '#0ecb81';
+                        vCurf.style.fontSize = '10px';
+                        if (subCurf) subCurf.innerText = 'Ends 19:45';
+                    } else if (isCurfewLock) {
+                        dCurf.style.background = 'conic-gradient(#ff5364 100%, #262b36 0)';
+                        vCurf.innerText = 'LOCKED';
+                        vCurf.style.color = '#ff5364';
+                        vCurf.style.fontSize = '9px';
+                        if (subCurf) subCurf.innerText = '19:45 Cutoff';
+                    } else {
+                        dCurf.style.background = 'conic-gradient(#262b36 0%, #262b36 100%)';
+                        vCurf.innerText = 'CLOSED';
+                        vCurf.style.color = '#8a8a9e';
+                        vCurf.style.fontSize = '9px';
+                        if (subCurf) subCurf.innerText = '14:30–19:45';
+                    }
                 }
             }
 
@@ -7378,7 +7539,10 @@
             for (let idx = 1; idx <= 3; idx++) {
                 let bar = document.getElementById(`strikeBar${idx}`);
                 if (!bar) continue;
-                if (idx <= used) {
+                if (isP1MBg) {
+                    bar.style.background = '#0ecb81';
+                    bar.style.boxShadow = '0 0 6px rgba(14, 203, 129, 0.45)';
+                } else if (idx <= used) {
                     bar.style.background = usedCol;
                     bar.style.boxShadow = 'none';
                 } else {
@@ -7389,8 +7553,13 @@
 
             let sText = document.getElementById('strikeCountText');
             if (sText) {
-                sText.innerText = used >= 3 ? '0 / 3 • Locked' : `${left} / 3 Left`;
-                sText.style.color = used >= 3 ? '#ff5364' : '#ffd400';
+                if (isP1MBg) {
+                    sText.innerText = 'Exempt (∞)';
+                    sText.style.color = '#0ecb81';
+                } else {
+                    sText.innerText = used >= 3 ? '0 / 3 • Locked' : `${left} / 3 Left`;
+                    sText.style.color = used >= 3 ? '#ff5364' : '#ffd400';
+                }
             }
 
             // 4th Guard Icon: Profit Ratchet Lock (Unlocked Grey vs Locked Yellow + %)
@@ -7442,19 +7611,19 @@
                 if (isRatchetLocked) {
                     hdrStatus.innerText = `Ratchet ${rPctStr} Locked`;
                     hdrStatus.style.color = lockedYellow;
-                } else if (used >= 3) {
+                } else if (!isP1MBg && used >= 3) {
                     hdrStatus.innerText = '3-Strike Lockout';
                     hdrStatus.style.color = '#ff5364';
                 } else if (rem15 > 0) {
-                    hdrStatus.innerText = '15m Cooldown';
+                    hdrStatus.innerText = isP1MBg ? '60s Cooldown' : '15m Cooldown';
                     hdrStatus.style.color = '#ff9900';
                 } else if (isSpikeCalib) {
                     hdrStatus.innerText = '3m Spike Filter';
                     hdrStatus.style.color = '#ffd400';
-                } else if (isGapFadeOpen) {
+                } else if (!isP1MBg && isGapFadeOpen) {
                     hdrStatus.innerText = 'Gap-Fade Active';
                     hdrStatus.style.color = '#0ecb81';
-                } else if (isCurfewLock) {
+                } else if (!isP1MBg && isCurfewLock) {
                     hdrStatus.innerText = '19:45 Curfew';
                     hdrStatus.style.color = '#ff5364';
                 } else {
@@ -8226,6 +8395,122 @@
             }
         }
 
+        function renderPulse1MSequenceRadar(snap, ticker, history, isHeld) {
+            let box = document.getElementById('p1mSeqCanvasBox');
+            let titleEl = document.getElementById('p1mSeqTitle');
+            let badgeEl = document.getElementById('p1mSeqBadge');
+            if (!box) return;
+
+            if (titleEl) titleEl.innerText = `1m Candle Sequence (${ticker})`;
+            if (!snap || !Array.isArray(snap.bars) || snap.bars.length === 0) {
+                if (badgeEl) { badgeEl.innerText = 'Awaiting 1m'; badgeEl.style.color = '#8a8a9e'; }
+                box.innerHTML = '<div style="color:#8a8a9e; font-size:10px; text-align:center; padding:10px;">Awaiting 1-minute candle history...</div>';
+                return;
+            }
+
+            if (badgeEl) {
+                if (isHeld) {
+                    badgeEl.innerText = 'RIDING 1M GREEN';
+                    badgeEl.style.color = '#0ecb81';
+                } else {
+                    badgeEl.innerText = snap.pattern_stage || 'Scanning 1m';
+                    badgeEl.style.color = snap.stage_color || '#ffd400';
+                }
+            }
+
+            let bars = snap.bars;
+            let allHighs = bars.map(b => parseFloat(b.high) || parseFloat(b.close) || 0);
+            let allLows = bars.map(b => parseFloat(b.low) || parseFloat(b.close) || 0);
+            let maxP = Math.max(...allHighs);
+            let minP = Math.min(...allLows);
+            let spanP = Math.max(0.02, maxP - minP);
+            let chartH = 74;
+
+            let colsHtml = bars.map(b => {
+                let isG = Boolean(b.is_green);
+                let col = isG ? '#0ecb81' : '#ff5364';
+                let oP = parseFloat(b.open) || 0;
+                let cP = parseFloat(b.close) || 0;
+                let hP = parseFloat(b.high) || Math.max(oP, cP);
+                let lP = parseFloat(b.low) || Math.min(oP, cP);
+
+                let wickTop = Math.round(((maxP - hP) / spanP) * (chartH - 12)) + 6;
+                let wickBot = Math.round(((maxP - lP) / spanP) * (chartH - 12)) + 6;
+                let wickH = Math.max(4, wickBot - wickTop);
+
+                let bodyHi = Math.max(oP, cP);
+                let bodyLo = Math.min(oP, cP);
+                let bodyTop = Math.round(((maxP - bodyHi) / spanP) * (chartH - 12)) + 6;
+                let bodyBot = Math.round(((maxP - bodyLo) / spanP) * (chartH - 12)) + 6;
+                let bodyH = Math.max(4, bodyBot - bodyTop);
+
+                let tagCol = '#8a8a9e';
+                let tagBg = 'transparent';
+                if (b.tag === 'BIG RED') { tagCol = '#ff5364'; tagBg = 'rgba(255,83,100,0.14)'; }
+                else if (b.tag === 'SML RED') { tagCol = '#ffd400'; tagBg = 'rgba(255,212,0,0.16)'; }
+                else if (b.tag === 'GO GRN') { tagCol = '#0ecb81'; tagBg = 'rgba(14,203,129,0.18)'; }
+                else if (b.tag === 'STOP RED') { tagCol = '#ff5364'; tagBg = 'rgba(255,83,100,0.18)'; }
+                else if (b.tag === 'LIVE') { tagCol = '#38bdf8'; tagBg = 'rgba(56,189,248,0.14)'; }
+
+                let annotHtml = '';
+                if (Array.isArray(b.annots) && b.annots.length > 0) {
+                    annotHtml = b.annots.map(a => {
+                        let isB = a.action === 'BUY';
+                        let aCol = isB ? '#0ecb81' : '#ff5364';
+                        let aBg = isB ? 'rgba(14,203,129,0.22)' : 'rgba(255,83,100,0.22)';
+                        return `<div style="font-size:7px; font-weight:900; color:${aCol}; background:${aBg}; border:1px solid ${aCol}; border-radius:3px; padding:0 3px; line-height:1.2; white-space:nowrap; margin-bottom:2px;">${isB ? '▲ BUY' : '▼ SELL'}</div>`;
+                    }).join('');
+                }
+
+                let liveBorder = b.is_live ? 'border:1px dashed #38bdf8; border-radius:4px;' : '';
+                let bodyDiff = cP - oP;
+                let tipTxt = `${b.time_uk} UK • Open $${oP.toFixed(2)} -> Close $${cP.toFixed(2)} (${bodyDiff >= 0 ? '+' : ''}$${bodyDiff.toFixed(2)})`;
+
+                return `
+                    <div title="${tipTxt}" style="flex:1; display:flex; flex-direction:column; align-items:center; min-width:0; ${liveBorder} padding:2px 1px;">
+                        <div style="min-height:14px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">${annotHtml}</div>
+                        <div style="position:relative; width:100%; height:${chartH}px;">
+                            <div style="position:absolute; left:50%; transform:translateX(-50%); top:${wickTop}px; height:${wickH}px; width:1.5px; background:${col}; opacity:0.85;"></div>
+                            <div style="position:absolute; left:50%; transform:translateX(-50%); top:${bodyTop}px; height:${bodyH}px; width:14px; background:${col}; border-radius:2px; ${b.is_live ? 'opacity:0.75;' : ''}"></div>
+                        </div>
+                        <span style="font-size:7px; font-weight:800; color:${tagCol}; background:${tagBg}; padding:1px 3px; border-radius:3px; margin-top:2px; white-space:nowrap;">${b.tag}</span>
+                        <span style="font-size:7px; color:#6c7386; font-family:monospace; margin-top:1px;">${b.time_uk}</span>
+                    </div>
+                `;
+            }).join('');
+
+            let tkHist = (history || []).filter(tr => (tr.ticker || '').toUpperCase() === ticker.toUpperCase() && (tr.action === 'BUY' || tr.action === 'SELL'));
+            let lastCycleHtml = `<span style="color:#6c7386;">No ${ticker} 1m fills logged yet today</span>`;
+            if (tkHist.length > 0) {
+                let latest = tkHist[0];
+                if (latest.action === 'BUY') {
+                    lastCycleHtml = `<span style="color:#0ecb81; font-weight:800;">▲ OPEN BUY @ $${(parseFloat(latest.price) || 0).toFixed(2)}</span> <span style="color:#8a8a9e;">(${latest.time || ''})</span>`;
+                } else {
+                    let prevBuy = tkHist.slice(1).find(x => x.action === 'BUY');
+                    if (prevBuy && parseFloat(prevBuy.price) > 0) {
+                        let bp = parseFloat(prevBuy.price);
+                        let sp = parseFloat(latest.price) || 0;
+                        let ret = ((sp - bp) / bp) * 100.0;
+                        let rCol = ret >= 0 ? '#0ecb81' : '#ff5364';
+                        lastCycleHtml = `<span style="color:#8a8a9e;">Last Cycle:</span> <span style="color:#fff; font-weight:700;">$${bp.toFixed(2)} → $${sp.toFixed(2)}</span> <span style="color:${rCol}; font-weight:800;">(${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%)</span>`;
+                    } else {
+                        lastCycleHtml = `<span style="color:#ff5364; font-weight:800;">▼ LAST SELL @ $${(parseFloat(latest.price) || 0).toFixed(2)}</span> <span style="color:#8a8a9e;">(${latest.time || ''})</span>`;
+                    }
+                }
+            }
+
+            box.innerHTML = `
+                <div style="background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:6px 4px 4px 4px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:2px;">
+                        ${colsHtml}
+                    </div>
+                    <div style="margin-top:5px; padding-top:4px; border-top:1px solid #1a1e28; text-align:center; font-size:8.5px;">
+                        ${lastCycleHtml}
+                    </div>
+                </div>
+            `;
+        }
+
         async function fetchReadinessScanner() {
             try {
                 let activeUser = document.getElementById('userSelect')?.value || '';
@@ -8241,12 +8526,45 @@
                     return b.score - a.score;
                 });
                 
+                let activeProfScan = (document.getElementById('userSelect')?.value || '').toLowerCase();
+                let isP1MScan = activeProfScan.includes('1m reversal') || activeProfScan.includes('pulse 1m');
+
                 let html = items.map(it => {
                     let isHeld = it.is_held;
                     let valPct = isHeld ? it.health_pct : it.score;
                     let isCurrent = (it.ticker === currentTicker);
                     let color = '#8a8a9e';
                     let label = '';
+
+                    if (isP1MScan) {
+                        let snap = it.p1m_snap || {};
+                        let step = parseInt(snap.step_idx) || 0;
+                        let pTxt = `$${(parseFloat(it.price) || 0).toFixed(2)}`;
+                        let sBadge = isHeld
+                            ? `<span style="color:#0ecb81; font-weight:800;">RIDING 1M WAVE</span>`
+                            : `<span style="color:${snap.stage_color || '#8a8a9e'}; font-weight:800;">${snap.pattern_stage || 'Scanning 1m'}</span>`;
+                        let s1Bg = isHeld ? '#0ecb81' : (step >= 1 ? '#ff5364' : '#1e222d');
+                        let s2Bg = isHeld ? '#0ecb81' : (step >= 2 ? '#ffd400' : '#1e222d');
+                        let s3Bg = isHeld ? '#0ecb81' : (step >= 3 ? '#0ecb81' : '#1e222d');
+                        let heldTag = isHeld ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(HELD)</span>` : '';
+                        let reasonTip = String(it.reason || '').replace(/"/g, '"');
+                        return `
+                        <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:5px; padding:5px 7px; cursor:pointer;" title="${reasonTip}" onclick="selectStock('${it.ticker}')">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                <div>
+                                    <span style="font-weight:800; font-size:10.5px; color:#fff;">${it.ticker}</span>
+                                    <span style="font-size:9px; color:#8a8a9e; margin-left:4px;">${pTxt}</span>
+                                    ${heldTag}
+                                </div>
+                                <span style="font-size:9px;">${sBadge}</span>
+                            </div>
+                            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:3px; text-align:center; font-size:7.5px; font-weight:800;">
+                                <div style="background:${s1Bg}; color:${step >= 1 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">1. BIG RED</div>
+                                <div style="background:${s2Bg}; color:${step >= 2 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">2. SML RED</div>
+                                <div style="background:${s3Bg}; color:${step >= 3 || isHeld ? '#000' : '#6c7386'}; border-radius:3px; padding:1.5px 0;">3. GRN GO</div>
+                            </div>
+                        </div>`;
+                    }
                     
                     if (isHeld) {
                         color = valPct >= 70 ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#ff5364');
