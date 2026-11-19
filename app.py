@@ -93,15 +93,28 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                     df.columns = df.columns.get_level_values(0)
                 df = df.dropna(subset=[c for c in ['Open', 'High', 'Low', 'Close'] if c in df.columns])
                 df = df.sort_index()
-                # Reject stale intraday responses (>15 mins old) or true bad-tick spikes (>4.5%; 3x ETFs routinely move 1.2-2.5% per bar)
+                # Reject stale intraday responses (>240s old during US session) & never overwrite fresher cache with older Yahoo edge data
                 if interval in ['1m', '2m', '5m', '15m']:
                     last_ts = df.index[-1]
                     if last_ts.tzinfo is None:
                         last_ts = last_ts.tz_localize('UTC')
-                    if (now - last_ts.timestamp()) > 900 and cache_key in YF_CACHE:
+                    if cache_key in YF_CACHE:
                         c_time, c_df = YF_CACHE[cache_key]
-                        if not c_df.empty and (now - c_time) < 60:
-                            return c_df.copy()
+                        if not c_df.empty:
+                            c_last = c_df.index[-1]
+                            if c_last.tzinfo is None:
+                                c_last = c_last.tz_localize('UTC')
+                            if last_ts < c_last and (now - c_time) < 120:
+                                return c_df.copy()
+                    now_lon_chk = pd.Timestamp.now(tz='Europe/London')
+                    mins_lon_chk = now_lon_chk.hour * 60 + now_lon_chk.minute
+                    is_us_live_chk = (now_lon_chk.weekday() < 5) and ((14 * 60 + 30) <= mins_lon_chk < (21 * 60))
+                    if is_us_live_chk and (now - last_ts.timestamp()) > 240:
+                        if cache_key in YF_CACHE:
+                            c_time, c_df = YF_CACHE[cache_key]
+                            if not c_df.empty and (now - c_time) < 120:
+                                return c_df.copy()
+                        return pd.DataFrame()
                     if len(df) >= 2:
                         prev_c = float(df['Close'].iloc[-2])
                         last_c = float(df['Close'].iloc[-1])
@@ -2389,7 +2402,12 @@ def process_auto_profile(prof_name, client_email=None):
                 if is_pulse_1m or (now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
                     df_1m_open = fetch_yf_data(t, "1d", "1m")
                     if df_1m_open is not None and not df_1m_open.empty:
-                        cur = float(df_1m_open['Close'].iloc[-1])
+                        cand_1m = float(df_1m_open['Close'].iloc[-1])
+                        # Guard against stale 1m edge cache diverging >1.2% from the 5m bar
+                        if cur > 0 and abs(cand_1m - cur) / cur <= 0.012:
+                            cur = cand_1m
+                        elif df_1m_open.index[-1] >= df.index[-1]:
+                            cur = cand_1m
                 sh = resolve_shares(t)
                 stale_pre_buy_quote = False
                 # Prefer Alpaca's real-time position quote when holding shares; fallback to fresh 1m quote (never lagging 5m close)
@@ -2678,7 +2696,8 @@ def match_bot_from_order_id(client_order_id, profiles):
         p_clean = p.lower().replace(' ', '_').replace('(', '').replace(')', '')
         if p_clean in coid_clean:
             return p
-    # Prefix fallbacks
+    # Prefix fallbacks (check 1m reversal before generic 'pulse' so Pulse 1M Reversal never routes to Velocity Pulse)
+    if '1m_reversal' in coid_clean or 'pulse_1m' in coid_clean: return 'Pulse 1M Reversal'
     if 'vector' in coid_clean: return 'Vector Hybrid'
     if 'apex' in coid_clean: return 'Apex Precision'
     if 'velocity' in coid_clean or 'pulse' in coid_clean: return 'Velocity Pulse'
@@ -2997,16 +3016,25 @@ def reconcile_single_target(target):
                         if order_ts > 0 and h_ts > 0 and abs(order_ts - h_ts) > 1800:
                             continue
 
-                        h['price'] = round(filled_price, 2)
+                        new_px_r = round(filled_price, 2)
                         cps = filled_price / 100.0 if symbol.endswith('.L') else filled_price
-                        h['amount'] = round(h['shares'] * cps, 2)
+                        new_amt_r = round(h['shares'] * cps, 2)
+                        h['price'] = new_px_r
+                        h['amount'] = new_amt_r
                         h['price_reconciled'] = True
                         h['alpaca_order_id'] = order_id
                         reconciled_existing = True
-                        if c_email:
-                            portfolio_store.save_client_store(c_email, c_s)
-                        else:
-                            portfolio_store.save_data(portfolio_store.data)
+                        tr_id_r = h.get('id')
+                        def _mut_rec_fill(f_ud, tid=tr_id_r, px_v=new_px_r, amt_v=new_amt_r, oid=order_id):
+                            for item in (f_ud.get('history') or []):
+                                if item.get('id') == tid:
+                                    item['price'] = px_v
+                                    item['amount'] = amt_v
+                                    item['price_reconciled'] = True
+                                    item['alpaca_order_id'] = oid
+                                    return True
+                            return False
+                        update_user_state_atomic(matched_prof, c_email, _mut_rec_fill)
                         break
 
                 if side == 'sell' and not reconciled_existing:
@@ -4538,6 +4566,16 @@ def get_data():
                 div = 100.0 if str(tk).endswith('.L') and cur_p > 100 else 1.0
                 tot_own += round(sh_c * (cur_p / div), 2)
         total_equity = cash_balance + tot_own
+        enabled_live_top = [
+            u_n for u_n in ((c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})).keys()
+            if is_profile_alpaca_enabled(u_n)
+        ]
+        active_disp_name = active_name if is_client else (req_user or portfolio_store.active_username())
+        if alpaca_acc and len(enabled_live_top) == 1 and active_disp_name == enabled_live_top[0]:
+            alp_eq_top = float(alpaca_acc.get('equity') or 0.0)
+            if alp_eq_top > 0:
+                total_equity = alp_eq_top
+                cash_balance = round(total_equity - tot_own, 2)
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb * 100.0) if mb > 0 else 0.0
 
