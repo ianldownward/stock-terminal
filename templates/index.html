@@ -7538,9 +7538,9 @@
             let vCurf = document.getElementById('dialCurfew-val');
             let subCurf = document.getElementById('dialCurfew-sub');
             let sweepSecs = 20 * 3600 + 50 * 60;
+            let seedEndSecs = 14 * 3600 + 32 * 60;
+            let isP1MSeeding = !isWknd && curSecs >= openSecs && curSecs < seedEndSecs;
             if (dCurf && vCurf) {
-                let seedEndSecs = 14 * 3600 + 32 * 60;
-                let isP1MSeeding = !isWknd && curSecs >= openSecs && curSecs < seedEndSecs;
                 if (isP1MBg) {
                     if (isP1MSeeding) {
                         let remSeed = seedEndSecs - curSecs;
