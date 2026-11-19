@@ -5897,9 +5897,12 @@
                 console.error("fetchData error:", e);
                 window._lastAutoSwitchedHoldKey = '';
                 window._fetchRetryCount = (window._fetchRetryCount || 0) + 1;
-                if (window._fetchRetryCount <= 3) {
-                    setTimeout(() => fetchData(false), 2000);
+                let titleEl = document.getElementById('activeTitle');
+                if (titleEl && titleEl.innerText === 'Loading Market Data...') {
+                    titleEl.innerText = `Syncing Market Feed (Retry ${window._fetchRetryCount})...`;
                 }
+                let retryDelay = window._fetchRetryCount <= 3 ? 2000 : 5000;
+                setTimeout(() => fetchData(true), retryDelay);
             } finally {
                 clearTimeout(safetyTimer);
                 if (loader) loader.style.display = 'none';
