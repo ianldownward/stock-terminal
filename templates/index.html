@@ -6460,7 +6460,8 @@
             try {
                 let activeUser = document.getElementById('userSelect')?.value || '';
                 let shortProfName = getShortProfileName(activeUser);
-                if (titleEl) titleEl.innerText = shortProfName ? `${shortProfName} Watchlist` : 'Watchlist';
+                let isP1MModalWl = activeUser.toLowerCase().includes('1m reversal') || activeUser.toLowerCase().includes('pulse 1m');
+                if (titleEl) titleEl.innerText = isP1MModalWl ? '1m Pattern Scanner' : (shortProfName ? `${shortProfName} Watchlist` : 'Watchlist');
 
                 // Request ONLY the active profile's own watchlist on mobile
                 let url = `/api/watchlist/scan_all?scope=active&user=${encodeURIComponent(activeUser)}`;
@@ -6478,7 +6479,30 @@
                     let isCurrent = (it.ticker === currentTicker);
                     
                     let thermoHtml = '';
-                    if (it.is_held) {
+                    if (isP1MModalWl) {
+                        let snap = it.p1m_snap || {};
+                        let step = parseInt(snap.step_idx) || 0;
+                        let sBadge = it.is_held
+                            ? `<span style="color:#0ecb81; font-weight:800;">RIDING 1M WAVE</span>`
+                            : `<span style="color:${snap.stage_color || '#8a8a9e'}; font-weight:800;">${snap.pattern_stage || 'Scanning 1m'}</span>`;
+                        let s1Bg = it.is_held ? '#0ecb81' : (step >= 1 ? '#ff5364' : '#1e222d');
+                        let s2Bg = it.is_held ? '#0ecb81' : (step >= 2 ? '#ffd400' : '#1e222d');
+                        let s3Bg = it.is_held ? '#0ecb81' : (step >= 3 ? '#0ecb81' : '#1e222d');
+                        thermoHtml = `
+                            <div style="margin-top:6px;">
+                                <div style="display:flex; justify-content:space-between; font-size:10px; font-weight:800; margin-bottom:4px;">
+                                    <span style="color:#8a8a9e;">1M CANDLE SEQUENCE</span>
+                                    ${sBadge}
+                                </div>
+                                <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:4px; text-align:center; font-size:8.5px; font-weight:800;">
+                                    <div style="background:${s1Bg}; color:${step >= 1 || it.is_held ? '#000' : '#6c7386'}; border-radius:4px; padding:3px 0;">1. BIG RED</div>
+                                    <div style="background:${s2Bg}; color:${step >= 2 || it.is_held ? '#000' : '#6c7386'}; border-radius:4px; padding:3px 0;">2. SML RED</div>
+                                    <div style="background:${s3Bg}; color:${step >= 3 || it.is_held ? '#000' : '#6c7386'}; border-radius:4px; padding:3px 0;">3. GRN GO</div>
+                                </div>
+                                <div style="text-align:center; font-size:10px; color:#8a8a9e; margin-top:4px;">${it.reason || 'Scanning 1m candles...'}</div>
+                            </div>
+                        `;
+                    } else if (it.is_held) {
                         thermoHtml = `
                             <div style="margin-top:6px;">
                                 <div style="display:flex; justify-content:space-between; font-size:10px; color:#ffd400; font-weight:800; margin-bottom:3px;">
@@ -8693,18 +8717,42 @@
                 let ui = document.getElementById('readinessUI');
                 if (ui) ui.innerHTML = html;
 
-                // Render Mobile 3-Tile Readiness Row
+                // Render Mobile 3-Tile Readiness Row (Condensed 1m Scanner for Pulse 1M Reversal; Readiness Slider for 5m bots)
                 let mobRow = document.getElementById('mobReadinessRow');
                 if (mobRow) {
                     mobRow.innerHTML = items.map(it => {
                         let isHeld = it.is_held;
                         let valPct = isHeld ? it.health_pct : it.score;
                         let isCurrent = (it.ticker === currentTicker);
+                        let heldTag = isHeld ? `<span style="background:#ffd400; color:#000; font-size:8px; padding:0 3px; border-radius:2px; font-weight:800; margin-left:3px;">H</span>` : '';
+
+                        if (isP1MScan) {
+                            let snap = it.p1m_snap || {};
+                            let step = parseInt(snap.step_idx) || 0;
+                            let shortStage = isHeld ? 'RIDING' : (step === 3 ? '3/3 GO' : (step === 2 ? '2/3' : (step === 1 ? '1/3' : 'WAVE')));
+                            let stageCol = isHeld ? '#0ecb81' : (snap.stage_color || '#8a8a9e');
+                            let s1Bg = isHeld ? '#0ecb81' : (step >= 1 ? '#ff5364' : '#1e222d');
+                            let s2Bg = isHeld ? '#0ecb81' : (step >= 2 ? '#ffd400' : '#1e222d');
+                            let s3Bg = isHeld ? '#0ecb81' : (step >= 3 ? '#0ecb81' : '#1e222d');
+
+                            return `
+                                <div class="mob-readiness-card ${isCurrent ? 'active' : ''}" onclick="selectStock('${it.ticker}')" title="${it.ticker}">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span style="font-size:11px; font-weight:800; color:${isCurrent ? '#ffd400' : '#fff'};">${it.ticker}${heldTag}</span>
+                                        <span style="font-size:8.5px; font-weight:900; color:${stageCol}; letter-spacing:0.2px;">${shortStage}</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:2px; text-align:center; font-size:6.5px; font-weight:900; margin-top:2px;">
+                                        <div style="background:${s1Bg}; color:${step >= 1 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">BIG</div>
+                                        <div style="background:${s2Bg}; color:${step >= 2 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">SML</div>
+                                        <div style="background:${s3Bg}; color:${step >= 3 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">GO</div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+
                         let isReady = !isHeld && valPct >= 65;
-                        
                         let scoreColor = isHeld ? (valPct >= 70 ? '#0ecb81' : (valPct >= 40 ? '#ff9900' : '#ff5364')) : (isReady ? '#0ecb81' : '#fff');
                         let scoreLabel = isHeld ? `${valPct}%` : `${valPct}<span style="font-size:9px; color:#ffd400; font-weight:700;">/65</span>`;
-                        let heldTag = isHeld ? `<span style="background:#ffd400; color:#000; font-size:8px; padding:0 3px; border-radius:2px; font-weight:800; margin-left:3px;">H</span>` : '';
                         
                         return `
                             <div class="mob-readiness-card ${isCurrent ? 'active' : ''}" onclick="selectStock('${it.ticker}')" title="${it.ticker}">
