@@ -5550,8 +5550,22 @@
                 let url = `/api/data?t=${encodeURIComponent(reqTk)}&p=${pSelect}&i=${iSelect}`;
                 if (activeUser) url += `&user=${encodeURIComponent(activeUser)}`;
 
-                let res = await fetch(url, { cache: 'no-store' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                let ctrl = new AbortController();
+                let abortTimer = setTimeout(() => ctrl.abort(), 10000);
+                let res;
+                try {
+                    res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+                } finally {
+                    clearTimeout(abortTimer);
+                }
+                if (!res.ok) {
+                    let errDetail = `HTTP ${res.status}`;
+                    try {
+                        let errJson = await res.json();
+                        if (errJson && errJson.error) errDetail += `: ${errJson.error}`;
+                    } catch (_) {}
+                    throw new Error(errDetail);
+                }
                 let p = await res.json();
                 window._fetchRetryCount = 0; 
                 
@@ -5898,8 +5912,8 @@
                 window._lastAutoSwitchedHoldKey = '';
                 window._fetchRetryCount = (window._fetchRetryCount || 0) + 1;
                 let titleEl = document.getElementById('activeTitle');
-                if (titleEl && titleEl.innerText === 'Loading Market Data...') {
-                    titleEl.innerText = `Syncing Market Feed (Retry ${window._fetchRetryCount})...`;
+                if (titleEl && (titleEl.innerText.startsWith('Loading Market Data') || titleEl.innerText.startsWith('Syncing Market Feed'))) {
+                    titleEl.innerText = `Syncing Market Feed (Retry ${window._fetchRetryCount}) [${e && e.message ? e.message : 'err'}]...`;
                 }
                 let retryDelay = window._fetchRetryCount <= 3 ? 2000 : 5000;
                 setTimeout(() => fetchData(true), retryDelay);
@@ -8817,8 +8831,7 @@
             }
         }
 
-        setTimeout(fetchBrokerStatus, 1000);
-        setTimeout(fetchReadinessScanner, 1500);
+        setTimeout(fetchBrokerStatus, 2500);
         setTimeout(updateSessionTimeline, 500);
 
         let touchStartX = 0;
