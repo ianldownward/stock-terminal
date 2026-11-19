@@ -5073,7 +5073,7 @@ def get_data():
             'buy_guards': buy_guards,
             'macro_pulse': macro_pulse,
             'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p) if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else None
-        }}) if False else jsonify(_sanitize_json_payload(locals()['ud'] and {
+        }})) if False else jsonify(_sanitize_json_payload(locals()['ud'] and {
             'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
                 'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if str(t).endswith('.L') and last_p>100 else f"${last_p:.2f}",
                 'discount': st.get('discount', '--'), 'buy_score': f"{st.get('score', 0)} / 100", 'tranches': st.get('tranches', 0),
@@ -5086,7 +5086,7 @@ def get_data():
                 'buy_guards': buy_guards, 'macro_pulse': macro_pulse,
                 'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p) if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else None
             }
-        })))
+        }))
     except Exception as e:
         import traceback
         traceback.print_exc()
