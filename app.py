@@ -40,23 +40,6 @@ PAPER_STATS_ACCOUNT = "ian_paper@gmail.com"
 PERFORMANCE_START_DATE = "2026-11-16"  # Baseline reset date: all profiles treat this morning as Day 1
 MONGO_DB_NAME = os.environ.get('MONGO_DB_NAME', 'stock_terminal')
 
-def _sanitize_json_payload(obj):
-    import math
-    if obj is None or isinstance(obj, (bool, int, str)):
-        return obj
-    if isinstance(obj, float):
-        return 0.0 if (math.isnan(obj) or math.isinf(obj)) else obj
-    if isinstance(obj, dict):
-        return {str(k): _sanitize_json_payload(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set)):
-        return [_sanitize_json_payload(v) for v in obj]
-    if hasattr(obj, 'item'):
-        try:
-            return _sanitize_json_payload(obj.item())
-        except Exception:
-            return str(obj)
-    return str(obj)
-
 def is_admin_session():
     u = (session.get('email') or session.get('user') or '').strip().lower()
     return (session.get('role') == 'admin') or (u in [ADMIN_USER.lower(), ADMIN_ALIAS.lower(), 'ian'])
@@ -4685,6 +4668,18 @@ def get_data():
             tot_eq_now = max(0.0, cash_now) + equity_now
             tot_eq_start = max(0.0, cash_start) + equity_start
 
+            enabled_live_list = [
+                u_n for u_n in source_users.keys()
+                if is_profile_alpaca_enabled(u_n)
+            ]
+            if alpaca_acc and len(enabled_live_list) == 1 and u == enabled_live_list[0]:
+                alp_eq_live = float(alpaca_acc.get('equity') or 0.0)
+                alp_last_live = float(alpaca_acc.get('last_equity') or 0.0)
+                if alp_eq_live > 0:
+                    tot_eq_now = alp_eq_live
+                if alp_last_live > 0:
+                    tot_eq_start = alp_last_live
+
             user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
             held_sym = user_holds[0] if user_holds else ''
             day_diff = round(tot_eq_now - tot_eq_start, 2)
@@ -4864,14 +4859,14 @@ def get_data():
 
         df = fetch_yf_data(t, req_p, req_i)
         if df.empty:
-            return jsonify({'ohlc': [], 'wl_status': wl_status, 'name': f'{t}', 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
+            return jsonify(_sanitize_json_payload({'ohlc': [], 'wl_status': wl_status, 'name': f'{t}', 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
                 'price': 0, 'price_display': '$0.00', 'discount': '--', 'buy_score': '0 / 100', 'tranches': 0,
                 'status': 'Loading Data', 'color': '#787e8e', 'reason': 'Fetching fresh market quotes.',
                 'action_main': 'WAIT', 'action_sub': '', 'action_color': '#787e8e', 'shares_owned': 0, 'value_owned': 0.0,
                 'pnl_display': '$0.00 (0.00%)', 'pnl_color': '#8a8a9e', 'pnl_data': master_pnl_data, 'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data,
                 'master_budget': mb, 'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime,
                 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '', 'is_rotator_profile': is_rotator, 'macro_pulse': macro_pulse
-            }})
+            }}))
 
         df_chart = df.copy()
         if df_chart.index.tz is not None: df_chart.index = df_chart.index.tz_convert('UTC')
@@ -5061,19 +5056,7 @@ def get_data():
             'server_ts': now_ts_guard
         }
 
-        return jsonify(_sanitize_json_payload({'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
-            'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if str(t).endswith('.L') and last_p>100 else f"${last_p:.2f}",
-            'discount': st.get('discount', '--'), 'buy_score': f"{st.get('score', 0)} / 100", 'tranches': st.get('tranches', 0),
-            'status': st.get('status', '--'), 'color': st.get('color', '#8a8a9e'), 'reason': st.get('reason', ''),
-            'action_main': st.get('action_main', 'HOLD'), 'action_sub': st.get('action_sub', ''), 'action_color': st.get('action_color', '#8a8a9e'),
-            'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': ticker_pnl_data['all']['val'], 'pnl_color': ticker_pnl_data['all']['color'], 'pnl_data': ticker_pnl_data,
-            'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
-            'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG'),
-            'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator,
-            'buy_guards': buy_guards,
-            'macro_pulse': macro_pulse,
-            'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p) if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else None
-        }})) if False else jsonify(_sanitize_json_payload(locals()['ud'] and {
+        return jsonify(_sanitize_json_payload({
             'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
                 'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if str(t).endswith('.L') and last_p>100 else f"${last_p:.2f}",
                 'discount': st.get('discount', '--'), 'buy_score': f"{st.get('score', 0)} / 100", 'tranches': st.get('tranches', 0),
@@ -6278,12 +6261,22 @@ def get_broker_status():
                     if alp_pv > 0 and abs(alp_pv - u_est_eq) >= 0.25:
                         has_desync = True
 
+            pv_now = float(acc.get('portfolio_value') or acc.get('equity') or 0.0)
+            last_eq_now = float(acc.get('last_equity') or pv_now)
+            alp_day_pnl = round(pv_now - last_eq_now, 2)
+            alp_day_pct = round((alp_day_pnl / last_eq_now * 100.0), 2) if last_eq_now > 0 else 0.0
+            fx_rate_status = (NEWS_CACHE.get('_usd_gbp') or {}).get('rate', 0.7499)
+
             return jsonify({
                 'connected': True,
                 'status': acc.get('status', 'ACTIVE'),
                 'buying_power': float(acc.get('buying_power', 0.0)),
                 'cash': float(acc.get('cash', 0.0)),
-                'portfolio_value': float(acc.get('portfolio_value', 0.0)),
+                'portfolio_value': pv_now,
+                'last_equity': last_eq_now,
+                'daily_pnl': alp_day_pnl,
+                'daily_pct': alp_day_pct,
+                'usd_gbp_rate': fx_rate_status,
                 'positions': live_positions,
                 'has_desync': has_desync,
                 'has_queued_orders': has_queued_orders,

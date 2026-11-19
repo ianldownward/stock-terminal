@@ -5551,7 +5551,7 @@
                 if (activeUser) url += `&user=${encodeURIComponent(activeUser)}`;
 
                 let ctrl = new AbortController();
-                let abortTimer = setTimeout(() => ctrl.abort(), 10000);
+                let abortTimer = setTimeout(() => ctrl.abort(), 22000);
                 let res;
                 try {
                     res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
