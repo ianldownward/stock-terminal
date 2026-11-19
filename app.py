@@ -1399,7 +1399,13 @@ class MarketScoringEngine:
                     or_high = max(or_high, float(o1_pre45['High'].max()))
                     or_low = min(or_low, float(o1_pre45['Low'].min()))
 
-            if (not is_inverse) and cur_ref > or_high:
+            e9_orb_ok = True
+            if df_orb_1m is not None and not df_orb_1m.empty and len(df_orb_1m) >= 9:
+                e9_orb_val = float(df_orb_1m['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
+                if e9_orb_val > 0 and ((cur_ref - e9_orb_val) / e9_orb_val * 100.0) > 0.55:
+                    e9_orb_ok = False
+
+            if (not is_inverse) and cur_ref > or_high and e9_orb_ok:
                 return {
                     'type': 'Opening 15m ORB',
                     'score': 85,
@@ -1420,7 +1426,7 @@ class MarketScoringEngine:
                     'health_color': '#0ecb81',
                     'health_text': '15m ORB Breakout'
                 }
-            if is_inverse and cur_ref < or_low:
+            if is_inverse and cur_ref < or_low and e9_orb_ok:
                 return {
                     'type': 'Opening 15m ORB',
                     'score': 85,
@@ -1838,7 +1844,11 @@ class MarketScoringEngine:
         red2_ok = (b_r2_c < b_r2_o) and (0 < r2_body < r1_body)
         grn1_ok = (b_g1_c > b_g1_o) and (g1_body > 0) and (current_price >= b_g1_o)
 
-        if red1_ok and red2_ok and grn1_ok:
+        e21_1m_chk = float(src_1m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]) if len(src_1m) >= 5 else current_price
+        not_waterfall_crash = (e21_1m_chk <= 0) or (((e21_1m_chk - current_price) / e21_1m_chk * 100.0) <= 0.65)
+        meaningful_green_snap = (g1_body >= r2_body * 0.35)
+
+        if red1_ok and red2_ok and grn1_ok and meaningful_green_snap and not_waterfall_crash:
             bounce_pct = ((b_g1_c - b_g1_o) / b_g1_o * 100.0) if b_g1_o > 0 else 0.0
             buy_score = min(98, max(75, round(78 + bounce_pct * 20)))
             return {'type': '1m Reversal', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M GO TRIGGER: Red (-${r1_body:.2f}) -> Smaller Red (-${r2_body:.2f}) -> Green (+${g1_body:.2f}).', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Reversal Go', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m Reversal Go)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Reversal Go'}
@@ -1914,12 +1924,13 @@ class MarketScoringEngine:
                 if current_price <= s2_floor:
                     return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"S2 VELOCITY FLOOR HIT (+{pnl_pct:.2f}%). Protected +1.00% gain (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Velocity Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +1.00%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Velocity Lock (+{pnl_pct:.2f}%)"}
 
-            # 3X-CALIBRATED BREAKEVEN-PLUS LOCK (+0.35% LOCK ONCE +1.10% PEAK HIT)
-            # Gives full -0.75% trailing room during early 3x ETF wiggles so runners are never shaken out at +0.50%
-            if any(x in prof for x in ['vector', 'apex', 'tqm', 'tq']) and peak_pnl_pct >= 1.10:
-                breakeven_price = avg_buy_price * 1.0035  # Locks +0.35% minimum profit while preserving 0.75% pullback room
+            # 3X-CALIBRATED TWO-STAGE BREAKEVEN LOCK: +0.18% floor once +0.55% peak hit; +0.45% floor once +1.10% peak hit
+            if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq']) and peak_pnl_pct >= 0.55:
+                be_mult = 1.0045 if peak_pnl_pct >= 1.10 else 1.0018
+                be_lbl = '+0.45%' if peak_pnl_pct >= 1.10 else '+0.18%'
+                breakeven_price = avg_buy_price * be_mult
                 if current_price <= breakeven_price:
-                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Peak was +{peak_pnl_pct:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Lock +0.35%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
+                    return {'type': 'Intraday Momentum', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f"BREAKEVEN LOCK HIT (+{pnl_pct:.2f}%). Protected {be_lbl} floor (Peak +{peak_pnl_pct:.2f}%).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Breakeven Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': f'(Lock {be_lbl})', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': f"Breakeven Lock (+{pnl_pct:.2f}%)"}
 
             # DYNAMIC 0.50% STEP-RATCHET FLOOR (MOVES UP INDEFINITELY EVERY +0.50% FROM +2.50%)
             if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']) and peak_pnl_pct >= 2.50:
@@ -2026,11 +2037,11 @@ class MarketScoringEngine:
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': "OVERNIGHT SWEEP: Liquidating to 100% cash to eliminate overnight gap risk.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': "OVERNIGHT SWEEP: Blocking new entries before close.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
-        # OVERRIDE: QUICK 1.2% TARGET FOR TIGHT TARGET PROFILES ONLY (EXCLUDES S2 WHICH USES VELOCITY RATCHET)
+        # OVERRIDE: QUICK 0.95% TARGET FOR VELOCITY PULSE SCALPER
         if any(x in prof for x in ['velocity', 'pulse', 'test u', 'test s']) and 'test s2' not in prof and is_3x_etf and avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-            if pnl_pct >= 1.20:
-                return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 1.2% Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#ffd400', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#ffd400', 'health_text': 'Target Hit (Selling)'}
+            if pnl_pct >= 0.95:
+                return {'type': 'Rotator Target', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'Quick 0.95% Scalp Target Hit on 3x ETF.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Take Profit', 'color': '#ffd400', 'action_main': 'SELL', 'action_sub': '(Target Hit)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#ffd400', 'health_text': 'Target Hit (Selling)'}
             
         # MAIN HOLDING LOGIC
         if avg_buy_price > 0 and highest_price > 0:
@@ -2170,16 +2181,24 @@ class MarketScoringEngine:
             if has_cap_vreversal and vol_ratio < 1.15:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"V-Reversal Watch: Reclaimed EMAs off low, awaiting >=1.30x volume ({vol_ratio:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # DYNAMIC ANTI-CHASE: tighter after 18:00 UK to avoid late-day range tops; allow 1.65% on fresh 1H-shelf breakouts
+            # STRATEGY-SPECIFIC ANTI-CHASE & DIFFERENTIATION (prevents all 3 bots from chasing stretched spikes)
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
             late_chop_window = (now_uk.hour >= 18)
-            if any(x in prof for x in ['apex', 'test e6', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']):
-                max_extension = (0.65 if late_chop_window else 0.95) if is_3x_etf else 0.35
+            if 'apex' in prof:
+                # Apex Precision: Institutional Volume Breakout Sniper (requires >=1.20x vol & <=0.60% extension)
+                max_extension = (0.45 if late_chop_window else 0.60) if is_3x_etf else 0.30
+                if vol_ratio < 1.20 and not breaks_1h_shelf:
+                    return {'type': 'Intraday Momentum', 'score': 46, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Apex Volume Gate: Current bar volume ({vol_ratio:.1f}x) below 1.20x breakout requirement.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1.2x Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+            elif any(x in prof for x in ['velocity', 'pulse']):
+                # Velocity Pulse: Crisp RSI 52-68 Momentum Scalper (blocks overbought >68 & stretched >0.50%)
+                max_extension = (0.40 if late_chop_window else 0.50) if is_3x_etf else 0.30
+                if rsi > 68:
+                    return {'type': 'Intraday Momentum', 'score': 44, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Pulse RSI Gate: RSI ({rsi:.1f}) above 68 scalp ceiling.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'RSI Overbought', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI > 68)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Scanning...'}
             else:
-                early_session = (now_uk.hour == 14 and now_uk.minute >= 50) or (now_uk.hour == 15 and now_uk.minute < 20)
-                max_extension = (0.65 if late_chop_window else (1.45 if early_session else 1.15)) if is_3x_etf else 0.50
-            if is_3x_etf and breaks_1h_shelf and not late_chop_window:
-                max_extension = max(max_extension, 1.65)
+                # Vector Hybrid: Disciplined 9-EMA Launch Specialist (buys within 0.55% of rising 9-EMA, up to 0.75% on 1H shelf break)
+                max_extension = (0.45 if late_chop_window else 0.55) if is_3x_etf else 0.35
+                if is_3x_etf and breaks_1h_shelf and not late_chop_window:
+                    max_extension = 0.75
 
             if ema_extension_pct > max_extension:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max {max_extension:.2f}%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
@@ -2434,7 +2453,8 @@ def process_auto_profile(prof_name, client_email=None):
                 ud['ratchet_locked'] = False
                 ud['is_locked'] = False
 
-            observed_peak_pct = round(max(daily_pnl_pct, peak_daily_pnl_pct), 2)
+            clamped_peak_daily_pct = min(peak_daily_pnl_pct, daily_pnl_pct + 1.25)
+            observed_peak_pct = round(max(daily_pnl_pct, clamped_peak_daily_pct), 2)
             if observed_peak_pct > float(ud.get('daily_peak_pct') or 0.0):
                 ud['daily_peak_pct'] = observed_peak_pct
                 if ud.get('ratchet_floor_override') is not None and observed_peak_pct >= (float(ud['ratchet_floor_override']) + r_clear_buf):
@@ -2472,7 +2492,11 @@ def process_auto_profile(prof_name, client_email=None):
                     return True
                 update_user_state_atomic(prof_name, client_email, _mut_clear_stale_lock)
 
-            if daily_floor_locked > 0 and daily_pnl_pct <= daily_floor_locked and not ud.get('ratchet_locked'):
+            if daily_floor_locked > 0 and daily_pnl_pct < (daily_floor_locked - 0.75) and ud.get('ratchet_floor_override') is None:
+                # Heal stale/outlier daily_peak_pct if actual account P&L never genuinely held above floor
+                ud['daily_peak_pct'] = max(0.0, round(daily_pnl_pct, 2))
+                daily_floor_locked = 0.0
+            if daily_floor_locked > 0 and daily_pnl_pct > 0 and daily_pnl_pct <= daily_floor_locked and not ud.get('ratchet_locked'):
                 force_daily_floor_sell = True
 
         # LATE-DAY ENTRY CURFEW (NO NEW BUYS AFTER 20:00 BST / 3:00 PM EST)
@@ -2503,7 +2527,9 @@ def process_auto_profile(prof_name, client_email=None):
             if h.get('action') == 'SELL' and h.get('date_str') == today_str:
                 matching_buy = next((b for b in hist[i+1:] if b.get('ticker') == h.get('ticker') and b.get('action') == 'BUY'), None)
                 if matching_buy:
-                    if float(h.get('price', 0)) < float(matching_buy.get('price', 0)):
+                    b_px_s = float(matching_buy.get('price', 0))
+                    s_px_s = float(h.get('price', 0))
+                    if b_px_s > 0 and ((s_px_s - b_px_s) / b_px_s * 100.0) <= -0.35:
                         today_loss_stops += 1
                 else:
                     today_loss_stops += 1
@@ -3165,7 +3191,7 @@ def reconcile_single_target(target):
                         if h.get('alpaca_order_id') and h.get('alpaca_order_id') != order_id:
                             continue
                         h_ts = int(h.get('timestamp') or 0)
-                        if order_ts > 0 and h_ts > 0 and abs(order_ts - h_ts) > 1800:
+                        if order_ts > 0 and h_ts > 0 and abs(order_ts - h_ts) > 180:
                             continue
 
                         new_px_r = round(filled_price, 2)
@@ -3192,7 +3218,10 @@ def reconcile_single_target(target):
                 if side == 'sell' and not reconciled_existing:
                     current_shares = get_prof_shares(symbol)
                     already_logged = any(h.get('alpaca_order_id') == order_id for h in hist)
-                    if current_shares > 0 and not already_logged:
+                    latest_buy_tr = next((h for h in hist if h.get('ticker') == symbol and h.get('action') == 'BUY'), None)
+                    latest_buy_ts = int(latest_buy_tr.get('timestamp') or 0) if latest_buy_tr else 0
+                    is_fresh_buy = (latest_buy_ts > 0 and (int(time.time()) - latest_buy_ts) < 45)
+                    if current_shares > 0 and not already_logged and not is_fresh_buy:
                         portfolio_store.execute_trade(
                             ticker=symbol,
                             action_type='SELL',
@@ -5237,7 +5266,9 @@ def get_data():
             if h.get('action') == 'SELL' and h.get('date_str') == today_str:
                 m_buy = next((b for b in hist[idx_g+1:] if b.get('ticker') == h.get('ticker') and b.get('action') == 'BUY'), None)
                 if m_buy:
-                    if float(h.get('price') or 0) < float(m_buy.get('price') or 0):
+                    b_px_g = float(m_buy.get('price') or 0)
+                    s_px_g = float(h.get('price') or 0)
+                    if b_px_g > 0 and ((s_px_g - b_px_g) / b_px_g * 100.0) <= -0.35:
                         guard_loss_stops += 1
                 else:
                     guard_loss_stops += 1
