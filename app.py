@@ -1,5 +1,21 @@
-import os, json, time, urllib.request, threading, re, socket, gc
-socket.setdefaulttimeout(12)
+import os, json, time, urllib.request, threading, re, socket, gc, math
+socket.setdefaulttimeout(6)
+
+def _sanitize_json_payload(obj):
+    if obj is None or isinstance(obj, (bool, int, str)):
+        return obj
+    if isinstance(obj, float):
+        return 0.0 if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {str(k): _sanitize_json_payload(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [_sanitize_json_payload(v) for v in obj]
+    if hasattr(obj, 'item'):
+        try:
+            return _sanitize_json_payload(obj.item())
+        except Exception:
+            return str(obj)
+    return str(obj)
 import xml.etree.ElementTree as ET
 import pandas as pd
 import yfinance as yf
@@ -1514,7 +1530,8 @@ class MarketScoringEngine:
                 h_p = max(h_p, c_p)
                 l_p = min(l_p, c_p)
             is_live = (idx_i == n_rows - 1)
-            is_green = (c_p >= o_p)
+            is_doji = (c_p == o_p)
+            is_green = (c_p > o_p)
             body = round(abs(c_p - o_p), 4)
 
             bar_annots = []
@@ -1537,19 +1554,24 @@ class MarketScoringEngine:
             })
 
         closed_bars = [b for b in raw_bars if not b['is_live']]
+        dir_bars = [b for b in closed_bars if b['body'] > 0]
         for j in range(len(closed_bars)):
             b = closed_bars[j]
+            if b['body'] == 0:
+                b['tag'] = 'DOJI'
+                continue
+            d_idx = dir_bars.index(b)
             if not b['is_green']:
-                if j + 1 < len(closed_bars) and (not closed_bars[j + 1]['is_green']) and (0 < closed_bars[j + 1]['body'] < b['body']):
+                if d_idx + 1 < len(dir_bars) and (not dir_bars[d_idx + 1]['is_green']) and (0 < dir_bars[d_idx + 1]['body'] < b['body']):
                     b['tag'] = 'BIG RED'
-                elif j > 0 and (not closed_bars[j - 1]['is_green']) and (0 < b['body'] < closed_bars[j - 1]['body']):
+                elif d_idx > 0 and (not dir_bars[d_idx - 1]['is_green']) and (0 < b['body'] < dir_bars[d_idx - 1]['body']):
                     b['tag'] = 'SML RED'
-                elif j > 0 and closed_bars[j - 1]['is_green']:
+                elif d_idx > 0 and dir_bars[d_idx - 1]['is_green']:
                     b['tag'] = 'STOP RED'
                 else:
                     b['tag'] = 'RED'
             else:
-                if j >= 2 and closed_bars[j - 1]['tag'] == 'SML RED':
+                if d_idx >= 2 and dir_bars[d_idx - 1]['tag'] == 'SML RED':
                     b['tag'] = 'GO GRN'
                 else:
                     b['tag'] = 'GREEN'
@@ -1557,8 +1579,8 @@ class MarketScoringEngine:
         stage_txt = 'Scanning 1m'
         stage_col = '#8a8a9e'
         step_idx = 0
-        if len(closed_bars) >= 3:
-            c1, c2, c3 = closed_bars[-3], closed_bars[-2], closed_bars[-1]
+        if len(dir_bars) >= 3:
+            c1, c2, c3 = dir_bars[-3], dir_bars[-2], dir_bars[-1]
             if (not c1['is_green']) and (not c2['is_green']) and (0 < c2['body'] < c1['body']) and c3['is_green']:
                 stage_txt = '3/3 GO TRIGGER'
                 stage_col = '#0ecb81'
@@ -1662,11 +1684,18 @@ class MarketScoringEngine:
                 return {'type': '1m Reversal', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': '1m Exhaustion Ready: 14:30 & 14:31 Red -> Smaller Red printed, awaiting Green 3rd bar.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Green', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Green)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Awaiting Green'}
             return {'type': '1m Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': "Scanning today's 1m candles for Red -> Smaller Red -> Green (Go).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1m Pattern)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-        # Pure candle entry across all 3 tickers (TQQQ, SOXL, SQQQ): Red (-4) -> Smaller Red (-3) -> Green (-2)
+        # Pure candle entry across all 3 tickers (TQQQ, SOXL, SQQQ): Red -> Smaller Red -> Green on completed non-doji bars
         src_1m = today_reg_1m if len(today_reg_1m) >= 4 else df_1m
-        b_r1_o, b_r1_c = float(src_1m['Open'].iloc[-4]), float(src_1m['Close'].iloc[-4])
-        b_r2_o, b_r2_c = float(src_1m['Open'].iloc[-3]), float(src_1m['Close'].iloc[-3])
-        b_g1_o, b_g1_c = float(src_1m['Open'].iloc[-2]), float(src_1m['Close'].iloc[-2])
+        closed_src = src_1m.iloc[:-1]
+        non_doji_src = closed_src[closed_src['Close'] != closed_src['Open']]
+        if len(non_doji_src) >= 3:
+            b_r1_o, b_r1_c = float(non_doji_src['Open'].iloc[-3]), float(non_doji_src['Close'].iloc[-3])
+            b_r2_o, b_r2_c = float(non_doji_src['Open'].iloc[-2]), float(non_doji_src['Close'].iloc[-2])
+            b_g1_o, b_g1_c = float(non_doji_src['Open'].iloc[-1]), float(non_doji_src['Close'].iloc[-1])
+        else:
+            b_r1_o, b_r1_c = float(src_1m['Open'].iloc[-4]), float(src_1m['Close'].iloc[-4])
+            b_r2_o, b_r2_c = float(src_1m['Open'].iloc[-3]), float(src_1m['Close'].iloc[-3])
+            b_g1_o, b_g1_c = float(src_1m['Open'].iloc[-2]), float(src_1m['Close'].iloc[-2])
 
         r1_body = b_r1_o - b_r1_c
         r2_body = b_r2_o - b_r2_c
@@ -5044,7 +5073,20 @@ def get_data():
             'buy_guards': buy_guards,
             'macro_pulse': macro_pulse,
             'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p) if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else None
-        }}))
+        }}) if False else jsonify(_sanitize_json_payload(locals()['ud'] and {
+            'ohlc': data, 'ticker': t, 'mathLine': mathLine, 'wl_status': wl_status, 'name': engine.asset_names.get(t, t), 'portfolio': ud, 'leaderboard': leaderboard, 'usd_gbp_rate': usd_gbp_rate, 'metrics': {
+                'price': last_p, 'price_display': f"{last_p:.2f}p (£{(last_p/100.0):.2f})" if str(t).endswith('.L') and last_p>100 else f"${last_p:.2f}",
+                'discount': st.get('discount', '--'), 'buy_score': f"{st.get('score', 0)} / 100", 'tranches': st.get('tranches', 0),
+                'status': st.get('status', '--'), 'color': st.get('color', '#8a8a9e'), 'reason': st.get('reason', ''),
+                'action_main': st.get('action_main', 'HOLD'), 'action_sub': st.get('action_sub', ''), 'action_color': st.get('action_color', '#8a8a9e'),
+                'shares_owned': sh_own, 'value_owned': val_own, 'pnl_display': ticker_pnl_data['all']['val'], 'pnl_color': ticker_pnl_data['all']['color'], 'pnl_data': ticker_pnl_data,
+                'total_pnl_display': master_pnl_data['all']['val'], 'total_pnl_color': master_pnl_data['all']['color'], 'master_pnl_data': master_pnl_data, 'master_budget': mb,
+                'total_portfolio_owned': tot_own, 'budget_remaining': round(cash_balance, 2), 'total_equity': round(total_equity, 2), 'regime': regime, 'trade_type': st.get('trade_type', 'LONG'),
+                'health_pct': st.get('health_pct', 0), 'health_color': st.get('health_color', '#8a8a9e'), 'health_text': st.get('health_text', 'N/A'), 'is_rotator_profile': is_rotator,
+                'buy_guards': buy_guards, 'macro_pulse': macro_pulse,
+                'pulse_1m_bars': engine.get_pulse_1m_snapshot(t, hist=hist, current_price=last_p) if any(x in active_profile for x in ['1m reversal', 'pulse 1m']) else None
+            }
+        })))
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -6371,7 +6413,8 @@ def get_watchlist_scanner():
                 if df.empty: continue
                 df.name = tick
                 cur = float(df['Close'].iloc[-1])
-                if is_open_win_scan:
+                is_p1m_active = any(x in active_profile.lower() for x in ['1m reversal', 'pulse 1m'])
+                if is_p1m_active or is_open_win_scan:
                     df_1m_s = fetch_yf_data(tick, "1d", "1m")
                     if df_1m_s is not None and not df_1m_s.empty:
                         cur = float(df_1m_s['Close'].iloc[-1])
