@@ -2269,6 +2269,23 @@ def process_auto_profile(prof_name, client_email=None):
                 daily_floor_locked = float(ud['ratchet_floor_override'])
             elif daily_peak >= r_start_pct:
                 daily_floor_locked = round(int(daily_peak / r_step_pct) * r_step_pct, 2)
+            elif ud.get('manual_locked_day') != today_str and (ud.get('ratchet_locked') or ud.get('is_locked')):
+                # Clear stale pre-5.0% ratchet lock from before threshold upgrade
+                ud['ratchet_locked'] = False
+                ud['is_locked'] = False
+                ud['locked_floor_val'] = None
+                def _mut_clear_stale_lock(f_ud, r_min=r_start_pct, t_str=today_str):
+                    if f_ud.get('manual_locked_day') == t_str or f_ud.get('ratchet_floor_override') is not None:
+                        return False
+                    if float(f_ud.get('daily_peak_pct') or 0.0) >= r_min:
+                        return False
+                    if not (f_ud.get('ratchet_locked') or f_ud.get('is_locked')):
+                        return False
+                    f_ud['ratchet_locked'] = False
+                    f_ud['is_locked'] = False
+                    f_ud['locked_floor_val'] = None
+                    return True
+                update_user_state_atomic(prof_name, client_email, _mut_clear_stale_lock)
 
             if daily_floor_locked > 0 and daily_pnl_pct <= daily_floor_locked and not ud.get('ratchet_locked'):
                 force_daily_floor_sell = True
@@ -4671,7 +4688,7 @@ def get_data():
 
             has_override = (u_data.get('ratchet_floor_override') is not None)
             is_manually_locked = (u_data.get('manual_locked_day') == today_str)
-            is_ratchet_locked = bool(u_data.get('ratchet_locked') and len(user_holds) == 0)
+            is_ratchet_locked = bool(u_data.get('ratchet_locked') and len(user_holds) == 0 and (peak_pct_today >= r_start_lb or has_override))
             is_locked = is_manually_locked or is_ratchet_locked or (len(user_holds) == 0 and day_pct >= r_start_lb and not has_override)
 
             if has_override:

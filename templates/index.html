@@ -3495,7 +3495,12 @@
             let heldTicker = activeHolds.length > 0 ? activeHolds[0] : (activeLb.held_ticker || currentTicker || '');
             let holdsDict = uData.holdings || {};
             let shOwned = (metrics && metrics.shares_owned !== undefined) ? metrics.shares_owned : (holdsDict[heldTicker]?.shares || 0);
-            let curPrice = (metrics && metrics.price !== undefined) ? parseFloat(metrics.price) : 0;
+            let curPrice = (heldTicker && heldTicker === currentTicker && metrics && metrics.price !== undefined) ? parseFloat(metrics.price) : 0;
+            if (curPrice <= 0 && heldTicker && Array.isArray(window._latestScannerItems)) {
+                let sMatch = window._latestScannerItems.find(x => x.ticker === heldTicker);
+                if (sMatch && parseFloat(sMatch.price) > 0) curPrice = parseFloat(sMatch.price);
+            }
+            if (curPrice <= 0 && metrics && metrics.price !== undefined) curPrice = parseFloat(metrics.price) || 0;
             if (curPrice <= 0 && masterData && masterData.length > 0) curPrice = parseFloat(masterData[masterData.length - 1].close) || 0;
 
             let trailHtml = '';
@@ -5545,7 +5550,7 @@
                 let url = `/api/data?t=${encodeURIComponent(reqTk)}&p=${pSelect}&i=${iSelect}`;
                 if (activeUser) url += `&user=${encodeURIComponent(activeUser)}`;
 
-                let res = await fetch(url);
+                let res = await fetch(url, { cache: 'no-store' });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 let p = await res.json();
                 window._fetchRetryCount = 0; 
@@ -5890,6 +5895,7 @@
                 if (typeof fetchReadinessScanner === 'function') fetchReadinessScanner();
             } catch(e) { 
                 console.error("fetchData error:", e);
+                window._lastAutoSwitchedHoldKey = '';
                 window._fetchRetryCount = (window._fetchRetryCount || 0) + 1;
                 if (window._fetchRetryCount <= 3) {
                     setTimeout(() => fetchData(false), 2000);
@@ -8575,9 +8581,10 @@
         async function fetchReadinessScanner() {
             try {
                 let activeUser = document.getElementById('userSelect')?.value || '';
-                let res = await fetch(`/api/watchlist/scan_all?scope=active&user=${encodeURIComponent(activeUser)}`);
+                let res = await fetch(`/api/watchlist/scan_all?scope=active&user=${encodeURIComponent(activeUser)}`, { cache: 'no-store' });
                 let d = await res.json();
                 let items = d.items || [];
+                window._latestScannerItems = items;
                 
                 // Sort: Held items at top (sorted by health), then non-held sorted by buy score descending
                 items.sort((a, b) => {
