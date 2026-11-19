@@ -6245,8 +6245,19 @@
                     }
 
                     if (!matchTime) return null;
+                    let plotPrice = price;
+                    if (!isDaily && matchIdx >= 0 && masterData[matchIdx]) {
+                        let bar = masterData[matchIdx];
+                        let bLo = parseFloat(bar.low) || plotPrice;
+                        let bHi = parseFloat(bar.high) || plotPrice;
+                        if (plotPrice > 0 && Math.abs(plotPrice - bLo) / plotPrice > 0.006 && plotPrice < bLo) {
+                            plotPrice = bLo;
+                        } else if (plotPrice > 0 && Math.abs(plotPrice - bHi) / plotPrice > 0.006 && plotPrice > bHi) {
+                            plotPrice = bHi;
+                        }
+                    }
                     let x = tvChart.timeScale().timeToCoordinate(matchTime);
-                    let y = tvSeries.priceToCoordinate(price);
+                    let y = tvSeries.priceToCoordinate(plotPrice);
                     if (x === null || y === null || isNaN(x) || isNaN(y)) return null;
 
                     if (!isDaily && matchIdx >= 0) {
