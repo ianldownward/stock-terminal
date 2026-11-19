@@ -2079,11 +2079,15 @@ def process_auto_profile(prof_name, client_email=None):
         daily_pnl_pct = (daily_pnl / sod_equity) * 100.0 if sod_equity > 0 else 0.0
         peak_daily_pnl_pct = ((peak_total_equity - sod_equity) / sod_equity) * 100.0 if sod_equity > 0 else daily_pnl_pct
 
-        # Maximum allowable daily drawdown: -2.5% of starting daily equity
-        CIRCUIT_BREAKER_PCT = -2.50
+        # Maximum allowable daily drawdown (-5.0% for Pulse 1M Reversal; -2.5% for 5m bots)
+        is_p1m_risk = any(x in active_profile for x in ['1m reversal', 'pulse 1m'])
+        CIRCUIT_BREAKER_PCT = -5.00 if is_p1m_risk else -2.50
         circuit_breaker_tripped = (daily_pnl_pct <= CIRCUIT_BREAKER_PCT)
 
-        # TOTAL DAILY ACCOUNT STEP-RATCHET (Monitors the big header % on your screen)
+        # TOTAL DAILY ACCOUNT STEP-RATCHET (+5.0% start & +5.0% steps for Pulse 1M Reversal; +2.5% start & +0.5% steps for 5m bots)
+        r_start_pct = 5.00 if is_p1m_risk else 2.50
+        r_step_pct = 5.00 if is_p1m_risk else 0.50
+        r_clear_buf = 5.10 if is_p1m_risk else 0.60
         force_daily_floor_sell = False
         daily_floor_locked = 0.0
         if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
@@ -2098,13 +2102,13 @@ def process_auto_profile(prof_name, client_email=None):
             observed_peak_pct = round(max(daily_pnl_pct, peak_daily_pnl_pct), 2)
             if observed_peak_pct > float(ud.get('daily_peak_pct') or 0.0):
                 ud['daily_peak_pct'] = observed_peak_pct
-                if ud.get('ratchet_floor_override') is not None and observed_peak_pct >= (float(ud['ratchet_floor_override']) + 0.6):
+                if ud.get('ratchet_floor_override') is not None and observed_peak_pct >= (float(ud['ratchet_floor_override']) + r_clear_buf):
                     ud['ratchet_floor_override'] = None
-                def _mut_peak(f_ud, pk=observed_peak_pct):
+                def _mut_peak(f_ud, pk=observed_peak_pct, c_buf=r_clear_buf):
                     if pk <= float(f_ud.get('daily_peak_pct') or 0.0):
                         return False
                     f_ud['daily_peak_pct'] = pk
-                    if f_ud.get('ratchet_floor_override') is not None and pk >= (float(f_ud['ratchet_floor_override']) + 0.6):
+                    if f_ud.get('ratchet_floor_override') is not None and pk >= (float(f_ud['ratchet_floor_override']) + c_buf):
                         f_ud['ratchet_floor_override'] = None
                     return True
                 update_user_state_atomic(prof_name, client_email, _mut_peak)
@@ -2113,8 +2117,8 @@ def process_auto_profile(prof_name, client_email=None):
 
             if ud.get('ratchet_floor_override') is not None:
                 daily_floor_locked = float(ud['ratchet_floor_override'])
-            elif daily_peak >= 2.50:
-                daily_floor_locked = round(int(daily_peak * 2) / 2.0, 2)
+            elif daily_peak >= r_start_pct:
+                daily_floor_locked = round(int(daily_peak / r_step_pct) * r_step_pct, 2)
 
             if daily_floor_locked > 0 and daily_pnl_pct <= daily_floor_locked and not ud.get('ratchet_locked'):
                 force_daily_floor_sell = True
@@ -2677,8 +2681,10 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
         if ud.get('last_ratchet_date') == today_str and float(ud.get('daily_peak_pct') or 0.0) > true_today_pct + 0.15:
             ud['daily_peak_pct'] = max(0.0, true_today_pct)
             changed = True
+        is_p1m_sync = any(x in str(ud.get('method') or '').lower() for x in ['1m reversal', 'pulse 1m']) or (ud.get('settings') or {}).get('interval') == '1m'
+        min_unlock_pct = 4.75 if is_p1m_sync else 2.25
         if ud.get('manual_locked_day') != today_str and (ud.get('ratchet_locked') or ud.get('is_locked')):
-            if true_today_pct < 2.25 and ud.get('ratchet_floor_override') is None:
+            if true_today_pct < min_unlock_pct and ud.get('ratchet_floor_override') is None:
                 ud['ratchet_locked'] = False
                 ud['is_locked'] = False
                 ud['locked_floor_val'] = None
@@ -3596,11 +3602,14 @@ def step_down_override_route():
     cur_eq_est = max(0.0, mb_cur + nh_cur - im_cur)
     cur_day_pct = ((cur_eq_est - mb_cur) / mb_cur * 100.0) if mb_cur > 0 else 0.0
 
+    is_p1m_ov = any(x in prof_name.lower() for x in ['1m reversal', 'pulse 1m'])
+    r_start_ov = 5.0 if is_p1m_ov else 2.5
+    r_step_ov = 5.0 if is_p1m_ov else 0.5
     raw_floor = ud.get('locked_floor_val') if ud.get('locked_floor_val') is not None else (
-        round(int(cur_day_pct * 2) / 2.0, 2) if cur_day_pct >= 2.5 else 2.5
+        round(int(cur_day_pct / r_step_ov) * r_step_ov, 2) if cur_day_pct >= r_start_ov else r_start_ov
     )
     current_floor = float(raw_floor)
-    new_floor = max(0.0, round(current_floor - 0.5, 2))
+    new_floor = max(0.0, round(current_floor - r_step_ov, 2))
 
     ud['ratchet_floor_override'] = new_floor
     ud['locked_floor_val'] = new_floor
@@ -3608,7 +3617,7 @@ def step_down_override_route():
     ud['is_locked'] = False
     ud['manual_locked_day'] = None
     # Keep daily_peak_pct >= cur_day_pct so process_auto_profile does not wipe ratchet_floor_override on the next tick
-    ud['daily_peak_pct'] = round(max(cur_day_pct, new_floor + 0.4), 2)
+    ud['daily_peak_pct'] = round(max(cur_day_pct, new_floor + (r_step_ov * 0.8)), 2)
 
     if is_client:
         portfolio_store.save_client_store(client_name, c_store)
@@ -4474,21 +4483,24 @@ def get_data():
                             fresh_u['daily_peak_pct'] = new_peak_val
                             portfolio_store.save_data(portfolio_store.data)
 
+            is_p1m_lb = any(x in u.lower() for x in ['1m reversal', 'pulse 1m'])
+            r_start_lb = 5.00 if is_p1m_lb else 2.50
+            r_step_lb = 5.00 if is_p1m_lb else 0.50
             peak_pct_today = max(float(u_data.get('daily_peak_pct') or 0.0), day_pct)
             stored_locked_floor = float(u_data.get('locked_floor_val') or 0.0)
-            computed_floor = round(int(peak_pct_today * 2) / 2.0, 2) if peak_pct_today >= 2.50 else stored_locked_floor
+            computed_floor = round(int(peak_pct_today / r_step_lb) * r_step_lb, 2) if peak_pct_today >= r_start_lb else stored_locked_floor
 
             has_override = (u_data.get('ratchet_floor_override') is not None)
             is_manually_locked = (u_data.get('manual_locked_day') == today_str)
             is_ratchet_locked = bool(u_data.get('ratchet_locked') and len(user_holds) == 0)
-            is_locked = is_manually_locked or is_ratchet_locked or (len(user_holds) == 0 and day_pct >= 2.50 and not has_override)
+            is_locked = is_manually_locked or is_ratchet_locked or (len(user_holds) == 0 and day_pct >= r_start_lb and not has_override)
 
             if has_override:
                 active_floor_val = float(u_data.get('ratchet_floor_override'))
             elif computed_floor > 0:
                 active_floor_val = computed_floor
             elif is_ratchet_locked:
-                active_floor_val = 2.5
+                active_floor_val = r_start_lb
             else:
                 active_floor_val = 0.0
 

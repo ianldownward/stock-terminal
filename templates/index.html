@@ -3261,14 +3261,25 @@
     <script>
         function updateProfitRatchetHUD(dayPct, isProfileLocked = false, activeFloor = 0) {
             let pct = parseFloat(dayPct) || 0.0;
-            let lockedStep = activeFloor > 0 ? activeFloor : (pct >= 2.5 ? (Math.floor(pct * 2) / 2) : 0);
+            let activeProfLow = (document.getElementById('userSelect')?.value || '').toLowerCase();
+            let isPulse1M = activeProfLow.includes('1m reversal') || activeProfLow.includes('pulse 1m');
+            let rStart = isPulse1M ? 5.0 : 2.5;
+            let rStep = isPulse1M ? 5.0 : 0.5;
+            let warnOffset = isPulse1M ? 0.5 : 0.1;
+            let lockedStep = activeFloor > 0 ? activeFloor : (pct >= rStart ? (Math.floor(pct / rStep) * rStep) : 0);
             let isLight = document.body.classList.contains('light-mode');
             let approachingTarget = 0;
 
-            document.querySelectorAll('#ratchetSegmentsRow .ratchet-step').forEach(step => {
-                let target = parseFloat(step.getAttribute('data-target'));
-                let warnThreshold = Math.round((target - 0.1) * 100) / 100;
+            let desktopSteps = document.querySelectorAll('#ratchetSegmentsRow .ratchet-step');
+            desktopSteps.forEach((step, idx) => {
+                let target = rStart + (idx * rStep);
+                step.setAttribute('data-target', target.toFixed(1));
+                let warnThreshold = Math.round((target - warnOffset) * 100) / 100;
                 let textEl = step.querySelector('span');
+                if (textEl) {
+                    let lbl = (target % 1 === 0) ? `${target.toFixed(0)}%` : `${target.toFixed(1)}%`;
+                    textEl.innerText = (idx === desktopSteps.length - 1) ? `${lbl}+` : lbl;
+                }
                 let barEl = step.querySelector('.r-bar');
 
                 let isHit = (lockedStep >= target || pct >= target);
@@ -3324,7 +3335,7 @@
                     subEl.innerText = `Trailing floor armed at +${lockedStep.toFixed(1)}%`;
                     subEl.style.color = '#ffd400';
                 } else {
-                    subEl.innerText = `Locks in 0.5% steps from 2.5%`;
+                    subEl.innerText = isPulse1M ? `Locks in 5% steps from 5%` : `Locks in 0.5% steps from 2.5%`;
                     subEl.style.color = '#8a8a9e';
                 }
             }
@@ -3336,15 +3347,18 @@
                 } else if (approachingTarget > 0) {
                     mobStatEl.innerHTML = `<span style="color:#ff9900;">+${pct.toFixed(2)}% / ${approachingTarget.toFixed(1)}%</span>`;
                 } else if (pct > 0) {
-                    mobStatEl.innerHTML = `<span style="color:#ffd400;">+${pct.toFixed(2)}% / 2.5%</span>`;
+                    mobStatEl.innerHTML = `<span style="color:#ffd400;">+${pct.toFixed(2)}% / ${rStart.toFixed(1)}%</span>`;
                 } else {
                     mobStatEl.innerHTML = `<span style="color:#8a8a9e;">Idle (0.0%)</span>`;
                 }
             }
 
-            document.querySelectorAll('#mobRatchetSegments .mob-r-bar').forEach(bar => {
-                let target = parseFloat(bar.getAttribute('data-target'));
-                let warnThreshold = Math.round((target - 0.1) * 100) / 100;
+            let mobBars = document.querySelectorAll('#mobRatchetSegments .mob-r-bar');
+            mobBars.forEach((bar, idx) => {
+                let target = rStart + (idx * rStep);
+                bar.setAttribute('data-target', target.toFixed(1));
+                bar.title = (idx === mobBars.length - 1) ? `${target}%+` : `${target}%`;
+                let warnThreshold = Math.round((target - warnOffset) * 100) / 100;
                 let isHit = (lockedStep >= target || pct >= target);
                 let isApproaching = (!isHit && !isProfileLocked && pct >= warnThreshold);
 
@@ -3444,11 +3458,14 @@
                 return;
             }
 
-            // 1. Calculate Daily Loss Shield (Circuit Breaker)
+            // 1. Calculate Daily Loss Shield (Circuit Breaker: -5.0% for Pulse 1M Reversal; -2.5% for 5m bots)
+            let isPulse1MShield = profName.includes('1m reversal') || profName.includes('pulse 1m');
+            let cbRatio = isPulse1MShield ? 0.05 : 0.025;
+            let cbHaltText = isPulse1MShield ? '-5.0% Halt' : '-2.5% Halt';
             let activeLb = (latestLeaderboardData || []).find(l => l.user && l.user.toLowerCase().includes(profName)) || {};
             let budget = activeLb.budget || 700.0;
             let dayPnl = activeLb.daily_pnl || 0.0;
-            let maxLoss = budget * 0.025; // -2.50% circuit breaker
+            let maxLoss = budget * cbRatio;
             let lossUsed = Math.max(0, -dayPnl);
             let cushionLeft = Math.max(0, maxLoss - lossUsed);
             let cushionPct = Math.max(0, Math.min(100, (cushionLeft / maxLoss) * 100));
@@ -3574,7 +3591,7 @@
                         <div style="width:${cushionPct}%; height:100%; background:${shieldColor}; transition:width 0.3s ease, background 0.3s ease;"></div>
                     </div>
                     <div style="display:flex; justify-content:space-between; font-size:7.5px; font-weight:700; color:#5a5f70;">
-                        <span>-$${maxLoss.toFixed(2)} (-2.5% Halt)</span>
+                        <span>-$${maxLoss.toFixed(2)} (${cbHaltText})</span>
                         <span>$0.00 (Full Buffer)</span>
                     </div>
                 </div>
@@ -3736,10 +3753,12 @@
             fetchData(false);
         }
 
-        // Smart Step-Down Override: Steps the floor down by 0.5% (e.g. 3.0% -> 2.5%) and reactivates trading
+        // Smart Step-Down Override: Steps the floor down (5.0% for Pulse 1M Reversal; 0.5% for 5m bots) and reactivates trading
         async function stepDownUnlockProfile(userKey, currentFloor, e) {
             if (e) e.stopPropagation();
-            let nextFloor = Math.max(0.0, currentFloor - 0.5);
+            let isP1M = (userKey || '').toLowerCase().includes('1m reversal') || (userKey || '').toLowerCase().includes('pulse 1m');
+            let stepSize = isP1M ? 5.0 : 0.5;
+            let nextFloor = Math.max(0.0, currentFloor - stepSize);
             let msg = `Step-Down Override for ${userKey}:\n\nStep the safety floor down to +${nextFloor.toFixed(1)}% and resume automated trading?\n\nIf the account pulls back to +${nextFloor.toFixed(1)}%, it will liquidate and lock at +${nextFloor.toFixed(1)}%.`;
             if (!confirm(msg)) return;
 
@@ -5071,7 +5090,10 @@
                         </div>
                     `;
                 } else if (isLocked) {
-                    let stepVal = (lb.active_floor && lb.active_floor > 0) ? lb.active_floor : Math.max(2.5, Math.floor((lb.daily_pct || 2.5) * 2) / 2);
+                    let isP1MLb = (lb.user || '').toLowerCase().includes('1m reversal') || (lb.user || '').toLowerCase().includes('pulse 1m');
+                    let rStartLb = isP1MLb ? 5.0 : 2.5;
+                    let rStepLb = isP1MLb ? 5.0 : 0.5;
+                    let stepVal = (lb.active_floor && lb.active_floor > 0) ? lb.active_floor : Math.max(rStartLb, Math.floor((lb.daily_pct || rStartLb) / rStepLb) * rStepLb);
                     let targetPctStr = `${stepVal % 1 === 0 ? stepVal.toFixed(0) : stepVal.toFixed(1)}%`;
 
                     tickerUnderName = `
@@ -5530,9 +5552,12 @@
                 let dayCol = dayVal >= 0 ? '#0ecb81' : '#ff5364';
                 let dayPct = activeLb.daily_pct || 0;
                 
+                let isP1MFetch = activeProf.toLowerCase().includes('1m reversal') || activeProf.toLowerCase().includes('pulse 1m');
+                let rStartFetch = isP1MFetch ? 5.0 : 2.5;
+                let rStepFetch = isP1MFetch ? 5.0 : 0.5;
                 let isRatchetLockedGuard = Boolean(activeLb.is_locked && !activeLb.is_manually_locked);
                 let ratchetLockedFloorVal = isRatchetLockedGuard
-                    ? ((activeLb.active_floor && activeLb.active_floor > 0) ? parseFloat(activeLb.active_floor) : Math.max(2.5, Math.floor((dayPct || 2.5) * 2) / 2))
+                    ? ((activeLb.active_floor && activeLb.active_floor > 0) ? parseFloat(activeLb.active_floor) : Math.max(rStartFetch, Math.floor((dayPct || rStartFetch) / rStepFetch) * rStepFetch))
                     : 0;
                 window._ratchetLockGuardState = { locked: isRatchetLockedGuard, floor: ratchetLockedFloorVal };
                 updateProfitRatchetHUD(dayPct, Boolean(activeLb.is_locked), parseFloat(activeLb.active_floor) || 0);
@@ -6647,23 +6672,28 @@
                 if (assetLabel) assetLabel.innerText = 'Current Status:';
                 assetEl.innerText = used >= 3 ? '0 / 3 Strikes Left (Locked for Today)' : `${left} of 3 Strikes Remaining`;
             } else if (guardType === 'ratchet') {
+                let activeProfModal = (document.getElementById('userSelect')?.value || '').toLowerCase();
+                let isP1MModal = activeProfModal.includes('1m reversal') || activeProfModal.includes('pulse 1m');
+                let rStartTxt = isP1MModal ? '5.0%' : '2.5%';
+                let rStepTxt = isP1MModal ? '5.0%' : '0.5%';
+                let rExamples = isP1MModal ? '5%, 10%, 15%, 20%+' : '2.5%, 3.0%, 3.5%, 4.0%+';
                 let rState = window._ratchetLockGuardState || { locked: false, floor: 0 };
                 let isLocked = Boolean(rState.locked && rState.floor > 0);
-                let flStr = isLocked ? `${rState.floor % 1 === 0 ? rState.floor.toFixed(0) : rState.floor.toFixed(1)}%` : '2.5%';
+                let flStr = isLocked ? `${rState.floor % 1 === 0 ? rState.floor.toFixed(0) : rState.floor.toFixed(1)}%` : rStartTxt;
                 let lockSvgIcon = isLocked
                     ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>'
                     : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
                 color = isLocked ? '#ffd400' : '#8a8a9e';
                 titleEl.innerHTML = lockSvgIcon + ' Profit Ratchet Lock';
                 if (allocLbl) allocLbl.innerText = 'Activation Threshold';
-                allocEl.innerText = '+2.5% Daily Gain';
+                allocEl.innerText = `+${rStartTxt} Daily Gain`;
                 if (execLbl) execLbl.innerText = 'Step Increment';
-                execEl.innerText = '+0.5% Trailing Floors';
-                descEl.innerText = 'Automated profit-bank lock. Once daily gains reach +2.5%, the ratchet arms a trailing safety floor that steps up every +0.5% (2.5%, 3.0%, 3.5%, 4.0%+). If price pulls back to that floor, the engine liquidates to cash and locks out further entries for the day.';
+                execEl.innerText = `+${rStepTxt} Trailing Floors`;
+                descEl.innerText = `Automated profit-bank lock. Once daily gains reach +${rStartTxt}, the ratchet arms a trailing safety floor that steps up every +${rStepTxt} (${rExamples}). If price pulls back to that floor, the engine liquidates to cash and locks out further entries for the day.`;
                 if (targetLabel) targetLabel.innerText = 'Override Option:';
-                tgtEl.innerText = 'Step Down 0.5% on Profile Card';
+                tgtEl.innerText = `Step Down ${rStepTxt} on Profile Card`;
                 if (assetLabel) assetLabel.innerText = 'Current Status:';
-                assetEl.innerText = isLocked ? `Ratchet Locked at +${flStr} (Cash Protected)` : 'Unlocked (Arms at +2.5% Daily Gain)';
+                assetEl.innerText = isLocked ? `Ratchet Locked at +${flStr} (Cash Protected)` : `Unlocked (Arms at +${rStartTxt} Daily Gain)`;
             }
 
             titleEl.style.color = color;
