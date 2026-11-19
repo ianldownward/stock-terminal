@@ -1574,10 +1574,10 @@ class MarketScoringEngine:
             'avg_pct': avg_pct
         }
 
-    def score_pulse_1m_reversal(self, ticker, current_price, avg_buy_price=0.0, highest_price=0.0, regime=None, overnight_sweep=True):
+    def score_pulse_1m_reversal(self, ticker, current_price, avg_buy_price=0.0, highest_price=0.0, regime=None, overnight_sweep=True, buy_timestamp=0):
         """1-Minute Pure Candle Reversal (Pulse 1M Reversal) across TQQQ, SOXL & SQQQ:
         - Entry (GO): Red (-4) -> Smaller Red (-3) -> Green (-2) on completed 1-minute candles.
-        - Exit (STOP): First completed 1-minute Red candle (-2) (or 20:50 UK overnight sweep).
+        - Exit (STOP): First completed 1-minute Red candle (-2) that closes AFTER entry (or 20:50 UK overnight sweep).
         """
         if regime is None:
             regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
@@ -1591,7 +1591,7 @@ class MarketScoringEngine:
 
         pct_change_1d = ((current_price - float(df_1m['Close'].iloc[0])) / float(df_1m['Close'].iloc[0])) * 100.0 if float(df_1m['Close'].iloc[0]) > 0 else 0.0
 
-        # Holding position: SELL immediately on the first completed red 1-minute candle (or 20:50 UK overnight sweep)
+        # Holding position: SELL immediately on the first completed red 1-minute candle that closed AFTER entry
         if avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
@@ -1599,9 +1599,10 @@ class MarketScoringEngine:
             if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'OVERNIGHT SWEEP: Liquidating to 100% cash.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
 
+            prev_bar_close_ts = int(df_1m.index[-2].timestamp()) + 60
             c_prev = float(df_1m['Close'].iloc[-2])
             o_prev = float(df_1m['Open'].iloc[-2])
-            if c_prev < o_prev:
+            if c_prev < o_prev and (int(buy_timestamp or 0) <= 0 or prev_bar_close_ts > int(buy_timestamp)):
                 return {'type': '1m Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M RED STOP {pnl_str}: 1m candle closed red (${o_prev:.2f} -> ${c_prev:.2f}).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Red Stop', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(1m Red Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'1m Red Stop {pnl_str}'}
 
             return {'type': '1m Reversal', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f'RIDING GREEN 1M WAVE {pnl_str}: Holding until first closed red 1m candle.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 1m Green', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 1m Green)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 85, 'health_color': '#0ecb81', 'health_text': f'Riding 1m Green {pnl_str}'}
@@ -1651,7 +1652,7 @@ class MarketScoringEngine:
 
         red1_ok = (b_r1_c < b_r1_o) and (r1_body > 0)
         red2_ok = (b_r2_c < b_r2_o) and (0 < r2_body < r1_body)
-        grn1_ok = (b_g1_c > b_g1_o) and (g1_body > 0)
+        grn1_ok = (b_g1_c > b_g1_o) and (g1_body > 0) and (current_price >= b_g1_o)
 
         if red1_ok and red2_ok and grn1_ok:
             bounce_pct = ((b_g1_c - b_g1_o) / b_g1_o * 100.0) if b_g1_o > 0 else 0.0
@@ -1663,12 +1664,12 @@ class MarketScoringEngine:
 
         return {'type': '1m Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m candles for Red -> Smaller Red -> Green (Go).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1m Pattern)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test e', regime=None, overnight_sweep=True):
+    def score_momentum(self, df_5m, current_price, avg_buy_price=0.0, highest_price=0.0, profile='test e', regime=None, overnight_sweep=True, buy_timestamp=0):
         if regime is None: regime = {'score': 50, 'state': 'Room Temp (Neutral)', 'color': '#8a8a9e', 'code': 'NEUTRAL', 'sparkline': [], 'trend': '► Stable'}
         ticker = getattr(df_5m, 'name', '')
         prof = profile.lower()
         if any(x in prof for x in ['1m reversal', 'pulse 1m']):
-            return self.score_pulse_1m_reversal(ticker, current_price, avg_buy_price=avg_buy_price, highest_price=highest_price, regime=regime, overnight_sweep=overnight_sweep)
+            return self.score_pulse_1m_reversal(ticker, current_price, avg_buy_price=avg_buy_price, highest_price=highest_price, regime=regime, overnight_sweep=overnight_sweep, buy_timestamp=buy_timestamp)
 
         is_inverse = ticker in ['SQQQ', '3SUS.L']
         is_3x_etf = ticker in ['TQQQ', 'SOXL', 'NVDL', 'CONL', 'MSTX', 'BITX', 'SQQQ', '3SUS.L']
@@ -2393,12 +2394,12 @@ def process_auto_profile(prof_name, client_email=None):
                 elif is_us_stock: is_open = (14 * 60 + 30) <= current_mins < (21 * 60)
                 else: is_open = (8 * 60) <= current_mins < (16 * 60 + 30)
 
-                avg_buy_p, highest_p = 0.0, cur
+                avg_buy_p, highest_p, buy_ts = 0.0, cur, 0
                 if sh > 0:
                     t_buys = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
                     if t_buys:
                         avg_buy_p = t_buys[0].get('price', 0.0)
-                        buy_ts = t_buys[0].get('timestamp', 0)
+                        buy_ts = int(t_buys[0].get('timestamp') or 0)
                         df_1m_hw = fetch_yf_data(t, "1d", "1m")
                         hw_src = df_1m_hw if (df_1m_hw is not None and not df_1m_hw.empty) else df
                         if not hw_src.empty and 'High' in hw_src.columns:
@@ -2439,7 +2440,7 @@ def process_auto_profile(prof_name, client_email=None):
                     v_r = (df['Volume'].iloc[-1] / avg_v) if avg_v > 0 else 1.0
                     st = engine.score_nav_asset(t, cur, v_r) if t in engine.nav_bases else engine.score_equity(df, cur)
                 else:
-                    st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=eff_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
+                    st = engine.score_momentum(df, cur, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=eff_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)), buy_timestamp=buy_ts)
 
                 if sh > 0:
                     held_scores.append({'ticker': t, 'shares': sh, 'price': cur, 'cps': cps, 'value': vo, 'score': st['score'], 'action': st['action_main']})
@@ -4829,7 +4830,7 @@ def get_data():
         cps = last_p / 100.0 if str(t).endswith('.L') and last_p > 100 else last_p
         val_own = round(sh_own * cps, 2)
 
-        avg_buy_p, highest_p = 0.0, last_p
+        avg_buy_p, highest_p, buy_ts = 0.0, last_p, 0
         holds_dict = ud.get('holdings') or {}
         if sh_own > 0:
             t_buys = [tr for tr in hist if tr.get('ticker') == t and tr.get('action') == 'BUY']
@@ -4875,7 +4876,7 @@ def get_data():
                 df_1m_ui = fetch_yf_data(t, "1d", "1m")
                 if df_1m_ui is not None and not df_1m_ui.empty:
                     score_px = float(df_1m_ui['Close'].iloc[-1])
-            st = engine.score_momentum(df_score, score_px, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
+            st = engine.score_momentum(df_score, score_px, avg_buy_price=avg_buy_p, highest_price=highest_p, profile=active_profile, regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)), buy_timestamp=buy_ts)
         else:
             av = df['Volume'].tail(20).mean() if len(df)>=20 else 1.0
             st = engine.score_nav_asset(t, last_p, (df['Volume'].iloc[-1]/av) if av>0 else 1.0) if t in engine.nav_bases else engine.score_equity(fetch_yf_data(t, "1y", "1d"), last_p)
