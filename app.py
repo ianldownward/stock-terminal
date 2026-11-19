@@ -3020,48 +3020,16 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
     alpaca_equity = round(float(acc.get('portfolio_value') or acc.get('equity') or 0.0), 2)
     alpaca_last_equity = round(float(acc.get('last_equity') or 0.0), 2)
     mb_val = float(ud.get('master_budget') or 700.0)
-    if mb_val <= 0 and alpaca_last_equity > 0:
-        ud['master_budget'] = alpaca_last_equity
-        mb_val = alpaca_last_equity
+    if mb_val <= 0:
+        ud['master_budget'] = 700.0
+        mb_val = 700.0
         changed = True
 
-    # Skip residual equity calibration while an order is still settling (<90s) so cash + open position never double-count
-    has_unsettled_trade = any(
-        tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC']
-        and (now_ts_sync - int(tr.get('timestamp') or 0)) < 90
-        for tr in hist
-    )
-
-    if not has_unsettled_trade:
-        # Remove ALL historical ALPACASYNC entries so cross-day drift never double-counts
-        non_sync_hist = [tr for tr in hist if tr.get('ticker') != 'ALPACASYNC']
-        if len(non_sync_hist) != len(hist):
-            hist = non_sync_hist
-            changed = True
-
-        net_real = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
-                       for tr in hist if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC'])
-        init_man = sum(float(pos.get('manual_val') or 0.0) for pos in init_pos.values())
-        open_mv = sum(round(float(p.get('market_value') or 0.0), 2) for p in alpaca_pos_map.values())
-        local_eq_before_adj = round(mb_val + net_real - init_man + open_mv, 2)
-
-        residual = round(alpaca_equity - local_eq_before_adj, 2) if alpaca_equity > 0 else 0.0
-        if abs(residual) >= 0.02:
-            # Anchor ALPACASYNC before PERFORMANCE_START_DATE so historical Alpaca baseline drift never distorts TODAY or DAILY AVG
-            pre_epoch_date = (pd.Timestamp(PERFORMANCE_START_DATE) - pd.Timedelta(days=1)).strftime('%Y-%m-%d')
-            hist.insert(0, {
-                'id': str(int(time.time() * 1000) + 4),
-                'ticker': 'ALPACASYNC',
-                'trade_type': 'LONG',
-                'action': 'SELL' if residual >= 0 else 'BUY',
-                'shares': 0,
-                'price': abs(residual),
-                'amount': abs(residual),
-                'time': now_lon.strftime('%d %b %H:%M'),
-                'date_str': pre_epoch_date,
-                'timestamp': int(now_lon.timestamp()) - 10
-            })
-            changed = True
+    # Purge any legacy ALPACASYNC balance-override entries so each profile strictly keeps its assigned capital split
+    non_sync_hist = [tr for tr in hist if tr.get('ticker') != 'ALPACASYNC']
+    if len(non_sync_hist) != len(hist):
+        hist = non_sync_hist
+        changed = True
 
     ud['history'] = hist
 
@@ -3860,9 +3828,13 @@ def api_client_settings():
         c_store = portfolio_store.get_client_store(client_name)
         c_broker = c_store.setdefault('broker', {})
         c_broker['mode'] = b_mode
-        c_broker['api_key'] = api_key
-        c_broker['secret_key'] = secret_key
+        if api_key: c_broker['api_key'] = api_key
+        if secret_key: c_broker['secret_key'] = secret_key
         c_broker['allocations'] = allocations
+        for prof, pdata in (c_store.get('users') or {}).items():
+            for s_key, s_cfg in allocations.items():
+                if s_key == prof.lower() or s_key in prof.lower() or prof.lower() in s_key:
+                    pdata['master_budget'] = float(s_cfg.get('budget', pdata.get('master_budget', 700.0)))
         c_store['is_configured'] = True
         portfolio_store.save_client_store(client_name, c_store)
         return jsonify({'status': 'ok', 'message': 'Account settings saved.'})
@@ -4161,7 +4133,8 @@ def add_capital_route():
         target = username if username in users else c_store.get('active_user', '')
         if target in users:
             ud = users[target]
-            new_budget = max(50.0, round(float(ud.get('master_budget', 500.0)) + amount, 2))
+            ud['history'] = [tr for tr in (ud.get('history') or []) if tr.get('ticker') != 'ALPACASYNC']
+            new_budget = max(50.0, round(float(ud.get('master_budget', 700.0)) + amount, 2))
             ud['master_budget'] = new_budget
             c_broker = c_store.setdefault('broker', {})
             allocs = c_broker.setdefault('allocations', {})
@@ -4174,7 +4147,8 @@ def add_capital_route():
 
     portfolio_store.reload()
     ud = portfolio_store.user_data(username)
-    new_budget = max(50.0, round(float(ud.get('master_budget', 500.0)) + amount, 2))
+    ud['history'] = [tr for tr in (ud.get('history') or []) if tr.get('ticker') != 'ALPACASYNC']
+    new_budget = max(50.0, round(float(ud.get('master_budget', 700.0)) + amount, 2))
     ud['master_budget'] = new_budget
     broker = portfolio_store.data.setdefault('broker', {})
     allocs = broker.setdefault('allocations', {})
@@ -4262,8 +4236,11 @@ def api_sync_alpaca_state():
         today_pnl = round(alpaca_equity - alpaca_last_equity, 2)
         today_pct = round((today_pnl / alpaca_last_equity) * 100.0, 2)
 
-        # Baseline budget is set to Alpaca's opening equity & clear any stale ratchet/day locks
-        ud['master_budget'] = alpaca_last_equity
+        # Preserve the profile's assigned capital allocation (e.g. $700 split) & clear stale ratchet/day locks
+        kept_budget = float(ud.get('master_budget') or 700.0)
+        if kept_budget <= 0:
+            kept_budget = 700.0
+        ud['master_budget'] = kept_budget
         ud['daily_peak_pct'] = max(0.0, today_pct)
         ud['ratchet_locked'] = False
         ud['is_locked'] = False
@@ -4296,7 +4273,10 @@ def api_sync_alpaca_state():
                 portfolio_store.reload()
                 ud = portfolio_store.user_data(prof_name)
 
-            ud['master_budget'] = alpaca_last_equity
+            kept_budget = float(ud.get('master_budget') or 700.0)
+            if kept_budget <= 0:
+                kept_budget = 700.0
+            ud['master_budget'] = kept_budget
             ud['daily_peak_pct'] = max(0.0, today_pct)
             ud['ratchet_locked'] = False
             ud['is_locked'] = False
@@ -4751,16 +4731,6 @@ def get_data():
                 div = 100.0 if str(tk).endswith('.L') and cur_p > 100 else 1.0
                 tot_own += round(sh_c * (cur_p / div), 2)
         total_equity = cash_balance + tot_own
-        enabled_live_top = [
-            u_n for u_n in ((c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})).keys()
-            if is_profile_alpaca_enabled(u_n)
-        ]
-        active_disp_name = active_name if is_client else (req_user or portfolio_store.active_username())
-        if alpaca_acc and len(enabled_live_top) == 1 and active_disp_name == enabled_live_top[0]:
-            alp_eq_top = float(alpaca_acc.get('equity') or 0.0)
-            if alp_eq_top > 0:
-                total_equity = alp_eq_top
-                cash_balance = round(total_equity - tot_own, 2)
         master_pnl_val = total_equity - mb
         master_pnl_pct = (master_pnl_val / mb * 100.0) if mb > 0 else 0.0
 
@@ -4890,18 +4860,6 @@ def get_data():
                 
             tot_eq_now = max(0.0, cash_now) + equity_now
             tot_eq_start = max(0.0, cash_start) + equity_start
-
-            enabled_live_list = [
-                u_n for u_n in source_users.keys()
-                if is_profile_alpaca_enabled(u_n)
-            ]
-            if alpaca_acc and len(enabled_live_list) == 1 and u == enabled_live_list[0]:
-                alp_eq_live = float(alpaca_acc.get('equity') or 0.0)
-                alp_last_live = float(alpaca_acc.get('last_equity') or 0.0)
-                if alp_eq_live > 0:
-                    tot_eq_now = alp_eq_live
-                if alp_last_live > 0:
-                    tot_eq_start = alp_last_live
 
             user_holds = [tk for tk, sh in shares_now_map.items() if sh > 0]
             held_sym = user_holds[0] if user_holds else ''
@@ -6465,26 +6423,20 @@ def get_broker_status():
                         if max(0, i_sh + n_sh) > 0:
                             claimed_symbols.add(tk.upper())
 
-            has_desync = any(p['symbol'].upper() not in claimed_symbols for p in live_positions)
+            live_symbols = {p['symbol'].upper() for p in live_positions if int(p.get('qty', 0)) > 0}
+            has_desync = any(sym not in claimed_symbols for sym in live_symbols) or any(sym not in live_symbols for sym in claimed_symbols)
             if not has_desync:
-                enabled_u = [
-                    u_n for u_n in audit_users.keys()
-                    if any((s_k == u_n.lower() or s_k in u_n.lower() or u_n.lower() in s_k) and s_d.get('enabled')
-                           for s_k, s_d in allocations.items())
-                ]
-                if len(enabled_u) == 1:
-                    u_d = audit_users[enabled_u[0]]
-                    u_mb = float(u_d.get('master_budget') or 700.0)
-                    u_init = u_d.get('initial_positions') or {}
-                    u_hist = u_d.get('history') or []
-                    u_nh = sum(-float(x.get('amount') or 0.0) if x.get('action') == 'BUY' else float(x.get('amount') or 0.0)
-                               for x in u_hist if x.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION'])
-                    u_im = sum(float(pos.get('manual_val') or 0.0) for pos in u_init.values())
-                    u_open_mv = sum(float(p.get('market_value') or 0.0) for p in live_positions)
-                    u_est_eq = round(u_mb + u_nh - u_im + u_open_mv, 2)
-                    alp_pv = round(float(acc.get('portfolio_value') or 0.0), 2)
-                    if alp_pv > 0 and abs(alp_pv - u_est_eq) >= 0.25:
-                        has_desync = True
+                total_allocated_budget = sum(
+                    float(u_d.get('master_budget') or 700.0)
+                    for u_n, u_d in audit_users.items()
+                    if isinstance(u_d, dict) and any(
+                        (s_k == u_n.lower() or s_k in u_n.lower() or u_n.lower() in s_k) and s_d.get('enabled')
+                        for s_k, s_d in allocations.items()
+                    )
+                )
+                alp_pv = round(float(acc.get('portfolio_value') or 0.0), 2)
+                if alp_pv > 0 and total_allocated_budget > (alp_pv + 1.00):
+                    has_desync = True
 
             pv_now = float(acc.get('portfolio_value') or acc.get('equity') or 0.0)
             last_eq_now = float(acc.get('last_equity') or pv_now)

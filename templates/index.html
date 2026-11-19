@@ -4856,19 +4856,15 @@
             });
             let d = await res.json();
             if (d.status === 'ok') {
-                // Instantly update badge in Settings modal without requiring a refresh
-                let nb = d.new_budget ? parseFloat(d.new_budget).toFixed(2) : '700.00';
-                if (activeProf.toLowerCase().includes('vector')) {
-                    let b = document.getElementById('alloc_vector_display');
-                    if (b) b.innerText = `$${nb}`;
-                } else if (activeProf.toLowerCase().includes('apex')) {
-                    let b = document.getElementById('alloc_apex_display');
-                    if (b) b.innerText = `$${nb}`;
-                } else if (activeProf.toLowerCase().includes('pulse') || activeProf.toLowerCase().includes('velocity')) {
-                    let b = document.getElementById('alloc_pulse_display');
-                    if (b) b.innerText = `$${nb}`;
+                let nb = d.new_budget ? parseFloat(d.new_budget) : 700.0;
+                let pKey = activeProf.toLowerCase();
+                if (window._activeAllocations && window._activeAllocations[pKey]) {
+                    window._activeAllocations[pKey].budget = nb;
                 }
                 await fetchData(false);
+                if (document.getElementById('settingsModal')?.style.display === 'flex') {
+                    openSettingsModal('bots');
+                }
             } else {
                 alert(d.message || "Failed to adjust capital.");
             }
