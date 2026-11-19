@@ -69,7 +69,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
 
         try:
             try:
-                df = yf.Ticker(ticker).history(period=period, interval=interval, timeout=8)
+                df = yf.Ticker(ticker).history(period=period, interval=interval, timeout=5)
             except TypeError:
                 df = yf.Ticker(ticker).history(period=period, interval=interval)
             if not df.empty:
@@ -4523,19 +4523,48 @@ def get_data():
             except Exception:
                 return tick, 0.0, 0.0
 
-        with ThreadPoolExecutor(max_workers=6) as ex:
+        # Pre-warm all needed market series in ONE parallel batch so /api/data responds in ~2s even on cold cache
+        settings = ud.get('settings') or {}
+        pre_p = request.args.get('p')
+        if not pre_p or pre_p == 'undefined': pre_p = settings.get('period', '1d')
+        pre_i = request.args.get('i')
+        if not pre_i or pre_i == 'undefined': pre_i = settings.get('interval', '5m')
+        if pre_p in ['1y', '5y', 'max'] and pre_i in ['1m', '2m', '5m', '15m', '30m', '60m', '1h']: pre_i = '1d'
+        elif pre_p in ['1mo', '3mo', '6mo'] and pre_i in ['1m', '2m']: pre_i = '5m'
+        pre_t = 'TQQQ' if t == 'ALL_SHARES' else t
+
+        warm_tasks = set()
+        for sym_w in all_user_holds:
+            if sym_w and sym_w not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']:
+                warm_tasks.add((sym_w, "5d", "5m"))
+        warm_tasks.add(("QQQ", "5d", "5m"))
+        warm_tasks.add(("NQ=F", "5d", "1d"))
+        warm_tasks.add(("ES=F", "5d", "1d"))
+        warm_tasks.add(("^VIX", "5d", "1d"))
+        if pre_t:
+            warm_tasks.add((pre_t, pre_p, pre_i))
+            warm_tasks.add((pre_t, "1d", "1m"))
+
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            list(ex.map(lambda args: fetch_yf_data(args[0], args[1], args[2]), warm_tasks))
             for tick, cur_d, start_d in ex.map(fetch_lb_price, all_user_holds): 
                 if tick in alp_live_px_map and alp_live_px_map[tick] > 0:
                     cur_d = alp_live_px_map[tick]
                 prices[tick] = {'cur': cur_d, 'start': start_d}
 
-        usd_gbp_rate = 0.7499
-        try:
-            df_fx = fetch_yf_data("GBPUSD=X", "5d", "5m")
-            if not df_fx.empty:
-                gbp_per_usd = 1.0 / float(df_fx['Close'].iloc[-1])
-                if gbp_per_usd > 0: usd_gbp_rate = round(gbp_per_usd, 4)
-        except Exception: pass
+        cached_fx = NEWS_CACHE.get('_usd_gbp')
+        if cached_fx and (time.time() - cached_fx.get('ts', 0)) < 600:
+            usd_gbp_rate = cached_fx['rate']
+        else:
+            usd_gbp_rate = 0.7499
+            try:
+                df_fx = fetch_yf_data("GBPUSD=X", "5d", "5m")
+                if not df_fx.empty:
+                    gbp_per_usd = 1.0 / float(df_fx['Close'].iloc[-1])
+                    if gbp_per_usd > 0:
+                        usd_gbp_rate = round(gbp_per_usd, 4)
+                        NEWS_CACHE['_usd_gbp'] = {'ts': time.time(), 'rate': usd_gbp_rate}
+            except Exception: pass
 
         leaderboard = []
         source_users = (c_store.get('users', {}) if c_store else {}) if is_client else portfolio_store.data.get('users', {})
