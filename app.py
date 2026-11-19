@@ -1689,11 +1689,12 @@ class MarketScoringEngine:
         if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 32:
             return {'type': 'Opening Window', 'score': 30, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': '2-Bar Seeding (14:30–14:32 UK): Building first 2 regular-session 1m candles.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '2-Bar Seeding', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(2-Bar Seeding)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': '2-Bar Seeding'}
 
-        # Early 3rd-bar catch at 14:32:xx: if 14:30 (Big Red) & 14:31 (Smaller Red) closed and 14:32 is actively breaking green above 14:31 close
-        if len(today_reg_1m) == 3:
+        # Early 3rd-bar catch at 14:32:xx: handles both len==2 (before 14:32 row emits) and len==3 (forming 14:32 bar)
+        if len(today_reg_1m) in [2, 3] and now_uk.weekday() < 5 and ((now_uk.hour == 14 and now_uk.minute >= 32) or now_uk.hour >= 15):
             b_r1_o, b_r1_c = float(today_reg_1m['Open'].iloc[0]), float(today_reg_1m['Close'].iloc[0])
             b_r2_o, b_r2_c = float(today_reg_1m['Open'].iloc[1]), float(today_reg_1m['Close'].iloc[1])
-            b_g1_o, b_g1_c = float(today_reg_1m['Open'].iloc[2]), float(current_price)
+            b_g1_o = float(today_reg_1m['Open'].iloc[2]) if len(today_reg_1m) == 3 else b_r2_c
+            b_g1_c = float(current_price)
             r1_b = b_r1_o - b_r1_c
             r2_b = b_r2_o - b_r2_c
             g1_b = b_g1_c - b_g1_o
@@ -1704,6 +1705,11 @@ class MarketScoringEngine:
             if (b_r1_c < b_r1_o) and (r1_b > 0) and (b_r2_c < b_r2_o) and (0 < r2_b < r1_b):
                 return {'type': '1m Reversal', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': '1m Exhaustion Ready: 14:30 & 14:31 Red -> Smaller Red printed, awaiting Green 3rd bar.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Green', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Green)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Awaiting Green'}
             return {'type': '1m Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': "Scanning today's 1m candles for Red -> Smaller Red -> Green (Go).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1m Pattern)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
+        # Never fall back to pre-market/overnight bars during live US regular session hours
+        is_us_reg_live = (now_uk.weekday() < 5) and ((now_uk.hour > 14 or (now_uk.hour == 14 and now_uk.minute >= 30)) and now_uk.hour < 21)
+        if is_us_reg_live and len(today_reg_1m) < 4:
+            return {'type': '1m Reversal', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': "Building today's 1m candle history (awaiting 4 regular-session bars).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Seeding 1m', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Seeding 1m)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Seeding 1m'}
 
         # Pure candle entry across all 3 tickers (TQQQ, SOXL, SQQQ): Red -> Smaller Red -> Green on completed non-doji bars
         src_1m = today_reg_1m if len(today_reg_1m) >= 4 else df_1m
@@ -6490,13 +6496,15 @@ def get_watchlist_scanner():
                 sh = resolve_scanner_shares(ud, tick)
                 is_held = (sh > 0)
                 
-                avg_p, high_p = 0.0, cur
+                avg_p, high_p, buy_ts_s = 0.0, cur, 0
                 if is_held:
                     buys = [tr for tr in hist if tr.get('ticker') == tick and tr.get('action') == 'BUY']
-                    if buys: avg_p = buys[0].get('price', 0.0)
+                    if buys:
+                        avg_p = buys[0].get('price', 0.0)
+                        buy_ts_s = int(buys[0].get('timestamp') or 0)
                     high_p = (holds.get(tick) or {}).get('high_water', cur)
 
-                st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)))
+                st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)), buy_timestamp=buy_ts_s)
                 
                 trail_pct = 0.65 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
