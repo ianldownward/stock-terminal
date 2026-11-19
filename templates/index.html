@@ -3409,11 +3409,10 @@
             let activeProfTl = (document.getElementById('userSelect')?.value || '').toLowerCase();
             let isP1MTl = activeProfTl.includes('1m reversal') || activeProfTl.includes('pulse 1m');
             let timeline = isP1MTl ? [
-                { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Pre-Market Data Warmup", nextTarget: 14*3600 + 30*60, nextLabel: "14:30 OPEN IN" },
-                { start: 14*60 + 30, end: 14*60 + 33, label: "14:30 – 14:33 • 3m Opening Spike Filter", nextTarget: 14*3600 + 33*60, nextLabel: "1M HUNT IN" },
-                { start: 14*60 + 33, end: 20*60 + 50, label: "14:33 – 20:50 • Continuous 1m Hunting", nextTarget: 20*3600 + 50*60, nextLabel: "20:50 SWEEP IN" },
-                { start: 20*60 + 50, end: 21*60, label: "20:50 • Overnight Cash Sweep", nextTarget: 21*3600, nextLabel: "US CLOSE IN" },
-                { start: 21*60, end: 24*60, label: "21:00 • US Market Close", nextTarget: 24*3600 + 8*3600, nextLabel: "WARMUP IN" }
+                { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Pre-Market Warmup", nextTarget: 14*3600 + 30*60, nextLabel: "14:30 OPEN IN" },
+                { start: 14*60 + 30, end: 14*60 + 32, label: "14:30 – 14:32 • 2-Bar Pattern Seeding", nextTarget: 14*3600 + 32*60, nextLabel: "1M HUNT IN" },
+                { start: 14*60 + 32, end: 20*60 + 50, label: "14:32 – 20:50 • Live 1m Reversal Hunting", nextTarget: 20*3600 + 50*60, nextLabel: "20:50 SWEEP IN" },
+                { start: 20*60 + 50, end: 21*60, label: "20:50 – 21:00 • Overnight Cash Sweep", nextTarget: 21*3600, nextLabel: "US CLOSE IN" }
             ] : [
                 { start: 8*60, end: 14*60 + 30, label: "08:00 – 14:30 • Data Prep & Warmup", nextTarget: 14*3600 + 30*60, nextLabel: "14:30 GAP-FADE IN" },
                 { start: 14*60 + 30, end: 14*60 + 50, label: "14:30 – 14:50 • Opening Gap-Fade & ORB", nextTarget: 14*3600 + 50*60, nextLabel: "TREND WINDOW IN" },
@@ -7511,18 +7510,20 @@
             let subCurf = document.getElementById('dialCurfew-sub');
             let sweepSecs = 20 * 3600 + 50 * 60;
             if (dCurf && vCurf) {
+                let seedEndSecs = 14 * 3600 + 32 * 60;
+                let isP1MSeeding = !isWknd && curSecs >= openSecs && curSecs < seedEndSecs;
                 if (isP1MBg) {
-                    if (isSpikeCalib) {
-                        let remSpike = spikeEndSecs - curSecs;
-                        let pctSpike = Math.max(4, Math.min(100, (remSpike / 180) * 100));
-                        dCurf.style.background = `conic-gradient(#ffd400 ${pctSpike}%, #262b36 0)`;
-                        vCurf.innerText = formatCountdownMMSS(remSpike);
+                    if (isP1MSeeding) {
+                        let remSeed = seedEndSecs - curSecs;
+                        let pctSeed = Math.max(4, Math.min(100, (remSeed / 120) * 100));
+                        dCurf.style.background = `conic-gradient(#ffd400 ${pctSeed}%, #262b36 0)`;
+                        vCurf.innerText = formatCountdownMMSS(remSeed);
                         vCurf.style.color = '#ffd400';
                         vCurf.style.fontSize = '10px';
-                        if (subCurf) subCurf.innerText = '3m Filter';
-                    } else if (!isWknd && curSecs >= spikeEndSecs && curSecs < sweepSecs) {
+                        if (subCurf) subCurf.innerText = '2m Seed';
+                    } else if (!isWknd && curSecs >= seedEndSecs && curSecs < sweepSecs) {
                         let remSess = sweepSecs - curSecs;
-                        let pctSess = Math.max(4, Math.min(100, (remSess / (sweepSecs - spikeEndSecs)) * 100));
+                        let pctSess = Math.max(4, Math.min(100, (remSess / (sweepSecs - seedEndSecs)) * 100));
                         dCurf.style.background = `conic-gradient(#0ecb81 ${pctSess}%, #262b36 0)`;
                         vCurf.innerText = 'ACTIVE';
                         vCurf.style.color = '#0ecb81';
@@ -7539,7 +7540,7 @@
                         vCurf.innerText = 'CLOSED';
                         vCurf.style.color = '#8a8a9e';
                         vCurf.style.fontSize = '9px';
-                        if (subCurf) subCurf.innerText = '14:33–20:50';
+                        if (subCurf) subCurf.innerText = '14:32–20:50';
                     }
                 } else {
                     if (isSpikeCalib) {
@@ -7668,7 +7669,10 @@
                 } else if (rem15 > 0) {
                     hdrStatus.innerText = isP1MBg ? '60s Cooldown' : '15m Cooldown';
                     hdrStatus.style.color = '#ff9900';
-                } else if (isSpikeCalib) {
+                } else if (isP1MBg && isP1MSeeding) {
+                    hdrStatus.innerText = '2m Pattern Seed';
+                    hdrStatus.style.color = '#ffd400';
+                } else if (!isP1MBg && isSpikeCalib) {
                     hdrStatus.innerText = '3m Spike Filter';
                     hdrStatus.style.color = '#ffd400';
                 } else if (!isP1MBg && isGapFadeOpen) {
