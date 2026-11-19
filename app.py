@@ -1609,13 +1609,41 @@ class MarketScoringEngine:
         if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'OVERNIGHT SWEEP: Blocking new entries before close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
-        if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 33:
-            return {'type': 'Opening Window', 'score': 30, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': '3m Spike Filter: Letting opening bell orders settle until 14:33 UK.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '3m Spike Filter', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(3m Spike Wait)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': '3m Spike Filter'}
+        # Filter to today's regular US session (>= 14:30 UK) so overnight gaps never pair yesterday's 20:59 bar with today's open
+        df_1m_uk = df_1m.copy()
+        if df_1m_uk.index.tz is None:
+            df_1m_uk.index = df_1m_uk.index.tz_localize('UTC')
+        idx_lon_1m = df_1m_uk.index.tz_convert('Europe/London')
+        today_reg_1m = df_1m_uk[
+            (idx_lon_1m.strftime('%Y-%m-%d') == now_uk.strftime('%Y-%m-%d'))
+            & ((idx_lon_1m.hour > 14) | ((idx_lon_1m.hour == 14) & (idx_lon_1m.minute >= 30)))
+        ]
+
+        # Need at least 2 completed regular-session 1m candles (14:30 & 14:31 -> ready at 14:32:00)
+        if now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 32:
+            return {'type': 'Opening Window', 'score': 30, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': '2-Bar Seeding (14:30–14:32 UK): Building first 2 regular-session 1m candles.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '2-Bar Seeding', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(2-Bar Seeding)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': '2-Bar Seeding'}
+
+        # Early 3rd-bar catch at 14:32:xx: if 14:30 (Big Red) & 14:31 (Smaller Red) closed and 14:32 is actively breaking green above 14:31 close
+        if len(today_reg_1m) == 3:
+            b_r1_o, b_r1_c = float(today_reg_1m['Open'].iloc[0]), float(today_reg_1m['Close'].iloc[0])
+            b_r2_o, b_r2_c = float(today_reg_1m['Open'].iloc[1]), float(today_reg_1m['Close'].iloc[1])
+            b_g1_o, b_g1_c = float(today_reg_1m['Open'].iloc[2]), float(current_price)
+            r1_b = b_r1_o - b_r1_c
+            r2_b = b_r2_o - b_r2_c
+            g1_b = b_g1_c - b_g1_o
+            if (b_r1_c < b_r1_o) and (r1_b > 0) and (b_r2_c < b_r2_o) and (0 < r2_b < r1_b) and (b_g1_c > b_g1_o) and (b_g1_c > b_r2_c) and (g1_b > 0):
+                bounce_pct = ((b_g1_c - b_g1_o) / b_g1_o * 100.0) if b_g1_o > 0 else 0.0
+                buy_score = min(98, max(78, round(80 + bounce_pct * 20)))
+                return {'type': '1m Reversal', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M 3RD-BAR GO: 14:30 Red (-${r1_b:.2f}) -> 14:31 Smaller Red (-${r2_b:.2f}) -> 14:32 Green (+${g1_b:.2f}).', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Reversal Go', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m 3rd-Bar Go)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Reversal Go'}
+            if (b_r1_c < b_r1_o) and (r1_b > 0) and (b_r2_c < b_r2_o) and (0 < r2_b < r1_b):
+                return {'type': '1m Reversal', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': '1m Exhaustion Ready: 14:30 & 14:31 Red -> Smaller Red printed, awaiting Green 3rd bar.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Green', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Green)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Awaiting Green'}
+            return {'type': '1m Reversal', 'score': 10, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': "Scanning today's 1m candles for Red -> Smaller Red -> Green (Go).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1m Pattern)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
         # Pure candle entry across all 3 tickers (TQQQ, SOXL, SQQQ): Red (-4) -> Smaller Red (-3) -> Green (-2)
-        b_r1_o, b_r1_c = float(df_1m['Open'].iloc[-4]), float(df_1m['Close'].iloc[-4])
-        b_r2_o, b_r2_c = float(df_1m['Open'].iloc[-3]), float(df_1m['Close'].iloc[-3])
-        b_g1_o, b_g1_c = float(df_1m['Open'].iloc[-2]), float(df_1m['Close'].iloc[-2])
+        src_1m = today_reg_1m if len(today_reg_1m) >= 4 else df_1m
+        b_r1_o, b_r1_c = float(src_1m['Open'].iloc[-4]), float(src_1m['Close'].iloc[-4])
+        b_r2_o, b_r2_c = float(src_1m['Open'].iloc[-3]), float(src_1m['Close'].iloc[-3])
+        b_g1_o, b_g1_c = float(src_1m['Open'].iloc[-2]), float(src_1m['Close'].iloc[-2])
 
         r1_body = b_r1_o - b_r1_c
         r2_body = b_r2_o - b_r2_c
