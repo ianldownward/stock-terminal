@@ -2878,7 +2878,7 @@
             <div class="top-nav" style="margin-top:10px; border:none; padding:0; background:transparent;">
                 <div class="top-nav-row1">
                     <div style="display:flex; align-items:center; gap:8px;">
-                        <h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">No Stock Loaded</h2>
+                        <h2 id="activeTitle" style="margin:0; display:flex; align-items:center;">Loading Market Data...</h2>
                     </div>
                     <div class="action-buttons">
                         <button id="btnShowTrades" class="btn-control active" onclick="toggleShowTrades()">Trades</button>
@@ -5534,7 +5534,7 @@
 
             let safetyTimer = setTimeout(() => {
                 if (loader) loader.style.display = 'none';
-            }, 3000);
+            }, 12000);
 
             try {
                 let pSelect = document.getElementById('periodSelect') ? document.getElementById('periodSelect').value : '1d';
@@ -5545,8 +5545,10 @@
                 let url = `/api/data?t=${encodeURIComponent(reqTk)}&p=${pSelect}&i=${iSelect}`;
                 if (activeUser) url += `&user=${encodeURIComponent(activeUser)}`;
 
-                let res = await fetch(url); 
-                let p = await res.json(); 
+                let res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                let p = await res.json();
+                window._fetchRetryCount = 0; 
                 
                 masterData = p.ohlc || [];
                 globalPortfolioData = p.portfolio || {};
@@ -5888,6 +5890,10 @@
                 if (typeof fetchReadinessScanner === 'function') fetchReadinessScanner();
             } catch(e) { 
                 console.error("fetchData error:", e);
+                window._fetchRetryCount = (window._fetchRetryCount || 0) + 1;
+                if (window._fetchRetryCount <= 3) {
+                    setTimeout(() => fetchData(false), 2000);
+                }
             } finally {
                 clearTimeout(safetyTimer);
                 if (loader) loader.style.display = 'none';
@@ -6095,11 +6101,11 @@
         async function initTerminal() {
             syncThemeUI(document.body.classList.contains('light-mode'));
             initChart(); 
-            await fetchUsers();
-            updateMarketClocks();
-            await fetchData(false); 
             setupAutoRefresh();
             checkMobileLayout();
+            await fetchUsers();
+            updateMarketClocks();
+            await fetchData(false);
 
             // Direct trigger: Only pop up if there are genuinely zero active strategy profiles
             const isClient = ("{{ user_role }}" !== 'admin');
