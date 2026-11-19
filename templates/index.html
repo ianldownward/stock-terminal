@@ -4974,16 +4974,44 @@
                         if (u === data.active_user) opt.selected = true; 
                         sel.appendChild(opt); 
                     });
-                    if (data.active_user) sel.value = data.active_user;
+                    if (data.active_user) {
+                        sel.value = data.active_user;
+                        applyDefaultIntervalForProfile(data.active_user);
+                    }
                 }
                 renderCustomProfileDropdown(latestLeaderboardData);
             } catch(e) {}
+        }
+
+        function applyDefaultIntervalForProfile(username) {
+            let low = (username || '').toLowerCase();
+            let isP1M = low.includes('1m reversal') || low.includes('pulse 1m');
+            let targetInt = isP1M ? '1m' : '5m';
+
+            let pSel = document.getElementById('periodSelect');
+            if (pSel && pSel.value !== '1d') {
+                pSel.value = '1d';
+                updateIntervals();
+            }
+            let iSel = document.getElementById('intervalSelect');
+            if (iSel) iSel.value = targetInt;
+
+            document.querySelectorAll('#mobileBottomControls .mobile-ctrl-group:nth-child(1) .m-btn').forEach(b => b.classList.remove('active'));
+            let mR1D = document.getElementById('mRange1D');
+            if (mR1D) mR1D.classList.add('active');
+
+            document.querySelectorAll('#mobileBottomControls .mobile-ctrl-group:nth-child(2) .m-btn').forEach(b => b.classList.remove('active'));
+            let mIntBtn = document.getElementById(isP1M ? 'mInt1M' : 'mInt5M');
+            if (mIntBtn) mIntBtn.classList.add('active');
         }
 
         async function onUserChange(username, targetTicker = null) {
             if (!username) return; 
             let sel = document.getElementById('userSelect');
             if (sel) sel.value = username;
+            applyDefaultIntervalForProfile(username);
+            window._userHasPannedChart = false;
+            window._chartEverFitted = false;
             renderCustomProfileDropdown(latestLeaderboardData);
 
             if (targetTicker) {
