@@ -2974,10 +2974,19 @@ def reconcile_single_target(target):
                 continue
             order_id = o.get('id')
             
-            if not coid or filled_qty <= 0 or filled_price <= 0:
+            if filled_qty <= 0 or filled_price <= 0:
                 continue
                 
             matched_prof = match_bot_from_order_id(coid, auto_profiles)
+            if not matched_prof:
+                _allocs = broker.get('allocations') or {}
+                _en_profs = [
+                    p for p in auto_profiles
+                    if any((s_k == p.lower() or s_k in p.lower() or p.lower() in s_k) and s_d.get('enabled')
+                           for s_k, s_d in _allocs.items())
+                ]
+                if len(_en_profs) == 1:
+                    matched_prof = _en_profs[0]
             if not matched_prof:
                 continue
 
