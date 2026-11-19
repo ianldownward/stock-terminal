@@ -3169,7 +3169,7 @@
                 <span id="buyGuardStatusText" style="margin-left:auto; margin-right:6px; font-size:10px; font-weight:800; color:#0ecb81; text-transform:none;">All Clear</span>
             </summary>
 
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:2px;">
+            <div id="buyingGuardsRow" style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:2px;">
                 <!-- Post-Sell Cooldown Circle (60s for Pulse 1M Reversal; 15m for 5m bots) -->
                 <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('cooldown')" title="Click for post-sell cooldown explanation">
                     <span id="dialCd15-title" style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">15M COOL</span>
@@ -3191,7 +3191,7 @@
                 </div>
 
                 <!-- 3-Strike Loss Lockout Burger Icon (Same 46px height as timer circles) -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('strikes')" title="Click for 3-Strike Loss Guard explanation">
+                <div id="strikeGuardCol" style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('strikes')" title="Click for 3-Strike Loss Guard explanation">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">3-STRIKE</span>
                     <div id="strikeBurgerBox" style="width:46px; height:46px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:6px;">
                         <div id="strikeBar1" style="width:34px; height:6px; border-radius:3px; background:#ffd400; box-shadow:0 0 6px rgba(255,212,0,0.45); transition:all 0.3s ease;"></div>
@@ -5188,24 +5188,31 @@
                 let equityFormatted = formatDualCurrency(lb.equity);
                 let isInfoOpen = openInfoSet.has(lb.user);
 
-                let displayVal = sortMode === 'today' ? `${dailyPnlFormatted} ${arrowHtml}` : equityFormatted;
-                let subText = sortMode === 'today' ? `${equityFormatted} Total` : `(${dailyPnlFormatted} ${arrow ? arrow + ' ' : ''}${pctStr} Today)`;
-
                 let mainColor = sortMode === 'today' ? dailyColor : equityColor;
                 let subColor = sortMode === 'today' ? equityColor : dailyColor;
+                let rightStackHtml = sortMode === 'today'
+                    ? `
+                        <span style="color:${mainColor}; font-weight:800; font-size:13px; line-height:1.15;">${dailyPnlFormatted}</span>
+                        <div style="font-size:10px; font-weight:700; color:${dailyColor}; margin-top:2px; line-height:1.15;">${arrow ? arrow + ' ' : ''}${pctStr}</div>
+                        <div style="font-size:9.5px; color:${subColor}; margin-top:1px; line-height:1.15;">${equityFormatted}</div>
+                    `
+                    : `
+                        <span style="color:${mainColor}; font-weight:800; font-size:13px; line-height:1.15;">${equityFormatted}</span>
+                        <div style="font-size:10px; font-weight:700; color:${subColor}; margin-top:2px; line-height:1.15;">${dailyPnlFormatted}</div>
+                        <div style="font-size:9.5px; font-weight:700; color:${subColor}; margin-top:1px; line-height:1.15;">(${arrow ? arrow + ' ' : ''}${pctStr})</div>
+                    `;
 
                 let cardInner = `
-                    <div class="lb-header">
-                        <div style="display:flex; flex-direction:column; align-items:flex-start;">
-                            <div>
+                    <div class="lb-header" style="gap:8px;">
+                        <div style="display:flex; flex-direction:column; align-items:flex-start; min-width:0;">
+                            <div style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">
                                 <span>${lb.user}</span>
-                                <span class="info-icon" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
+                                <span class="info-icon" style="margin-left:0;" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
                             </div>
                             ${tickerUnderName}
                         </div>
-                        <div style="text-align:right;">
-                            <span style="color:${mainColor}; font-weight:bold; font-size:13px;">${displayVal}</span>
-                            <div style="font-size:10px; color:${subColor}; margin-top:2px;">${subText}</div>
+                        <div style="text-align:right; flex-shrink:0;">
+                            ${rightStackHtml}
                         </div>
                     </div>
                     <div class="lb-desc" style="display:${isInfoOpen ? 'block' : 'none'};">${profileDesc[lb.user] || 'Custom Strategy Profile.'}</div>`;
@@ -5676,6 +5683,9 @@
                 }
 
                 let p1mDrawer = document.getElementById('pulse1mSequenceDrawer');
+                let execGearDrawer = document.getElementById('executionGearHud');
+                let strikeColEl = document.getElementById('strikeGuardCol');
+                let guardsRowEl = document.getElementById('buyingGuardsRow');
                 let wlTitleEl = document.getElementById('watchlistDrawerTitle');
                 let macroTitleEl = document.getElementById('macroRadarTitle');
                 let mCol1Lbl = document.getElementById('macroCol1Label');
@@ -5684,6 +5694,9 @@
 
                 if (isP1MFetch) {
                     if (p1mDrawer) p1mDrawer.style.display = '';
+                    if (execGearDrawer) execGearDrawer.style.display = 'none';
+                    if (strikeColEl) strikeColEl.style.display = 'none';
+                    if (guardsRowEl) guardsRowEl.style.justifyContent = 'space-around';
                     if (wlTitleEl) wlTitleEl.innerText = '1m Pattern Scanner (3x Universe)';
                     if (macroTitleEl) macroTitleEl.innerText = `1m Scalp Pulse (${currentTicker || 'SOXL'})`;
                     if (typeof renderPulse1MSequenceRadar === 'function') {
@@ -5713,6 +5726,9 @@
                     }
                 } else {
                     if (p1mDrawer) p1mDrawer.style.display = 'none';
+                    if (execGearDrawer) execGearDrawer.style.display = '';
+                    if (strikeColEl) strikeColEl.style.display = 'flex';
+                    if (guardsRowEl) guardsRowEl.style.justifyContent = 'space-between';
                     if (wlTitleEl) wlTitleEl.innerText = 'Strategy Readiness (3x Universe)';
                     if (macroTitleEl) macroTitleEl.innerText = 'Macro Radar & Futures Pulse';
                     if (mCol1Lbl) mCol1Lbl.innerText = 'NQ (Nasdaq)';
@@ -7396,6 +7412,13 @@
             if (!st) return;
             let activeProfBg = (document.getElementById('userSelect')?.value || '').toLowerCase();
             let isP1MBg = activeProfBg.includes('1m reversal') || activeProfBg.includes('pulse 1m');
+
+            let strikeColBg = document.getElementById('strikeGuardCol');
+            let guardsRowBg = document.getElementById('buyingGuardsRow');
+            let execGearBg = document.getElementById('executionGearHud');
+            if (strikeColBg) strikeColBg.style.display = isP1MBg ? 'none' : 'flex';
+            if (guardsRowBg) guardsRowBg.style.justifyContent = isP1MBg ? 'space-around' : 'space-between';
+            if (execGearBg) execGearBg.style.display = isP1MBg ? 'none' : '';
 
             let cdTitleEl = document.getElementById('dialCd15-title');
             let cdSubEl = document.getElementById('dialCd15-sub');
