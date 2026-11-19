@@ -76,7 +76,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
             for k in stale_keys:
                 YF_CACHE.pop(k, None)
 
-        cache_duration = 8 if interval in ['1m', '2m'] else (15 if interval == '5m' else 180)
+        cache_duration = 3 if interval in ['1m', '2m'] else (12 if interval == '5m' else 180)
         
         if cache_key in YF_CACHE:
             cached_time, df = YF_CACHE[cache_key]
@@ -263,7 +263,7 @@ def get_live_alpaca_account(api_key, secret_key, mode):
     cache_key = f"{api_key}_{mode}"
     if cache_key in ALPACA_ACCOUNT_CACHE:
         cached_time, data = ALPACA_ACCOUNT_CACHE[cache_key]
-        if now - cached_time < 5:
+        if now - cached_time < 2:
             return data
 
     base_url = "https://paper-api.alpaca.markets" if mode == 'paper' else "https://api.alpaca.markets"
@@ -1631,21 +1631,46 @@ class MarketScoringEngine:
 
         pct_change_1d = ((current_price - float(df_1m['Close'].iloc[0])) / float(df_1m['Close'].iloc[0])) * 100.0 if float(df_1m['Close'].iloc[0]) > 0 else 0.0
 
-        # Holding position: SELL immediately on the first completed red 1-minute candle that closed AFTER entry
+        # Holding position: Multi-layer Fast-Bail Exit Shield (Intrabar Stop + Live-Bar Red Breakdown + Peak Profit Lock + Closed Red Bar)
         if avg_buy_price > 0:
             pnl_pct = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
             pnl_str = f"({'+' if pnl_pct >= 0 else ''}{pnl_pct:.2f}%)"
+            eff_high = max(float(highest_price or 0.0), float(current_price or 0.0), float(avg_buy_price))
+            peak_pnl_pct = ((eff_high - avg_buy_price) / avg_buy_price) * 100.0
+            drop_from_peak_pct = ((eff_high - current_price) / eff_high) * 100.0 if eff_high > 0 else 0.0
 
             if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'OVERNIGHT SWEEP: Liquidating to 100% cash.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
 
+            # 1. Instant Intrabar Hard Bailout (-0.45% max adverse excursion — never wait 60s for a crashing bar to close)
+            if pnl_pct <= -0.45:
+                return {'type': '1m Fast Bail', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'FAST HARD STOP {pnl_str}: Bailed intrabar at -0.45% limit before candle close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Fast Stop', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(1m Fast Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'1m Fast Stop {pnl_str}'}
+
+            # 2. Intrabar Peak Profit Lock & Tight 0.25% Trailing Choke (never let a +0.40%+ winner turn into a loser)
+            if peak_pnl_pct >= 0.75:
+                if drop_from_peak_pct >= 0.25 or pnl_pct <= 0.45:
+                    return {'type': '1m Profit Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M PEAK CHOKE {pnl_str}: Banked surge (Peak +{peak_pnl_pct:.2f}%, Trail 0.25%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Peak Banked', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(1m Peak Banked)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f'1m Peak Banked {pnl_str}'}
+            elif peak_pnl_pct >= 0.40:
+                if pnl_pct <= 0.12:
+                    return {'type': '1m Profit Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M BREAKEVEN LOCK {pnl_str}: Protected +0.12% floor after +{peak_pnl_pct:.2f}% peak.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m BE Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(1m BE Lock)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 90, 'health_color': '#0ecb81', 'health_text': f'1m BE Lock {pnl_str}'}
+
+            # 3. Live-Bar Intrabar Red Breakdown (if current forming 1m bar drops >= 0.25% below its Open, bail immediately)
+            live_open = float(df_1m['Open'].iloc[-1])
+            live_bar_ts = int(df_1m.index[-1].timestamp())
+            if live_open > 0 and (int(buy_timestamp or 0) <= 0 or (live_bar_ts + 60) > int(buy_timestamp)):
+                live_drop_pct = ((live_open - current_price) / live_open) * 100.0
+                if live_drop_pct >= 0.25 and pnl_pct <= 0.20:
+                    return {'type': '1m Live Red Bail', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'LIVE 1M RED BREAK {pnl_str}: Forming bar dropped -{live_drop_pct:.2f}% below ${live_open:.2f} open.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Live Red Bail', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Live Red Bail)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'Live Red Bail {pnl_str}'}
+
+            # 4. Completed 1-Minute Red Candle Stop (exits at bar close if candle finished red)
             prev_bar_close_ts = int(df_1m.index[-2].timestamp()) + 60
             c_prev = float(df_1m['Close'].iloc[-2])
             o_prev = float(df_1m['Open'].iloc[-2])
             if c_prev < o_prev and (int(buy_timestamp or 0) <= 0 or prev_bar_close_ts > int(buy_timestamp)):
                 return {'type': '1m Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M RED STOP {pnl_str}: 1m candle closed red (${o_prev:.2f} -> ${c_prev:.2f}).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Red Stop', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(1m Red Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'1m Red Stop {pnl_str}'}
 
-            return {'type': '1m Reversal', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f'RIDING GREEN 1M WAVE {pnl_str}: Holding until first closed red 1m candle.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 1m Green', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 1m Green)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 85, 'health_color': '#0ecb81', 'health_text': f'Riding 1m Green {pnl_str}'}
+            trail_cushion = max(0, min(100, int(100 - (max(0.0, -pnl_pct) / 0.45 * 100))))
+            return {'type': '1m Reversal', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f'RIDING 1M WAVE {pnl_str}: Fast-Bail active (-0.45% stop / -0.25% live red / +0.40% BE lock).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 1m Green', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 1m Green)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': trail_cushion, 'health_color': '#0ecb81', 'health_text': f'Riding 1m Green {pnl_str}'}
 
         if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'OVERNIGHT SWEEP: Blocking new entries before close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
@@ -2681,9 +2706,13 @@ def global_background_worker():
         now_uk_w = pd.Timestamp.now(tz='Europe/London')
         w_mins = now_uk_w.hour * 60 + now_uk_w.minute
         is_us_open_w = (now_uk_w.weekday() < 5) and ((14 * 60 + 30) <= w_mins < (21 * 60))
-        # Wall-clock aligned sleep (:00, :10, :20, :30, :40, :50) so Live & Staging evaluate identical candles simultaneously
-        step_sec = 10.0 if is_us_open_w else 20.0
-        sleep_sec = max(1.0, step_sec - (time.time() % step_sec))
+        any_live_holds = any(
+            isinstance(u_d, dict) and any(int((v or {}).get('shares') or 0) > 0 for v in (u_d.get('holdings') or {}).values() if isinstance(v, dict))
+            for u_d in (portfolio_store.data.get('users') or {}).values()
+        )
+        # 3-second fast exit watchdog when holding a position; 10-second wall-clock aligned entry scan when flat
+        step_sec = 3.0 if (is_us_open_w and any_live_holds) else (10.0 if is_us_open_w else 20.0)
+        sleep_sec = max(0.8, step_sec - (time.time() % step_sec))
         time.sleep(sleep_sec)
 
 def match_bot_from_order_id(client_order_id, profiles):
