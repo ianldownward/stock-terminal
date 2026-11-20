@@ -2441,7 +2441,7 @@
                 </div>
 
                 <div style="display:flex; gap:8px; margin-top:4px;">
-                    <button type="button" id="btnMobAlpacaCalibrate" class="btn-sync-action" style="flex:1; padding:10px; font-size:12px; border-color:#0ecb81 !important; color:#0ecb81 !important;" onclick="forceCalibrateAlpaca(this)">
+                    <button type="button" id="btnMobAlpacaCalibrate" class="btn-sync-action" style="flex:1; padding:10px; font-size:12px;" onclick="forceCalibrateAlpaca(this)">
                         Calibrate
                     </button>
                     <button type="button" id="btnMobAlpacaSync" class="btn-sync-action" style="flex:1; padding:10px; font-size:12px;" onclick="syncWithAlpaca(this)">
@@ -6793,11 +6793,20 @@
                     if (circleBtn) circleBtn.title = isDesyncTop ? 'Alpaca: De-Synced (Click to Calibrate & Sync)' : 'Alpaca: Live & Synced (Click to Calibrate & Sync)';
 
                     let isExpanded = (window._alpacaExpExpanded !== undefined) ? window._alpacaExpExpanded : true;
-                    let expBorder = '#262b36';
-                    let expHtml = `
+                    let expBorder = isDesyncTop ? '#ff9900' : '#262b36';
+                    let expHtml = isDesyncTop
+                        ? `
+                        <div style="color:#ff9900; font-weight:700; font-size:11px; display:flex; flex-direction:column; gap:3px; padding:2px 0;">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ff9900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                <span>De-Synced (100% Cash on Alpaca)</span>
+                            </div>
+                            <span style="font-size:10px; color:#e1e3e6; font-weight:500;">${d.desync_reason || 'Click Calibrate to align local ledger with Alpaca.'}</span>
+                        </div>`
+                        : `
                         <div style="color:#0ecb81; font-weight:700; font-size:11px; display:flex; align-items:center; justify-content:center; gap:6px; padding:2px 0;">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ecb81" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                            <span>100% Flat (Cash)</span>
+                            <span>Live & Synced • 100% Flat (Cash)</span>
                         </div>`;
 
                     if (d.positions && d.positions.length > 0) {
@@ -6885,10 +6894,16 @@
                         [deskBtn, mobBtn].filter(Boolean).forEach(b => {
                             b.disabled = false;
                             b.innerText = 'Check';
-                            b.style.borderColor = '#ffd400';
-                            b.style.color = '#ffd400';
+                            b.style.borderColor = '';
+                            b.style.color = '';
                             b.style.cursor = 'pointer';
-                            b.onclick = () => fetchBrokerStatus();
+                            b.onclick = async () => {
+                                b.disabled = true;
+                                b.innerText = 'Checking...';
+                                await fetchBrokerStatus();
+                                b.innerText = 'Checked ✓';
+                                setTimeout(() => { b.disabled = false; b.innerText = 'Check'; }, 1500);
+                            };
                         });
                     }
 
