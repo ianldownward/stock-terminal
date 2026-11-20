@@ -4390,7 +4390,7 @@ def api_sync_alpaca_state():
                         other_ud['history'] = cleaned_o
 
             for p_name_sync, p_ud_sync in all_profs_map.items():
-                if isinstance(p_ud_sync, dict):
+                if p_name_sync != prof_name and isinstance(p_ud_sync, dict):
                     p_tag = re.sub(r'[^a-z0-9_]', '', p_name_sync.lower().replace(' ', '_'))
                     prof_orders = [o for o in closed_orders if p_tag and p_tag in re.sub(r'[^a-z0-9_]', '', (o.get('client_order_id') or '').lower())]
                     sync_profile_with_alpaca_non_destructive(p_ud_sync, acc, [], prof_orders, today_str, now_lon)
@@ -6573,7 +6573,7 @@ def get_broker_status():
                 'buying_power': float(acc.get('buying_power', 0.0)),
                 'cash': float(acc.get('cash', 0.0)),
                 'portfolio_value': pv_now,
-                'last_equity': lastX_eq_now,
+                'last_equity': last_eq_now,
                 'daily_pnl': alp_day_pnl,
                 'daily_pct': alp_day_pct,
                 'usd_gbp_rate': fx_rate_status,
