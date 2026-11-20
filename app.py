@@ -1604,16 +1604,16 @@ class MarketScoringEngine:
                 for b_bx in box_bars:
                     if b_bx['tag'] != 'DOJI':
                         b_bx['tag'] = 'BOX'
-                if box_pct <= 0.75 and brk_bar['is_green'] and brk_bar['close'] > box_hi:
+                if box_pct <= 0.85 and brk_bar['is_green'] and brk_bar['close'] > box_hi:
                     brk_bar['tag'] = 'BRK GRN'
                     stage_txt = '3/3 BREAK GO'
                     stage_col = '#0ecb81'
                     step_idx = 3
-                elif box_pct <= 0.75:
+                elif box_pct <= 0.85:
                     stage_txt = '2/3 COILING'
                     stage_col = '#ffd400'
                     step_idx = 2
-                elif box_pct <= 1.00:
+                elif box_pct <= 1.15:
                     stage_txt = '1/3 TIGHT BOX'
                     stage_col = '#ff9900'
                     step_idx = 1
@@ -1781,7 +1781,7 @@ class MarketScoringEngine:
         src_1m = today_reg_1m if len(today_reg_1m) >= 4 else df_1m
         closed_src = src_1m.iloc[:-1]
 
-        # VARIANT B: MICRO-SHELF 1M (4-bar tight <=0.75% 1m box in 9>21 EMA uptrend -> green breakout bar)
+        # VARIANT B: MICRO-SHELF 1M (4-bar tight <=0.85% 1m box in 9>21 EMA uptrend -> green breakout bar)
         if variant == 'shelf':
             if len(closed_src) >= 6:
                 e9_sh = closed_src['Close'].ewm(span=9, adjust=False).mean()
@@ -1795,13 +1795,13 @@ class MarketScoringEngine:
                 shelf_lo = float(shelf_df['Low'].min())
                 box_pct = ((shelf_hi - shelf_lo) / shelf_lo * 100.0) if shelf_lo > 0 else 9.9
                 brk_o, brk_c = float(brk_bar['Open']), float(brk_bar['Close'])
-                ema_ok_sh = (e9_now > e21_now) and (e9_now >= e9_prev * 0.9992)
-                brk_green = (brk_c > brk_o) and (brk_c > shelf_hi) and (current_price >= brk_c * 0.9990) and ema_ok_sh
-                if box_pct <= 0.75 and brk_green:
+                ema_ok_sh = (e9_now > e21_now) and (e9_now >= e9_prev * 0.9990)
+                brk_green = (brk_c > brk_o) and (brk_c > shelf_hi) and (current_price >= brk_c * 0.9985) and ema_ok_sh
+                if box_pct <= 0.85 and brk_green:
                     brk_pct = ((brk_c - shelf_hi) / shelf_hi * 100.0) if shelf_hi > 0 else 0.0
                     buy_score = min(98, max(76, round(80 + brk_pct * 25)))
                     return {'type': 'Micro-Shelf 1M', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M SHELF BREAKOUT: Cleared 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}, {box_pct:.2f}% tight) on green 1m bar.', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Shelf Break', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m Shelf Break)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Shelf Break'}
-                if box_pct <= 0.75 and ema_ok_sh and current_price >= shelf_lo:
+                if box_pct <= 0.85 and ema_ok_sh and current_price >= shelf_lo:
                     return {'type': 'Micro-Shelf 1M', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1m Micro-Shelf Coiling: Tight {box_pct:.2f}% 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}), awaiting breakout above ${shelf_hi:.2f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Coiling Box', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Coiling Box)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Coiling Box'}
             return {'type': 'Micro-Shelf 1M', 'score': 12, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m candles for tight 4-bar consolidation box breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Shelf)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
@@ -2166,10 +2166,14 @@ class MarketScoringEngine:
 
         if (has_ema_trend or has_v_reclaim or has_cap_vreversal or has_arch_reclaim) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
             # Completed 1-minute candle confirmation: evaluate on last closed 1m bar so Live, Staging & Recon stay deterministic
+            ext_1m_pct = 0.0
             if is_3x_etf:
                 df_1m_ent = fetch_yf_data(ticker, "1d", "1m")
                 if df_1m_ent is not None and not df_1m_ent.empty and len(df_1m_ent) >= 4:
                     e9_1m_ent = df_1m_ent['Close'].ewm(span=9, adjust=False).mean()
+                    e9_1m_last = float(e9_1m_ent.iloc[-1])
+                    if e9_1m_last > 0:
+                        ext_1m_pct = ((current_price - e9_1m_last) / e9_1m_last) * 100.0
                     prev_1m_close = float(df_1m_ent['Close'].iloc[-2])
                     prev_1m_open = float(df_1m_ent['Open'].iloc[-2])
                     closed_1m_green = (prev_1m_close > prev_1m_open) and (current_price >= prev_1m_open)
@@ -2187,24 +2191,28 @@ class MarketScoringEngine:
             if has_cap_vreversal and vol_ratio < 1.15:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"V-Reversal Watch: Reclaimed EMAs off low, awaiting >=1.30x volume ({vol_ratio:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # STRATEGY-SPECIFIC ANTI-CHASE & DIFFERENTIATION (calibrated for 3x ETF 5m EMA lag)
+            # STRATEGY-SPECIFIC ANTI-CHASE & DIFFERENTIATION (1m 9-EMA pullback check prevents lagging 5m EMA from blocking 3x trends)
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
             late_chop_window = (now_uk.hour >= 18)
             if 'apex' in prof:
-                # Apex Precision: Institutional Volume Breakout Sniper (requires >=1.05x vol or 1H shelf break, <=1.35% extension)
-                max_extension = (0.75 if late_chop_window else 1.35) if is_3x_etf else 0.45
+                # Apex Precision: Institutional Volume Breakout Sniper (requires >=1.05x vol or 1H shelf break)
+                max_extension = (0.85 if late_chop_window else 1.75) if is_3x_etf else 0.45
                 if vol_ratio < 1.05 and not breaks_1h_shelf:
                     return {'type': 'Intraday Momentum', 'score': 46, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Apex Volume Gate: Current bar volume ({vol_ratio:.1f}x) below 1.05x breakout requirement.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1.05x Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
             elif any(x in prof for x in ['velocity', 'pulse']):
-                # Velocity Pulse: Crisp RSI 50-75 Momentum Scalper (<=1.20% extension, +0.95% quick take-profit)
-                max_extension = (0.70 if late_chop_window else 1.20) if is_3x_etf else 0.40
-                if rsi > 75:
-                    return {'type': 'Intraday Momentum', 'score': 44, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Pulse RSI Gate: RSI ({rsi:.1f}) above 75 scalp ceiling.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'RSI Overbought', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI > 75)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Scanning...'}
+                # Velocity Pulse: Crisp RSI 50-76 Momentum Scalper (+0.95% quick take-profit)
+                max_extension = (0.80 if late_chop_window else 1.50) if is_3x_etf else 0.40
+                if rsi > 76:
+                    return {'type': 'Intraday Momentum', 'score': 44, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Pulse RSI Gate: RSI ({rsi:.1f}) above 76 scalp ceiling.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'RSI Overbought', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI > 76)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Scanning...'}
             else:
-                # Vector Hybrid: Disciplined 9-EMA Launch Specialist (<=1.40% extension, up to 1.65% on 1H shelf break)
-                max_extension = (0.80 if late_chop_window else 1.40) if is_3x_etf else 0.50
+                # Vector Hybrid: Disciplined 9-EMA Launch Specialist (up to 2.25% on 1H shelf breakouts)
+                max_extension = (0.90 if late_chop_window else 1.80) if is_3x_etf else 0.50
                 if is_3x_etf and breaks_1h_shelf and not late_chop_window:
-                    max_extension = 1.65
+                    max_extension = 2.25
+
+            # If 1m chart is tightly hugging its 1m 9-EMA (<= 0.55%) during a valid 5m trend/breakout, allow entry up to 2.40% 5m extension
+            if is_3x_etf and not late_chop_window and ext_1m_pct <= 0.55 and ema_extension_pct <= 2.40:
+                max_extension = max(max_extension, 2.40)
 
             if ema_extension_pct > max_extension:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max {max_extension:.2f}%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
