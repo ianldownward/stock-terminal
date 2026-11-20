@@ -381,33 +381,21 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
 
     print(f"[ALPACA ATTEMPT] {action.upper()} {shares} {ticker} via {base_url} (Bot: {bot_name})")
 
-    # Clean liquidation: If selling, close directly via Alpaca position endpoint to automatically cancel resting stops
-    if action.lower() == 'sell':
-        try:
-            # 1. First cancel any resting open orders for this symbol so shares are unlocked
-            req_cancel_sym = urllib.request.Request(f"{base_url}/v2/orders?status=open", headers=headers)
-            with urllib.request.urlopen(req_cancel_sym, timeout=4) as r_c:
-                all_o = json.loads(r_c.read().decode('utf-8'))
-                for o in all_o:
-                    if (o.get('symbol') or '').upper() == ticker.upper():
-                        d_req = urllib.request.Request(f"{base_url}/v2/orders/{o['id']}", headers=headers, method="DELETE")
-                        with urllib.request.urlopen(d_req, timeout=4): pass
-            time.sleep(0.5)
-            
-            # 2. Use DELETE /v2/positions/{symbol} which liquidates directly without race conditions
-            req_close_pos = urllib.request.Request(f"{base_url}/v2/positions/{ticker.upper()}?qty={int(shares)}", headers=headers, method="DELETE")
-            with urllib.request.urlopen(req_close_pos, timeout=6) as resp_c:
-                res_data = json.loads(resp_c.read().decode('utf-8'))
-                print(f"[ALPACA SUCCESS] Closed position {shares} {ticker} -> ID: {res_data.get('id')}")
-                _reconcile_or_purge_local_entry(order_id=res_data.get('id'))
-                return res_data
-        except urllib.error.HTTPError as he:
-            # If 404, position is already flat; otherwise fall back to market sell order
-            if he.code == 404:
-                return {'status': 'ok', 'message': 'Position already closed'}
-            print(f"[ALPACA CLOSE NOTICE {he.code}] Falling back to standard market sell: {he.read().decode('utf-8', errors='ignore')}")
-        except Exception as e:
-            print(f"[ALPACA CLOSE ERROR]: {e}")
+    # Cancel any resting open orders on this symbol first so Alpaca never blocks BUY or SELL with wash-trade / held-for-orders errors
+    try:
+        req_cancel_sym = urllib.request.Request(f"{base_url}/v2/orders?status=open", headers=headers)
+        with urllib.request.urlopen(req_cancel_sym, timeout=4) as r_c:
+            all_o = json.loads(r_c.read().decode('utf-8'))
+            cancelled_any = False
+            for o in all_o:
+                if (o.get('symbol') or '').upper() == ticker.upper():
+                    d_req = urllib.request.Request(f"{base_url}/v2/orders/{o['id']}", headers=headers, method="DELETE")
+                    with urllib.request.urlopen(d_req, timeout=4):
+                        cancelled_any = True
+            if cancelled_any:
+                time.sleep(0.4)
+    except Exception:
+        pass
 
     num_slices = max(1, min(int(slices or 1), int(shares))) if action.lower() == 'buy' else 1
     base_qty = int(shares) // num_slices
@@ -441,8 +429,9 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
         if res_data is not None:
             _reconcile_or_purge_local_entry(order_id=res_data.get('id'))
             
-            # Poll until BUY shares settle on Alpaca (up to 6s) before attaching native exchange trailing stop
-            if action.lower() == 'buy' and trail_pct:
+            # Only attach native exchange trailing stop on single-bot accounts (multi-bot accounts use IDC 3s watchdog to avoid Alpaca wash-trade locks)
+            active_allocs_cnt = sum(1 for v in ((portfolio_store.data.get('broker') or {}).get('allocations') or {}).values() if isinstance(v, dict) and v.get('enabled'))
+            if action.lower() == 'buy' and trail_pct and active_allocs_cnt <= 1:
                 settled_qty = 0
                 for _ in range(6):
                     time.sleep(1.0)
@@ -1772,35 +1761,27 @@ class MarketScoringEngine:
             if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': 'OVERNIGHT SWEEP: Liquidating to 100% cash.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
 
-            # 1. Instant Intrabar Hard Bailout (-0.45% max adverse excursion — never wait 60s for a crashing bar to close)
-            if pnl_pct <= -0.45:
-                return {'type': '1m Fast Bail', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'FAST HARD STOP {pnl_str}: Bailed intrabar at -0.45% limit before candle close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Fast Stop', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(1m Fast Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'1m Fast Stop {pnl_str}'}
+            # 1. Instant Intrabar Hard Stop (-0.60% max adverse excursion)
+            if pnl_pct <= -0.60:
+                return {'type': '1m Fast Bail', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'FAST HARD STOP {pnl_str}: Bailed intrabar at -0.60% limit.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Fast Stop', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(1m Fast Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'1m Fast Stop {pnl_str}'}
 
-            # 2. Intrabar Peak Profit Lock & Tight 0.25% Trailing Choke (never let a +0.40%+ winner turn into a loser)
-            if peak_pnl_pct >= 0.75:
-                if drop_from_peak_pct >= 0.25 or pnl_pct <= 0.45:
-                    return {'type': '1m Profit Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M PEAK CHOKE {pnl_str}: Banked surge (Peak +{peak_pnl_pct:.2f}%, Trail 0.25%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Peak Banked', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(1m Peak Banked)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f'1m Peak Banked {pnl_str}'}
-            elif peak_pnl_pct >= 0.40:
-                if pnl_pct <= 0.12:
-                    return {'type': '1m Profit Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M BREAKEVEN LOCK {pnl_str}: Protected +0.12% floor after +{peak_pnl_pct:.2f}% peak.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m BE Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(1m BE Lock)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 90, 'health_color': '#0ecb81', 'health_text': f'1m BE Lock {pnl_str}'}
+            # 2. Intrabar Peak Profit Lock & 0.30% Trailing Choke (lets winners ride multi-minute waves)
+            if peak_pnl_pct >= 0.85:
+                if drop_from_peak_pct >= 0.30 or pnl_pct <= 0.50:
+                    return {'type': '1m Profit Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M PEAK CHOKE {pnl_str}: Banked wave (Peak +{peak_pnl_pct:.2f}%, Trail 0.30%).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Peak Banked', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(1m Peak Banked)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f'1m Peak Banked {pnl_str}'}
+            elif peak_pnl_pct >= 0.45:
+                if pnl_pct <= 0.15:
+                    return {'type': '1m Profit Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M BREAKEVEN LOCK {pnl_str}: Protected +0.15% floor after +{peak_pnl_pct:.2f}% peak.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m BE Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(1m BE Lock)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 90, 'health_color': '#0ecb81', 'health_text': f'1m BE Lock {pnl_str}'}
 
-            # 3. Live-Bar Intrabar Red Breakdown (if current forming 1m bar drops >= 0.25% below its Open, bail immediately)
-            live_open = float(df_1m['Open'].iloc[-1])
-            live_bar_ts = int(df_1m.index[-1].timestamp())
-            if live_open > 0 and (int(buy_timestamp or 0) <= 0 or (live_bar_ts + 60) > int(buy_timestamp)):
-                live_drop_pct = ((live_open - current_price) / live_open) * 100.0
-                if live_drop_pct >= 0.25 and pnl_pct <= 0.20:
-                    return {'type': '1m Live Red Bail', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'LIVE 1M RED BREAK {pnl_str}: Forming bar dropped -{live_drop_pct:.2f}% below ${live_open:.2f} open.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Live Red Bail', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(Live Red Bail)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'Live Red Bail {pnl_str}'}
-
-            # 4. Completed 1-Minute Red Candle Stop (exits at bar close if candle finished red)
+            # 3. 1m 9-EMA Trend Breakdown Exit (exits only when a completed 1m bar closes below 1m 9-EMA, letting single red pause candles breathe)
             prev_bar_close_ts = int(df_1m.index[-2].timestamp()) + 60
             c_prev = float(df_1m['Close'].iloc[-2])
-            o_prev = float(df_1m['Open'].iloc[-2])
-            if c_prev < o_prev and (int(buy_timestamp or 0) <= 0 or prev_bar_close_ts > int(buy_timestamp)):
-                return {'type': '1m Reversal', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M RED STOP {pnl_str}: 1m candle closed red (${o_prev:.2f} -> ${c_prev:.2f}).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m Red Stop', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(1m Red Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'1m Red Stop {pnl_str}'}
+            e9_1m_exit = float(df_1m['Close'].iloc[:-1].ewm(span=9, adjust=False).mean().iloc[-1])
+            if c_prev < e9_1m_exit and (int(buy_timestamp or 0) <= 0 or prev_bar_close_ts > int(buy_timestamp)):
+                return {'type': '1m Trend Exit', 'score': 0, 'tranches': 0, 'discount': f"{pnl_pct:.2f}%", 'reason': f'1M 9-EMA BREAK {pnl_str}: Closed ${c_prev:.2f} below 1m 9-EMA (${e9_1m_exit:.2f}).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '1m 9-EMA Break', 'color': '#ff5364' if pnl_pct < 0 else '#0ecb81', 'action_main': 'SELL', 'action_sub': '(1m 9-EMA Break)', 'action_color': '#ff5364' if pnl_pct < 0 else '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f'1m 9-EMA Break {pnl_str}'}
 
-            trail_cushion = max(0, min(100, int(100 - (max(0.0, -pnl_pct) / 0.45 * 100))))
-            return {'type': '1m Reversal', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f'RIDING 1M WAVE {pnl_str}: Fast-Bail active (-0.45% stop / -0.25% live red / +0.40% BE lock).', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 1m Green', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 1m Green)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': trail_cushion, 'health_color': '#0ecb81', 'health_text': f'Riding 1m Green {pnl_str}'}
+            trail_cushion = max(0, min(100, int(100 - (max(0.0, -pnl_pct) / 0.60 * 100))))
+            return {'type': '1m Reversal', 'score': 80, 'tranches': 1, 'discount': f"{pnl_pct:.2f}%", 'reason': f'RIDING 1M TREND {pnl_str}: Holding above 1m 9-EMA (${e9_1m_exit:.2f}) • -0.60% stop / +0.45% BE lock.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 1m Wave', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 1m Wave)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': trail_cushion, 'health_color': '#0ecb81', 'health_text': f'Riding 1m Wave {pnl_str}'}
 
         if overnight_sweep and now_uk.hour == 20 and now_uk.minute >= 50:
             return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'OVERNIGHT SWEEP: Blocking new entries before close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
@@ -1860,11 +1841,11 @@ class MarketScoringEngine:
                 brk_o, brk_c = float(brk_bar['Open']), float(brk_bar['Close'])
                 ema_ok_sh = (e9_now > e21_now) and (e9_now >= e9_prev * 0.9990)
                 brk_green = (brk_c > brk_o) and (brk_c > shelf_hi) and (current_price >= brk_c * 0.9985) and ema_ok_sh
-                if box_pct <= 0.85 and brk_green:
+                if box_pct <= 0.42 and brk_green:
                     brk_pct = ((brk_c - shelf_hi) / shelf_hi * 100.0) if shelf_hi > 0 else 0.0
                     buy_score = min(98, max(76, round(80 + brk_pct * 25)))
-                    return {'type': 'Micro-Shelf 1M', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M SHELF BREAKOUT: Cleared 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}, {box_pct:.2f}% tight) on green 1m bar.', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Shelf Break', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m Shelf Break)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Shelf Break'}
-                if box_pct <= 0.85 and ema_ok_sh and current_price >= shelf_lo:
+                    return {'type': 'Micro-Shelf 1M', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M TIGHT SHELF BREAKOUT: Cleared {box_pct:.2f}% 4-bar coil (${shelf_lo:.2f}–${shelf_hi:.2f}) on green 1m bar.', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Shelf Break', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m Shelf Break)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Shelf Break'}
+                if box_pct <= 0.42 and ema_ok_sh and current_price >= shelf_lo:
                     return {'type': 'Micro-Shelf 1M', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1m Micro-Shelf Coiling: Tight {box_pct:.2f}% 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}), awaiting breakout above ${shelf_hi:.2f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Coiling Box', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Coiling Box)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Coiling Box'}
             return {'type': 'Micro-Shelf 1M', 'score': 12, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m candles for tight 4-bar consolidation box breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Shelf)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
@@ -1968,8 +1949,13 @@ class MarketScoringEngine:
         # DYNAMIC ASSET-SPECIFIC TRAILING STOPS & HARD STOPS
         peak_gain_pct = ((highest_price - avg_buy_price) / avg_buy_price * 100.0) if avg_buy_price > 0 and highest_price > 0 else 0.0
 
-        # Standardized Production Trailing Stops (0.75% across 3x ETFs prevents premature wiggle stop-outs)
-        trail_pct, hard_pct = 0.75, -0.75
+        # Strategy-Calibrated 3x ETF Trailing Stops (1.15% on Vector Hybrid prevents 0.25% index wiggle stop-outs)
+        if 'vector' in prof:
+            trail_pct, hard_pct = 1.15, -1.15
+        elif 'apex' in prof:
+            trail_pct, hard_pct = 1.05, -1.05
+        else:
+            trail_pct, hard_pct = 0.85, -0.85
 
         health_pct, health_color, health_text = 0, "#8a8a9e", "Scanning..."
 
@@ -2220,11 +2206,20 @@ class MarketScoringEngine:
             and two_green_bars
         )
 
-        # Block lower-high dead-cat bounces trapped below today's session high unless breaking a 1h shelf, V-reversing, or launching a confirmed Higher-Low Arch Reclaim
-        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 0.15) and (not (breaks_1h_shelf and below_session_high_pct <= 0.45)) and (not has_cap_vreversal) and (not has_arch_reclaim)
+        # Strategy-Specific Entry Differentiation:
+        # - Vector Hybrid: Clean early trend rider (Price > 9-EMA > 21-EMA + rising 9-EMA + green 5m bar)
+        # - Apex Precision: 1H-Shelf / Range Breakout sniper (Price > prior_high_12 + rising EMAs)
+        # - Velocity Pulse: 9-EMA Pullback Bounce scalper (uptrend pullback within 0.45% of 9-EMA bouncing green)
+        dist_from_ema9_pct = abs((current_price - ema9) / ema9 * 100.0) if ema9 > 0 else 9.9
+        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 1.25) and (not breaks_1h_shelf) and (not has_cap_vreversal) and (not has_arch_reclaim)
 
-        # Require 2-bar follow-through (or 1h-shelf breakout) + at least 6 completed today bars (14:55+ UK) so 14:50 gap-distorted EMAs don't fire
-        has_ema_trend = post_open_ready and (ema9 > ema21) and ema_rising and (current_price > ema9) and (two_green_bars or (bar_is_green and breaks_1h_shelf)) and (intraday_pct >= -1.50)
+        if 'apex' in prof:
+            has_ema_trend = post_open_ready and (ema9 > ema21) and ema_rising and (current_price > ema9) and bar_is_green and (breaks_1h_shelf or below_session_high_pct <= 0.25)
+        elif any(x in prof for x in ['velocity', 'pulse']):
+            has_ema_trend = post_open_ready and (ema9 > ema21) and (ema9 >= prev_ema9) and (current_price > ema9) and bar_is_green and (dist_from_ema9_pct <= 0.45)
+        else:
+            has_ema_trend = post_open_ready and (ema9 > ema21) and ema_rising and (current_price > ema9) and bar_is_green and (intraday_pct >= -1.50)
+
         has_v_reclaim = post_open_ready and is_3x_etf and (current_price > ema9) and ema_rising and two_green_bars and breaks_1h_shelf and (0.55 <= bounce_from_low_pct <= 2.85)
 
         if (has_ema_trend or has_v_reclaim or has_cap_vreversal or has_arch_reclaim) and not at_double_top and not in_lower_high_trap and rsi < (92 if is_3x_etf else 78):
@@ -2287,11 +2282,9 @@ class MarketScoringEngine:
             if any(x in prof for x in ['apex', 'test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 0.95:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Current Bar Volume ({vol_ratio:.1f}x) below 0.95x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # Sideways consolidation shield for Vector Hybrid / Velocity Pulse: block low-volume mid-range chop
-            recent_high_6 = float(df_5m['High'].tail(6).max()) if 'High' in df_5m.columns and len(df_5m) >= 6 else current_price
-            near_range_high = (recent_high_6 > 0 and current_price >= recent_high_6 * 0.9975)
-            if not near_range_high and not (has_arch_reclaim and vol_ratio >= 0.95) and vol_ratio < 1.15:
-                return {'type': 'Intraday Momentum', 'score': 42, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Chop Shield: Mid-range consolidation (${current_price:.2f} vs ${recent_high_6:.2f} high) on {vol_ratio:.1f}x vol.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Range Chop Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Breakout)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+            # Light chop filter: only block dead-volume (<0.55x) flat sideways drift
+            if vol_ratio < 0.55 and not breaks_1h_shelf and not has_arch_reclaim:
+                return {'type': 'Intraday Momentum', 'score': 42, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Low Volume Chop Filter: Volume ({vol_ratio:.1f}x) below 0.55x minimum.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Low Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # 14:30 - 14:50 UK is governed exclusively by evaluate_opening_window() above
             if any(x in prof for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
@@ -2958,7 +2951,7 @@ def match_bot_from_order_id(client_order_id, profiles):
     if 'velocity' in coid_clean or 'pulse' in coid_clean: return 'Velocity Pulse'
     return None
 
-def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon, purge_unfilled_today=False):
+def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon, purge_unfilled_today=False, allow_position_import=True):
     """Non-destructive two-way reconciliation: preserves today's trade history while aligning exact fills, positions, equity, and ratchet state to Alpaca."""
     changed = False
     hist = ud.get('history') or []
@@ -3004,7 +2997,7 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
                 continue
             h_ts = int(h.get('timestamp') or 0)
             t_diff = abs(order_ts - h_ts) if (order_ts > 0 and h_ts > 0) else 0
-            if order_ts > 0 and h_ts > 0 and t_diff > 2400:
+            if order_ts > 0 and h_ts > 0 and t_diff > 180:
                 continue
             if t_diff < best_diff:
                 best_diff = t_diff
@@ -3024,20 +3017,23 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
 
     if purge_unfilled_today:
         now_ts_p = int(time.time())
+        valid_oid_set = {str(o.get('id')) for o in (closed_orders or []) if o.get('status') == 'filled' and o.get('id')}
         filtered_hist = []
         for tr in hist:
             tk_p = tr.get('ticker')
+            if tr.get('source') == 'alpaca_sync':
+                changed = True
+                continue
             if (
                 tk_p
                 and tk_p not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
-                and tr.get('source') != 'alpaca_sync'
                 and tr.get('date_str') == today_str
-                and not tr.get('price_reconciled')
-                and not tr.get('alpaca_order_id')
                 and (now_ts_p - int(tr.get('timestamp') or 0)) > 60
             ):
-                changed = True
-                continue
+                tr_oid = str(tr.get('alpaca_order_id') or '')
+                if not tr_oid or (valid_oid_set and tr_oid not in valid_oid_set):
+                    changed = True
+                    continue
             filtered_hist.append(tr)
         hist = filtered_hist
 
@@ -3065,6 +3061,16 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
                 mv = round(float(alp_p.get('market_value') or 0.0), 2)
                 hw = max(float((ud['holdings'].get(tk) or {}).get('high_water') or 0.0), float(alp_p.get('current_price') or 0.0))
                 ud['holdings'][tk] = {'shares': alp_sh, 'manual_val': mv, 'high_water': hw}
+            continue
+
+        if not allow_position_import:
+            if loc_sh == 0:
+                ud['holdings'].pop(tk, None)
+            else:
+                cur_px_alp = float(alp_p.get('current_price') or 0.0) if alp_p else 0.0
+                if cur_px_alp > 0:
+                    hw = max(float((ud['holdings'].get(tk) or {}).get('high_water') or 0.0), cur_px_alp)
+                    ud['holdings'][tk] = {'shares': loc_sh, 'manual_val': round(loc_sh * cur_px_alp, 2), 'high_water': hw}
             continue
 
         if loc_sh > 0 and alp_sh == 0:
@@ -4410,43 +4416,12 @@ def api_sync_alpaca_state():
 
             allocs_sync = broker.get('allocations') or {}
             all_prof_names = list(all_profs_map.keys())
+            is_multi_bot = len(all_prof_names) > 1
             orders_by_prof = {pn: [] for pn in all_prof_names}
-            untagged_orders = []
             for o in closed_orders:
                 m_prof = match_bot_from_order_id(o.get('client_order_id') or '', all_prof_names)
                 if m_prof and m_prof in orders_by_prof:
                     orders_by_prof[m_prof].append(o)
-                else:
-                    untagged_orders.append(o)
-
-            for uo in untagged_orders:
-                u_side = (uo.get('side') or '').upper()
-                u_sym = (uo.get('symbol') or '').upper()
-                try:
-                    u_qty = int(float(uo.get('filled_qty') or 0))
-                except Exception:
-                    u_qty = 0
-                u_ts = 0
-                try:
-                    if uo.get('filled_at'):
-                        u_ts = int(pd.Timestamp(uo['filled_at']).timestamp())
-                    elif uo.get('created_at'):
-                        u_ts = int(pd.Timestamp(uo['created_at']).timestamp())
-                except Exception:
-                    u_ts = 0
-                best_pn = prof_name
-                best_dt = 999999
-                for pn, pud in all_profs_map.items():
-                    if not isinstance(pud, dict):
-                        continue
-                    for h_it in (pud.get('history') or []):
-                        if h_it.get('action') == u_side and h_it.get('ticker') == u_sym and int(float(h_it.get('shares') or 0)) == u_qty:
-                            dt_h = abs(u_ts - int(h_it.get('timestamp') or 0)) if (u_ts > 0 and int(h_it.get('timestamp') or 0) > 0) else 0
-                            if dt_h <= 2400 and dt_h < best_dt:
-                                best_dt = dt_h
-                                best_pn = pn
-                if best_pn in orders_by_prof:
-                    orders_by_prof[best_pn].append(uo)
 
             for p_name_sync, p_ud_sync in all_profs_map.items():
                 if isinstance(p_ud_sync, dict):
@@ -4454,10 +4429,10 @@ def api_sync_alpaca_state():
                         (s_k == p_name_sync.lower() or s_k in p_name_sync.lower() or p_name_sync.lower() in s_k) and s_d.get('enabled')
                         for s_k, s_d in allocs_sync.items()
                     )
-                    pos_for_p = live_pos if p_name_sync == prof_name else []
+                    pos_for_p = live_pos if (p_name_sync == prof_name and not is_multi_bot) else []
                     sync_profile_with_alpaca_non_destructive(
                         p_ud_sync, acc, pos_for_p, orders_by_prof.get(p_name_sync, []),
-                        today_str, now_lon, purge_unfilled_today=is_en_sync
+                        today_str, now_lon, purge_unfilled_today=is_en_sync, allow_position_import=(not is_multi_bot)
                     )
 
             if is_client:
