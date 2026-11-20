@@ -1073,6 +1073,10 @@
             font-weight: bold; 
             color: #fff; 
         }
+        .lb-item {
+            padding: 7px 10px;
+            margin-bottom: 5px;
+        }
         .lb-ticker-pill {
             display: inline-flex;
             align-items: center;
@@ -3875,7 +3879,7 @@
                     }
 
                     return `
-                        <div onclick="selectStock('${t.ticker}'); document.getElementById('journeyModal').style.display='none';" style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" title="View ${t.ticker} chart">
+                        <div onclick="selectStock('${t.ticker}', ${t.timestamp || 0}); document.getElementById('journeyModal').style.display='none';" style="background:#1e222d; border:1px solid #262b36; border-radius:8px; padding:10px 12px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" title="Jump to trade on ${t.ticker} chart">
                             <div>
                                 <span style="font-weight:bold; color:${col}; font-size:12px;">${t.action} ${t.shares} sh <span style="color:#ffd400; text-decoration:underline;">${t.ticker}</span></span>${pnlStr}
                                 <div style="font-size:10px; color:#8a8a9e; margin-top:2px;">${t.time || '--'} • Total $${(parseFloat(t.amount) || 0).toFixed(2)}</div>
@@ -5383,14 +5387,20 @@
                 let subColor = sortMode === 'today' ? equityColor : dailyColor;
                 let rightStackHtml = sortMode === 'today'
                     ? `
-                        <span style="color:${mainColor}; font-weight:800; font-size:13px; line-height:1.15;">${dailyPnlFormatted}</span>
-                        <div style="font-size:10px; font-weight:700; color:${dailyColor}; margin-top:2px; line-height:1.15;">${arrow ? arrow + ' ' : ''}${pctStr}</div>
-                        <div style="font-size:9.5px; color:${subColor}; margin-top:1px; line-height:1.15;">${equityFormatted}</div>
+                        <div style="display:flex; justify-content:flex-end; align-items:baseline; gap:4px; line-height:1.1;">
+                            <span style="color:${mainColor}; font-weight:800; font-size:13px;">${dailyPnlFormatted}</span>
+                            <span style="color:${dailyColor}; font-weight:800; font-size:10.5px;">${arrow ? arrow + ' ' : ''}${pctStr}</span>
+                        </div>
+                        <div style="font-size:10px; color:${subColor}; font-weight:700; margin-top:2px; line-height:1.1; text-align:right;">${equityFormatted}</div>
                     `
                     : `
-                        <span style="color:${mainColor}; font-weight:800; font-size:13px; line-height:1.15;">${equityFormatted}</span>
-                        <div style="font-size:10px; font-weight:700; color:${subColor}; margin-top:2px; line-height:1.15;">${dailyPnlFormatted}</div>
-                        <div style="font-size:9.5px; font-weight:700; color:${subColor}; margin-top:1px; line-height:1.15;">(${arrow ? arrow + ' ' : ''}${pctStr})</div>
+                        <div style="display:flex; justify-content:flex-end; align-items:baseline; gap:4px; line-height:1.1;">
+                            <span style="color:${mainColor}; font-weight:800; font-size:13px;">${equityFormatted}</span>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; align-items:baseline; gap:4px; margin-top:2px; line-height:1.1;">
+                            <span style="color:${subColor}; font-weight:700; font-size:10px;">${dailyPnlFormatted}</span>
+                            <span style="color:${subColor}; font-weight:700; font-size:9.5px;">(${arrow ? arrow + ' ' : ''}${pctStr})</span>
+                        </div>
                     `;
 
                 let isProfLocked = Boolean(lb.is_manually_locked || isLocked);
@@ -5595,10 +5605,10 @@
 
                 li.innerHTML = `
                     <button class="btn-undo" onclick="undoTrade('${i.id}')">✕</button>
-                    <div class="h-action ${i.action === 'BUY' ? 'h-buy' : 'h-sell'}" style="cursor:pointer;" onclick="selectStock('${i.ticker}')" title="View ${i.ticker} Chart">
+                    <div class="h-action ${i.action === 'BUY' ? 'h-buy' : 'h-sell'}" style="cursor:pointer;" onclick="selectStock('${i.ticker}', ${i.timestamp || 0})" title="Jump to trade on ${i.ticker} chart">
                         ${i.action} ${i.shares} sh <span style="text-decoration:underline; text-underline-offset:2px; font-weight:900;">${i.ticker}</span> ${pnlTag}
                     </div>
-                    <div class="h-meta" style="cursor:pointer;" onclick="selectStock('${i.ticker}')">@ $${perShare} (Total $${totalAmt}) • ${i.time}</div>
+                    <div class="h-meta" style="cursor:pointer;" onclick="selectStock('${i.ticker}', ${i.timestamp || 0})">@ $${perShare} (Total $${totalAmt}) • ${i.time}</div>
                 `;
                 ul.appendChild(li);
             });
@@ -6105,12 +6115,33 @@
             }
         }
 
-        function selectStock(ticker) {
+        async function selectStock(ticker, targetTimestamp = null) {
             currentTicker = ticker;
             window._manualTickerLockUntil = Date.now() + 30000;
-            window._userHasPannedChart = false;
-            window._chartEverFitted = false;
-            fetchData(false);
+            window._userHasPannedChart = Boolean(targetTimestamp);
+            window._chartEverFitted = Boolean(targetTimestamp);
+            await fetchData(false);
+
+            if (targetTimestamp && tvChart && Array.isArray(masterData) && masterData.length > 0) {
+                let timeScale = tvChart.timeScale();
+                let currentRange = timeScale.getVisibleLogicalRange();
+                let rangeSpan = currentRange ? Math.max(20, currentRange.to - currentRange.from) : 45;
+                let isDaily = typeof masterData[0].time === 'string';
+                let searchTs = parseInt(targetTimestamp);
+                let targetLogical = masterData.length - 1;
+                for (let i = 0; i < masterData.length; i++) {
+                    let barTs = isDaily ? (new Date(masterData[i].time).getTime() / 1000) : masterData[i].time;
+                    if (barTs >= searchTs) {
+                        targetLogical = i;
+                        break;
+                    }
+                }
+                timeScale.setVisibleLogicalRange({
+                    from: targetLogical - (rangeSpan * 0.55),
+                    to: targetLogical + (rangeSpan * 0.45)
+                });
+                requestAnimationFrame(drawTradeMarkers);
+            }
         }
 
         async function addWatchlistTicker() {
@@ -6470,23 +6501,31 @@
                     return { x: x, y: y };
                 }
 
-                // Thin white 'X' centered at execution price
+                // Thin white 'X' on desktop; clean solid white dot on mobile
                 function drawThinX(x, y, s = 5.5) {
                     ctx.save();
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 1.3;
-                    ctx.beginPath();
-                    ctx.moveTo(x - s, y - s);
-                    ctx.lineTo(x + s, y + s);
-                    ctx.moveTo(x + s, y - s);
-                    ctx.lineTo(x - s, y + s);
-                    ctx.stroke();
+                    if (window.innerWidth <= 900) {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.beginPath();
+                        ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else {
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 1.3;
+                        ctx.beginPath();
+                        ctx.moveTo(x - s, y - s);
+                        ctx.lineTo(x + s, y + s);
+                        ctx.moveTo(x + s, y - s);
+                        ctx.lineTo(x - s, y + s);
+                        ctx.stroke();
+                    }
                     ctx.restore();
                 }
 
-                // Clean stacked white text with automatic collision avoidance
+                // Clean stacked white text with automatic collision avoidance (hidden on mobile)
                 let placedLabelBoxes = [];
                 function drawStackedText(x, y, lines, isSell = false) {
+                    if (window.innerWidth <= 900 || !lines || lines.length === 0) return;
                     ctx.save();
                     ctx.fillStyle = '#ffffff';
                     ctx.textAlign = 'center';
@@ -6551,7 +6590,7 @@
                         // 2. Buy marker and stacked text (place above X if sell is below buy so labels never cross)
                         if (buyPt) {
                             drawThinX(buyPt.x, buyPt.y);
-                            drawStackedText(buyPt.x, buyPt.y, ['BUY', `$${openBuy.price.toFixed(2)}`], isLossExit);
+                            drawStackedText(buyPt.x, buyPt.y, [`$${openBuy.price.toFixed(2)}`], isLossExit);
                         }
 
                         // 3. Sell marker and stacked text with return % (place below X on loss exits)
@@ -6562,7 +6601,7 @@
                                 let pct = ((p - openBuy.price) / openBuy.price) * 100.0;
                                 pnlText = `(${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
                             }
-                            drawStackedText(sellPt.x, sellPt.y, ['SELL', `$${p.toFixed(2)}`, pnlText].filter(Boolean), !isLossExit);
+                            drawStackedText(sellPt.x, sellPt.y, [`$${p.toFixed(2)}`, pnlText].filter(Boolean), !isLossExit);
                         }
 
                         openBuy = null;
@@ -6575,7 +6614,7 @@
                     let buyPt = getCandleCoords(openBuy.ts, openBuy.price);
                     if (buyPt) {
                         drawThinX(buyPt.x, buyPt.y);
-                        drawStackedText(buyPt.x, buyPt.y, ['BUY', `$${openBuy.price.toFixed(2)}`], false);
+                        drawStackedText(buyPt.x, buyPt.y, [`$${openBuy.price.toFixed(2)}`], false);
                     }
                 }
             }
