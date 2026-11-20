@@ -1604,16 +1604,16 @@ class MarketScoringEngine:
                 for b_bx in box_bars:
                     if b_bx['tag'] != 'DOJI':
                         b_bx['tag'] = 'BOX'
-                if box_pct <= 0.35 and brk_bar['is_green'] and brk_bar['close'] > box_hi:
+                if box_pct <= 0.75 and brk_bar['is_green'] and brk_bar['close'] > box_hi:
                     brk_bar['tag'] = 'BRK GRN'
                     stage_txt = '3/3 BREAK GO'
                     stage_col = '#0ecb81'
                     step_idx = 3
-                elif box_pct <= 0.35:
+                elif box_pct <= 0.75:
                     stage_txt = '2/3 COILING'
                     stage_col = '#ffd400'
                     step_idx = 2
-                elif box_pct <= 0.55:
+                elif box_pct <= 1.00:
                     stage_txt = '1/3 TIGHT BOX'
                     stage_col = '#ff9900'
                     step_idx = 1
@@ -1627,8 +1627,8 @@ class MarketScoringEngine:
                 c_prev2 = closed_bars[-2]
                 c_prev1 = closed_bars[-1]
                 trend_up = (e9_now > e21_now) and (e9_now >= e9_prev)
-                dipped_9 = (not c_prev2['is_green']) and (c_prev2['low'] <= e9_prev * 1.0008) and (c_prev2['close'] > e21_now)
-                snapped_9 = c_prev1['is_green'] and (c_prev1['close'] > e9_now) and (c_prev1['close'] > c_prev2['high'])
+                dipped_9 = (not c_prev2['is_green']) and (c_prev2['low'] <= e9_prev * 1.0025) and (c_prev2['close'] > e21_now)
+                snapped_9 = c_prev1['is_green'] and (c_prev1['close'] > e9_now) and (c_prev1['close'] >= c_prev2['open'])
                 if dipped_9 and c_prev2['tag'] != 'DOJI':
                     c_prev2['tag'] = 'DIP RED'
                 if trend_up and dipped_9 and snapped_9:
@@ -1636,7 +1636,7 @@ class MarketScoringEngine:
                     stage_txt = '3/3 SNAP GO'
                     stage_col = '#0ecb81'
                     step_idx = 3
-                elif trend_up and ((not c_prev1['is_green']) and (c_prev1['low'] <= e9_now * 1.0008) and (c_prev1['close'] > e21_now)):
+                elif trend_up and ((not c_prev1['is_green']) and (c_prev1['low'] <= e9_now * 1.0025) and (c_prev1['close'] > e21_now)):
                     c_prev1['tag'] = 'DIP RED'
                     stage_txt = '2/3 9-EMA DIP'
                     stage_col = '#ffd400'
@@ -1781,51 +1781,54 @@ class MarketScoringEngine:
         src_1m = today_reg_1m if len(today_reg_1m) >= 4 else df_1m
         closed_src = src_1m.iloc[:-1]
 
-        # VARIANT B: MICRO-SHELF 1M (4-bar tight <=0.35% 1m box above rising 9-EMA -> green breakout bar)
+        # VARIANT B: MICRO-SHELF 1M (4-bar tight <=0.75% 1m box in 9>21 EMA uptrend -> green breakout bar)
         if variant == 'shelf':
             if len(closed_src) >= 6:
                 e9_sh = closed_src['Close'].ewm(span=9, adjust=False).mean()
+                e21_sh = closed_src['Close'].ewm(span=21, adjust=False).mean()
                 e9_now = float(e9_sh.iloc[-1])
                 e9_prev = float(e9_sh.iloc[-2])
+                e21_now = float(e21_sh.iloc[-1])
                 shelf_df = closed_src.iloc[-5:-1]
                 brk_bar = closed_src.iloc[-1]
                 shelf_hi = float(shelf_df['High'].max())
                 shelf_lo = float(shelf_df['Low'].min())
                 box_pct = ((shelf_hi - shelf_lo) / shelf_lo * 100.0) if shelf_lo > 0 else 9.9
                 brk_o, brk_c = float(brk_bar['Open']), float(brk_bar['Close'])
-                brk_green = (brk_c > brk_o) and (brk_c > shelf_hi) and (current_price >= shelf_hi) and (e9_now >= e9_prev * 0.9995)
-                if box_pct <= 0.35 and brk_green:
+                ema_ok_sh = (e9_now > e21_now) and (e9_now >= e9_prev * 0.9992)
+                brk_green = (brk_c > brk_o) and (brk_c > shelf_hi) and (current_price >= brk_c * 0.9990) and ema_ok_sh
+                if box_pct <= 0.75 and brk_green:
                     brk_pct = ((brk_c - shelf_hi) / shelf_hi * 100.0) if shelf_hi > 0 else 0.0
                     buy_score = min(98, max(76, round(80 + brk_pct * 25)))
                     return {'type': 'Micro-Shelf 1M', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M SHELF BREAKOUT: Cleared 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}, {box_pct:.2f}% tight) on green 1m bar.', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Shelf Break', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m Shelf Break)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Shelf Break'}
-                if box_pct <= 0.35 and current_price >= shelf_lo:
+                if box_pct <= 0.75 and ema_ok_sh and current_price >= shelf_lo:
                     return {'type': 'Micro-Shelf 1M', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1m Micro-Shelf Coiling: Tight {box_pct:.2f}% 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}), awaiting breakout above ${shelf_hi:.2f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Coiling Box', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Coiling Box)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Coiling Box'}
             return {'type': 'Micro-Shelf 1M', 'score': 12, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m candles for tight 4-bar consolidation box breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Shelf)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-        # VARIANT C: EMA-9 SNAP 1M (1m 9>21 EMA uptrend -> 1-bar red pullback to 9-EMA -> green snap bar above 9-EMA & prior red high)
+        # VARIANT C: EMA-9 SNAP 1M (1m 9>21 EMA uptrend -> 1-bar red pullback near 9-EMA -> green snap bar closing above 9-EMA & red open)
         if variant == 'ema9':
-            if len(closed_src) >= 10:
+            if len(closed_src) >= 6:
                 e9_s = closed_src['Close'].ewm(span=9, adjust=False).mean()
                 e21_s = closed_src['Close'].ewm(span=21, adjust=False).mean()
                 e9_now, e9_prev = float(e9_s.iloc[-1]), float(e9_s.iloc[-2])
                 e21_now = float(e21_s.iloc[-1])
                 dip_bar = closed_src.iloc[-2]
                 snap_bar = closed_src.iloc[-1]
-                dip_o, dip_c, dip_l, dip_h = float(dip_bar['Open']), float(dip_bar['Close']), float(dip_bar['Low']), float(dip_bar['High'])
+                dip_o, dip_c, dip_l = float(dip_bar['Open']), float(dip_bar['Close']), float(dip_bar['Low'])
                 snp_o, snp_c = float(snap_bar['Open']), float(snap_bar['Close'])
                 trend_up = (e9_now > e21_now) and (e9_now >= e9_prev)
-                dipped_9 = (dip_c < dip_o) and (dip_l <= e9_prev * 1.0008) and (dip_c > e21_now)
-                snapped_9 = (snp_c > snp_o) and (snp_c > e9_now) and (snp_c > dip_h) and (current_price >= e9_now)
+                dipped_9 = (dip_c < dip_o) and (dip_l <= e9_prev * 1.0025) and (dip_c > e21_now)
+                snapped_9 = (snp_c > snp_o) and (snp_c > e9_now) and (snp_c >= dip_o) and (current_price >= snp_c * 0.9990)
                 if trend_up and dipped_9 and snapped_9:
                     snap_pct = ((snp_c - snp_o) / snp_o * 100.0) if snp_o > 0 else 0.0
                     buy_score = min(98, max(76, round(80 + snap_pct * 22)))
-                    return {'type': 'EMA-9 Snap 1M', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M EMA-9 SNAP: Bounced off 9-EMA (${e9_now:.2f}) and cleared dip high (${dip_h:.2f}).', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m EMA-9 Snap', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m EMA-9 Snap)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m EMA-9 Snap'}
+                    return {'type': 'EMA-9 Snap 1M', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M EMA-9 SNAP: Bounced off 9-EMA (${e9_now:.2f}) and reclaimed red open (${dip_o:.2f}).', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m EMA-9 Snap', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m EMA-9 Snap)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m EMA-9 Snap'}
                 last_b = closed_src.iloc[-1]
-                if trend_up and float(last_b['Close']) < float(last_b['Open']) and float(last_b['Low']) <= e9_now * 1.0008 and float(last_b['Close']) > e21_now:
+                if trend_up and float(last_b['Close']) < float(last_b['Open']) and float(last_b['Low']) <= e9_now * 1.0025 and float(last_b['Close']) > e21_now:
                     return {'type': 'EMA-9 Snap 1M', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1m 9-EMA Pullback: Dipped to ${float(last_b["Low"]):.2f} near 9-EMA (${e9_now:.2f}), awaiting green snap bar.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '9-EMA Dip Ready', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(9-EMA Dip)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': '9-EMA Dip Ready'}
             return {'type': 'EMA-9 Snap 1M', 'score': 12, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m 9/21-EMA uptrend for pullback bounce off 9-EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 9-EMA Dip)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-        # VARIANT A: PULSE 1M REVERSAL (Red -> Smaller Red -> Green on completed non-doji bars)
+        # VARIANT A: PULSE 1M REVERSAL (Red -> Smaller Red -> Green pullback inside active 1m 9>21 EMA uptrend)
         non_doji_src = closed_src[closed_src['Close'] != closed_src['Open']]
         if len(non_doji_src) >= 3:
             b_r1_o, b_r1_c = float(non_doji_src['Open'].iloc[-3]), float(non_doji_src['Close'].iloc[-3])
@@ -1842,13 +1845,16 @@ class MarketScoringEngine:
 
         red1_ok = (b_r1_c < b_r1_o) and (r1_body > 0)
         red2_ok = (b_r2_c < b_r2_o) and (0 < r2_body < r1_body)
-        grn1_ok = (b_g1_c > b_g1_o) and (g1_body > 0) and (current_price >= b_g1_o)
+        grn1_ok = (b_g1_c > b_g1_o) and (g1_body > 0) and (current_price >= b_g1_c * 0.9990)
 
-        e21_1m_chk = float(src_1m['Close'].ewm(span=21, adjust=False).mean().iloc[-1]) if len(src_1m) >= 5 else current_price
-        not_waterfall_crash = (e21_1m_chk <= 0) or (((e21_1m_chk - current_price) / e21_1m_chk * 100.0) <= 0.65)
-        meaningful_green_snap = (g1_body >= r2_body * 0.35)
+        e9_1m_s = closed_src['Close'].ewm(span=9, adjust=False).mean()
+        e21_1m_s = closed_src['Close'].ewm(span=21, adjust=False).mean()
+        e9_1m_val = float(e9_1m_s.iloc[-1]) if len(e9_1m_s) >= 1 else current_price
+        e21_1m_val = float(e21_1m_s.iloc[-1]) if len(e21_1m_s) >= 1 else current_price
+        uptrend_pullback_ok = (e9_1m_val > e21_1m_val) and (current_price > e21_1m_val) and (b_g1_c > e9_1m_val * 0.9985)
+        meaningful_green_snap = (g1_body >= r2_body * 0.65)
 
-        if red1_ok and red2_ok and grn1_ok and meaningful_green_snap and not_waterfall_crash:
+        if red1_ok and red2_ok and grn1_ok and meaningful_green_snap and uptrend_pullback_ok:
             bounce_pct = ((b_g1_c - b_g1_o) / b_g1_o * 100.0) if b_g1_o > 0 else 0.0
             buy_score = min(98, max(75, round(78 + bounce_pct * 20)))
             return {'type': '1m Reversal', 'score': buy_score, 'tranches': 1, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1M GO TRIGGER: Red (-${r1_body:.2f}) -> Smaller Red (-${r2_body:.2f}) -> Green (+${g1_body:.2f}).', 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.012, 2), 'status': '1m Reversal Go', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(1m Reversal Go)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '1m Reversal Go'}
@@ -2100,7 +2106,7 @@ class MarketScoringEngine:
         fresh_session_bottom = (session_low > 0 and swing_low_8 <= session_low * 1.0020)
 
         ema_spread_pct = ((ema9 - ema21) / ema21 * 100.0) if ema21 > 0 else 0.0
-        ema_rising = (ema9 > prev_ema9) and (ema_spread_pct >= (0.12 if is_3x_etf else 0.05))
+        ema_rising = (ema9 > prev_ema9) and (ema_spread_pct >= (0.04 if is_3x_etf else 0.03))
 
         # Capitulation V-Reversal: after >=2.0% intraday selloff to a fresh session low, price surges >=0.75% off the bottom on 2 green 5m bars + rising 1m 9/21-EMA
         bounce_from_session_low_pct = ((current_price - session_low) / session_low * 100.0) if session_low > 0 else 0.0
@@ -2181,24 +2187,24 @@ class MarketScoringEngine:
             if has_cap_vreversal and vol_ratio < 1.15:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"V-Reversal Watch: Reclaimed EMAs off low, awaiting >=1.30x volume ({vol_ratio:.1f}x).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            # STRATEGY-SPECIFIC ANTI-CHASE & DIFFERENTIATION (prevents all 3 bots from chasing stretched spikes)
+            # STRATEGY-SPECIFIC ANTI-CHASE & DIFFERENTIATION (calibrated for 3x ETF 5m EMA lag)
             ema_extension_pct = ((current_price - ema9) / ema9) * 100.0
             late_chop_window = (now_uk.hour >= 18)
             if 'apex' in prof:
-                # Apex Precision: Institutional Volume Breakout Sniper (requires >=1.20x vol & <=0.60% extension)
-                max_extension = (0.45 if late_chop_window else 0.60) if is_3x_etf else 0.30
-                if vol_ratio < 1.20 and not breaks_1h_shelf:
-                    return {'type': 'Intraday Momentum', 'score': 46, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Apex Volume Gate: Current bar volume ({vol_ratio:.1f}x) below 1.20x breakout requirement.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1.2x Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+                # Apex Precision: Institutional Volume Breakout Sniper (requires >=1.05x vol or 1H shelf break, <=1.35% extension)
+                max_extension = (0.75 if late_chop_window else 1.35) if is_3x_etf else 0.45
+                if vol_ratio < 1.05 and not breaks_1h_shelf:
+                    return {'type': 'Intraday Momentum', 'score': 46, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Apex Volume Gate: Current bar volume ({vol_ratio:.1f}x) below 1.05x breakout requirement.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1.05x Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
             elif any(x in prof for x in ['velocity', 'pulse']):
-                # Velocity Pulse: Crisp RSI 52-68 Momentum Scalper (blocks overbought >68 & stretched >0.50%)
-                max_extension = (0.40 if late_chop_window else 0.50) if is_3x_etf else 0.30
-                if rsi > 68:
-                    return {'type': 'Intraday Momentum', 'score': 44, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Pulse RSI Gate: RSI ({rsi:.1f}) above 68 scalp ceiling.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'RSI Overbought', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI > 68)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Scanning...'}
+                # Velocity Pulse: Crisp RSI 50-75 Momentum Scalper (<=1.20% extension, +0.95% quick take-profit)
+                max_extension = (0.70 if late_chop_window else 1.20) if is_3x_etf else 0.40
+                if rsi > 75:
+                    return {'type': 'Intraday Momentum', 'score': 44, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Pulse RSI Gate: RSI ({rsi:.1f}) above 75 scalp ceiling.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'RSI Overbought', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI > 75)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Scanning...'}
             else:
-                # Vector Hybrid: Disciplined 9-EMA Launch Specialist (buys within 0.55% of rising 9-EMA, up to 0.75% on 1H shelf break)
-                max_extension = (0.45 if late_chop_window else 0.55) if is_3x_etf else 0.35
+                # Vector Hybrid: Disciplined 9-EMA Launch Specialist (<=1.40% extension, up to 1.65% on 1H shelf break)
+                max_extension = (0.80 if late_chop_window else 1.40) if is_3x_etf else 0.50
                 if is_3x_etf and breaks_1h_shelf and not late_chop_window:
-                    max_extension = 0.75
+                    max_extension = 1.65
 
             if ema_extension_pct > max_extension:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Anti-Chase Gate: Price is {ema_extension_pct:.2f}% above 9-EMA (max {max_extension:.2f}%). Awaiting pullback.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overextended', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Pullback)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': f"Overextended (+{ema_extension_pct:.2f}%)"}
@@ -2848,6 +2854,15 @@ def global_background_worker():
             isinstance(u_d, dict) and any(int((v or {}).get('shares') or 0) > 0 for v in (u_d.get('holdings') or {}).values() if isinstance(v, dict))
             for u_d in (portfolio_store.data.get('users') or {}).values()
         )
+        if not any_live_holds and portfolio_store.client:
+            try:
+                for acc_h in portfolio_store.client[MONGO_DB_NAME]['accounts'].find({"role": "client"}, {"portfolio.users": 1}):
+                    u_map_h = ((acc_h.get('portfolio') or {}).get('users') or {})
+                    if any(isinstance(ud_h, dict) and any(int((vh or {}).get('shares') or 0) > 0 for vh in (ud_h.get('holdings') or {}).values() if isinstance(vh, dict)) for ud_h in u_map_h.values()):
+                        any_live_holds = True
+                        break
+            except Exception:
+                pass
         # 3-second fast exit watchdog when holding a position; 10-second wall-clock aligned entry scan when flat
         step_sec = 3.0 if (is_us_open_w and any_live_holds) else (10.0 if is_us_open_w else 20.0)
         sleep_sec = max(0.8, step_sec - (time.time() % step_sec))
