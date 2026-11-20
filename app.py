@@ -293,13 +293,69 @@ def get_live_alpaca_account(api_key, secret_key, mode):
     except Exception:
         return None
 
-def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT", trail_pct=None, slices=1):
-    """Sends live orders directly to Alpaca with automatic Paper/Live host detection."""
+def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_name="BOT", trail_pct=None, slices=1, entry_id=None, target_prof=None, client_email=None):
+    """Sends live orders directly to Alpaca with automatic Paper/Live host detection and instant fill-price reconciliation."""
     if not api_key or not secret_key or not ticker or shares <= 0:
         print("[ALPACA REJECTED] Missing keys, ticker, or shares <= 0.")
         return None
     if ticker.endswith('.L'):
-        return None  
+        return None
+
+    def _reconcile_or_purge_local_entry(order_id=None, rejected=False):
+        if not entry_id or not target_prof:
+            return
+        filled_px = 0.0
+        is_rejected = rejected
+        if order_id and not is_rejected:
+            for _ in range(8):
+                time.sleep(0.5)
+                try:
+                    req_o = urllib.request.Request(f"{base_url}/v2/orders/{order_id}", headers=headers)
+                    with urllib.request.urlopen(req_o, timeout=4) as r_o:
+                        od = json.loads(r_o.read().decode('utf-8'))
+                        st_o = (od.get('status') or '').lower()
+                        if st_o == 'filled' and float(od.get('filled_avg_price') or 0) > 0:
+                            filled_px = float(od['filled_avg_price'])
+                            break
+                        if st_o in ['rejected', 'canceled', 'expired']:
+                            is_rejected = True
+                            break
+                except Exception:
+                    pass
+        if filled_px <= 0 and not is_rejected:
+            return
+        def _mut_entry(f_ud):
+            h_list = f_ud.get('history') or []
+            idx_m = next((idx for idx, it in enumerate(h_list) if str(it.get('id')) == str(entry_id)), -1)
+            if idx_m < 0:
+                return False
+            if is_rejected:
+                h_list.pop(idx_m)
+                print(f"[ALPACA ORDER REJECTED] Purged unexecuted local trade {action.upper()} {shares} {ticker} on {target_prof}")
+            else:
+                it = h_list[idx_m]
+                new_p = round(filled_px, 2)
+                cps = filled_px / 100.0 if ticker.endswith('.L') else filled_px
+                it['price'] = new_p
+                it['amount'] = round(int(float(it.get('shares') or shares)) * cps, 2)
+                it['price_reconciled'] = True
+                if order_id:
+                    it['alpaca_order_id'] = order_id
+                print(f"[ALPACA FILL SYNCED] {target_prof} {action.upper()} {shares} {ticker} -> ${new_p:.2f}")
+            init_p = f_ud.get('initial_positions') or {}
+            i_sh = int((init_p.get(ticker) or {}).get('shares') or 0)
+            n_sh = sum(int(t.get('shares') or 0) if t.get('action') == 'BUY' else -int(t.get('shares') or 0) for t in h_list if t.get('ticker') == ticker)
+            tot_sh = max(0, i_sh + n_sh)
+            f_ud.setdefault('holdings', {})
+            if tot_sh > 0:
+                last_b = next((t for t in h_list if t.get('ticker') == ticker and t.get('action') == 'BUY'), None)
+                ref_p = float(last_b.get('price') or 0) if last_b else 0.0
+                hw = max(float((f_ud['holdings'].get(ticker) or {}).get('high_water') or 0.0), ref_p)
+                f_ud['holdings'][ticker] = {'shares': tot_sh, 'manual_val': round(tot_sh * ref_p, 2), 'high_water': hw}
+            else:
+                f_ud['holdings'].pop(ticker, None)
+            return True
+        update_user_state_atomic(target_prof, client_email, _mut_entry)  
 
     api_key_clean = api_key.strip()
     secret_key_clean = secret_key.strip()
@@ -343,6 +399,7 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
             with urllib.request.urlopen(req_close_pos, timeout=6) as resp_c:
                 res_data = json.loads(resp_c.read().decode('utf-8'))
                 print(f"[ALPACA SUCCESS] Closed position {shares} {ticker} -> ID: {res_data.get('id')}")
+                _reconcile_or_purge_local_entry(order_id=res_data.get('id'))
                 return res_data
         except urllib.error.HTTPError as he:
             # If 404, position is already flat; otherwise fall back to market sell order
@@ -382,6 +439,7 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
                 time.sleep(3.0)
 
         if res_data is not None:
+            _reconcile_or_purge_local_entry(order_id=res_data.get('id'))
             
             # Poll until BUY shares settle on Alpaca (up to 6s) before attaching native exchange trailing stop
             if action.lower() == 'buy' and trail_pct:
@@ -414,6 +472,7 @@ def send_alpaca_order(api_key, secret_key, mode, ticker, action, shares, bot_nam
     except urllib.error.HTTPError as he:
         err_body = he.read().decode('utf-8', errors='ignore')
         print(f"[ALPACA HTTP ERROR {he.code}] {err_body}")
+        _reconcile_or_purge_local_entry(rejected=True)
         return {'status': 'error', 'code': he.code, 'message': err_body}
     except Exception as e:
         print(f"[ALPACA ERROR] Execution failed: {e}")
@@ -893,6 +952,7 @@ class PortfolioManager:
                 t_pct = 2.50
 
                 order_slices = int((metadata or {}).get('slices', 1))
+                exact_prof_name = prof_target if is_client else (username or self.active_username())
                 threading.Thread(
                     target=send_alpaca_order,
                     args=(
@@ -904,7 +964,10 @@ class PortfolioManager:
                         shares,
                         current_profile,
                         t_pct,
-                        order_slices
+                        order_slices,
+                        entry.get('id'),
+                        exact_prof_name,
+                        client_email if is_client else None
                     ),
                     daemon=True
                 ).start()
@@ -3107,7 +3170,7 @@ def reconcile_single_target(target):
         pass
 
     try:
-        req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=40&direction=desc", headers=headers)
+        req_orders = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=200&direction=desc", headers=headers)
         with urllib.request.urlopen(req_orders, timeout=5) as resp:
             closed_orders = json.loads(resp.read().decode('utf-8'))
     except Exception:
@@ -4291,7 +4354,7 @@ def api_sync_alpaca_state():
 
         closed_orders = []
         try:
-            req_o = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=40&direction=desc", headers=headers)
+            req_o = urllib.request.Request(f"{base_url}/v2/orders?status=closed&limit=200&direction=desc", headers=headers)
             with urllib.request.urlopen(req_o, timeout=5) as r_o:
                 closed_orders = json.loads(r_o.read().decode('utf-8'))
         except Exception:
@@ -4326,6 +4389,11 @@ def api_sync_alpaca_state():
                     if len(cleaned_o) != len(o_hist):
                         other_ud['history'] = cleaned_o
 
+            for p_name_sync, p_ud_sync in all_profs_map.items():
+                if isinstance(p_ud_sync, dict):
+                    p_tag = re.sub(r'[^a-z0-9_]', '', p_name_sync.lower().replace(' ', '_'))
+                    prof_orders = [o for o in closed_orders if p_tag and p_tag in re.sub(r'[^a-z0-9_]', '', (o.get('client_order_id') or '').lower())]
+                    sync_profile_with_alpaca_non_destructive(p_ud_sync, acc, [], prof_orders, today_str, now_lon)
             sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon)
 
             if is_client:
@@ -6505,7 +6573,7 @@ def get_broker_status():
                 'buying_power': float(acc.get('buying_power', 0.0)),
                 'cash': float(acc.get('cash', 0.0)),
                 'portfolio_value': pv_now,
-                'last_equity': last_eq_now,
+                'last_equity': lastX_eq_now,
                 'daily_pnl': alp_day_pnl,
                 'daily_pct': alp_day_pct,
                 'usd_gbp_rate': fx_rate_status,
