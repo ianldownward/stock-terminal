@@ -3741,8 +3741,6 @@ def view_admin_users_log():
                             <th style='padding:12px; border-left:1px solid #262b36;'>Pulse 1M Reversal</th>
                             <th style='padding:12px; border-left:1px solid #262b36;'>Micro-Shelf 1M</th>
                             <th style='padding:12px; border-left:1px solid #262b36;'>EMA-9 Snap 1M</th>
-                            <th style='padding:12px; border-left:1px solid #262b36;'>Micro-Shelf 1M</th>
-                            <th style='padding:12px; border-left:1px solid #262b36;'>EMA-9 Snap 1M</th>
                             <th style='padding:12px; border-left:1px solid #262b36; text-align:right;'>Action</th>
                         </tr>
                     </thead>
@@ -4016,7 +4014,7 @@ def step_down_override_route():
 @app.route('/api/profile/manual_lock_day', methods=['POST'])
 @login_required
 def manual_lock_day_route():
-    """Permanent manual lock: liquidates ONLY the profile on screen and halts it until tomorrow."""
+    """Manual day lock: locks/unlocks either a single profile or ALL profiles ('__ALL__')."""
     data = request.get_json() or {}
     prof_name = data.get('profile', '').strip()
     action = data.get('action', 'lock')
@@ -4029,48 +4027,60 @@ def manual_lock_day_route():
     if is_client:
         c_store = portfolio_store.get_client_store(client_name)
         users = c_store.setdefault('users', {})
-        ud = users.get(prof_name)
     else:
         portfolio_store.reload()
         users = portfolio_store.data.setdefault('users', {})
-        ud = users.get(prof_name)
 
-    if not ud:
+    target_names = list(users.keys()) if prof_name == '__ALL__' else ([prof_name] if prof_name in users else [])
+    if not target_names:
         return jsonify({'status': 'error', 'message': 'Profile not found'}), 404
 
     if action == 'unlock':
-        ud['manual_locked_day'] = None
-        ud['ratchet_locked'] = False
-        ud['is_locked'] = False
+        for t_name in target_names:
+            u_obj = users[t_name]
+            u_obj['manual_locked_day'] = None
+            u_obj['ratchet_locked'] = False
+            u_obj['is_locked'] = False
         if is_client:
             portfolio_store.save_client_store(client_name, c_store)
         else:
             portfolio_store.save_data(portfolio_store.data)
         return jsonify({'status': 'ok', 'locked': False})
 
-    # Liquidate ONLY the position belonging to this specific profile on screen
-    hist = ud.get('history') or []
-    init_pos = ud.get('initial_positions') or {}
-    def r_sh(tk):
-        i_s = (init_pos.get(tk) or {}).get('shares', 0)
-        n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in hist if t.get('ticker') == tk)
-        return max(0, i_s + n_s)
+    for t_name in target_names:
+        u_obj = users[t_name]
+        hist = u_obj.get('history') or []
+        init_pos = u_obj.get('initial_positions') or {}
 
-    active_tickers = list(set([tr.get('ticker') for tr in hist if r_sh(tr.get('ticker')) > 0]))
-    for tick in active_tickers:
-        sh = r_sh(tick)
-        if sh > 0:
-            df = fetch_yf_data(tick, '1d', '1m')
-            cur_p = df['Close'].iloc[-1] if not df.empty else 1.0
-            portfolio_store.execute_trade(
-                tick, 'SELL', sh, cur_p, prof_name,
-                metadata={'status': 'Manual Day Lock', 'reason': f'Locked on screen for the day by user ({prof_name})'},
-                client_email=client_name if is_client else None
-            )
+        def r_sh(tk, _init=init_pos, _hist=hist):
+            i_s = (_init.get(tk) or {}).get('shares', 0)
+            n_s = sum(t.get('shares', 0) if t.get('action') == 'BUY' else -t.get('shares', 0) for t in _hist if t.get('ticker') == tk)
+            return max(0, i_s + n_s)
 
-    ud['manual_locked_day'] = today_str
-    ud['ratchet_locked'] = True
-    ud['is_locked'] = True
+        active_tickers = list(set([tr.get('ticker') for tr in hist if r_sh(tr.get('ticker')) > 0]))
+        for tick in active_tickers:
+            sh = r_sh(tick)
+            if sh > 0:
+                df = fetch_yf_data(tick, '1d', '1m')
+                cur_p = df['Close'].iloc[-1] if not df.empty else 1.0
+                portfolio_store.execute_trade(
+                    tick, 'SELL', sh, cur_p, t_name,
+                    metadata={'status': 'Manual Day Lock', 'reason': f'Locked for the day by user ({t_name})'},
+                    client_email=client_name if is_client else None
+                )
+
+        if is_client:
+            c_store = portfolio_store.get_client_store(client_name)
+            users = c_store.setdefault('users', {})
+            u_obj = users[t_name]
+        else:
+            portfolio_store.reload()
+            users = portfolio_store.data.setdefault('users', {})
+            u_obj = users[t_name]
+
+        u_obj['manual_locked_day'] = today_str
+        u_obj['ratchet_locked'] = True
+        u_obj['is_locked'] = True
 
     if is_client:
         portfolio_store.save_client_store(client_name, c_store)
@@ -4500,14 +4510,15 @@ def get_score():
     t = request.args.get('t', '').upper()
     try:
         active_profile = portfolio_store.active_username().strip().lower()
+        engine = MarketScoringEngine()
         is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
-        interval = "1m" if any(x in active_profile for x in ['1m reversal', 'pulse 1m', 'test p', 'test t']) else "5m"
-        period = "1d" if any(x in active_profile for x in ['1m reversal', 'pulse 1m', 'test p', 'test t']) else "5d"
+        is_1m_sc = engine._is_1m_family(active_profile) or any(x in active_profile for x in ['test p', 'test t'])
+        interval = "1m" if is_1m_sc else "5m"
+        period = "1d" if is_1m_sc else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
         if df.empty: return jsonify({'error': 'Ticker not found.'}), 400
         df.name = t
         cur = df['Close'].iloc[-1]
-        engine = MarketScoringEngine()
         
         if is_momentum:
             regime = engine.check_market_regime()
@@ -5327,18 +5338,18 @@ def export_forensic_report():
     raw_row = 2
     daily_pnl_map = {}
 
-    # PASS 1: Build trade details & accumulate daily P&L
+    # PASS 1: Build trade details & accumulate daily P&L (strictly matched per ticker)
     for u_name, u_data in users_data.items():
         if not isinstance(u_data, dict): continue
         hist = u_data.get('history') or []
-        buy_q = []
+        buy_queues = {}
         for t in reversed(hist):
-            tk = t.get('ticker')
-            if not tk or tk == 'CALIBRATION': continue
+            tk = (t.get('ticker') or '').strip().upper()
+            if not tk or tk in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']: continue
             if t.get('action') == 'BUY':
-                buy_q.append(t)
-            elif t.get('action') == 'SELL' and buy_q:
-                b = buy_q.pop(0)
+                buy_queues.setdefault(tk, []).append(t)
+            elif t.get('action') == 'SELL' and buy_queues.get(tk):
+                b = buy_queues[tk].pop(0)
                 diff = round((float(t.get('price', 1)) - float(b.get('price', 1))) * int(t.get('shares', 1)), 2)
                 d_key = t.get('date_str', '')
                 daily_pnl_map[(u_name, d_key)] = daily_pnl_map.get((u_name, d_key), 0.0) + diff
@@ -5349,17 +5360,17 @@ def export_forensic_report():
         hist = u_data.get('history') or []
         budget = float(u_data.get('master_budget', 500.0))
 
-        buy_q = []
+        buy_queues = {}
         p_trades = []
         wins, losses, win_val, loss_val = 0, 0, 0.0, 0.0
 
         for t in reversed(hist):
-            tk = t.get('ticker')
-            if not tk or tk == 'CALIBRATION': continue
+            tk = (t.get('ticker') or '').strip().upper()
+            if not tk or tk in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']: continue
             if t.get('action') == 'BUY':
-                buy_q.append(t)
-            elif t.get('action') == 'SELL' and buy_q:
-                b = buy_q.pop(0)
+                buy_queues.setdefault(tk, []).append(t)
+            elif t.get('action') == 'SELL' and buy_queues.get(tk):
+                b = buy_queues[tk].pop(0)
                 b_p = float(b.get('price', 1.0))
                 s_p = float(t.get('price', 1.0))
                 sh = int(t.get('shares', 1))
