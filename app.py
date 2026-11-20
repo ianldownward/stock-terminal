@@ -2958,7 +2958,7 @@ def match_bot_from_order_id(client_order_id, profiles):
     if 'velocity' in coid_clean or 'pulse' in coid_clean: return 'Velocity Pulse'
     return None
 
-def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon):
+def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon, purge_unfilled_today=False):
     """Non-destructive two-way reconciliation: preserves today's trade history while aligning exact fills, positions, equity, and ratchet state to Alpaca."""
     changed = False
     hist = ud.get('history') or []
@@ -3021,6 +3021,25 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
                 changed = True
             best_h['price_reconciled'] = True
             best_h['alpaca_order_id'] = order_id
+
+    if purge_unfilled_today:
+        now_ts_p = int(time.time())
+        filtered_hist = []
+        for tr in hist:
+            tk_p = tr.get('ticker')
+            if (
+                tk_p
+                and tk_p not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
+                and tr.get('source') != 'alpaca_sync'
+                and tr.get('date_str') == today_str
+                and not tr.get('price_reconciled')
+                and not tr.get('alpaca_order_id')
+                and (now_ts_p - int(tr.get('timestamp') or 0)) > 60
+            ):
+                changed = True
+                continue
+            filtered_hist.append(tr)
+        hist = filtered_hist
 
     alpaca_pos_map = {p['symbol'].upper(): p for p in (live_pos or []) if int(p.get('qty', 0)) > 0}
 
@@ -4389,12 +4408,57 @@ def api_sync_alpaca_state():
                     if len(cleaned_o) != len(o_hist):
                         other_ud['history'] = cleaned_o
 
+            allocs_sync = broker.get('allocations') or {}
+            all_prof_names = list(all_profs_map.keys())
+            orders_by_prof = {pn: [] for pn in all_prof_names}
+            untagged_orders = []
+            for o in closed_orders:
+                m_prof = match_bot_from_order_id(o.get('client_order_id') or '', all_prof_names)
+                if m_prof and m_prof in orders_by_prof:
+                    orders_by_prof[m_prof].append(o)
+                else:
+                    untagged_orders.append(o)
+
+            for uo in untagged_orders:
+                u_side = (uo.get('side') or '').upper()
+                u_sym = (uo.get('symbol') or '').upper()
+                try:
+                    u_qty = int(float(uo.get('filled_qty') or 0))
+                except Exception:
+                    u_qty = 0
+                u_ts = 0
+                try:
+                    if uo.get('filled_at'):
+                        u_ts = int(pd.Timestamp(uo['filled_at']).timestamp())
+                    elif uo.get('created_at'):
+                        u_ts = int(pd.Timestamp(uo['created_at']).timestamp())
+                except Exception:
+                    u_ts = 0
+                best_pn = prof_name
+                best_dt = 999999
+                for pn, pud in all_profs_map.items():
+                    if not isinstance(pud, dict):
+                        continue
+                    for h_it in (pud.get('history') or []):
+                        if h_it.get('action') == u_side and h_it.get('ticker') == u_sym and int(float(h_it.get('shares') or 0)) == u_qty:
+                            dt_h = abs(u_ts - int(h_it.get('timestamp') or 0)) if (u_ts > 0 and int(h_it.get('timestamp') or 0) > 0) else 0
+                            if dt_h <= 2400 and dt_h < best_dt:
+                                best_dt = dt_h
+                                best_pn = pn
+                if best_pn in orders_by_prof:
+                    orders_by_prof[best_pn].append(uo)
+
             for p_name_sync, p_ud_sync in all_profs_map.items():
-                if p_name_sync != prof_name and isinstance(p_ud_sync, dict):
-                    p_tag = re.sub(r'[^a-z0-9_]', '', p_name_sync.lower().replace(' ', '_'))
-                    prof_orders = [o for o in closed_orders if p_tag and p_tag in re.sub(r'[^a-z0-9_]', '', (o.get('client_order_id') or '').lower())]
-                    sync_profile_with_alpaca_non_destructive(p_ud_sync, acc, [], prof_orders, today_str, now_lon)
-            sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, today_str, now_lon)
+                if isinstance(p_ud_sync, dict):
+                    is_en_sync = (not allocs_sync) or any(
+                        (s_k == p_name_sync.lower() or s_k in p_name_sync.lower() or p_name_sync.lower() in s_k) and s_d.get('enabled')
+                        for s_k, s_d in allocs_sync.items()
+                    )
+                    pos_for_p = live_pos if p_name_sync == prof_name else []
+                    sync_profile_with_alpaca_non_destructive(
+                        p_ud_sync, acc, pos_for_p, orders_by_prof.get(p_name_sync, []),
+                        today_str, now_lon, purge_unfilled_today=is_en_sync
+                    )
 
             if is_client:
                 portfolio_store.save_client_store(client_name, c_store)
