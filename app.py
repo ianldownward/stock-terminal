@@ -6443,6 +6443,7 @@ def get_broker_status():
 
             # Audit desync across ALL profiles in the active account (admin or client)
             claimed_symbols = set()
+            desync_reason = ""
             audit_users = (c_store.get('users', {}) if is_client else portfolio_store.data.get('users', {})) or {}
             for u_name, u_data in audit_users.items():
                 if isinstance(u_data, dict):
@@ -6458,19 +6459,39 @@ def get_broker_status():
                             claimed_symbols.add(tk.upper())
 
             live_symbols = {p['symbol'].upper() for p in live_positions if int(p.get('qty', 0)) > 0}
-            has_desync = any(sym not in claimed_symbols for sym in live_symbols) or any(sym not in live_symbols for sym in claimed_symbols)
+            unclaimed_alpaca = [sym for sym in live_symbols if sym not in claimed_symbols]
+            phantom_local = [sym for sym in claimed_symbols if sym not in live_symbols]
+            has_desync = bool(unclaimed_alpaca or phantom_local)
+            if unclaimed_alpaca:
+                desync_reason = f"Alpaca holds {', '.join(unclaimed_alpaca)} not assigned to a local bot"
+            elif phantom_local:
+                desync_reason = f"Local bot shows {', '.join(phantom_local)} but Alpaca is flat"
+
             if not has_desync:
-                total_allocated_budget = sum(
-                    float(u_d.get('master_budget') or 700.0)
-                    for u_n, u_d in audit_users.items()
-                    if isinstance(u_d, dict) and any(
+                total_local_equity = 0.0
+                for u_n, u_d in audit_users.items():
+                    if not isinstance(u_d, dict):
+                        continue
+                    is_en = (not allocations) or any(
                         (s_k == u_n.lower() or s_k in u_n.lower() or u_n.lower() in s_k) and s_d.get('enabled')
                         for s_k, s_d in allocations.items()
                     )
-                )
+                    if not is_en:
+                        continue
+                    mb_u = float(u_d.get('master_budget') or 700.0)
+                    h_u = u_d.get('history') or []
+                    ip_u = u_d.get('initial_positions') or {}
+                    nh_u = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
+                               for tr in h_u if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC'])
+                    im_u = sum(float(pos.get('manual_val') or 0.0) for pos in ip_u.values())
+                    cash_u = max(0.0, mb_u + nh_u - im_u)
+                    pos_val_u = sum(float(v.get('manual_val') or 0.0) for v in (u_d.get('holdings') or {}).values() if isinstance(v, dict))
+                    total_local_equity += (cash_u + pos_val_u)
+
                 alp_pv = round(float(acc.get('portfolio_value') or 0.0), 2)
-                if alp_pv > 0 and total_allocated_budget > (alp_pv + 1.00):
+                if alp_pv > 0 and total_local_equity > 0 and abs(total_local_equity - alp_pv) > 35.0:
                     has_desync = True
+                    desync_reason = f"Local fleet total (${total_local_equity:,.2f}) differs from Alpaca (${alp_pv:,.2f})"
 
             pv_now = float(acc.get('portfolio_value') or acc.get('equity') or 0.0)
             last_eq_now = float(acc.get('last_equity') or pv_now)
@@ -6490,6 +6511,7 @@ def get_broker_status():
                 'usd_gbp_rate': fx_rate_status,
                 'positions': live_positions,
                 'has_desync': has_desync,
+                'desync_reason': desync_reason,
                 'has_queued_orders': has_queued_orders,
                 'paused': paused,
                 'mode': mode,
