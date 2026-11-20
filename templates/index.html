@@ -2866,7 +2866,15 @@
             
             <!-- 2. ALL BOT PROFILES (LEADERBOARD) -->
             <details class="drawer-details" open style="margin-bottom:8px;">
-                <summary>Profiles</summary>
+                <summary>
+                    <span>Profiles</span>
+                    <button type="button" id="profilesMasterLockBtn" onclick="event.preventDefault(); event.stopPropagation(); toggleAllProfilesLock(event);" title="Lock all profiles to stop all trades" style="margin-left:auto; margin-right:8px; background:transparent; border:none; padding:2px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;">
+                        <svg id="profilesMasterLockSvg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a8a9e" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path id="profilesMasterLockShackle" d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                        </svg>
+                    </button>
+                </summary>
                 <div class="segmented-control" style="margin-top:8px;">
                     <input type="radio" name="lb_sort" id="lb_sort_all" value="all" checked onchange="fetchData(false)">
                     <label for="lb_sort_all">All Time</label>
@@ -3916,6 +3924,97 @@
             }
         }
 
+        function updateMasterProfilesLockUI(lbList) {
+            let list = Array.isArray(lbList) ? lbList : (latestLeaderboardData || []);
+            let allLocked = list.length > 0 && list.every(x => Boolean(x.is_locked || x.is_manually_locked));
+            let isLight = document.body.classList.contains('light-mode');
+            let yellowCol = isLight ? '#ffb700' : '#ffd400';
+            let greyCol = isLight ? '#606877' : '#8a8a9e';
+
+            let svg = document.getElementById('profilesMasterLockSvg');
+            let shackle = document.getElementById('profilesMasterLockShackle');
+            let btn = document.getElementById('profilesMasterLockBtn');
+            if (svg && shackle) {
+                if (allLocked) {
+                    shackle.setAttribute('d', 'M7 11V7a5 5 0 0 1 10 0v4');
+                    svg.setAttribute('stroke', yellowCol);
+                    svg.setAttribute('fill', 'rgba(255, 212, 0, 0.18)');
+                    if (btn) btn.title = 'All profiles locked — click to unlock all';
+                } else {
+                    shackle.setAttribute('d', 'M7 11V7a5 5 0 0 1 9.9-1');
+                    svg.setAttribute('stroke', greyCol);
+                    svg.setAttribute('fill', 'none');
+                    if (btn) btn.title = 'Lock all profiles to stop all trades';
+                }
+            }
+        }
+
+        async function toggleProfileLock(profName, isCurrentlyLocked, hasOpenPos, e) {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            if (!profName) return;
+
+            if (!isCurrentlyLocked && hasOpenPos) {
+                if (!confirm(`Lock ${profName} for today?\n\nThis will close its open position to cash and stop further trades until tomorrow.`)) return;
+            }
+
+            if (Array.isArray(latestLeaderboardData)) {
+                latestLeaderboardData.forEach(item => {
+                    if (item.user === profName) {
+                        item.is_manually_locked = !isCurrentlyLocked;
+                        item.is_locked = !isCurrentlyLocked;
+                    }
+                });
+                renderLeaderboard(latestLeaderboardData);
+            }
+
+            try {
+                let res = await fetch('/api/profile/manual_lock_day', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ profile: profName, action: isCurrentlyLocked ? 'unlock' : 'lock' })
+                });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    await fetchData(false);
+                }
+            } catch(err) {
+                await fetchData(false);
+            }
+        }
+
+        async function toggleAllProfilesLock(e) {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            let list = Array.isArray(latestLeaderboardData) ? latestLeaderboardData : [];
+            if (list.length === 0) return;
+
+            let allLocked = list.every(x => Boolean(x.is_locked || x.is_manually_locked));
+            let anyHeld = list.some(x => Boolean(x.has_holding || (x.active_holds && x.active_holds.length > 0)));
+
+            if (!allLocked && anyHeld) {
+                if (!confirm('Lock ALL profiles for today?\n\nThis will liquidate any open positions to cash and halt all bots until tomorrow.')) return;
+            }
+
+            list.forEach(item => {
+                item.is_manually_locked = !allLocked;
+                item.is_locked = !allLocked;
+            });
+            renderLeaderboard(list);
+
+            try {
+                let res = await fetch('/api/profile/manual_lock_day', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ profile: '__ALL__', action: allLocked ? 'unlock' : 'lock' })
+                });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    await fetchData(false);
+                }
+            } catch(err) {
+                await fetchData(false);
+            }
+        }
+
         // Permanent Manual Lock: Targets ONLY the active strategy/position currently on screen
         async function triggerManualLockDay(targetUser = null, isCurrentlyLocked = false, e = null) {
             if (e) e.stopPropagation();
@@ -3945,19 +4044,15 @@
                 return;
             }
 
-            // Inspect open shares for ONLY the profile on screen
             let currentShares = 0;
             let currentTk = currentTicker || '';
             if (globalPortfolioData && globalPortfolioData.holdings && globalPortfolioData.holdings[currentTk]) {
                 currentShares = globalPortfolioData.holdings[currentTk].shares || 0;
             }
 
-            let msg = '';
-            if (currentShares > 0) {
-                msg = `LOCK POSITION ON SCREEN FOR DAY (${prof}):\n\n• Will liquidate ${currentShares} sh ${currentTk} to cash immediately.\n• Will pause ${prof} until tomorrow morning.\n• Other strategies will NOT be touched.\n\nProceed?`;
-            } else {
-                msg = `LOCK ${prof} IN CASH FOR DAY:\n\n• ${prof} will remain in cash and will not enter any trades until tomorrow morning.\n• Other strategies will NOT be touched.\n\nProceed?`;
-            }
+            let msg = currentShares > 0
+                ? `LOCK POSITION ON SCREEN FOR DAY (${prof}):\n\n• Will liquidate ${currentShares} sh ${currentTk} to cash immediately.\n• Will pause ${prof} until tomorrow morning.\n• Other strategies will NOT be touched.\n\nProceed?`
+                : `LOCK ${prof} IN CASH FOR DAY:\n\n• ${prof} will remain in cash and will not enter any trades until tomorrow morning.\n• Other strategies will NOT be touched.\n\nProceed?`;
 
             if (!confirm(msg)) return;
 
@@ -5298,12 +5393,27 @@
                         <div style="font-size:9.5px; font-weight:700; color:${subColor}; margin-top:1px; line-height:1.15;">(${arrow ? arrow + ' ' : ''}${pctStr})</div>
                     `;
 
+                let isProfLocked = Boolean(lb.is_manually_locked || isLocked);
+                let isLightMode = document.body.classList.contains('light-mode');
+                let lockStroke = isProfLocked ? (isLightMode ? '#ffb700' : '#ffd400') : (isLightMode ? '#606877' : '#8a8a9e');
+                let lockFill = isProfLocked ? 'rgba(255, 212, 0, 0.18)' : 'none';
+                let lockShacklePath = isProfLocked ? 'M7 11V7a5 5 0 0 1 10 0v4' : 'M7 11V7a5 5 0 0 1 9.9-1';
+                let profLockSvg = `
+                    <button type="button" onclick="toggleProfileLock('${lb.user.replace(/'/g, "\\'")}', ${isProfLocked}, ${holdsList.length > 0}, event)" title="${isProfLocked ? 'Locked — click to resume trading' : 'Click to lock profile & stop trades'}" style="background:transparent; border:none; padding:1px 3px; margin-left:2px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="${lockFill}" stroke="${lockStroke}" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="${lockShacklePath}"></path>
+                        </svg>
+                    </button>
+                `;
+
                 let cardInner = `
                     <div class="lb-header" style="gap:8px;">
                         <div style="display:flex; flex-direction:column; align-items:flex-start; min-width:0;">
                             <div style="display:inline-flex; align-items:center; gap:4px; white-space:nowrap;">
                                 <span>${lb.user}</span>
                                 <span class="info-icon" style="margin-left:0;" onclick="toggleLbDesc('${lb.user}', event)">ⓘ</span>
+                                ${profLockSvg}
                             </div>
                             ${tickerUnderName}
                         </div>
@@ -5320,6 +5430,7 @@
                     </div>`;
             }).join('');
             document.getElementById('leaderboardUI').innerHTML = lbHtml;
+            updateMasterProfilesLockUI(lbData);
             renderCustomProfileDropdown(leaderboard);
             renderMobileLastTrade(globalPortfolioData ? globalPortfolioData.history : []);
         }
