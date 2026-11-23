@@ -2118,7 +2118,7 @@
                             <div style="font-size:10px; font-weight:700; color:#ff9900; margin-top:2px;">Pure Orange/Purple EMA Crossover</div>
                             
                             <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
-                                Buys the exact second the Orange 9-EMA crosses above the Purple 21-EMA on 1m candles, and sells the exact second it crosses back below. Protected by -2% daily loss lock & 3-strike guard.
+                                Enters on a fresh closed-bar 1m 9/21-EMA crossover only when aligned with the 5m 9/21-EMA trend. Exits on 9<21 cross, -0.45% hard stop, or +0.45% BE lock (protected by -2% daily lock & 3-strike guard).
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
@@ -3899,7 +3899,7 @@
             'Pulse 1M Reversal': 'Production Desk #4: 1-minute exhaustion reversal scalper across TQQQ, SOXL & SQQQ. Enters on Red -> Smaller Red -> Green (Go) with Fast-Bail exit protection (-0.45% stop, -0.25% live red bail, +0.40% BE lock, +0.75% peak choke).',
             'Micro-Shelf 1M': 'Production Desk #5: 1-minute tight consolidation breakout scalper across TQQQ, SOXL & SQQQ. Enters on green breakout above a 4-bar <=0.35% box with Fast-Bail exit protection.',
             'EMA-9 Snap 1M': 'Production Desk #6: 1-minute trend pullback scalper across TQQQ, SOXL & SQQQ. Enters when a 9/21-EMA uptrend dips to the 9-EMA and snaps green back above the 9-EMA & dip high.',
-            'EMA Cross 9/21': 'Production Desk #7: Pure 9/21-EMA crossover engine across TQQQ, SOXL & SQQQ. Buys the second Orange 9-EMA crosses above Purple 21-EMA and sells the second it crosses back below.',
+            'EMA Cross 9/21': 'Production Desk #7: Trend-filtered 9/21-EMA crossover engine across TQQQ, SOXL & SQQQ. Enters on fresh closed-bar 1m 9>21 crosses aligned with the 5m 9/21 trend, with -0.45% hard stop & +0.45% BE lock.',
             'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
 
