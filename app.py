@@ -238,7 +238,7 @@ def send_native_web_push(title, message, target_device=None):
         except Exception as ex:
             print(f"[PUSH EXCEPTION] Delivery failed: {ex}")
             errors.append(str(ex))
-            if hasattr(ex, 'response') and getattr(ex.response, 'status_code', None) in [404, 410]:
+            if hasattr(ex, 'response') and getattr(ex.response, 'status_code', None) in [401, 403, 404, 410]:
                 dead_subs.append(sub)
 
     if dead_subs:
