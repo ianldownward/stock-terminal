@@ -1915,6 +1915,43 @@ class MarketScoringEngine:
         if self._is_1m_family(prof):
             return self.score_pulse_1m_reversal(ticker, current_price, avg_buy_price=avg_buy_price, highest_price=highest_price, regime=regime, overnight_sweep=overnight_sweep, buy_timestamp=buy_timestamp, variant=self._get_1m_variant(prof))
 
+        if 'ema cross' in prof:
+            is_inverse_ec = ticker in ['SQQQ', '3SUS.L']
+            trade_type_ec = 'SHORT' if is_inverse_ec else 'LONG'
+            if df_5m.empty or len(df_5m) < 21:
+                return {'type': 'EMA Cross 9/21', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Awaiting 5m candle history for 9/21 EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'No Data'}
+
+            now_uk_ec = pd.Timestamp.now(tz='Europe/London')
+            pct_chg_ec = ((current_price - float(df_5m['Close'].iloc[0])) / float(df_5m['Close'].iloc[0])) * 100.0 if float(df_5m['Close'].iloc[0]) > 0 else 0.0
+
+            closes_ec = df_5m['Close'].astype(float).copy()
+            if current_price > 0:
+                closes_ec.iloc[-1] = float(current_price)
+            live_e9 = float(closes_ec.ewm(span=9, adjust=False).mean().iloc[-1])
+            live_e21 = float(closes_ec.ewm(span=21, adjust=False).mean().iloc[-1])
+            spread_diff = live_e9 - live_e21
+            spread_pct = ((live_e9 - live_e21) / live_e21 * 100.0) if live_e21 > 0 else 0.0
+
+            if avg_buy_price > 0:
+                pnl_ec = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                pnl_ec_str = f"({'+' if pnl_ec >= 0 else ''}{pnl_ec:.2f}%)"
+                if overnight_sweep and now_uk_ec.hour == 20 and now_uk_ec.minute >= 50:
+                    return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': 'OVERNIGHT SWEEP: Liquidating to 100% cash.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
+                if live_e9 < live_e21:
+                    return {'type': 'EMA Cross 9/21', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': f"ORANGE BELOW PURPLE {pnl_ec_str}: Live 9-EMA (${live_e9:.2f}) crossed below 21-EMA (${live_e21:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '9<21 EMA Cross', 'color': '#ff5364' if pnl_ec < 0 else '#0ecb81', 'action_main': 'SELL', 'action_sub': '(9<21 Cross)', 'action_color': '#ff5364' if pnl_ec < 0 else '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"9<21 Cross {pnl_ec_str}"}
+                ema_cushion = int(max(10, min(100, spread_pct * 120)))
+                return {'type': 'EMA Cross 9/21', 'score': 85, 'tranches': 1, 'discount': f"{pnl_ec:.2f}%", 'reason': f"RIDING 9>21 CROSS {pnl_ec_str}: Orange 9-EMA (${live_e9:.2f}) +${spread_diff:.2f} (+{spread_pct:.2f}%) above Purple 21-EMA (${live_e21:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 9>21 Cross', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': ema_cushion, 'health_color': '#0ecb81', 'health_text': f"9>21 (+{spread_pct:.2f}%) {pnl_ec_str}"}
+
+            if overnight_sweep and now_uk_ec.hour == 20 and now_uk_ec.minute >= 50:
+                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': 'OVERNIGHT SWEEP: Blocking new entries before close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
+
+            if live_e9 > live_e21:
+                buy_sc_ec = min(98, max(72, round(75 + spread_pct * 25)))
+                return {'type': 'EMA Cross 9/21', 'score': buy_sc_ec, 'tranches': 1, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"ORANGE ABOVE PURPLE: Live 9-EMA (${live_e9:.2f}) +${spread_diff:.2f} (+{spread_pct:.2f}%) above 21-EMA (${live_e21:.2f}).", 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.02, 2), 'status': '9>21 EMA Cross', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '9>21 Cross'}
+
+            wait_sc_ec = max(5, min(64, round(64 + spread_pct * 40)))
+            return {'type': 'EMA Cross 9/21', 'score': wait_sc_ec, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"Awaiting Orange 9-EMA (${live_e9:.2f}) to cross above Purple 21-EMA (${live_e21:.2f}) [Gap: {spread_pct:+.2f}%].", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting 9>21 Cross', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(9<21 EMA)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+
         is_inverse = ticker in ['SQQQ', '3SUS.L']
         is_3x_etf = ticker in ['TQQQ', 'SOXL', 'NVDL', 'CONL', 'MSTX', 'BITX', 'SQQQ', '3SUS.L']
         trade_type = 'SHORT' if is_inverse else 'LONG'
@@ -2391,7 +2428,7 @@ def process_auto_profile(prof_name, client_email=None):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_auto_profile = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         if not is_auto_profile: return
 
         # TEST B: PASSIVE BUY-AND-HOLD BENCHMARK
@@ -2503,9 +2540,10 @@ def process_auto_profile(prof_name, client_email=None):
         daily_pnl_pct = (daily_pnl / sod_equity) * 100.0 if sod_equity > 0 else 0.0
         peak_daily_pnl_pct = ((peak_total_equity - sod_equity) / sod_equity) * 100.0 if sod_equity > 0 else daily_pnl_pct
 
-        # Maximum allowable daily drawdown (-5.0% for 1m bots; -2.5% for 5m bots)
+        # Maximum allowable daily drawdown (-2.0% for EMA Cross 9/21; -5.0% for 1m bots; -2.5% for other 5m bots)
         is_p1m_risk = engine._is_1m_family(active_profile)
-        CIRCUIT_BREAKER_PCT = -5.00 if is_p1m_risk else -2.50
+        is_ema_cross_risk = ('ema cross' in active_profile)
+        CIRCUIT_BREAKER_PCT = -2.00 if is_ema_cross_risk else (-5.00 if is_p1m_risk else -2.50)
         circuit_breaker_tripped = (daily_pnl_pct <= CIRCUIT_BREAKER_PCT)
 
         # TOTAL DAILY ACCOUNT STEP-RATCHET (+5.0% start & +5.0% steps for Pulse 1M Reversal; +2.5% start & +0.5% steps for 5m bots)
@@ -2632,7 +2670,7 @@ def process_auto_profile(prof_name, client_email=None):
                 df.name = t
                 cur = float(df['Close'].iloc[-1])
                 is_pulse_1m = engine._is_1m_family(active_profile)
-                if is_pulse_1m or (now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
+                if is_pulse_1m or ('ema cross' in active_profile) or (now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
                     df_1m_open = fetch_yf_data(t, "1d", "1m")
                     if df_1m_open is not None and not df_1m_open.empty:
                         cand_1m = float(df_1m_open['Close'].iloc[-1])
@@ -2767,18 +2805,19 @@ def process_auto_profile(prof_name, client_email=None):
         current_hold_count = len([x for x in held_scores if x['shares'] > 0])
         slots_available = max(0, max_allowed_holds - current_hold_count)
 
-        # DEFENSIVE CHOP SHIELDS & COOLDOWNS FOR ACTIVE FLEET (Exempt 1m bots so they repeat freely until 20:50 sweep)
+        # DEFENSIVE CHOP SHIELDS & COOLDOWNS FOR ACTIVE FLEET (Exempt 1m bots & EMA Cross 9/21 from curfew/cooldown; keep 3-strike guard on EMA Cross 9/21)
         is_pulse_1m_prof = engine._is_1m_family(active_profile)
+        is_ema_cross_prof = ('ema cross' in active_profile)
         cur_mins = now_uk.hour * 60 + now_uk.minute
-        if not is_pulse_1m_prof and cur_mins >= (19 * 60 + 45):
+        if not is_pulse_1m_prof and not is_ema_cross_prof and cur_mins >= (19 * 60 + 45):
             is_curfew_active = True
 
-        # Three-Strike Loss Lockout (5m profiles only)
+        # Three-Strike Loss Lockout (5m profiles + EMA Cross 9/21)
         if not is_pulse_1m_prof and today_stops_cnt >= 3:
             is_curfew_active = True
 
-        # Post-Sell Cooldown: 60s (1 candle) for 1m bots; 15 mins (900s) for 5m profiles
-        cd_duration = 60 if engine._is_1m_family(active_profile) else 900
+        # Post-Sell Cooldown: 5s settlement buffer for EMA Cross 9/21; 60s for 1m bots; 15 mins (900s) for other 5m profiles
+        cd_duration = 5 if is_ema_cross_prof else (60 if is_pulse_1m_prof else 900)
         real_hist_for_cd = [h for h in hist if h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]
         if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
             if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < cd_duration:
@@ -2868,7 +2907,7 @@ def global_background_worker():
             # Priority 1: Primary Live Admin profiles
             for prof_name in list(portfolio_store.data.get('users', {}).keys()):
                 p_lower = prof_name.lower()
-                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'tqm', 'tq', 'test s']):
+                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'tqm', 'tq', 'test s']):
                     live_admin_tasks.append((prof_name, None))
 
             # Priority 2 & 3: Live Client accounts first, background Recon (ian_paper@gmail.com) strictly last
@@ -2883,7 +2922,7 @@ def global_background_worker():
                         is_recon_acc = (str(c_email or '').strip().lower() == PAPER_STATS_ACCOUNT.lower())
                         for p_name in list(users_dict.keys()):
                             p_low = p_name.lower()
-                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'tqm', 'tq', 'test s']):
+                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'tqm', 'tq', 'test s']):
                                 if is_recon_acc:
                                     recon_tasks.append((p_name, c_email))
                                 else:
@@ -2915,8 +2954,11 @@ def global_background_worker():
         w_mins = now_uk_w.hour * 60 + now_uk_w.minute
         is_us_open_w = (now_uk_w.weekday() < 5) and ((14 * 60 + 30) <= w_mins < (21 * 60))
         any_live_holds = any(
-            isinstance(u_d, dict) and any(int((v or {}).get('shares') or 0) > 0 for v in (u_d.get('holdings') or {}).values() if isinstance(v, dict))
-            for u_d in (portfolio_store.data.get('users') or {}).values()
+            isinstance(u_d, dict) and (
+                'ema cross' in str(u_k).lower()
+                or any(int((v or {}).get('shares') or 0) > 0 for v in (u_d.get('holdings') or {}).values() if isinstance(v, dict))
+            )
+            for u_k, u_d in (portfolio_store.data.get('users') or {}).items()
         )
         if not any_live_holds and portfolio_store.client:
             try:
@@ -2943,6 +2985,7 @@ def match_bot_from_order_id(client_order_id, profiles):
         if p_clean in coid_clean:
             return p
     # Prefix fallbacks (check 1m strategies before generic 'pulse' so Pulse 1M Reversal never routes to Velocity Pulse)
+    if 'ema_cross' in coid_clean or 'emacross' in coid_clean: return 'EMA Cross 9/21'
     if 'micro_shelf' in coid_clean or 'microshelf' in coid_clean: return 'Micro-Shelf 1M'
     if 'ema9_snap' in coid_clean or 'ema_9_snap' in coid_clean: return 'EMA-9 Snap 1M'
     if '1m_reversal' in coid_clean or 'pulse_1m' in coid_clean: return 'Pulse 1M Reversal'
@@ -4641,7 +4684,7 @@ def get_score():
     try:
         active_profile = portfolio_store.active_username().strip().lower()
         engine = MarketScoringEngine()
-        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         is_1m_sc = engine._is_1m_family(active_profile) or any(x in active_profile for x in ['test p', 'test t'])
         interval = "1m" if is_1m_sc else "5m"
         period = "1d" if is_1m_sc else "5d"
@@ -5246,7 +5289,7 @@ def get_data():
             if df_score is None or df_score.empty: df_score = df
             df_score.name = t
             score_px = last_p
-            if now_lon.weekday() < 5 and now_lon.hour == 14 and 30 <= now_lon.minute < 50:
+            if ('ema cross' in active_profile) or (now_lon.weekday() < 5 and now_lon.hour == 14 and 30 <= now_lon.minute < 50):
                 df_1m_ui = fetch_yf_data(t, "1d", "1m")
                 if df_1m_ui is not None and not df_1m_ui.empty:
                     score_px = float(df_1m_ui['Close'].iloc[-1])
@@ -5351,7 +5394,7 @@ def get_data():
             h for h in hist
             if h.get('ticker') and h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
         ]
-        cd_total_guard = 60 if engine._is_1m_family(active_profile) else 900
+        cd_total_guard = 5 if ('ema cross' in active_profile) else (60 if engine._is_1m_family(active_profile) else 900)
         cd_15m_rem = 0
         if real_hist_guard and real_hist_guard[0].get('action') == 'SELL':
             last_sell_ts = int(real_hist_guard[0].get('timestamp') or 0)
@@ -6747,7 +6790,8 @@ def get_watchlist_scanner():
                 df.name = tick
                 cur = float(df['Close'].iloc[-1])
                 is_p1m_active = engine._is_1m_family(active_profile)
-                if is_p1m_active or is_open_win_scan:
+                is_ec_active = ('ema cross' in active_profile.lower())
+                if is_p1m_active or is_ec_active or is_open_win_scan:
                     df_1m_s = fetch_yf_data(tick, "1d", "1m")
                     if df_1m_s is not None and not df_1m_s.empty:
                         cur = float(df_1m_s['Close'].iloc[-1])
@@ -6767,7 +6811,26 @@ def get_watchlist_scanner():
                 trail_pct = 0.65 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
                 
-                p1m_snap = engine.get_pulse_1m_snapshot(tick, hist=hist, current_price=cur, profile=active_profile) if engine._is_1m_family(active_profile) else None
+                p1m_snap = engine.get_pulse_1m_snapshot(tick, hist=hist, current_price=cur, profile=active_profile) if is_p1m_active else None
+                ema_cross_snap = None
+                if is_ec_active and len(df) >= 21:
+                    c_ec = df['Close'].astype(float).copy()
+                    if cur > 0:
+                        c_ec.iloc[-1] = float(cur)
+                    e9_s = c_ec.ewm(span=9, adjust=False).mean()
+                    e21_s = c_ec.ewm(span=21, adjust=False).mean()
+                    e9_v = float(e9_s.iloc[-1])
+                    e21_v = float(e21_s.iloc[-1])
+                    sp_pct = ((e9_v - e21_v) / e21_v * 100.0) if e21_v > 0 else 0.0
+                    ema_cross_snap = {
+                        'e9': round(e9_v, 2),
+                        'e21': round(e21_v, 2),
+                        'spread_pct': round(sp_pct, 2),
+                        'is_above': bool(e9_v > e21_v),
+                        'e9_series': [round(float(x), 3) for x in e9_s.tail(28).tolist()],
+                        'e21_series': [round(float(x), 3) for x in e21_s.tail(28).tolist()],
+                        'close_series': [round(float(x), 3) for x in c_ec.tail(28).tolist()]
+                    }
                 results.append({
                     'ticker': tick,
                     'user_tag': '',
@@ -6783,7 +6846,8 @@ def get_watchlist_scanner():
                     'action_main': st.get('action_main', 'HOLD'),
                     'stop_price': round(stop_price, 2),
                     'peak_price': round(high_p, 2),
-                    'p1m_snap': p1m_snap
+                    'p1m_snap': p1m_snap,
+                    'ema_cross_snap': ema_cross_snap
                 })
             except Exception: pass
 
@@ -7039,7 +7103,8 @@ def get_strategy_stats():
         'Velocity Pulse': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'Pulse 1M Reversal': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'Micro-Shelf 1M': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
-        'EMA-9 Snap 1M': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
+        'EMA-9 Snap 1M': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
+        'EMA Cross 9/21': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
     }
     if not portfolio_store.client:
         return jsonify({'stats': default_stats, 'connected': False, 'account': PAPER_STATS_ACCOUNT, **default_stats})
@@ -7073,6 +7138,7 @@ def get_strategy_stats():
         'Pulse 1M Reversal': ['1m reversal', 'pulse 1m'],
         'Micro-Shelf 1M': ['micro-shelf', 'micro shelf'],
         'EMA-9 Snap 1M': ['ema-9 snap', 'ema9 snap', 'ema 9 snap'],
+        'EMA Cross 9/21': ['ema cross'],
         'Vector Hybrid': ['vector'],
         'Apex Precision': ['apex'],
         'Velocity Pulse': ['velocity', 'pulse']
