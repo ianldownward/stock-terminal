@@ -53,6 +53,7 @@ def login_required(f):
     return decorated_function
 
 YF_CACHE = {}
+LAST_GOOD_TICK = {}
 FETCH_LOCKS = {}
 GLOBAL_LOCK = threading.Lock()
 NEWS_CACHE = {}
@@ -109,7 +110,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                     now_lon_chk = pd.Timestamp.now(tz='Europe/London')
                     mins_lon_chk = now_lon_chk.hour * 60 + now_lon_chk.minute
                     is_us_live_chk = (now_lon_chk.weekday() < 5) and ((14 * 60 + 30) <= mins_lon_chk < (21 * 60))
-                    if is_us_live_chk and (now - last_ts.timestamp()) > 240:
+                    if is_us_live_chk and ((now - last_ts.timestamp()) > 240 or last_ts.timestamp() < LAST_GOOD_TICK.get(ticker, 0) - 300):
                         if cache_key in YF_CACHE:
                             c_time, c_df = YF_CACHE[cache_key]
                             if not c_df.empty and (now - c_time) < 120:
@@ -124,6 +125,7 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                                 if not c_df.empty and (now - c_time) < 90:
                                     return c_df.copy()
                             df = df.iloc[:-1]
+                if interval=='1m': LAST_GOOD_TICK[ticker]=last_ts.timestamp()
                 YF_CACHE[cache_key] = (now, df)
                 return df.copy()
         except Exception:
@@ -2776,6 +2778,8 @@ def process_auto_profile(prof_name, client_email=None):
                         last_bar_ts = int(df_1m_hold.index[-1].timestamp())
                         if b_ts_chk > 0 and (last_bar_ts + 60) < b_ts_chk:
                             stale_pre_buy_quote = True
+                    else:
+                        stale_pre_buy_quote = True
                 cps = cur / 100.0 if t.endswith('.L') and cur > 100 else cur
                 vo = sh * cps
 
