@@ -3616,9 +3616,44 @@
             if (isEmaCrossShield) {
                 let uDataEc = (globalPortfolioData && globalPortfolioData.users && globalPortfolioData.users[profName]) ? globalPortfolioData.users[profName] : (globalPortfolioData || {});
                 let isSweepEc = (uDataEc.overnight_sweep !== undefined) ? uDataEc.overnight_sweep : true;
-                let reasonTxt = (metrics && metrics.reason) ? String(metrics.reason) : 'Scanning live 9/21 EMA crossover...';
-                let isBullCross = (metrics && (metrics.action_main === 'BUY' || String(metrics.status || '').includes('9>21')));
-                let crossCol = isBullCross ? '#0ecb81' : '#ff9900';
+                let reasonTxt = (metrics && metrics.reason) ? String(metrics.reason) : 'Scanning 5m trend + fresh 1m 9/21 EMA cross...';
+                let stTxtEc = (metrics && metrics.status) ? String(metrics.status) : '';
+                let isBullCross = (metrics && (metrics.action_main === 'BUY' || stTxtEc.includes('9>21')));
+                let crossCol = (shOwned > 0 || isBullCross) ? '#0ecb81' : (stTxtEc.includes('Confirm') ? '#ffd400' : '#ff9900');
+
+                let ecPosHtml = '';
+                if (shOwned > 0 && curPrice > 0) {
+                    let histEc = uDataEc.history || [];
+                    let tBuyEc = histEc.find(tr => tr.ticker === heldTicker && tr.action === 'BUY');
+                    let entryEc = tBuyEc ? (parseFloat(tBuyEc.price) || curPrice) : curPrice;
+                    let pnlEcPct = entryEc > 0 ? ((curPrice - entryEc) / entryEc * 100.0) : 0.0;
+                    let stopEcP = entryEc * 0.9955;
+                    let beEcP = entryEc * 1.0045;
+                    let pColEc = pnlEcPct >= 0 ? '#0ecb81' : '#ff5364';
+                    ecPosHtml = `
+                        <div style="display:flex; flex-direction:column; gap:3px; padding:6px 0; border-bottom:1px solid #1a1e28;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                                <span style="color:#8a8a9e;">2. ACTIVE POSITION (${heldTicker})</span>
+                                <span style="color:${pColEc};">BOUGHT @ $${entryEc.toFixed(2)} (${pnlEcPct >= 0 ? '+' : ''}${pnlEcPct.toFixed(2)}%)</span>
+                            </div>
+                            <div style="background:#14171f; border:1px solid ${pColEc}; border-radius:4px; padding:4px 6px; text-align:center; font-size:8.5px; font-weight:800; color:${pColEc};">
+                                -0.45% Hard Stop: $${stopEcP.toFixed(2)} • +0.45% BE Arm: $${beEcP.toFixed(2)}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    ecPosHtml = `
+                        <div style="display:flex; flex-direction:column; gap:3px; padding:6px 0; border-bottom:1px solid #1a1e28;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                                <span style="color:#8a8a9e;">2. 5M TREND + 1M CROSS GATE</span>
+                                <span style="color:${crossCol};">${stTxtEc || (isBullCross ? '9>21 SIGNAL' : 'SCANNING')}</span>
+                            </div>
+                            <div style="background:#14171f; border:1px solid ${crossCol}; border-radius:4px; padding:4px 6px; text-align:center; font-size:8.5px; font-weight:800; color:${crossCol};">
+                                ${reasonTxt}
+                            </div>
+                        </div>
+                    `;
+                }
 
                 container.innerHTML = `
                     <!-- 1. Daily Loss Shield (-2.0% Lock) -->
@@ -3636,16 +3671,8 @@
                         </div>
                     </div>
 
-                    <!-- 2. Live 9/21 EMA Crossover Signal -->
-                    <div style="display:flex; flex-direction:column; gap:3px; padding:6px 0; border-bottom:1px solid #1a1e28;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
-                            <span style="color:#8a8a9e;">2. LIVE 9 / 21 EMA CROSSOVER</span>
-                            <span style="color:${crossCol};">${isBullCross ? 'ORANGE > PURPLE' : 'ORANGE < PURPLE'}</span>
-                        </div>
-                        <div style="background:#14171f; border:1px solid ${crossCol}; border-radius:4px; padding:4px 6px; text-align:center; font-size:8.5px; font-weight:800; color:${crossCol};">
-                            ${reasonTxt}
-                        </div>
-                    </div>
+                    <!-- 2. Active Position / 5m + 1m Cross Gate -->
+                    ${ecPosHtml}
 
                     <!-- 3. Overnight Cash Sweep -->
                     <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:700; color:#8a8a9e; padding-top:4px;">
@@ -6056,12 +6083,12 @@
                     if (ratchetCardEl) ratchetCardEl.style.display = 'none';
                     if (mobRatchetCardEl) mobRatchetCardEl.style.display = 'none';
                     if (sentimentCardEl) sentimentCardEl.style.display = 'none';
-                    if (cd15ColEl) cd15ColEl.style.display = 'none';
+                    if (cd15ColEl) cd15ColEl.style.display = 'flex';
                     if (curfewColEl) curfewColEl.style.display = 'none';
                     if (ratchetColEl) ratchetColEl.style.display = 'none';
                     if (strikeColEl) strikeColEl.style.display = 'flex';
-                    if (guardsRowEl) guardsRowEl.style.justifyContent = 'center';
-                    if (wlTitleEl) wlTitleEl.innerText = 'Live 9/21 EMA Charts (3x Universe)';
+                    if (guardsRowEl) guardsRowEl.style.justifyContent = 'space-around';
+                    if (wlTitleEl) wlTitleEl.innerText = 'Live 9/21 EMA Radar (3x Universe)';
                     if (!showMath) {
                         showMath = true;
                         let btnM = document.getElementById('btnShowMath');
@@ -7921,13 +7948,13 @@
             let guardsRowBg = document.getElementById('buyingGuardsRow');
             let execGearBg = document.getElementById('executionGearHud');
             if (strikeColBg) strikeColBg.style.display = isP1MBg ? 'none' : 'flex';
-            if (guardsRowBg) guardsRowBg.style.justifyContent = isEcBg ? 'center' : (isP1MBg ? 'space-around' : 'space-between');
+            if (guardsRowBg) guardsRowBg.style.justifyContent = (isP1MBg || isEcBg) ? 'space-around' : 'space-between';
             if (execGearBg) execGearBg.style.display = (isP1MBg || isEcBg) ? 'none' : '';
 
             let cdTitleEl = document.getElementById('dialCd15-title');
             let cdSubEl = document.getElementById('dialCd15-sub');
-            if (cdTitleEl) cdTitleEl.innerText = isP1MBg ? '60S COOL' : '15M COOL';
-            if (cdSubEl) cdSubEl.innerText = isP1MBg ? '1-Bar' : 'Post-Sell';
+            if (cdTitleEl) cdTitleEl.innerText = (isP1MBg || isEcBg) ? '60S COOL' : '15M COOL';
+            if (cdSubEl) cdSubEl.innerText = (isP1MBg || isEcBg) ? '1-Bar' : 'Post-Sell';
 
             let elapsed = Math.floor((Date.now() - st.syncedAtMs) / 1000);
             let rem15 = Math.max(0, (st.cd_15m_rem || 0) - elapsed);
@@ -7936,7 +7963,7 @@
             let v15 = document.getElementById('dialCd15-val');
             if (d15 && v15) {
                 if (rem15 > 0) {
-                    let totalCd = isP1MBg ? 60 : (st.cd_15m_total || 900);
+                    let totalCd = (isP1MBg || isEcBg) ? 60 : (st.cd_15m_total || 900);
                     let pct15 = Math.max(2, Math.min(100, (rem15 / totalCd) * 100));
                     d15.style.background = `conic-gradient(#ff9900 ${pct15}%, #262b36 0)`;
                     v15.innerText = formatCountdownMMSS(rem15);
@@ -9147,27 +9174,70 @@
                         let snap = it.ema_cross_snap || {};
                         let pTxt = `$${(parseFloat(it.price) || 0).toFixed(2)}`;
                         let spPct = parseFloat(snap.spread_pct) || 0;
-                        let isAbove = Boolean(snap.is_above);
-                        let stCol = isHeld ? '#0ecb81' : (isAbove ? '#0ecb81' : '#8a8a9e');
-                        let stTxt = isHeld ? `RIDING (${spPct >= 0 ? '+' : ''}${spPct.toFixed(2)}%)` : (isAbove ? `9>21 LONG (+${spPct.toFixed(2)}%)` : `9<21 (${spPct.toFixed(2)}%)`);
-                        let heldTag = isHeld ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(HELD)</span>` : '';
+                        let stepEc = parseInt(snap.step_idx) || 0;
+                        let trend5mOk = Boolean(snap.trend_5m_ok);
+                        let rawStatus = String(it.status || snap.status_tag || '');
+                        let isBuyFire = !isHeld && (String(it.action_main || snap.action_main || '') === 'BUY' || stepEc >= 3);
+                        let isConfirming = !isHeld && !isBuyFire && (stepEc === 2 || rawStatus.includes('Confirm'));
+                        let isKiss = !isHeld && !isBuyFire && rawStatus.includes('Kiss');
+
+                        let badgeCol = '#8a8a9e';
+                        let badgeBg = 'rgba(138,138,158,0.12)';
+                        let badgeTxt = trend5mOk ? `1/3 AWAIT CROSS (${spPct >= 0 ? '+' : ''}${spPct.toFixed(2)}%)` : '5M TREND BLOCKED';
+                        if (isHeld) {
+                            let hPnl = parseFloat(snap.pnl_pct) || 0;
+                            badgeCol = hPnl >= 0 ? '#0ecb81' : '#ff5364';
+                            badgeBg = hPnl >= 0 ? 'rgba(14,203,129,0.16)' : 'rgba(255,83,100,0.16)';
+                            badgeTxt = `BOUGHT • ${hPnl >= 0 ? '+' : ''}${hPnl.toFixed(2)}%`;
+                        } else if (isBuyFire) {
+                            badgeCol = '#0ecb81';
+                            badgeBg = 'rgba(14,203,129,0.18)';
+                            badgeTxt = `3/3 BUY SIGNAL (+${spPct.toFixed(2)}%)`;
+                        } else if (isConfirming) {
+                            badgeCol = '#ffd400';
+                            badgeBg = 'rgba(255,212,0,0.16)';
+                            badgeTxt = `2/3 CONFIRMING BAR (+${spPct.toFixed(2)}%)`;
+                        } else if (isKiss) {
+                            badgeCol = '#ff9900';
+                            badgeBg = 'rgba(255,153,0,0.15)';
+                            badgeTxt = `KISS FILTERED (${spPct >= 0 ? '+' : ''}${spPct.toFixed(2)}%)`;
+                        }
+
+                        let p1Bg = isHeld ? '#0ecb81' : (trend5mOk ? '#ff9900' : '#1e222d');
+                        let p2Bg = isHeld ? '#0ecb81' : (stepEc >= 2 ? '#ffd400' : '#1e222d');
+                        let p3Bg = isHeld ? '#0ecb81' : (stepEc >= 3 ? '#0ecb81' : '#1e222d');
+                        let cardBorder = isHeld ? '#0ecb81' : (isBuyFire ? '#0ecb81' : (isConfirming ? '#ffd400' : (isCurrent ? '#ffd400' : '#262b36')));
                         let reasonTip = String(it.reason || '').replace(/"/g, '"');
-                        let chartSvg = buildMiniEmaChartSvg(snap, 220, 34);
+                        let chartSvg = buildMiniEmaChartSvg(snap, 220, 30);
+
+                        let posBannerHtml = isHeld
+                            ? `<div style="display:flex; justify-content:space-between; font-size:8px; font-weight:800; background:rgba(14,203,129,0.10); border:1px solid rgba(14,203,129,0.35); border-radius:3px; padding:2px 5px; margin-top:3px;">
+                                   <span style="color:#e1e3e6;">In: $${(snap.entry_price || 0).toFixed(2)}</span>
+                                   <span style="color:#ff5364;">Stop: $${(snap.hard_stop || 0).toFixed(2)}</span>
+                                   <span style="color:#b388ff;">21-EMA: $${(snap.e21 || 0).toFixed(2)}</span>
+                               </div>`
+                            : `<div style="display:flex; justify-content:space-between; font-size:8px; font-weight:700; margin-top:2px;">
+                                   <span style="color:#ff9900;">9-EMA: $${(snap.e9 || 0).toFixed(2)}</span>
+                                   <span style="color:${trend5mOk ? '#0ecb81' : '#ff5364'};">5m: ${trend5mOk ? '9>21 UP' : '9<21 DN'}</span>
+                                   <span style="color:#b388ff;">21-EMA: $${(snap.e21 || 0).toFixed(2)}</span>
+                               </div>`;
+
                         return `
-                        <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:5px; padding:5px 7px; cursor:pointer;" title="${reasonTip}" onclick="selectStock('${it.ticker}')">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-                                <div>
+                        <div style="background:#0f1115; border:1px solid ${cardBorder}; border-radius:5px; padding:5px 7px; cursor:pointer;" title="${reasonTip}" onclick="selectStock('${it.ticker}')">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px; gap:4px;">
+                                <div style="white-space:nowrap;">
                                     <span style="font-weight:800; font-size:10.5px; color:#fff;">${it.ticker}</span>
-                                    <span style="font-size:9px; color:#8a8a9e; margin-left:4px;">${pTxt}</span>
-                                    ${heldTag}
+                                    <span style="font-size:9px; color:#8a8a9e; margin-left:3px;">${pTxt}</span>
                                 </div>
-                                <span style="font-size:9px; font-weight:800; color:${stCol};">${stTxt}</span>
+                                <span style="font-size:8px; font-weight:900; color:${badgeCol}; background:${badgeBg}; border:1px solid ${badgeCol}; padding:1px 5px; border-radius:3px; white-space:nowrap;">${badgeTxt}</span>
+                            </div>
+                            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:3px; text-align:center; font-size:7px; font-weight:900; margin-bottom:3px;">
+                                <div style="background:${p1Bg}; color:${trend5mOk || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">1. 5M TREND</div>
+                                <div style="background:${p2Bg}; color:${stepEc >= 2 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">2. 1M CROSS</div>
+                                <div style="background:${p3Bg}; color:${stepEc >= 3 || isHeld ? '#000' : '#6c7386'}; border-radius:2px; padding:1px 0;">${isHeld ? 'BOUGHT ✓' : '3. BAR GO'}</div>
                             </div>
                             ${chartSvg}
-                            <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:700; margin-top:2px;">
-                                <span style="color:#ff9900;">9-EMA: $${(snap.e9 || 0).toFixed(2)}</span>
-                                <span style="color:#b388ff;">21-EMA: $${(snap.e21 || 0).toFixed(2)}</span>
-                            </div>
+                            ${posBannerHtml}
                         </div>`;
                     }
 
@@ -9243,15 +9313,21 @@
 
                         if (isEmaCrossScan) {
                             let snap = it.ema_cross_snap || {};
-                            let spPct = parseFloat(snap.spread_pct) || 0;
-                            let isAbove = Boolean(snap.is_above);
-                            let stCol = isHeld ? '#0ecb81' : (isAbove ? '#0ecb81' : '#8a8a9e');
-                            let miniSvg = buildMiniEmaChartSvg(snap, 96, 22);
+                            let stepEcM = parseInt(snap.step_idx) || 0;
+                            let trend5mOkM = Boolean(snap.trend_5m_ok);
+                            let hPnlM = parseFloat(snap.pnl_pct) || 0;
+                            let mTag = isHeld
+                                ? `${hPnlM >= 0 ? '+' : ''}${hPnlM.toFixed(1)}%`
+                                : (stepEcM >= 3 ? 'BUY GO' : (stepEcM === 2 ? '2/3 BAR' : (trend5mOkM ? '1/3 5M' : '5M OFF')));
+                            let stCol = isHeld
+                                ? (hPnlM >= 0 ? '#0ecb81' : '#ff5364')
+                                : (stepEcM >= 3 ? '#0ecb81' : (stepEcM === 2 ? '#ffd400' : (trend5mOkM ? '#ff9900' : '#8a8a9e')));
+                            let miniSvg = buildMiniEmaChartSvg(snap, 96, 18);
                             return `
                                 <div class="mob-readiness-card ${isCurrent ? 'active' : ''}" onclick="selectStock('${it.ticker}')" title="${it.ticker}">
                                     <div style="display:flex; justify-content:space-between; align-items:center;">
                                         <span style="font-size:11px; font-weight:800; color:${isCurrent ? '#ffd400' : '#fff'};">${it.ticker}${heldTag}</span>
-                                        <span style="font-size:8.5px; font-weight:900; color:${stCol};">${spPct >= 0 ? '+' : ''}${spPct.toFixed(2)}%</span>
+                                        <span style="font-size:8px; font-weight:900; color:${stCol};">${mTag}</span>
                                     </div>
                                     ${miniSvg}
                                 </div>
