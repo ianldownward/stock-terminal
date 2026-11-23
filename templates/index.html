@@ -3378,11 +3378,9 @@
 
         function updateProfitRatchetHUD(dayPct, isProfileLocked = false, activeFloor = 0) {
             let pct = parseFloat(dayPct) || 0.0;
-            let activeProfLow = (document.getElementById('userSelect')?.value || '').toLowerCase();
-            let isPulse1M = is1mFamilyProfile(activeProfLow);
-            let rStart = isPulse1M ? 5.0 : 2.5;
-            let rStep = isPulse1M ? 5.0 : 0.5;
-            let warnOffset = isPulse1M ? 0.5 : 0.1;
+            let rStart = 2.5;
+            let rStep = 0.5;
+            let warnOffset = 0.1;
             let lockedStep = activeFloor > 0 ? activeFloor : (pct >= rStart ? (Math.floor(pct / rStep) * rStep) : 0);
             let isLight = document.body.classList.contains('light-mode');
             let approachingTarget = 0;
@@ -3452,7 +3450,7 @@
                     subEl.innerText = `Trailing floor armed at +${lockedStep.toFixed(1)}%`;
                     subEl.style.color = '#ffd400';
                 } else {
-                    subEl.innerText = isPulse1M ? `Locks in 5% steps from 5%` : `Locks in 0.5% steps from 2.5%`;
+                    subEl.innerText = `Locks in 0.5% steps from 2.5%`;
                     subEl.style.color = '#8a8a9e';
                 }
             }
@@ -3741,11 +3739,11 @@
                 beCatchHtml = `
                     <div style="display:flex; flex-direction:column; gap:2px; padding-top:3px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:800;">
-                            <span style="color:#8a8a9e;">3. +5% STEP RATCHET</span>
-                            <span style="color:#0ecb81;">5% → 10% → 15%+</span>
+                            <span style="color:#8a8a9e;">3. +2.5% STEP RATCHET</span>
+                            <span style="color:#0ecb81;">2.5% → 3.0% → 3.5%+</span>
                         </div>
                         <div style="background:#14171f; border:1px dashed #262b36; border-radius:4px; padding:2px 5px; text-align:center; font-size:8px; font-weight:700; color:#5a5f70;">
-                            Arms at +5.0% daily gain • Steps every +5.0% (No 3-strike cap)
+                            Arms at +2.5% daily gain • Steps every +0.5% (No 3-strike cap)
                         </div>
                     </div>
                 `;
@@ -4028,8 +4026,7 @@
         // Smart Step-Down Override: Steps the floor down (5.0% for Pulse 1M Reversal; 0.5% for 5m bots) and reactivates trading
         async function stepDownUnlockProfile(userKey, currentFloor, e) {
             if (e) e.stopPropagation();
-            let isP1M = is1mFamilyProfile(userKey);
-            let stepSize = isP1M ? 5.0 : 0.5;
+            let stepSize = 0.5;
             let nextFloor = Math.max(0.0, currentFloor - stepSize);
             let msg = `Step-Down Override for ${userKey}:\n\nStep the safety floor down to +${nextFloor.toFixed(1)}% and resume automated trading?\n\nIf the account pulls back to +${nextFloor.toFixed(1)}%, it will liquidate and lock at +${nextFloor.toFixed(1)}%.`;
             if (!confirm(msg)) return;
@@ -6001,8 +5998,8 @@
                 let dayPct = activeLb.daily_pct || 0;
                 
                 let isP1MFetch = is1mFamilyProfile(activeProf);
-                let rStartFetch = isP1MFetch ? 5.0 : 2.5;
-                let rStepFetch = isP1MFetch ? 5.0 : 0.5;
+                let rStartFetch = 2.5;
+                let rStepFetch = 0.5;
                 let isRatchetLockedGuard = Boolean(activeLb.is_locked && !activeLb.is_manually_locked);
                 let ratchetLockedFloorVal = isRatchetLockedGuard
                     ? ((activeLb.active_floor && activeLb.active_floor > 0) ? parseFloat(activeLb.active_floor) : Math.max(rStartFetch, Math.floor((dayPct || rStartFetch) / rStepFetch) * rStepFetch))

@@ -1849,7 +1849,7 @@ class MarketScoringEngine:
                     return {'type': 'Micro-Shelf 1M', 'score': 48, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': f'1m Micro-Shelf Coiling: Tight {box_pct:.2f}% 4-bar box (${shelf_lo:.2f}–${shelf_hi:.2f}), awaiting breakout above ${shelf_hi:.2f}.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Coiling Box', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(Coiling Box)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Coiling Box'}
             return {'type': 'Micro-Shelf 1M', 'score': 12, 'tranches': 0, 'discount': f"{pct_change_1d:.2f}%", 'reason': 'Scanning 1m candles for tight 4-bar consolidation box breakout.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'No Setup', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Shelf)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-        # VARIANT C: EMA-9 SNAP 1M (1m 9>21 EMA uptrend -> 1-bar red pullback near 9-EMA -> green snap bar closing above 9-EMA & red open)
+        # VARIANT C: EMA-9 SNAP 1M (1m 9>21 EMA uptrend -> real >=0.15% red pullback near 9-EMA -> strong >=0.15% green snap bar)
         if variant == 'ema9':
             if len(closed_src) >= 6:
                 e9_s = closed_src['Close'].ewm(span=9, adjust=False).mean()
@@ -1859,10 +1859,14 @@ class MarketScoringEngine:
                 dip_bar = closed_src.iloc[-2]
                 snap_bar = closed_src.iloc[-1]
                 dip_o, dip_c, dip_l = float(dip_bar['Open']), float(dip_bar['Close']), float(dip_bar['Low'])
-                snp_o, snp_c = float(snap_bar['Open']), float(snap_bar['Close'])
-                trend_up = (e9_now > e21_now) and (e9_now >= e9_prev)
-                dipped_9 = (dip_c < dip_o) and (dip_l <= e9_prev * 1.0025) and (dip_c > e21_now)
-                snapped_9 = (snp_c > snp_o) and (snp_c > e9_now) and (snp_c >= dip_o) and (current_price >= snp_c * 0.9990)
+                snp_o, snp_c, snp_h, snp_l = float(snap_bar['Open']), float(snap_bar['Close']), float(snap_bar['High']), float(snap_bar['Low'])
+                dip_body_pct = ((dip_o - dip_c) / dip_o * 100.0) if dip_o > 0 else 0.0
+                snp_body_pct = ((snp_c - snp_o) / snp_o * 100.0) if snp_o > 0 else 0.0
+                snp_range = max(0.0001, snp_h - snp_l)
+                snp_close_pos = (snp_c - snp_l) / snp_range
+                trend_up = (e9_now > e21_now) and (e9_now > e9_prev * 1.0003)
+                dipped_9 = (dip_c < dip_o) and (dip_body_pct >= 0.15) and (dip_l <= e9_prev * 1.0025) and (dip_c > e21_now)
+                snapped_9 = (snp_c > snp_o) and (snp_body_pct >= 0.15) and (snp_close_pos >= 0.65) and (snp_c > e9_now) and (snp_c >= dip_o) and (current_price >= snp_c * 0.9990)
                 if trend_up and dipped_9 and snapped_9:
                     snap_pct = ((snp_c - snp_o) / snp_o * 100.0) if snp_o > 0 else 0.0
                     buy_score = min(98, max(76, round(80 + snap_pct * 22)))
@@ -2609,10 +2613,10 @@ def process_auto_profile(prof_name, client_email=None):
         CIRCUIT_BREAKER_PCT = -2.00 if is_ema_cross_risk else (-5.00 if is_p1m_risk else -2.50)
         circuit_breaker_tripped = (daily_pnl_pct <= CIRCUIT_BREAKER_PCT)
 
-        # TOTAL DAILY ACCOUNT STEP-RATCHET (+5.0% start & +5.0% steps for Pulse 1M Reversal; +2.5% start & +0.5% steps for 5m bots & EMA Cross 9/21)
-        r_start_pct = 5.00 if is_p1m_risk else 2.50
-        r_step_pct = 5.00 if is_p1m_risk else 0.50
-        r_clear_buf = 5.10 if is_p1m_risk else 0.60
+        # TOTAL DAILY ACCOUNT STEP-RATCHET (+2.50% start & +0.50% steps across all strategies)
+        r_start_pct = 2.50
+        r_step_pct = 0.50
+        r_clear_buf = 0.60
         force_daily_floor_sell = False
         daily_floor_locked = 0.0
         if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s', 'ema cross']):
@@ -3256,8 +3260,7 @@ def sync_profile_with_alpaca_non_destructive(ud, acc, live_pos, closed_orders, t
         if ud.get('last_ratchet_date') == today_str and float(ud.get('daily_peak_pct') or 0.0) > true_today_pct + 0.15:
             ud['daily_peak_pct'] = max(0.0, true_today_pct)
             changed = True
-        is_p1m_sync = any(x in str(ud.get('method') or '').lower() for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap']) or (ud.get('settings') or {}).get('interval') == '1m'
-        min_unlock_pct = 4.75 if is_p1m_sync else 2.25
+        min_unlock_pct = 2.25
         if ud.get('manual_locked_day') != today_str and (ud.get('ratchet_locked') or ud.get('is_locked')):
             if true_today_pct < min_unlock_pct and ud.get('ratchet_floor_override') is None:
                 ud['ratchet_locked'] = False
@@ -4204,9 +4207,8 @@ def step_down_override_route():
     cur_eq_est = max(0.0, mb_cur + nh_cur - im_cur)
     cur_day_pct = ((cur_eq_est - mb_cur) / mb_cur * 100.0) if mb_cur > 0 else 0.0
 
-    is_p1m_ov = any(x in prof_name.lower() for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap'])
-    r_start_ov = 5.0 if is_p1m_ov else 2.5
-    r_step_ov = 5.0 if is_p1m_ov else 0.5
+    r_start_ov = 2.5
+    r_step_ov = 0.5
     raw_floor = ud.get('locked_floor_val') if ud.get('locked_floor_val') is not None else (
         round(int(cur_day_pct / r_step_ov) * r_step_ov, 2) if cur_day_pct >= r_start_ov else r_start_ov
     )
@@ -5242,9 +5244,8 @@ def get_data():
                             fresh_u['daily_peak_pct'] = new_peak_val
                             portfolio_store.save_data(portfolio_store.data)
 
-            is_p1m_lb = any(x in u.lower() for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap'])
-            r_start_lb = 5.00 if is_p1m_lb else 2.50
-            r_step_lb = 5.00 if is_p1m_lb else 0.50
+            r_start_lb = 2.50
+            r_step_lb = 0.50
             peak_pct_today = max(float(u_data.get('daily_peak_pct') or 0.0), day_pct)
             stored_locked_floor = float(u_data.get('locked_floor_val') or 0.0)
             computed_floor = round(int(peak_pct_today / r_step_lb) * r_step_lb, 2) if peak_pct_today >= r_start_lb else stored_locked_floor
