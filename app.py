@@ -4522,7 +4522,15 @@ def api_sync_alpaca_state():
 
             allocs_sync = broker.get('allocations') or {}
             all_prof_names = list(all_profs_map.keys())
-            is_multi_bot = len(all_prof_names) > 1
+            enabled_profs_sync = [
+                pn for pn in all_prof_names
+                if (not allocs_sync) or any(
+                    (s_k == pn.lower() or s_k in pn.lower() or pn.lower() in s_k) and s_d.get('enabled')
+                    for s_k, s_d in allocs_sync.items()
+                )
+            ]
+            is_multi_bot = len(enabled_profs_sync) > 1
+            single_alpaca_prof = enabled_profs_sync[0] if len(enabled_profs_sync) == 1 else prof_name
             orders_by_prof = {pn: [] for pn in all_prof_names}
             for o in closed_orders:
                 m_prof = match_bot_from_order_id(o.get('client_order_id') or '', all_prof_names)
@@ -4535,10 +4543,11 @@ def api_sync_alpaca_state():
                         (s_k == p_name_sync.lower() or s_k in p_name_sync.lower() or p_name_sync.lower() in s_k) and s_d.get('enabled')
                         for s_k, s_d in allocs_sync.items()
                     )
-                    pos_for_p = live_pos if (p_name_sync == prof_name and not is_multi_bot) else []
+                    can_import_pos = (p_name_sync == single_alpaca_prof and not is_multi_bot)
+                    pos_for_p = live_pos if can_import_pos else []
                     sync_profile_with_alpaca_non_destructive(
                         p_ud_sync, acc, pos_for_p, orders_by_prof.get(p_name_sync, []),
-                        today_str, now_lon, purge_unfilled_today=is_en_sync, allow_position_import=(not is_multi_bot)
+                        today_str, now_lon, purge_unfilled_today=is_en_sync, allow_position_import=can_import_pos
                     )
 
             if is_client:
@@ -6728,12 +6737,18 @@ def get_broker_status():
                         has_queued_orders = True
             except Exception: pass
 
-            # Audit desync across ALL profiles in the active account (admin or client)
+            # Audit desync only across Alpaca-enabled profiles (ignore paper-only profiles not syncing to Alpaca)
             claimed_symbols = set()
             desync_reason = ""
             audit_users = (c_store.get('users', {}) if is_client else portfolio_store.data.get('users', {})) or {}
             for u_name, u_data in audit_users.items():
                 if isinstance(u_data, dict):
+                    is_en_claim = (not allocations) or any(
+                        (s_k == u_name.lower() or s_k in u_name.lower() or u_name.lower() in s_k) and s_d.get('enabled')
+                        for s_k, s_d in allocations.items()
+                    )
+                    if not is_en_claim:
+                        continue
                     u_init = u_data.get('initial_positions') or {}
                     u_hist = u_data.get('history') or []
                     for tr in u_hist:
