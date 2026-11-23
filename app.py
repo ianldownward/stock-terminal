@@ -1970,7 +1970,8 @@ class MarketScoringEngine:
             if e9_5m <= e21_5m:
                 return {'type': 'EMA Cross 9/21', 'score': 18, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"5m Trend Blocked: {ticker} 5m 9-EMA (${e9_5m:.2f}) below 21-EMA (${e21_5m:.2f}) — skipping counter-trend bounce.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '5m Trend Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(5m Trend < 21)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '5m Trend Blocked'}
 
-            # 2. Fresh Closed-Bar 1m Crossover Check: Prevents mid-candle wick fake-outs and late trend chasing
+            # 2. Fresh Closed-Bar 1m Crossover Check with Anti-Kiss Separation Buffer (>= +0.04%):
+            # Rejects tangent "kisses" where 9-EMA barely touches 21-EMA without piercing cleanly above
             closed_ec = df_ec_1m.iloc[:-1]
             e9_closed = closed_ec['Close'].astype(float).ewm(span=9, adjust=False).mean()
             e21_closed = closed_ec['Close'].astype(float).ewm(span=21, adjust=False).mean()
@@ -1979,22 +1980,32 @@ class MarketScoringEngine:
             c1_open = float(closed_ec['Open'].iloc[-1])
             c1_close = float(closed_ec['Close'].iloc[-1])
 
+            MIN_CROSS_SEP_PCT = 0.04  # Requires >= +0.04% clean piercing separation above 21-EMA (blocks tangent kisses)
+            closed_sep_pct = ((e9_c1 - e21_c1) / e21_c1 * 100.0) if e21_c1 > 0 else 0.0
+            prev_sep_pct = ((e9_c2 - e21_c2) / e21_c2 * 100.0) if e21_c2 > 0 else 0.0
+
             fresh_cross_1m = (
-                (e9_c1 > e21_c1)
-                and (e9_c2 <= e21_c2)
+                (closed_sep_pct >= MIN_CROSS_SEP_PCT)
+                and (prev_sep_pct < MIN_CROSS_SEP_PCT)
+                and (e9_c1 > e9_c2)
                 and (c1_close > c1_open)
-                and (live_e9 > live_e21)
-                and (current_price >= c1_close * 0.9990)
+                and (c1_close > e9_c1)
+                and (spread_pct >= MIN_CROSS_SEP_PCT)
+                and (live_e9 >= e9_c1)
+                and (current_price > live_e9)
             )
             if fresh_cross_1m:
-                buy_sc_ec = min(98, max(76, round(78 + spread_pct * 25)))
-                return {'type': 'EMA Cross 9/21', 'score': buy_sc_ec, 'tranches': 1, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"FRESH 1M CROSS + 5M UPTREND: Closed green 1m bar crossed 9-EMA (${e9_c1:.2f}) > 21-EMA (${e21_c1:.2f}) with 5m trend aligned.", 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.02, 2), 'status': 'Fresh 9>21 Cross', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(Fresh 9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': 'Fresh 9>21 Cross'}
+                buy_sc_ec = min(98, max(78, round(80 + spread_pct * 25)))
+                return {'type': 'EMA Cross 9/21', 'score': buy_sc_ec, 'tranches': 1, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"FRESH 1M CROSS + 5M UPTREND: Closed green 1m bar pierced 9-EMA (${e9_c1:.2f}) +{closed_sep_pct:.2f}% above 21-EMA (${e21_c1:.2f}).", 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.02, 2), 'status': 'Fresh 9>21 Cross', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(Fresh 9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': 'Fresh 9>21 Cross'}
 
-            if e9_c1 > e21_c1 and e9_c2 > e21_c2:
-                return {'type': 'EMA Cross 9/21', 'score': 45, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"Trend In Progress: 1m 9-EMA (${live_e9:.2f}) already above 21-EMA (${live_e21:.2f}) — awaiting fresh crossover reset.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Reset', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Reset)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Awaiting Reset'}
+            if closed_sep_pct >= MIN_CROSS_SEP_PCT and prev_sep_pct >= MIN_CROSS_SEP_PCT:
+                return {'type': 'EMA Cross 9/21', 'score': 45, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"Trend In Progress: 1m 9-EMA (${live_e9:.2f}) already +{spread_pct:.2f}% above 21-EMA (${live_e21:.2f}) — awaiting fresh cross reset.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Reset', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Reset)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Awaiting Reset'}
 
-            if live_e9 > live_e21:
-                return {'type': 'EMA Cross 9/21', 'score': 58, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"Confirming 1m Cross: Live 9-EMA (${live_e9:.2f}) > 21-EMA (${live_e21:.2f}) — awaiting closed green 1m bar.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Confirming Cross', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(1m Confirm)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Confirming Cross'}
+            if 0.0 <= spread_pct < MIN_CROSS_SEP_PCT or 0.0 <= closed_sep_pct < MIN_CROSS_SEP_PCT:
+                return {'type': 'EMA Cross 9/21', 'score': 50, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"EMA Kiss Filter: 9-EMA (${live_e9:.2f}) touching 21-EMA (${live_e21:.2f}) [{spread_pct:+.2f}% < +0.04% min] — ignoring tangent kiss.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EMA Kiss Filtered', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Kiss Filtered)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Kiss Filtered'}
+
+            if spread_pct >= MIN_CROSS_SEP_PCT:
+                return {'type': 'EMA Cross 9/21', 'score': 60, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"Confirming 1m Cross: Live 9-EMA (${live_e9:.2f}) +{spread_pct:.2f}% > 21-EMA (${live_e21:.2f}) — awaiting closed green 1m bar above 9-EMA.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Confirming Cross', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(1m Confirm)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Confirming Cross'}
 
             wait_sc_ec = max(5, min(55, round(55 + spread_pct * 40)))
             return {'type': 'EMA Cross 9/21', 'score': wait_sc_ec, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"5m Uptrend Active: Awaiting fresh 1m 9-EMA (${live_e9:.2f}) cross above 21-EMA (${live_e21:.2f}) [Gap: {spread_pct:+.2f}%].", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting 9>21 Cross', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(9<21 EMA)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
@@ -6936,9 +6947,9 @@ def get_watchlist_scanner():
                 ema_cross_snap = None
                 if is_ec_active:
                     df_ec_sc = fetch_yf_data(tick, "1d", "1m")
-                    if df_ec_sc is None or df_ec_sc.empty or len(df_ec_sc) < 21:
+                    if df_ec_sc is None or df_ec_sc.empty or len(df_ec_sc) < 23:
                         df_ec_sc = fetch_yf_data(tick, "5d", "1m")
-                    if df_ec_sc is not None and len(df_ec_sc) >= 21:
+                    if df_ec_sc is not None and len(df_ec_sc) >= 23:
                         c_ec = df_ec_sc['Close'].astype(float).copy()
                         if cur > 0:
                             c_ec.iloc[-1] = float(cur)
@@ -6947,11 +6958,42 @@ def get_watchlist_scanner():
                         e9_v = float(e9_s.iloc[-1])
                         e21_v = float(e21_s.iloc[-1])
                         sp_pct = ((e9_v - e21_v) / e21_v * 100.0) if e21_v > 0 else 0.0
+
+                        c_5m_sc = df['Close'].astype(float).copy()
+                        if cur > 0:
+                            c_5m_sc.iloc[-1] = float(cur)
+                        e9_5m_v = float(c_5m_sc.ewm(span=9, adjust=False).mean().iloc[-1]) if len(c_5m_sc) >= 21 else 0.0
+                        e21_5m_v = float(c_5m_sc.ewm(span=21, adjust=False).mean().iloc[-1]) if len(c_5m_sc) >= 21 else 0.0
+                        trend_5m_ok = bool(e9_5m_v > e21_5m_v)
+
+                        st_lbl_ec = str(st.get('status') or '')
+                        act_ec = str(st.get('action_main') or 'HOLD')
+                        if is_held:
+                            ec_step = 3
+                        elif act_ec == 'BUY' or 'Fresh 9>21' in st_lbl_ec:
+                            ec_step = 3
+                        elif 'Confirming' in st_lbl_ec:
+                            ec_step = 2
+                        elif trend_5m_ok:
+                            ec_step = 1
+                        else:
+                            ec_step = 0
+
+                        pnl_held_ec = round(((cur - avg_p) / avg_p * 100.0), 2) if (is_held and avg_p > 0) else 0.0
+                        hard_stop_ec = round(avg_p * 0.9955, 2) if (is_held and avg_p > 0) else 0.0
+
                         ema_cross_snap = {
                             'e9': round(e9_v, 2),
                             'e21': round(e21_v, 2),
                             'spread_pct': round(sp_pct, 2),
                             'is_above': bool(e9_v > e21_v),
+                            'trend_5m_ok': trend_5m_ok,
+                            'step_idx': ec_step,
+                            'status_tag': st_lbl_ec,
+                            'action_main': act_ec,
+                            'entry_price': round(float(avg_p), 2) if is_held else 0.0,
+                            'hard_stop': hard_stop_ec,
+                            'pnl_pct': pnl_held_ec,
                             'e9_series': [round(float(x), 3) for x in e9_s.tail(35).tolist()],
                             'e21_series': [round(float(x), 3) for x in e21_s.tail(35).tolist()],
                             'close_series': [round(float(x), 3) for x in c_ec.tail(35).tolist()]
