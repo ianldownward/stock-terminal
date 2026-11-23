@@ -553,7 +553,7 @@ class PortfolioManager:
             'notified_signals': {},
             'settings': {
                 'period': '1d', 
-                'interval': '1m' if any(x in prof for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'test s', 'test r', 'test tqm']) else '5m',
+                'interval': '1m' if any(x in prof for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test s', 'test r', 'test tqm']) else '5m',
                 'style': 'candlestick', 
                 'refresh': '10000', 
                 'ntfy_topic': ''
@@ -1918,13 +1918,18 @@ class MarketScoringEngine:
         if 'ema cross' in prof:
             is_inverse_ec = ticker in ['SQQQ', '3SUS.L']
             trade_type_ec = 'SHORT' if is_inverse_ec else 'LONG'
-            if df_5m.empty or len(df_5m) < 21:
-                return {'type': 'EMA Cross 9/21', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Awaiting 5m candle history for 9/21 EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'No Data'}
+            df_ec_1m = fetch_yf_data(ticker, "1d", "1m") if ticker else df_5m
+            if df_ec_1m is None or df_ec_1m.empty or len(df_ec_1m) < 21:
+                df_ec_5d = fetch_yf_data(ticker, "5d", "1m") if ticker else df_5m
+                if df_ec_5d is not None and not df_ec_5d.empty:
+                    df_ec_1m = df_ec_5d
+            if df_ec_1m is None or df_ec_1m.empty or len(df_ec_1m) < 21:
+                return {'type': 'EMA Cross 9/21', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Awaiting 1m candle history for 9/21 EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'No Data'}
 
             now_uk_ec = pd.Timestamp.now(tz='Europe/London')
-            pct_chg_ec = ((current_price - float(df_5m['Close'].iloc[0])) / float(df_5m['Close'].iloc[0])) * 100.0 if float(df_5m['Close'].iloc[0]) > 0 else 0.0
+            pct_chg_ec = ((current_price - float(df_ec_1m['Close'].iloc[0])) / float(df_ec_1m['Close'].iloc[0])) * 100.0 if float(df_ec_1m['Close'].iloc[0]) > 0 else 0.0
 
-            closes_ec = df_5m['Close'].astype(float).copy()
+            closes_ec = df_ec_1m['Close'].astype(float).copy()
             if current_price > 0:
                 closes_ec.iloc[-1] = float(current_price)
             live_e9 = float(closes_ec.ewm(span=9, adjust=False).mean().iloc[-1])
@@ -4685,7 +4690,7 @@ def get_score():
         active_profile = portfolio_store.active_username().strip().lower()
         engine = MarketScoringEngine()
         is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
-        is_1m_sc = engine._is_1m_family(active_profile) or any(x in active_profile for x in ['test p', 'test t'])
+        is_1m_sc = engine._is_1m_family(active_profile) or ('ema cross' in active_profile) or any(x in active_profile for x in ['test p', 'test t'])
         interval = "1m" if is_1m_sc else "5m"
         period = "1d" if is_1m_sc else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
@@ -6813,24 +6818,28 @@ def get_watchlist_scanner():
                 
                 p1m_snap = engine.get_pulse_1m_snapshot(tick, hist=hist, current_price=cur, profile=active_profile) if is_p1m_active else None
                 ema_cross_snap = None
-                if is_ec_active and len(df) >= 21:
-                    c_ec = df['Close'].astype(float).copy()
-                    if cur > 0:
-                        c_ec.iloc[-1] = float(cur)
-                    e9_s = c_ec.ewm(span=9, adjust=False).mean()
-                    e21_s = c_ec.ewm(span=21, adjust=False).mean()
-                    e9_v = float(e9_s.iloc[-1])
-                    e21_v = float(e21_s.iloc[-1])
-                    sp_pct = ((e9_v - e21_v) / e21_v * 100.0) if e21_v > 0 else 0.0
-                    ema_cross_snap = {
-                        'e9': round(e9_v, 2),
-                        'e21': round(e21_v, 2),
-                        'spread_pct': round(sp_pct, 2),
-                        'is_above': bool(e9_v > e21_v),
-                        'e9_series': [round(float(x), 3) for x in e9_s.tail(28).tolist()],
-                        'e21_series': [round(float(x), 3) for x in e21_s.tail(28).tolist()],
-                        'close_series': [round(float(x), 3) for x in c_ec.tail(28).tolist()]
-                    }
+                if is_ec_active:
+                    df_ec_sc = fetch_yf_data(tick, "1d", "1m")
+                    if df_ec_sc is None or df_ec_sc.empty or len(df_ec_sc) < 21:
+                        df_ec_sc = fetch_yf_data(tick, "5d", "1m")
+                    if df_ec_sc is not None and len(df_ec_sc) >= 21:
+                        c_ec = df_ec_sc['Close'].astype(float).copy()
+                        if cur > 0:
+                            c_ec.iloc[-1] = float(cur)
+                        e9_s = c_ec.ewm(span=9, adjust=False).mean()
+                        e21_s = c_ec.ewm(span=21, adjust=False).mean()
+                        e9_v = float(e9_s.iloc[-1])
+                        e21_v = float(e21_s.iloc[-1])
+                        sp_pct = ((e9_v - e21_v) / e21_v * 100.0) if e21_v > 0 else 0.0
+                        ema_cross_snap = {
+                            'e9': round(e9_v, 2),
+                            'e21': round(e21_v, 2),
+                            'spread_pct': round(sp_pct, 2),
+                            'is_above': bool(e9_v > e21_v),
+                            'e9_series': [round(float(x), 3) for x in e9_s.tail(35).tolist()],
+                            'e21_series': [round(float(x), 3) for x in e21_s.tail(35).tolist()],
+                            'close_series': [round(float(x), 3) for x in c_ec.tail(35).tolist()]
+                        }
                 results.append({
                     'ticker': tick,
                     'user_tag': '',

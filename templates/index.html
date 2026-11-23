@@ -2118,7 +2118,7 @@
                             <div style="font-size:10px; font-weight:700; color:#ff9900; margin-top:2px;">Pure Orange/Purple EMA Crossover</div>
                             
                             <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
-                                Buys the exact second the Orange 9-EMA crosses above the Purple 21-EMA on 5m candles, and sells the exact second it crosses back below. Protected by -2% daily loss lock & 3-strike guard.
+                                Buys the exact second the Orange 9-EMA crosses above the Purple 21-EMA on 1m candles, and sells the exact second it crosses back below. Protected by -2% daily loss lock & 3-strike guard.
                             </div>
                             
                             <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
@@ -5245,7 +5245,8 @@
             let low = (username || '').toLowerCase();
             let isP1M = is1mFamilyProfile(low);
             let isEc = isEmaCrossProfile(low);
-            let targetInt = isP1M ? '1m' : '5m';
+            let use1mChart = isP1M || isEc;
+            let targetInt = use1mChart ? '1m' : '5m';
 
             if (isEc) {
                 showMath = true;
@@ -5270,7 +5271,7 @@
             if (mR1D) mR1D.classList.add('active');
 
             document.querySelectorAll('#mobileBottomControls .mobile-ctrl-group:nth-child(2) .m-btn').forEach(b => b.classList.remove('active'));
-            let mIntBtn = document.getElementById(isP1M ? 'mInt1M' : 'mInt5M');
+            let mIntBtn = document.getElementById(use1mChart ? 'mInt1M' : 'mInt5M');
             if (mIntBtn) mIntBtn.classList.add('active');
         }
 
@@ -6210,23 +6211,37 @@
 
                     if (sharesOwned > 0) {
                         if (trigLine) trigLine.style.display = 'none';
-                        if (healthHeader) healthHeader.innerText = "Trailing Stop";
-                        // Show current price in top-right
-                        if (healthStatus) healthStatus.innerHTML = `<span style="color:#0ecb81; font-weight:900;">$${curPrice.toFixed(2)}</span>`;
-                        if (healthSubtext) healthSubtext.innerText = p.metrics.health_text || "Tracking Position";
-                        if (healthMarker) {
-                            healthMarker.style.display = "block";
-                            healthMarker.style.left = `${Math.max(0, Math.min(100, p.metrics.health_pct || 0))}%`;
-                        }
-
                         let prof = (document.getElementById('userSelect')?.value || '').toLowerCase();
-                        let trailPct = (prof.includes('velocity') || prof.includes('pulse') || prof.includes('test s')) ? 0.65 : 0.75;
+                        if (isEmaCrossProfile(prof)) {
+                            if (healthHeader) healthHeader.innerText = "9/21 EMA Trend Cushion";
+                            if (healthStatus) healthStatus.innerHTML = `<span style="color:#0ecb81; font-weight:900;">$${curPrice.toFixed(2)}</span>`;
+                            if (healthSubtext) healthSubtext.innerText = p.metrics.reason || p.metrics.health_text || "Riding 9>21 EMA Cross";
+                            if (healthMarker) {
+                                healthMarker.style.display = "block";
+                                healthMarker.style.left = `${Math.max(0, Math.min(100, p.metrics.health_pct || 50))}%`;
+                            }
+                            let ecScanItem = Array.isArray(window._latestScannerItems) ? window._latestScannerItems.find(x => x.ticker === currentTicker) : null;
+                            let ecSnap = ecScanItem ? ecScanItem.ema_cross_snap : null;
+                            if (stopEl) stopEl.innerText = ecSnap ? `21-EMA: $${(ecSnap.e21 || 0).toFixed(2)}` : 'Exit: 9 < 21 EMA';
+                            if (peakEl) peakEl.innerText = ecSnap ? `9-EMA: $${(ecSnap.e9 || 0).toFixed(2)}` : '';
+                        } else {
+                            if (healthHeader) healthHeader.innerText = "Trailing Stop";
+                            // Show current price in top-right
+                            if (healthStatus) healthStatus.innerHTML = `<span style="color:#0ecb81; font-weight:900;">$${curPrice.toFixed(2)}</span>`;
+                            if (healthSubtext) healthSubtext.innerText = p.metrics.health_text || "Tracking Position";
+                            if (healthMarker) {
+                                healthMarker.style.display = "block";
+                                healthMarker.style.left = `${Math.max(0, Math.min(100, p.metrics.health_pct || 0))}%`;
+                            }
 
-                        let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
-                        let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));
+                            let trailPct = (prof.includes('velocity') || prof.includes('pulse') || prof.includes('test s')) ? 0.65 : 0.75;
 
-                        if (stopEl) stopEl.innerText = `Stop: $${stopPrice.toFixed(2)}`;
-                        if (peakEl) peakEl.innerText = `Peak: $${peakPrice.toFixed(2)}`;
+                            let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
+                            let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));
+
+                            if (stopEl) stopEl.innerText = `Stop: $${stopPrice.toFixed(2)}`;
+                            if (peakEl) peakEl.innerText = `Peak: $${peakPrice.toFixed(2)}`;
+                        }
                     } else {
                         if (trigLine) trigLine.style.display = 'block';
                         let buyScore = parseInt(p.metrics.buy_score) || 0;
@@ -7896,13 +7911,14 @@
             if (!st) return;
             let activeProfBg = (document.getElementById('userSelect')?.value || '').toLowerCase();
             let isP1MBg = is1mFamilyProfile(activeProfBg);
+            let isEcBg = isEmaCrossProfile(activeProfBg);
 
             let strikeColBg = document.getElementById('strikeGuardCol');
             let guardsRowBg = document.getElementById('buyingGuardsRow');
             let execGearBg = document.getElementById('executionGearHud');
             if (strikeColBg) strikeColBg.style.display = isP1MBg ? 'none' : 'flex';
-            if (guardsRowBg) guardsRowBg.style.justifyContent = isP1MBg ? 'space-around' : 'space-between';
-            if (execGearBg) execGearBg.style.display = isP1MBg ? 'none' : '';
+            if (guardsRowBg) guardsRowBg.style.justifyContent = isEcBg ? 'center' : (isP1MBg ? 'space-around' : 'space-between');
+            if (execGearBg) execGearBg.style.display = (isP1MBg || isEcBg) ? 'none' : '';
 
             let cdTitleEl = document.getElementById('dialCd15-title');
             let cdSubEl = document.getElementById('dialCd15-sub');
