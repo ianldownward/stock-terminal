@@ -2107,6 +2107,28 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Strategy 7: EMA Cross 9/21 -->
+                    <div id="cardStratEmaCross" onclick="selectWizardStrategy('EMA Cross 9/21')" style="background:#13161c; border:2px solid #262b36; border-radius:8px; padding:14px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:15px; font-weight:800; color:#fff;" id="titleStratEmaCross">EMA Cross 9/21</span>
+                                <input type="radio" name="wizardStratChoice" value="EMA Cross 9/21" style="accent-color:#ffd400; cursor:pointer;">
+                            </div>
+                            <div style="font-size:10px; font-weight:700; color:#ff9900; margin-top:2px;">Pure Orange/Purple EMA Crossover</div>
+                            
+                            <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
+                                Buys the exact second the Orange 9-EMA crosses above the Purple 21-EMA on 5m candles, and sells the exact second it crosses back below. Protected by -2% daily loss lock & 3-strike guard.
+                            </div>
+                            
+                            <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
+                                <div>• Profit Factor: <b id="wiz-pf-EmaCross" style="color:#0ecb81; font-size:12px;">--</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-EmaCross" style="color:#fff;">--</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-EmaCross" style="color:#0ecb81;">--</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
@@ -3227,7 +3249,7 @@
 
             <div id="buyingGuardsRow" style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; margin-bottom:2px;">
                 <!-- Post-Sell Cooldown Circle (60s for Pulse 1M Reversal; 15m for 5m bots) -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('cooldown')" title="Click for post-sell cooldown explanation">
+                <div id="cd15GuardCol" style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('cooldown')" title="Click for post-sell cooldown explanation">
                     <span id="dialCd15-title" style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">15M COOL</span>
                     <div id="dialCd15" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3237,7 +3259,7 @@
                 </div>
 
                 <!-- Session & Curfew Gate Circle -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('curfew')" title="Click for Session & Curfew explanation">
+                <div id="curfewGuardCol" style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('curfew')" title="Click for Session & Curfew explanation">
                     <span id="dialCurfew-title" style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">CURFEW</span>
                     <div id="dialCurfew" style="position:relative; width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:conic-gradient(#262b36 0%, #262b36 100%); transition: background 0.3s ease;">
                         <div style="position:absolute; inset:4px; background:#14171f; border-radius:50%;"></div>
@@ -3258,7 +3280,7 @@
                 </div>
 
                 <!-- Profit Ratchet Lock Padlock Icon (Thick Outlined Style, Unlocked Grey -> Locked Yellow + %) -->
-                <div style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('ratchet')" title="Click for Profit Ratchet Lock explanation">
+                <div id="ratchetGuardCol" style="display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer;" onclick="openGuardInfoModal('ratchet')" title="Click for Profit Ratchet Lock explanation">
                     <span style="font-size:8.5px; font-weight:800; color:#e1e3e6; white-space:nowrap;">RATCHET</span>
                     <div id="ratchetLockBox" style="width:46px; height:46px; display:flex; align-items:center; justify-content:center;">
                         <svg id="ratchetLockSvg" width="46" height="46" viewBox="0 0 46 46" fill="none" style="overflow:visible; transition:filter 0.3s ease;">
@@ -3330,6 +3352,9 @@
             let p = String(name || '').toLowerCase();
             return p.includes('1m reversal') || p.includes('pulse 1m') || p.includes('micro-shelf') || p.includes('micro shelf') || p.includes('ema-9 snap') || p.includes('ema9 snap') || p.includes('ema 9 snap');
         }
+        function isEmaCrossProfile(name) {
+            return String(name || '').toLowerCase().includes('ema cross');
+        }
         function get1mVariant(name) {
             let p = String(name || '').toLowerCase();
             if (p.includes('micro-shelf') || p.includes('micro shelf')) return 'shelf';
@@ -3338,6 +3363,7 @@
         }
         function getStrategyStatsKey(name) {
             let p = String(name || '').toLowerCase();
+            if (p.includes('ema cross')) return 'EMA Cross 9/21';
             if (p.includes('micro-shelf') || p.includes('micro shelf')) return 'Micro-Shelf 1M';
             if (p.includes('ema-9 snap') || p.includes('ema9 snap') || p.includes('ema 9 snap')) return 'EMA-9 Snap 1M';
             if (p.includes('1m reversal') || p.includes('pulse 1m')) return 'Pulse 1M Reversal';
@@ -3552,10 +3578,11 @@
                 return;
             }
 
-            // 1. Calculate Daily Loss Shield (Circuit Breaker: -5.0% for 1m bots; -2.5% for 5m bots)
+            // 1. Calculate Daily Loss Shield (-2.0% for EMA Cross 9/21; -5.0% for 1m bots; -2.5% for 5m bots)
             let isPulse1MShield = is1mFamilyProfile(profName);
-            let cbRatio = isPulse1MShield ? 0.05 : 0.025;
-            let cbHaltText = isPulse1MShield ? '-5.0% Halt' : '-2.5% Halt';
+            let isEmaCrossShield = isEmaCrossProfile(profName);
+            let cbRatio = isEmaCrossShield ? 0.02 : (isPulse1MShield ? 0.05 : 0.025);
+            let cbHaltText = isEmaCrossShield ? '-2.0% Halt' : (isPulse1MShield ? '-5.0% Halt' : '-2.5% Halt');
             let activeLb = (latestLeaderboardData || []).find(l => l.user && l.user.toLowerCase().includes(profName)) || {};
             let budget = activeLb.budget || 700.0;
             let dayPnl = activeLb.daily_pnl || 0.0;
@@ -3581,6 +3608,68 @@
 
             let trailHtml = '';
             let beCatchHtml = '';
+
+            if (isEmaCrossShield) {
+                let uDataEc = (globalPortfolioData && globalPortfolioData.users && globalPortfolioData.users[profName]) ? globalPortfolioData.users[profName] : (globalPortfolioData || {});
+                let isSweepEc = (uDataEc.overnight_sweep !== undefined) ? uDataEc.overnight_sweep : true;
+                let reasonTxt = (metrics && metrics.reason) ? String(metrics.reason) : 'Scanning live 9/21 EMA crossover...';
+                let isBullCross = (metrics && (metrics.action_main === 'BUY' || String(metrics.status || '').includes('9>21')));
+                let crossCol = isBullCross ? '#0ecb81' : '#ff9900';
+
+                container.innerHTML = `
+                    <!-- 1. Daily Loss Shield (-2.0% Lock) -->
+                    <div style="display:flex; flex-direction:column; gap:3px; padding-bottom:6px; border-bottom:1px solid #1a1e28;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                            <span style="color:#8a8a9e;">1. DAILY LOSS SHIELD (-2.0% LOCK)</span>
+                            <span style="color:${shieldColor};">$${cushionLeft.toFixed(2)} Left (${cushionPct.toFixed(0)}%)</span>
+                        </div>
+                        <div style="width:100%; height:6px; background:#262b36; border-radius:3px; overflow:hidden;">
+                            <div style="width:${cushionPct}%; height:100%; background:${shieldColor}; transition:width 0.3s ease, background 0.3s ease;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:700; color:#5a5f70;">
+                            <span>-$${maxLoss.toFixed(2)} (${cbHaltText})</span>
+                            <span>$0.00 (Full Buffer)</span>
+                        </div>
+                    </div>
+
+                    <!-- 2. Live 9/21 EMA Crossover Signal -->
+                    <div style="display:flex; flex-direction:column; gap:3px; padding:6px 0; border-bottom:1px solid #1a1e28;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; font-size:9.5px; font-weight:800;">
+                            <span style="color:#8a8a9e;">2. LIVE 9 / 21 EMA CROSSOVER</span>
+                            <span style="color:${crossCol};">${isBullCross ? 'ORANGE > PURPLE' : 'ORANGE < PURPLE'}</span>
+                        </div>
+                        <div style="background:#14171f; border:1px solid ${crossCol}; border-radius:4px; padding:4px 6px; text-align:center; font-size:8.5px; font-weight:800; color:${crossCol};">
+                            ${reasonTxt}
+                        </div>
+                    </div>
+
+                    <!-- 3. Overnight Cash Sweep -->
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:9px; font-weight:700; color:#8a8a9e; padding-top:4px;">
+                        <span>Overnight Sweep:</span>
+                        <span style="color:${isSweepEc ? '#0ecb81' : '#ff9900'}; font-weight:800;">
+                            ${isSweepEc ? '20:50 BST (100% Cash)' : 'Holding Overnight'}
+                        </span>
+                    </div>
+                `;
+
+                let wrEl = document.getElementById('sideKpiWinRate');
+                let pfEl = document.getElementById('sideKpiProfitFactor');
+                let rrEl = document.getElementById('sideKpiRunRate');
+                if (wrEl && pfEl && rrEl) {
+                    if (!window._reconStrategyStats) refreshReconStrategyStats();
+                    let rStats = window._reconStrategyStats || {};
+                    let liveS = rStats['EMA Cross 9/21'];
+                    wrEl.innerText = liveS ? liveS.win_rate : '--';
+                    pfEl.innerText = liveS ? liveS.profit_factor : '--';
+                    let curEq = activeLb.equity || budget;
+                    let baseB = activeLb.epoch_budget || budget;
+                    let days = Math.max(1, activeLb.days_active || 1);
+                    let gainPct = ((curEq - baseB) / baseB) * 100.0;
+                    let dailyRate = (activeLb.daily_avg_pct !== undefined) ? parseFloat(activeLb.daily_avg_pct) : (gainPct / days);
+                    rrEl.innerText = `${dailyRate >= 0 ? '+' : ''}${dailyRate.toFixed(2)}% / Day`;
+                }
+                return;
+            }
 
             if (isPulse1MShield) {
                 let p1mData = (metrics && metrics.pulse_1m_bars) ? metrics.pulse_1m_bars : null;
@@ -3806,6 +3895,7 @@
             'Pulse 1M Reversal': 'Production Desk #4: 1-minute exhaustion reversal scalper across TQQQ, SOXL & SQQQ. Enters on Red -> Smaller Red -> Green (Go) with Fast-Bail exit protection (-0.45% stop, -0.25% live red bail, +0.40% BE lock, +0.75% peak choke).',
             'Micro-Shelf 1M': 'Production Desk #5: 1-minute tight consolidation breakout scalper across TQQQ, SOXL & SQQQ. Enters on green breakout above a 4-bar <=0.35% box with Fast-Bail exit protection.',
             'EMA-9 Snap 1M': 'Production Desk #6: 1-minute trend pullback scalper across TQQQ, SOXL & SQQQ. Enters when a 9/21-EMA uptrend dips to the 9-EMA and snaps green back above the 9-EMA & dip high.',
+            'EMA Cross 9/21': 'Production Desk #7: Pure 9/21-EMA crossover engine across TQQQ, SOXL & SQQQ. Buys the second Orange 9-EMA crosses above Purple 21-EMA and sells the second it crosses back below.',
             'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
 
@@ -4203,6 +4293,7 @@
         }
 
         function toggleShowMath() { 
+            window._userManualMathToggled = true;
             showMath = !showMath; 
             let btn = document.getElementById('btnShowMath'); 
             if(btn){ showMath ? btn.classList.add('active') : btn.classList.remove('active'); } 
@@ -4825,8 +4916,8 @@
                         badge.innerText = `● Recon Account Offline (${data.account || 'ian_paper@gmail.com'})`;
                     }
                 }
-                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal', 'Micro-Shelf 1M', 'EMA-9 Snap 1M'].forEach(strat => {
-                    let sId = strat === 'Pulse 1M Reversal' ? 'Pulse1M' : (strat === 'Micro-Shelf 1M' ? 'MicroShelf' : (strat === 'EMA-9 Snap 1M' ? 'Ema9Snap' : (strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0])));
+                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal', 'Micro-Shelf 1M', 'EMA-9 Snap 1M', 'EMA Cross 9/21'].forEach(strat => {
+                    let sId = strat === 'EMA Cross 9/21' ? 'EmaCross' : (strat === 'Pulse 1M Reversal' ? 'Pulse1M' : (strat === 'Micro-Shelf 1M' ? 'MicroShelf' : (strat === 'EMA-9 Snap 1M' ? 'Ema9Snap' : (strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0]))));
                     let wrEl = document.getElementById(`wiz-wr-${sId}`);
                     let pfEl = document.getElementById(`wiz-pf-${sId}`);
                     let dpEl = document.getElementById(`wiz-dp-${sId}`);
@@ -4854,10 +4945,10 @@
 
         function selectWizardStrategy(method) {
             selectedWizardMethod = method;
-            ['Vector', 'Apex', 'Pulse', 'Pulse1M', 'MicroShelf', 'Ema9Snap'].forEach(k => {
+            ['Vector', 'Apex', 'Pulse', 'Pulse1M', 'MicroShelf', 'Ema9Snap', 'EmaCross'].forEach(k => {
                 let card = document.getElementById(`cardStrat${k}`);
                 let title = document.getElementById(`titleStrat${k}`);
-                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse') || (k === 'Pulse1M' && method === 'Pulse 1M Reversal') || (k === 'MicroShelf' && method === 'Micro-Shelf 1M') || (k === 'Ema9Snap' && method === 'EMA-9 Snap 1M');
+                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse') || (k === 'Pulse1M' && method === 'Pulse 1M Reversal') || (k === 'MicroShelf' && method === 'Micro-Shelf 1M') || (k === 'Ema9Snap' && method === 'EMA-9 Snap 1M') || (k === 'EmaCross' && method === 'EMA Cross 9/21');
                 if (card) card.style.borderColor = isMatch ? '#ffd400' : '#262b36';
                 if (title) title.style.color = isMatch ? '#ffd400' : '#ffffff';
             });
@@ -5153,7 +5244,18 @@
         function applyDefaultIntervalForProfile(username) {
             let low = (username || '').toLowerCase();
             let isP1M = is1mFamilyProfile(low);
+            let isEc = isEmaCrossProfile(low);
             let targetInt = isP1M ? '1m' : '5m';
+
+            if (isEc) {
+                showMath = true;
+                let btnM = document.getElementById('btnShowMath');
+                if (btnM) btnM.classList.add('active');
+            } else if (!window._userManualMathToggled) {
+                showMath = false;
+                let btnM = document.getElementById('btnShowMath');
+                if (btnM) btnM.classList.remove('active');
+            }
 
             let pSel = document.getElementById('periodSelect');
             if (pSel && pSel.value !== '1d') {
@@ -5922,8 +6024,17 @@
                     if (textEl) textEl.innerText = `${p.metrics.regime.state || 'Room Temp'}`; 
                 }
 
+                let isEmaCrossFetch = isEmaCrossProfile(activeProf);
                 let p1mDrawer = document.getElementById('pulse1mSequenceDrawer');
                 let execGearDrawer = document.getElementById('executionGearHud');
+                let timelineDrawerEl = document.getElementById('timelineDrawer');
+                let macroDrawerEl = document.getElementById('macroRadarDrawer');
+                let ratchetCardEl = document.getElementById('profitRatchetCard');
+                let mobRatchetCardEl = document.getElementById('mobProfitRatchetCard');
+                let sentimentCardEl = document.getElementById('sentimentCard');
+                let cd15ColEl = document.getElementById('cd15GuardCol');
+                let curfewColEl = document.getElementById('curfewGuardCol');
+                let ratchetColEl = document.getElementById('ratchetGuardCol');
                 let strikeColEl = document.getElementById('strikeGuardCol');
                 let guardsRowEl = document.getElementById('buyingGuardsRow');
                 let wlTitleEl = document.getElementById('watchlistDrawerTitle');
@@ -5932,7 +6043,34 @@
                 let mCol2Lbl = document.getElementById('macroCol2Label');
                 let mCol3Lbl = document.getElementById('macroCol3Label');
 
-                if (isP1MFetch) {
+                if (isEmaCrossFetch) {
+                    if (p1mDrawer) p1mDrawer.style.display = 'none';
+                    if (execGearDrawer) execGearDrawer.style.display = 'none';
+                    if (timelineDrawerEl) timelineDrawerEl.style.display = 'none';
+                    if (macroDrawerEl) macroDrawerEl.style.display = 'none';
+                    if (ratchetCardEl) ratchetCardEl.style.display = 'none';
+                    if (mobRatchetCardEl) mobRatchetCardEl.style.display = 'none';
+                    if (sentimentCardEl) sentimentCardEl.style.display = 'none';
+                    if (cd15ColEl) cd15ColEl.style.display = 'none';
+                    if (curfewColEl) curfewColEl.style.display = 'none';
+                    if (ratchetColEl) ratchetColEl.style.display = 'none';
+                    if (strikeColEl) strikeColEl.style.display = 'flex';
+                    if (guardsRowEl) guardsRowEl.style.justifyContent = 'center';
+                    if (wlTitleEl) wlTitleEl.innerText = 'Live 9/21 EMA Charts (3x Universe)';
+                    if (!showMath) {
+                        showMath = true;
+                        let btnM = document.getElementById('btnShowMath');
+                        if (btnM) btnM.classList.add('active');
+                    }
+                } else if (isP1MFetch) {
+                    if (timelineDrawerEl) timelineDrawerEl.style.display = '';
+                    if (macroDrawerEl) macroDrawerEl.style.display = '';
+                    if (ratchetCardEl) ratchetCardEl.style.display = '';
+                    if (mobRatchetCardEl) mobRatchetCardEl.style.display = '';
+                    if (sentimentCardEl) sentimentCardEl.style.display = '';
+                    if (cd15ColEl) cd15ColEl.style.display = 'flex';
+                    if (curfewColEl) curfewColEl.style.display = 'flex';
+                    if (ratchetColEl) ratchetColEl.style.display = 'flex';
                     if (p1mDrawer) p1mDrawer.style.display = '';
                     if (execGearDrawer) execGearDrawer.style.display = 'none';
                     if (strikeColEl) strikeColEl.style.display = 'none';
@@ -5965,6 +6103,14 @@
                         vixEl.style.color = '#ffb700';
                     }
                 } else {
+                    if (timelineDrawerEl) timelineDrawerEl.style.display = '';
+                    if (macroDrawerEl) macroDrawerEl.style.display = '';
+                    if (ratchetCardEl) ratchetCardEl.style.display = '';
+                    if (mobRatchetCardEl) mobRatchetCardEl.style.display = '';
+                    if (sentimentCardEl) sentimentCardEl.style.display = '';
+                    if (cd15ColEl) cd15ColEl.style.display = 'flex';
+                    if (curfewColEl) curfewColEl.style.display = 'flex';
+                    if (ratchetColEl) ratchetColEl.style.display = 'flex';
                     if (p1mDrawer) p1mDrawer.style.display = 'none';
                     if (execGearDrawer) execGearDrawer.style.display = '';
                     if (strikeColEl) strikeColEl.style.display = 'flex';
@@ -7301,6 +7447,7 @@
             'Pulse 1M Reversal': '1m Red-Red-Green Reversal',
             'Micro-Shelf 1M': '1m Tight Box Breakout',
             'EMA-9 Snap 1M': '1m 9-EMA Pullback Snap',
+            'EMA Cross 9/21': 'Live Orange/Purple 9/21 EMA Cross',
             'Sovereign Core': 'Manual Execution'
         };
 
@@ -8180,6 +8327,13 @@
                                 <div style="font-size:11px; color:#8a8a9e;">1m 9-EMA trend pullback snap scalper across TQQQ, SOXL & SQQQ.</div>
                             </div>
                         </label>
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'EMA Cross 9/21' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='EMA Cross 9/21'; renderAssistStep();">
+                            <input type="radio" name="guideStrat" value="EMA Cross 9/21" ${guideState.strategy === 'EMA Cross 9/21' ? 'checked' : ''} style="accent-color:#ffd400;">
+                            <div>
+                                <span style="font-weight:800; color:${guideState.strategy === 'EMA Cross 9/21' ? '#ffd400' : '#fff'};">EMA Cross 9/21</span>
+                                <div style="font-size:11px; color:#8a8a9e;">Buys the exact second Orange 9-EMA crosses above Purple 21-EMA and sells the second it crosses back below.</div>
+                            </div>
+                        </label>
                     </div>
                 `;
             } else if (currentAssistStep === 6) {
@@ -8908,6 +9062,40 @@
                 
                 let activeProfScan = (document.getElementById('userSelect')?.value || '').toLowerCase();
                 let isP1MScan = is1mFamilyProfile(activeProfScan);
+                let isEmaCrossScan = isEmaCrossProfile(activeProfScan);
+
+                function buildMiniEmaChartSvg(snap, widthPx, heightPx) {
+                    if (!snap || !Array.isArray(snap.e9_series) || snap.e9_series.length < 2) {
+                        return `<div style="height:${heightPx}px; display:flex; align-items:center; justify-content:center; font-size:8.5px; color:#6c7386;">Loading 9/21 EMA...</div>`;
+                    }
+                    let e9 = snap.e9_series;
+                    let e21 = snap.e21_series;
+                    let allVals = e9.concat(e21);
+                    let minV = Math.min(...allVals);
+                    let maxV = Math.max(...allVals);
+                    let spanV = Math.max(0.0001, maxV - minV);
+                    let padY = 4;
+                    let plotH = heightPx - padY * 2;
+                    let n = e9.length;
+                    let pts9 = [];
+                    let pts21 = [];
+                    for (let i = 0; i < n; i++) {
+                        let x = ((i / Math.max(1, n - 1)) * (widthPx - 8) + 4).toFixed(1);
+                        let y9 = (padY + plotH - ((e9[i] - minV) / spanV) * plotH).toFixed(1);
+                        let y21 = (padY + plotH - ((e21[i] - minV) / spanV) * plotH).toFixed(1);
+                        pts9.push(`${x},${y9}`);
+                        pts21.push(`${x},${y21}`);
+                    }
+                    let lastPt9 = pts9[pts9.length - 1].split(',');
+                    let dotCol = snap.is_above ? '#0ecb81' : '#ff9900';
+                    return `
+                        <svg viewBox="0 0 ${widthPx} ${heightPx}" style="width:100%; height:${heightPx}px; display:block; overflow:visible;">
+                            <polyline fill="none" stroke="#b388ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" points="${pts21.join(' ')}" />
+                            <polyline fill="none" stroke="#ff9900" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="${pts9.join(' ')}" />
+                            <circle cx="${lastPt9[0]}" cy="${lastPt9[1]}" r="2.6" fill="${dotCol}" />
+                        </svg>
+                    `;
+                }
                 let p1mVariantScan = get1mVariant(activeProfScan);
                 let stepLbls = p1mVariantScan === 'shelf'
                     ? ['1. TIGHT BOX', '2. COILING', '3. BRK GO']
@@ -8934,6 +9122,34 @@
                     let isCurrent = (it.ticker === currentTicker);
                     let color = '#8a8a9e';
                     let label = '';
+
+                    if (isEmaCrossScan) {
+                        let snap = it.ema_cross_snap || {};
+                        let pTxt = `$${(parseFloat(it.price) || 0).toFixed(2)}`;
+                        let spPct = parseFloat(snap.spread_pct) || 0;
+                        let isAbove = Boolean(snap.is_above);
+                        let stCol = isHeld ? '#0ecb81' : (isAbove ? '#0ecb81' : '#8a8a9e');
+                        let stTxt = isHeld ? `RIDING (${spPct >= 0 ? '+' : ''}${spPct.toFixed(2)}%)` : (isAbove ? `9>21 LONG (+${spPct.toFixed(2)}%)` : `9<21 (${spPct.toFixed(2)}%)`);
+                        let heldTag = isHeld ? `<span style="color:#ffd400; font-weight:900; margin-left:4px;">(HELD)</span>` : '';
+                        let reasonTip = String(it.reason || '').replace(/"/g, '"');
+                        let chartSvg = buildMiniEmaChartSvg(snap, 220, 34);
+                        return `
+                        <div style="background:#0f1115; border:1px solid ${isCurrent ? '#ffd400' : '#262b36'}; border-radius:5px; padding:5px 7px; cursor:pointer;" title="${reasonTip}" onclick="selectStock('${it.ticker}')">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                                <div>
+                                    <span style="font-weight:800; font-size:10.5px; color:#fff;">${it.ticker}</span>
+                                    <span style="font-size:9px; color:#8a8a9e; margin-left:4px;">${pTxt}</span>
+                                    ${heldTag}
+                                </div>
+                                <span style="font-size:9px; font-weight:800; color:${stCol};">${stTxt}</span>
+                            </div>
+                            ${chartSvg}
+                            <div style="display:flex; justify-content:space-between; font-size:8px; font-weight:700; margin-top:2px;">
+                                <span style="color:#ff9900;">9-EMA: $${(snap.e9 || 0).toFixed(2)}</span>
+                                <span style="color:#b388ff;">21-EMA: $${(snap.e21 || 0).toFixed(2)}</span>
+                            </div>
+                        </div>`;
+                    }
 
                     if (isP1MScan) {
                         let snap = it.p1m_snap || {};
@@ -9004,6 +9220,23 @@
                         let valPct = isHeld ? it.health_pct : it.score;
                         let isCurrent = (it.ticker === currentTicker);
                         let heldTag = isHeld ? `<span style="background:#ffd400; color:#000; font-size:8px; padding:0 3px; border-radius:2px; font-weight:800; margin-left:3px;">H</span>` : '';
+
+                        if (isEmaCrossScan) {
+                            let snap = it.ema_cross_snap || {};
+                            let spPct = parseFloat(snap.spread_pct) || 0;
+                            let isAbove = Boolean(snap.is_above);
+                            let stCol = isHeld ? '#0ecb81' : (isAbove ? '#0ecb81' : '#8a8a9e');
+                            let miniSvg = buildMiniEmaChartSvg(snap, 96, 22);
+                            return `
+                                <div class="mob-readiness-card ${isCurrent ? 'active' : ''}" onclick="selectStock('${it.ticker}')" title="${it.ticker}">
+                                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                                        <span style="font-size:11px; font-weight:800; color:${isCurrent ? '#ffd400' : '#fff'};">${it.ticker}${heldTag}</span>
+                                        <span style="font-size:8.5px; font-weight:900; color:${stCol};">${spPct >= 0 ? '+' : ''}${spPct.toFixed(2)}%</span>
+                                    </div>
+                                    ${miniSvg}
+                                </div>
+                            `;
+                        }
 
                         if (isP1MScan) {
                             let snap = it.p1m_snap || {};
