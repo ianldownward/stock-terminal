@@ -2692,6 +2692,10 @@
             {% endif %}
             {% if is_recon %}
             <div style="background:rgba(56, 189, 248, 0.15); color:#38bdf8; font-size:9px; font-weight:900; padding:2px 6px; border-radius:4px; letter-spacing:1px; margin-left:12px; border:1px solid #38bdf8; box-shadow:0 0 8px rgba(56, 189, 248, 0.4);">RECON</div>
+            <button type="button" id="btnResetReconAll" onclick="triggerResetReconAccount(this)" style="background:rgba(56, 189, 248, 0.14); color:#38bdf8; border:1px solid #38bdf8; font-size:10px; font-weight:800; padding:3px 9px; border-radius:4px; letter-spacing:0.4px; margin-left:8px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; transition:all 0.15s ease; white-space:nowrap;" title="Reset all Recon profiles to $0 / 0% P&L, 100% cash, and 0 trades">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+                <span id="resetReconBtnLabel">Reset All</span>
+            </button>
             {% endif %}
         </div>
         <div class="header-right" style="position:relative;">
@@ -9363,6 +9367,45 @@
         setInterval(fetchReadinessScanner, 15000);
         setInterval(updateSessionTimeline, 15000);
         setInterval(updateMarketClocks, 15000);
+        async function triggerResetReconAccount(btn) {
+            if (!confirm("Reset ALL Recon profiles to $0.00 / 0.00% P&L?\n\n• Wipes all trade history and open positions across every Recon strategy.\n• Resets every profile to 100% starting cash ($0 / 0% gain).\n• Resets the live stats shown in '+ New Strategy Profile' across all accounts to 0.0% / 0.00.\n\nProceed?")) return;
+            let lbl = document.getElementById('resetReconBtnLabel');
+            if (btn) btn.disabled = true;
+            if (lbl) lbl.innerText = 'Resetting...';
+
+            try {
+                let res = await fetch('/api/recon/reset_all', { method: 'POST' });
+                let d = await res.json();
+                if (d.status === 'ok') {
+                    window._reconStrategyStats = null;
+                    window._lastAutoSwitchedHoldKey = '';
+                    if (btn) {
+                        btn.style.background = '#38bdf8';
+                        btn.style.color = '#000000';
+                    }
+                    if (lbl) lbl.innerText = 'Reset ✓';
+                    await fetchData(false);
+                    if (typeof refreshReconStrategyStats === 'function') await refreshReconStrategyStats();
+                    setTimeout(() => {
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.style.background = 'rgba(56, 189, 248, 0.14)';
+                            btn.style.color = '#38bdf8';
+                        }
+                        if (lbl) lbl.innerText = 'Reset All';
+                    }, 3000);
+                } else {
+                    alert(d.message || "Failed to reset Recon profiles.");
+                    if (btn) btn.disabled = false;
+                    if (lbl) lbl.innerText = 'Reset All';
+                }
+            } catch (err) {
+                alert("Reset error: " + (err.message || "Network error resetting Recon."));
+                if (btn) btn.disabled = false;
+                if (lbl) lbl.innerText = 'Reset All';
+            }
+        }
+
         async function triggerDeployStagingToLive(btn) {
             if (!confirm("Deploy Staging to Live Site (trade.idchub.co.uk)?\n\nThis will merge 'staging' into 'main' on GitHub and trigger Render to deploy your live production site.")) return;
             let lbl = document.getElementById('deployLiveBtnLabel');
