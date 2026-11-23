@@ -1919,11 +1919,11 @@ class MarketScoringEngine:
             is_inverse_ec = ticker in ['SQQQ', '3SUS.L']
             trade_type_ec = 'SHORT' if is_inverse_ec else 'LONG'
             df_ec_1m = fetch_yf_data(ticker, "1d", "1m") if ticker else df_5m
-            if df_ec_1m is None or df_ec_1m.empty or len(df_ec_1m) < 21:
+            if df_ec_1m is None or df_ec_1m.empty or len(df_ec_1m) < 23:
                 df_ec_5d = fetch_yf_data(ticker, "5d", "1m") if ticker else df_5m
                 if df_ec_5d is not None and not df_ec_5d.empty:
                     df_ec_1m = df_ec_5d
-            if df_ec_1m is None or df_ec_1m.empty or len(df_ec_1m) < 21:
+            if df_ec_1m is None or df_ec_1m.empty or len(df_ec_1m) < 23:
                 return {'type': 'EMA Cross 9/21', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Awaiting 1m candle history for 9/21 EMA.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'No Data'}
 
             now_uk_ec = pd.Timestamp.now(tz='Europe/London')
@@ -1940,22 +1940,64 @@ class MarketScoringEngine:
             if avg_buy_price > 0:
                 pnl_ec = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
                 pnl_ec_str = f"({'+' if pnl_ec >= 0 else ''}{pnl_ec:.2f}%)"
+                eff_high_ec = max(float(highest_price or 0.0), float(current_price or 0.0), float(avg_buy_price))
+                peak_pnl_ec = ((eff_high_ec - avg_buy_price) / avg_buy_price) * 100.0
+
                 if overnight_sweep and now_uk_ec.hour == 20 and now_uk_ec.minute >= 50:
                     return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': 'OVERNIGHT SWEEP: Liquidating to 100% cash.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
+                if pnl_ec <= -0.45:
+                    return {'type': 'EMA Cross Hard Stop', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': f"HARD STOP (-0.45%) {pnl_ec_str}: Cut whipsaw before 21-EMA lag bleed.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Hard Stop (-0.45%)', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(-0.45% Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"-0.45% Stop {pnl_ec_str}"}
+                if peak_pnl_ec >= 0.45 and pnl_ec <= 0.12:
+                    return {'type': 'EMA Cross BE Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': f"BREAKEVEN LOCK {pnl_ec_str}: Protected +0.12% floor after +{peak_pnl_ec:.2f}% peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'BE Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(BE Lock)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 90, 'health_color': '#0ecb81', 'health_text': f"BE Lock {pnl_ec_str}"}
                 if live_e9 < live_e21:
                     return {'type': 'EMA Cross 9/21', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': f"ORANGE BELOW PURPLE {pnl_ec_str}: Live 9-EMA (${live_e9:.2f}) crossed below 21-EMA (${live_e21:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '9<21 EMA Cross', 'color': '#ff5364' if pnl_ec < 0 else '#0ecb81', 'action_main': 'SELL', 'action_sub': '(9<21 Cross)', 'action_color': '#ff5364' if pnl_ec < 0 else '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"9<21 Cross {pnl_ec_str}"}
                 ema_cushion = int(max(10, min(100, spread_pct * 120)))
-                return {'type': 'EMA Cross 9/21', 'score': 85, 'tranches': 1, 'discount': f"{pnl_ec:.2f}%", 'reason': f"RIDING 9>21 CROSS {pnl_ec_str}: Orange 9-EMA (${live_e9:.2f}) +${spread_diff:.2f} (+{spread_pct:.2f}%) above Purple 21-EMA (${live_e21:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 9>21 Cross', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': ema_cushion, 'health_color': '#0ecb81', 'health_text': f"9>21 (+{spread_pct:.2f}%) {pnl_ec_str}"}
+                return {'type': 'EMA Cross 9/21', 'score': 85, 'tranches': 1, 'discount': f"{pnl_ec:.2f}%", 'reason': f"RIDING 9>21 CROSS {pnl_ec_str}: Orange 9-EMA (${live_e9:.2f}) +${spread_diff:.2f} (+{spread_pct:.2f}%) above Purple 21-EMA (${live_e21:.2f}) • -0.45% stop.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding 9>21 Cross', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding 9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': ema_cushion, 'health_color': '#0ecb81', 'health_text': f"9>21 (+{spread_pct:.2f}%) {pnl_ec_str}"}
 
             if overnight_sweep and now_uk_ec.hour == 20 and now_uk_ec.minute >= 50:
                 return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': 'OVERNIGHT SWEEP: Blocking new entries before close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
-            if live_e9 > live_e21:
-                buy_sc_ec = min(98, max(72, round(75 + spread_pct * 25)))
-                return {'type': 'EMA Cross 9/21', 'score': buy_sc_ec, 'tranches': 1, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"ORANGE ABOVE PURPLE: Live 9-EMA (${live_e9:.2f}) +${spread_diff:.2f} (+{spread_pct:.2f}%) above 21-EMA (${live_e21:.2f}).", 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.02, 2), 'status': '9>21 EMA Cross', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': '9>21 Cross'}
+            # 1. Higher-Timeframe 5m Trend Filter: Only trade 1m upward crosses in the direction of the 5m 9/21 EMA trend
+            df_5m_ec = df_5m if (df_5m is not None and not df_5m.empty and len(df_5m) >= 21) else (fetch_yf_data(ticker, "5d", "5m") if ticker else pd.DataFrame())
+            if df_5m_ec is None or df_5m_ec.empty or len(df_5m_ec) < 21:
+                return {'type': 'EMA Cross 9/21', 'score': 10, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': 'Awaiting 5m trend history for 9/21 EMA filter.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting 5m Trend', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(5m Data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            wait_sc_ec = max(5, min(64, round(64 + spread_pct * 40)))
-            return {'type': 'EMA Cross 9/21', 'score': wait_sc_ec, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"Awaiting Orange 9-EMA (${live_e9:.2f}) to cross above Purple 21-EMA (${live_e21:.2f}) [Gap: {spread_pct:+.2f}%].", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting 9>21 Cross', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(9<21 EMA)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
+            closes_5m_ec = df_5m_ec['Close'].astype(float).copy()
+            if current_price > 0:
+                closes_5m_ec.iloc[-1] = float(current_price)
+            e9_5m = float(closes_5m_ec.ewm(span=9, adjust=False).mean().iloc[-1])
+            e21_5m = float(closes_5m_ec.ewm(span=21, adjust=False).mean().iloc[-1])
+            if e9_5m <= e21_5m:
+                return {'type': 'EMA Cross 9/21', 'score': 18, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"5m Trend Blocked: {ticker} 5m 9-EMA (${e9_5m:.2f}) below 21-EMA (${e21_5m:.2f}) — skipping counter-trend bounce.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '5m Trend Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(5m Trend < 21)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '5m Trend Blocked'}
+
+            # 2. Fresh Closed-Bar 1m Crossover Check: Prevents mid-candle wick fake-outs and late trend chasing
+            closed_ec = df_ec_1m.iloc[:-1]
+            e9_closed = closed_ec['Close'].astype(float).ewm(span=9, adjust=False).mean()
+            e21_closed = closed_ec['Close'].astype(float).ewm(span=21, adjust=False).mean()
+            e9_c1, e21_c1 = float(e9_closed.iloc[-1]), float(e21_closed.iloc[-1])
+            e9_c2, e21_c2 = float(e9_closed.iloc[-2]), float(e21_closed.iloc[-2])
+            c1_open = float(closed_ec['Open'].iloc[-1])
+            c1_close = float(closed_ec['Close'].iloc[-1])
+
+            fresh_cross_1m = (
+                (e9_c1 > e21_c1)
+                and (e9_c2 <= e21_c2)
+                and (c1_close > c1_open)
+                and (live_e9 > live_e21)
+                and (current_price >= c1_close * 0.9990)
+            )
+            if fresh_cross_1m:
+                buy_sc_ec = min(98, max(76, round(78 + spread_pct * 25)))
+                return {'type': 'EMA Cross 9/21', 'score': buy_sc_ec, 'tranches': 1, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"FRESH 1M CROSS + 5M UPTREND: Closed green 1m bar crossed 9-EMA (${e9_c1:.2f}) > 21-EMA (${e21_c1:.2f}) with 5m trend aligned.", 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.02, 2), 'status': 'Fresh 9>21 Cross', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(Fresh 9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': 'Fresh 9>21 Cross'}
+
+            if e9_c1 > e21_c1 and e9_c2 > e21_c2:
+                return {'type': 'EMA Cross 9/21', 'score': 45, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"Trend In Progress: 1m 9-EMA (${live_e9:.2f}) already above 21-EMA (${live_e21:.2f}) — awaiting fresh crossover reset.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Reset', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Reset)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Awaiting Reset'}
+
+            if live_e9 > live_e21:
+                return {'type': 'EMA Cross 9/21', 'score': 58, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"Confirming 1m Cross: Live 9-EMA (${live_e9:.2f}) > 21-EMA (${live_e21:.2f}) — awaiting closed green 1m bar.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Confirming Cross', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(1m Confirm)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Confirming Cross'}
+
+            wait_sc_ec = max(5, min(55, round(55 + spread_pct * 40)))
+            return {'type': 'EMA Cross 9/21', 'score': wait_sc_ec, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"5m Uptrend Active: Awaiting fresh 1m 9-EMA (${live_e9:.2f}) cross above 21-EMA (${live_e21:.2f}) [Gap: {spread_pct:+.2f}%].", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting 9>21 Cross', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(9<21 EMA)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
         is_inverse = ticker in ['SQQQ', '3SUS.L']
         is_3x_etf = ticker in ['TQQQ', 'SOXL', 'NVDL', 'CONL', 'MSTX', 'BITX', 'SQQQ', '3SUS.L']
@@ -2821,8 +2863,8 @@ def process_auto_profile(prof_name, client_email=None):
         if not is_pulse_1m_prof and today_stops_cnt >= 3:
             is_curfew_active = True
 
-        # Post-Sell Cooldown: 5s settlement buffer for EMA Cross 9/21; 60s for 1m bots; 15 mins (900s) for other 5m profiles
-        cd_duration = 5 if is_ema_cross_prof else (60 if is_pulse_1m_prof else 900)
+        # Post-Sell Cooldown: 60s (1 candle) for EMA Cross 9/21 & 1m bots; 15 mins (900s) for other 5m profiles
+        cd_duration = 60 if (is_ema_cross_prof or is_pulse_1m_prof) else 900
         real_hist_for_cd = [h for h in hist if h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]
         if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
             if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < cd_duration:
@@ -5473,7 +5515,7 @@ def get_data():
             h for h in hist
             if h.get('ticker') and h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
         ]
-        cd_total_guard = 5 if ('ema cross' in active_profile) else (60 if engine._is_1m_family(active_profile) else 900)
+        cd_total_guard = 60 if ('ema cross' in active_profile or engine._is_1m_family(active_profile)) else 900
         cd_15m_rem = 0
         if real_hist_guard and real_hist_guard[0].get('action') == 'SELL':
             last_sell_ts = int(real_hist_guard[0].get('timestamp') or 0)
