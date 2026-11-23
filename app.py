@@ -657,7 +657,8 @@ class PortfolioManager:
                     doc.pop('_id', None)
                     return doc
             except Exception:
-                pass
+                if getattr(self, 'data', None) and self.data.get('users'): return self.data
+                return {'active_user': 'Vector Hybrid', 'users': {'Vector Hybrid': self.default_user_state('Vector Hybrid')}}
             initial = {'active_user': 'Vector Hybrid', 'users': {'Vector Hybrid': self.default_user_state('Vector Hybrid')}}
             self.save_data(initial)
             return initial
@@ -2626,7 +2627,7 @@ def process_auto_profile(prof_name, client_email=None):
                 ud['manual_locked_day'] = None
                 ud['ratchet_floor_override'] = None
                 ud['ratchet_locked'] = False
-                ud['is_locked'] = False
+                ud['is_locked'] = False; ud['ratchet_disabled_day'] = None
 
             clamped_peak_daily_pct = min(peak_daily_pnl_pct, daily_pnl_pct + 1.25)
             observed_peak_pct = round(max(daily_pnl_pct, clamped_peak_daily_pct), 2)
@@ -2645,7 +2646,9 @@ def process_auto_profile(prof_name, client_email=None):
 
             daily_peak = float(ud.get('daily_peak_pct') or 0.0)
 
-            if ud.get('ratchet_floor_override') is not None:
+            if ud.get('ratchet_disabled_day')==today_str:
+                daily_floor_locked=0.0
+            elif ud.get('ratchet_floor_override') is not None:
                 daily_floor_locked = float(ud['ratchet_floor_override'])
             elif daily_peak >= r_start_pct:
                 daily_floor_locked = round(int(daily_peak / r_step_pct) * r_step_pct, 2)
@@ -4259,7 +4262,7 @@ def manual_lock_day_route():
             u_obj = users[t_name]
             u_obj['manual_locked_day'] = None
             u_obj['ratchet_locked'] = False
-            u_obj['is_locked'] = False
+            u_obj['is_locked'] = False; u_obj['ratchet_disabled_day'] = today_str
         if is_client:
             portfolio_store.save_client_store(client_name, c_store)
         else:
@@ -5253,7 +5256,7 @@ def get_data():
             has_override = (u_data.get('ratchet_floor_override') is not None)
             is_manually_locked = (u_data.get('manual_locked_day') == today_str)
             is_ratchet_locked = bool(u_data.get('ratchet_locked') and len(user_holds) == 0 and (peak_pct_today >= r_start_lb or has_override))
-            is_locked = is_manually_locked or is_ratchet_locked or (len(user_holds) == 0 and day_pct >= r_start_lb and not has_override)
+            is_locked = is_manually_locked or (u_data.get('ratchet_disabled_day')!=today_str and (is_ratchet_locked or (len(user_holds)==0 and day_pct>=r_start_lb and not has_override)))
 
             if has_override:
                 active_floor_val = float(u_data.get('ratchet_floor_override'))
