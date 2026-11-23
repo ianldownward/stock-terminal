@@ -4560,6 +4560,80 @@ def reset_all_profiles():
     portfolio_store.reset_all_profiles_to_5000()
     return jsonify({'status': 'ok'})
 
+@app.route('/api/recon/reset_all', methods=['POST'])
+@login_required
+def reset_recon_all_profiles():
+    caller = (session.get('email') or session.get('user') or '').strip().lower()
+    if caller != PAPER_STATS_ACCOUNT.lower() and not is_admin_session():
+        return jsonify({'status': 'error', 'message': 'Unauthorized: Recon account only.'}), 403
+
+    now_lon = pd.Timestamp.now(tz='Europe/London')
+    today_str = now_lon.strftime('%Y-%m-%d')
+    reset_count = 0
+
+    def _wipe_recon_store(store_obj):
+        nonlocal reset_count
+        if not isinstance(store_obj, dict):
+            return False
+        users_map = store_obj.get('users')
+        if not isinstance(users_map, dict) or not users_map:
+            return False
+        c_broker = store_obj.get('broker') or {}
+        allocs = c_broker.get('allocations') or {}
+        for p_name, ud in users_map.items():
+            if not isinstance(ud, dict):
+                continue
+            start_b = float(ud.get('master_budget') or 1000.0)
+            if start_b <= 0:
+                start_b = 1000.0
+            ud['master_budget'] = start_b
+            ud['initial_positions'] = {}
+            ud['holdings'] = {}
+            ud['history'] = []
+            ud['cooldowns'] = {}
+            ud['notified_signals'] = {}
+            ud['daily_peak_pct'] = 0.0
+            ud['last_ratchet_date'] = today_str
+            ud['ratchet_locked'] = False
+            ud['is_locked'] = False
+            ud['manual_locked_day'] = None
+            ud['ratchet_floor_override'] = None
+            ud['locked_floor_val'] = None
+            for k in allocs:
+                if k == p_name.lower() or k in p_name.lower() or p_name.lower() in k:
+                    allocs[k]['budget'] = start_b
+            reset_count += 1
+        return True
+
+    with portfolio_store.trade_lock:
+        c_store = portfolio_store.get_client_store(PAPER_STATS_ACCOUNT)
+        if _wipe_recon_store(c_store):
+            portfolio_store.save_client_store(PAPER_STATS_ACCOUNT, c_store)
+            c_broker = c_store.get('broker') or {}
+            if c_broker.get('api_key') and c_broker.get('secret_key') and c_broker.get('mode', 'paper') == 'paper':
+                threading.Thread(
+                    target=alpaca_cancel_and_liquidate,
+                    args=(str(c_broker['api_key']).strip(), str(c_broker['secret_key']).strip(), 'paper'),
+                    daemon=True
+                ).start()
+
+        # Also sync the live production database if triggered while testing on staging
+        recon_db_name = os.environ.get('RECON_MONGO_DB', 'stock_terminal')
+        if portfolio_store.client and recon_db_name != MONGO_DB_NAME:
+            try:
+                prod_col = portfolio_store.client[recon_db_name]['accounts']
+                prod_doc = prod_col.find_one({"_id": f"client_{PAPER_STATS_ACCOUNT.lower()}"})
+                if not prod_doc:
+                    prod_doc = prod_col.find_one({"username": {"$regex": f"^{re.escape(PAPER_STATS_ACCOUNT)}$", "$options": "i"}})
+                if prod_doc and isinstance(prod_doc.get('portfolio'), dict):
+                    prod_store = prod_doc['portfolio']
+                    if _wipe_recon_store(prod_store):
+                        prod_col.update_one({"_id": prod_doc["_id"]}, {"$set": {"portfolio": prod_store}})
+            except Exception as ex_r:
+                print(f"[RECON PROD SYNC RESET ERROR]: {ex_r}")
+
+    return jsonify({'status': 'ok', 'profiles_reset': reset_count})
+
 @app.route('/api/drawings', methods=['GET'])
 def get_drawings_route():
     ticker = request.args.get('ticker', '').strip().upper()
@@ -7108,7 +7182,7 @@ def api_update_password():
 def get_strategy_stats():
     default_stats = {
         'Vector Hybrid': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
-        'Apex Precision': {'win_rate': '72.0%', 'profit_factor': '3.85', 'daily_pace': '+1.42%'},
+        'Apex Precision': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'Velocity Pulse': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'Pulse 1M Reversal': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'Micro-Shelf 1M': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
