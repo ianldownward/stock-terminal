@@ -1947,6 +1947,11 @@ class MarketScoringEngine:
                     return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': 'OVERNIGHT SWEEP: Liquidating to 100% cash.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
                 if pnl_ec <= -0.45:
                     return {'type': 'EMA Cross Hard Stop', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': f"HARD STOP (-0.45%) {pnl_ec_str}: Cut whipsaw before 21-EMA lag bleed.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Hard Stop (-0.45%)', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(-0.45% Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"-0.45% Stop {pnl_ec_str}"}
+                if peak_pnl_ec >= 2.50:
+                    ec_floor_pct = round(int(peak_pnl_ec * 2) / 2.0, 2)
+                    ec_floor_px = avg_buy_price * (1.0 + (ec_floor_pct / 100.0))
+                    if current_price <= ec_floor_px:
+                        return {'type': 'EMA Cross Step Ratchet', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': f"STEP RATCHET FLOOR BANKED (+{ec_floor_pct:.2f}%). Peak was +{peak_pnl_ec:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': f"{ec_floor_pct:.1f}% Floor Banked", 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': f'(Bank +{ec_floor_pct:.1f}%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"Banked (+{pnl_ec:.2f}%)"}
                 if peak_pnl_ec >= 0.45 and pnl_ec <= 0.12:
                     return {'type': 'EMA Cross BE Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_ec:.2f}%", 'reason': f"BREAKEVEN LOCK {pnl_ec_str}: Protected +0.12% floor after +{peak_pnl_ec:.2f}% peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'BE Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(BE Lock)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 90, 'health_color': '#0ecb81', 'health_text': f"BE Lock {pnl_ec_str}"}
                 if live_e9 < live_e21:
@@ -2604,13 +2609,13 @@ def process_auto_profile(prof_name, client_email=None):
         CIRCUIT_BREAKER_PCT = -2.00 if is_ema_cross_risk else (-5.00 if is_p1m_risk else -2.50)
         circuit_breaker_tripped = (daily_pnl_pct <= CIRCUIT_BREAKER_PCT)
 
-        # TOTAL DAILY ACCOUNT STEP-RATCHET (+5.0% start & +5.0% steps for Pulse 1M Reversal; +2.5% start & +0.5% steps for 5m bots)
+        # TOTAL DAILY ACCOUNT STEP-RATCHET (+5.0% start & +5.0% steps for Pulse 1M Reversal; +2.5% start & +0.5% steps for 5m bots & EMA Cross 9/21)
         r_start_pct = 5.00 if is_p1m_risk else 2.50
         r_step_pct = 5.00 if is_p1m_risk else 0.50
         r_clear_buf = 5.10 if is_p1m_risk else 0.60
         force_daily_floor_sell = False
         daily_floor_locked = 0.0
-        if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s']):
+        if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s', 'ema cross']):
             if ud.get('last_ratchet_date') != today_str:
                 ud['last_ratchet_date'] = today_str
                 ud['daily_peak_pct'] = 0.0
