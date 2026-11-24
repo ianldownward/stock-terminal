@@ -1867,9 +1867,9 @@ class MarketScoringEngine:
                 snp_body_pct = ((snp_c - snp_o) / snp_o * 100.0) if snp_o > 0 else 0.0
                 snp_range = max(0.0001, snp_h - snp_l)
                 snp_close_pos = (snp_c - snp_l) / snp_range
-                trend_up = (e9_now > e21_now) and (e9_now > e9_prev * 1.0003)
-                dipped_9 = (dip_c < dip_o) and (dip_body_pct >= 0.15) and (dip_l <= e9_prev * 1.0025) and (dip_c > e21_now)
-                snapped_9 = (snp_c > snp_o) and (snp_body_pct >= 0.15) and (snp_close_pos >= 0.65) and (snp_c > e9_now) and (snp_c >= dip_o) and (current_price >= snp_c * 0.9990)
+                trend_up = (e9_now > e21_now) and (e9_now > e9_prev * 1.0002)
+                dipped_9 = (dip_c < dip_o) and (dip_body_pct >= 0.10) and (dip_l <= e9_prev * 1.0025) and (dip_c > e21_now)
+                snapped_9 = (float(src_1m['Close'].iloc[-1]) >= float(src_1m['Open'].iloc[-1])) and (snp_c > snp_o) and (snp_body_pct >= 0.12) and (snp_close_pos >= 0.60) and (snp_c > e9_now) and (snp_c >= dip_o) and (current_price >= snp_c * 0.9990)
                 if trend_up and dipped_9 and snapped_9:
                     snap_pct = ((snp_c - snp_o) / snp_o * 100.0) if snp_o > 0 else 0.0
                     buy_score = min(98, max(76, round(80 + snap_pct * 22)))
@@ -1894,16 +1894,16 @@ class MarketScoringEngine:
         r2_body = b_r2_o - b_r2_c
         g1_body = b_g1_c - b_g1_o
 
-        red1_ok = (b_r1_c < b_r1_o) and (r1_body > 0)
+        red1_ok = (b_r1_c < b_r1_o) and (r1_body >= b_r1_o * 0.0012)
         red2_ok = (b_r2_c < b_r2_o) and (0 < r2_body < r1_body)
-        grn1_ok = (b_g1_c > b_g1_o) and (g1_body > 0) and (current_price >= b_g1_c * 0.9990)
+        grn1_ok = (float(src_1m['Close'].iloc[-1]) >= float(src_1m['Open'].iloc[-1])) and (b_g1_c > b_g1_o) and (g1_body >= b_g1_o * 0.0012) and (b_g1_c > b_r2_o) and (current_price >= b_g1_c * 0.9990)
 
         e9_1m_s = closed_src['Close'].ewm(span=9, adjust=False).mean()
         e21_1m_s = closed_src['Close'].ewm(span=21, adjust=False).mean()
         e9_1m_val = float(e9_1m_s.iloc[-1]) if len(e9_1m_s) >= 1 else current_price
         e21_1m_val = float(e21_1m_s.iloc[-1]) if len(e21_1m_s) >= 1 else current_price
         uptrend_pullback_ok = (e9_1m_val > e21_1m_val) and (current_price > e21_1m_val) and (b_g1_c > e9_1m_val * 0.9985)
-        meaningful_green_snap = (g1_body >= r2_body * 0.65)
+        meaningful_green_snap = (g1_body >= r2_body * 0.80)
 
         if red1_ok and red2_ok and grn1_ok and meaningful_green_snap and uptrend_pullback_ok:
             bounce_pct = ((b_g1_c - b_g1_o) / b_g1_o * 100.0) if b_g1_o > 0 else 0.0
@@ -1979,7 +1979,7 @@ class MarketScoringEngine:
                 closes_5m_ec.iloc[-1] = float(current_price)
             e9_5m = float(closes_5m_ec.ewm(span=9, adjust=False).mean().iloc[-1])
             e21_5m = float(closes_5m_ec.ewm(span=21, adjust=False).mean().iloc[-1])
-            if e9_5m <= e21_5m:
+            if e9_5m <= e21_5m or e9_5m <= float(closes_5m_ec.ewm(span=9, adjust=False).mean().iloc[-2]):
                 return {'type': 'EMA Cross 9/21', 'score': 18, 'tranches': 0, 'discount': f"{pct_chg_ec:.2f}%", 'reason': f"5m Trend Blocked: {ticker} 5m 9-EMA (${e9_5m:.2f}) below 21-EMA (${e21_5m:.2f}) — skipping counter-trend bounce.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '5m Trend Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(5m Trend < 21)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_ec, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '5m Trend Blocked'}
 
             # 2. Fresh Closed-Bar 1m Crossover Check with Anti-Kiss Separation Buffer (>= +0.04%):
@@ -1992,7 +1992,7 @@ class MarketScoringEngine:
             c1_open = float(closed_ec['Open'].iloc[-1])
             c1_close = float(closed_ec['Close'].iloc[-1])
 
-            MIN_CROSS_SEP_PCT = 0.04  # Requires >= +0.04% clean piercing separation above 21-EMA (blocks tangent kisses)
+            MIN_CROSS_SEP_PCT = 0.08  # Requires >= +0.08% clean piercing separation above 21-EMA (blocks tangent kisses)
             closed_sep_pct = ((e9_c1 - e21_c1) / e21_c1 * 100.0) if e21_c1 > 0 else 0.0
             prev_sep_pct = ((e9_c2 - e21_c2) / e21_c2 * 100.0) if e21_c2 > 0 else 0.0
 
@@ -2222,7 +2222,7 @@ class MarketScoringEngine:
 
         reg_score = regime.get('score', 50) if isinstance(regime, dict) else 50
         intraday_session_gain = ((current_price - float(today_s5['Open'].iloc[0])) / float(today_s5['Open'].iloc[0]) * 100.0) if ('Open' in df_5m.columns and 'today_s5' in locals() and not today_s5.empty and float(today_s5['Open'].iloc[0]) > 0) else 0.0
-        if is_inverse and reg_score > 45 and intraday_session_gain < 0.90:
+        if is_inverse and reg_score > 52 and intraday_session_gain < 0.50 and not (ema9 > ema21 and ema9 > prev_ema9):
             return {'type': 'Intraday Momentum', 'score': 20, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"SQQQ blocked: Macro sentiment ({reg_score}/100) not in cooling/bear regime (≤45 required).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Regime Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Inverse Blocked)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
         # ENTRY LOGIC: Rising 9/21-EMA Alignment + Session-High / 1H-Shelf Breakout Confirmation
@@ -2248,6 +2248,8 @@ class MarketScoringEngine:
         session_high = float(today_s5['High'].iloc[:-1].max()) if ('High' in df_5m.columns and 'today_s5' in locals() and len(today_s5) >= 2) else prior_high_12
         below_session_high_pct = ((session_high - current_price) / session_high * 100.0) if session_high > 0 else 0.0
         breaks_1h_shelf = (prior_high_12 > 0 and current_price > prior_high_12)
+        prior_high_6 = float(today_s5['High'].iloc[:-1].tail(6).max()) if ('High' in df_5m.columns and 'today_s5' in locals() and len(today_s5) >= 2) else (float(df_5m['High'].iloc[-7:-1].max()) if 'High' in df_5m.columns and len(df_5m) >= 7 else prior_high_12)
+        breaks_30m_shelf = (prior_high_6 > 0 and current_price > prior_high_6 * 1.0005)
 
         at_double_top = (
             prior_high_12 > 0
@@ -2318,10 +2320,10 @@ class MarketScoringEngine:
         # - Apex Precision: 1H-Shelf / Range Breakout sniper (Price > prior_high_12 + rising EMAs)
         # - Velocity Pulse: 9-EMA Pullback Bounce scalper (uptrend pullback within 0.45% of 9-EMA bouncing green)
         dist_from_ema9_pct = abs((current_price - ema9) / ema9 * 100.0) if ema9 > 0 else 9.9
-        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 1.25) and (not breaks_1h_shelf) and (not has_cap_vreversal) and (not has_arch_reclaim)
+        in_lower_high_trap = is_3x_etf and (below_session_high_pct > 1.25) and (not breaks_1h_shelf) and (not breaks_30m_shelf) and (not has_cap_vreversal) and (not has_arch_reclaim)
 
         if 'apex' in prof:
-            has_ema_trend = post_open_ready and (ema9 > ema21) and ema_rising and (current_price > ema9) and bar_is_green and (breaks_1h_shelf or below_session_high_pct <= 0.25)
+            has_ema_trend = post_open_ready and (ema9 > ema21) and ema_rising and (current_price > ema9) and bar_is_green and (breaks_30m_shelf or breaks_1h_shelf)
         elif any(x in prof for x in ['velocity', 'pulse']):
             has_ema_trend = post_open_ready and (ema9 > ema21) and (ema9 >= prev_ema9) and (current_price > ema9) and bar_is_green and (dist_from_ema9_pct <= 0.45)
         else:
@@ -2362,7 +2364,8 @@ class MarketScoringEngine:
             if 'apex' in prof:
                 # Apex Precision: Institutional Volume Breakout Sniper (requires >=1.05x vol or 1H shelf break)
                 max_extension = (0.85 if late_chop_window else 1.75) if is_3x_etf else 0.45
-                if vol_ratio < 1.05 and not breaks_1h_shelf:
+                max_extension = (1.35 if late_chop_window else 2.10) if is_3x_etf else 0.45
+                if vol_ratio < 0.85 and not breaks_1h_shelf:
                     return {'type': 'Intraday Momentum', 'score': 46, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Apex Volume Gate: Current bar volume ({vol_ratio:.1f}x) below 1.05x breakout requirement.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting 1.05x Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
             elif any(x in prof for x in ['velocity', 'pulse']):
                 # Velocity Pulse: Crisp RSI 50-76 Momentum Scalper (+0.95% quick take-profit)
@@ -2386,11 +2389,11 @@ class MarketScoringEngine:
                 return {'type': 'Intraday Momentum', 'score': 40, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"E12 Momentum Filter: RSI ({rsi:.1f}) below 50. Entry blocked.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low RSI Filter', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(RSI < 50)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # Relative volume & range-chop filter (uses current bar volume pace so stale prior-bar spikes don't trigger stalled entries)
-            if any(x in prof for x in ['apex', 'test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 0.95:
+            if any(x in prof for x in ['test e6', 'test e7', 'test e17', 'test e22', 'test e23', 'test e24', 'test e25', 'test e26', 'test e27', 'test e28', 'test tq', 'test s2', 'test m']) and vol_ratio < 0.95:
                 return {'type': 'Intraday Momentum', 'score': 45, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"EMA Surge set, but Current Bar Volume ({vol_ratio:.1f}x) below 0.95x threshold.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # Light chop filter: only block dead-volume (<0.55x) flat sideways drift
-            if vol_ratio < 0.55 and not breaks_1h_shelf and not has_arch_reclaim:
+            if vol_ratio < 0.75 and not breaks_1h_shelf and not breaks_30m_shelf and not has_arch_reclaim:
                 return {'type': 'Intraday Momentum', 'score': 42, 'tranches': 0, 'discount': f"{pct_change_5d:.2f}%", 'reason': f"Low Volume Chop Filter: Volume ({vol_ratio:.1f}x) below 0.55x minimum.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Low Volume', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Low Vol)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
             # 14:30 - 14:50 UK is governed exclusively by evaluate_opening_window() above
@@ -2891,7 +2894,7 @@ def process_auto_profile(prof_name, client_email=None):
             is_curfew_active = True
 
         # Post-Sell Cooldown: 60s (1 candle) for EMA Cross 9/21 & 1m bots; 15 mins (900s) for other 5m profiles
-        cd_duration = 60 if (is_ema_cross_prof or is_pulse_1m_prof) else 900
+        cd_duration = (180 if (len(hist) >= 2 and hist[0].get('action') == 'sell' and any(b.get('ticker') == hist[0].get('ticker') and b.get('action') == 'buy' and float(hist[0].get('price') or 0) < float(b.get('price') or 0) for b in hist[1:4])) else 60) if (is_ema_cross_prof or is_pulse_1m_prof) else 900
         real_hist_for_cd = [h for h in hist if h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']]
         if real_hist_for_cd and real_hist_for_cd[0].get('action') == 'SELL':
             if (time.time() - real_hist_for_cd[0].get('timestamp', 0)) < cd_duration:
@@ -3416,7 +3419,7 @@ def reconcile_single_target(target):
                     latest_buy_tr = next((h for h in hist if h.get('ticker') == symbol and h.get('action') == 'BUY'), None)
                     latest_buy_ts = int(latest_buy_tr.get('timestamp') or 0) if latest_buy_tr else 0
                     is_fresh_buy = (latest_buy_ts > 0 and (int(time.time()) - latest_buy_ts) < 45)
-                    if current_shares > 0 and not already_logged and not is_fresh_buy:
+                    if current_shares > 0 and not already_logged and not is_fresh_buy and (latest_buy_ts == 0 or order_ts == 0 or order_ts >= (latest_buy_ts - 15)):
                         portfolio_store.execute_trade(
                             ticker=symbol,
                             action_type='SELL',
@@ -5548,7 +5551,7 @@ def get_data():
             h for h in hist
             if h.get('ticker') and h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
         ]
-        cd_total_guard = 60 if ('ema cross' in active_profile or engine._is_1m_family(active_profile)) else 900
+        cd_total_guard = (180 if (len(real_hist_guard) >= 2 and real_hist_guard[0].get('action') == 'sell' and any(b.get('ticker') == real_hist_guard[0].get('ticker') and b.get('action') == 'buy' and float(real_hist_guard[0].get('price') or 0) < float(b.get('price') or 0) for b in real_hist_guard[1:4])) else 60) if ('ema cross' in active_profile or engine._is_1m_family(active_profile)) else 900
         cd_15m_rem = 0
         if real_hist_guard and real_hist_guard[0].get('action') == 'SELL':
             last_sell_ts = int(real_hist_guard[0].get('timestamp') or 0)
@@ -6968,7 +6971,7 @@ def get_watchlist_scanner():
 
                 st = engine.score_momentum(df, cur, avg_buy_price=avg_p, highest_price=high_p, profile=active_profile.lower(), regime=regime, overnight_sweep=bool(ud.get('overnight_sweep', True)), buy_timestamp=buy_ts_s)
                 
-                trail_pct = 0.65 if any(x in active_profile.lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
+                trail_pct = 1.15 if 'vector' in active_profile.lower() else (1.05 if 'apex' in active_profile.lower() else 0.85)
                 stop_price = high_p * (1.0 - (trail_pct / 100.0))
                 
                 p1m_snap = engine.get_pulse_1m_snapshot(tick, hist=hist, current_price=cur, profile=active_profile) if is_p1m_active else None
@@ -7084,7 +7087,7 @@ def get_watchlist_scanner():
             cur = float(df['Close'].iloc[-1])
             st = engine.score_momentum(df, cur, avg_buy_price=p['avg_price'], highest_price=p['high_water'], profile=p['user'].lower(), regime=regime)
             
-            trail_pct = 0.65 if any(x in p['user'].lower() for x in ['velocity', 'pulse', 'test s']) else 0.75
+            trail_pct = 1.15 if 'vector' in p['user'].lower() else (1.05 if 'apex' in p['user'].lower() else 0.85)
             stop_price = p['high_water'] * (1.0 - (trail_pct / 100.0))
             
             results.append({
