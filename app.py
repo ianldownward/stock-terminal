@@ -555,7 +555,7 @@ class PortfolioManager:
             'notified_signals': {},
             'settings': {
                 'period': '1d', 
-                'interval': '1m' if any(x in prof for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test s', 'test r', 'test tqm']) else '5m',
+                'interval': '1m' if any(x in prof for x in ['1m reversal', 'pulse 1m', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'ema squeeze', 'test s', 'test r', 'test tqm']) else '5m',
                 'style': 'candlestick', 
                 'refresh': '10000', 
                 'ntfy_topic': ''
@@ -1922,6 +1922,119 @@ class MarketScoringEngine:
         if self._is_1m_family(prof):
             return self.score_pulse_1m_reversal(ticker, current_price, avg_buy_price=avg_buy_price, highest_price=highest_price, regime=regime, overnight_sweep=overnight_sweep, buy_timestamp=buy_timestamp, variant=self._get_1m_variant(prof))
 
+        if 'ema squeeze' in prof:
+            is_inverse_sq = ticker in ['sqqq', '3sus.l']
+            trade_type_sq = 'short' if is_inverse_sq else 'long'
+            df_sq_1m = fetch_yf_data(ticker, "1d", "1m") if ticker else df_5m
+            if df_sq_1m is none or df_sq_1m.empty or len(df_sq_1m) < 23:
+                df_sq_5d = fetch_yf_data(ticker, "5d", "1m") if ticker else df_5m
+                if df_sq_5d is not none and not df_sq_5d.empty:
+                    df_sq_1m = df_sq_5d
+            if df_sq_1m is none or df_sq_1m.empty or len(df_sq_1m) < 23:
+                return {'type': 'ema squeeze 9/21', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'awaiting 1m candle history for 9/21 ema squeeze.', 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'awaiting data', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(awaiting data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'no data'}
+
+            now_uk_sq = pd.timestamp.now(tz='europe/london')
+            pct_chg_sq = ((current_price - float(df_sq_1m['close'].iloc[0])) / float(df_sq_1m['close'].iloc[0])) * 100.0 if float(df_sq_1m['close'].iloc[0]) > 0 else 0.0
+
+            closes_sq = df_sq_1m['close'].astype(float).copy()
+            if current_price > 0:
+                closes_sq.iloc[-1] = float(current_price)
+            e9_s_sq = closes_sq.ewm(span=9, adjust=false).mean()
+            e21_s_sq = closes_sq.ewm(span=21, adjust=false).mean()
+            live_e9_sq = float(e9_s_sq.iloc[-1])
+            live_e21_sq = float(e21_s_sq.iloc[-1])
+            spread_diff_sq = live_e9_sq - live_e21_sq
+            spread_pct_sq = ((live_e9_sq - live_e21_sq) / live_e21_sq * 100.0) if live_e21_sq > 0 else 0.0
+
+            if avg_buy_price > 0:
+                pnl_sq = ((current_price - avg_buy_price) / avg_buy_price) * 100.0
+                pnl_sq_str = f"({'+' if pnl_sq >= 0 else ''}{pnl_sq:.2f}%)"
+                eff_high_sq = max(float(highest_price or 0.0), float(current_price or 0.0), float(avg_buy_price))
+                peak_pnl_sq = ((eff_high_sq - avg_buy_price) / avg_buy_price) * 100.0
+
+                closed_e9_sq = e9_s_sq.iloc[:-1]
+                closed_e21_sq = e21_s_sq.iloc[:-1]
+                c_sp_now = float(closed_e9_sq.iloc[-1] - closed_e21_sq.iloc[-1]) if len(closed_e9_sq) >= 1 else spread_diff_sq
+                c_sp_prev = float(closed_e9_sq.iloc[-2] - closed_e21_sq.iloc[-2]) if len(closed_e9_sq) >= 2 else c_sp_now
+                c_sp_prev2 = float(closed_e9_sq.iloc[-3] - closed_e21_sq.iloc[-3]) if len(closed_e9_sq) >= 3 else c_sp_prev
+                peak_sp_sq = max([spread_diff_sq, c_sp_now, c_sp_prev, c_sp_prev2, 0.0])
+
+                if overnight_sweep and now_uk_sq.hour == 20 and now_uk_sq.minute >= 50:
+                    return {'type': 'eod sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': 'overnight sweep: liquidating to 100% cash.', 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'overnight sweep', 'color': '#ff9900', 'action_main': 'sell', 'action_sub': '(overnight sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'overnight sweep'}
+                if pnl_sq <= -0.45:
+                    return {'type': 'ema squeeze hard stop', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"hard stop (-0.45%) {pnl_sq_str}: cut early reversal before squeeze.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'hard stop (-0.45%)', 'color': '#ff5364', 'action_main': 'sell', 'action_sub': '(-0.45% stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"-0.45% stop {pnl_sq_str}"}
+                if peak_pnl_sq >= 2.50:
+                    sq_floor_pct = round(int(peak_pnl_sq * 2) / 2.0, 2)
+                    sq_floor_px = avg_buy_price * (1.0 + (sq_floor_pct / 100.0))
+                    if current_price <= sq_floor_px:
+                        return {'type': 'ema squeeze step ratchet', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"step ratchet floor banked (+{sq_floor_pct:.2f}%). peak was +{peak_pnl_sq:.2f}%.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': f"{sq_floor_pct:.1f}% floor banked", 'color': '#0ecb81', 'action_main': 'sell', 'action_sub': f'(bank +{sq_floor_pct:.1f}%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"banked (+{pnl_sq:.2f}%)"}
+                if live_e9_sq < live_e21_sq:
+                    return {'type': 'ema squeeze 9/21', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"orange below purple {pnl_sq_str}: 9-ema (${live_e9_sq:.2f}) crossed below 21-ema (${live_e21_sq:.2f}).", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '9<21 cross exit', 'color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'action_main': 'sell', 'action_sub': '(9<21 cross)', 'action_color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'health_text': f"9<21 cross {pnl_sq_str}"}
+
+                min_squeeze_margin = max(0.03, current_price * 0.0007)
+                squeezed_2_bars = (peak_sp_sq >= min_squeeze_margin) and (c_sp_now < c_sp_prev) and (c_sp_prev < c_sp_prev2) and (c_sp_now <= peak_sp_sq * 0.65)
+                live_squeezing_out = squeezed_2_bars and (spread_diff_sq <= c_sp_now * 1.02) and (current_price > avg_buy_price * 1.0005)
+                if live_squeezing_out:
+                    shrink_pct = ((peak_sp_sq - max(0.0, spread_diff_sq)) / peak_sp_sq * 100.0) if peak_sp_sq > 0 else 0.0
+                    return {'type': 'ema squeeze exit', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"squeeze harvest {pnl_sq_str}: gap shrunk -{shrink_pct:.0f}% (${peak_sp_sq:.2f} -> ${max(0.0, spread_diff_sq):.2f}) above entry (${avg_buy_price:.2f}).", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'squeeze banked', 'color': '#0ecb81', 'action_main': 'sell', 'action_sub': '(squeeze bank)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"squeeze bank {pnl_sq_str}"}
+
+                squeeze_ratio = (max(0.0, spread_diff_sq) / peak_sp_sq) if peak_sp_sq > 0 else 1.0
+                sq_health = int(max(10, min(100, squeeze_ratio * 100)))
+                return {'type': 'ema squeeze 9/21', 'score': 85, 'tranches': 1, 'discount': f"{pnl_sq:.2f}%", 'reason': f"riding squeeze {pnl_sq_str}: gap ${spread_diff_sq:.2f} (peak ${peak_sp_sq:.2f}) • watching for 2-bar squeeze above entry.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'riding gap', 'color': '#0ecb81', 'action_main': 'hold / wait', 'action_sub': '(riding gap)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': sq_health, 'health_color': '#0ecb81' if sq_health >= 50 else '#ff9900', 'health_text': f"gap ${spread_diff_sq:.2f} {pnl_sq_str}"}
+
+            if overnight_sweep and now_uk_sq.hour == 20 and now_uk_sq.minute >= 50:
+                return {'type': 'eod sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': 'overnight sweep: blocking new entries before close.', 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'eod block active', 'color': '#ff9900', 'action_main': 'hold / wait', 'action_sub': '(eod blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'eod blocked'}
+
+            df_5m_sq = df_5m if (df_5m is not none and not df_5m.empty and len(df_5m) >= 21) else (fetch_yf_data(ticker, "5d", "5m") if ticker else pd.dataframe())
+            if df_5m_sq is none or df_5m_sq.empty or len(df_5m_sq) < 21:
+                return {'type': 'ema squeeze 9/21', 'score': 10, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': 'awaiting 5m trend history for 9/21 ema filter.', 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'awaiting 5m trend', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(5m data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'scanning...'}
+
+            closes_5m_sq = df_5m_sq['close'].astype(float).copy()
+            if current_price > 0:
+                closes_5m_sq.iloc[-1] = float(current_price)
+            e9_5m_sq = float(closes_5m_sq.ewm(span=9, adjust=false).mean().iloc[-1])
+            e21_5m_sq = float(closes_5m_sq.ewm(span=21, adjust=false).mean().iloc[-1])
+            if e9_5m_sq <= e21_5m_sq or e9_5m_sq <= float(closes_5m_sq.ewm(span=9, adjust=false).mean().iloc[-2]):
+                return {'type': 'ema squeeze 9/21', 'score': 18, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"5m trend blocked: {ticker} 5m 9-ema (${e9_5m_sq:.2f}) below 21-ema (${e21_5m_sq:.2f}).", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '5m trend blocked', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(5m trend < 21)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '5m trend blocked'}
+
+            closed_sq = df_sq_1m.iloc[:-1]
+            e9_c_sq = closed_sq['close'].astype(float).ewm(span=9, adjust=false).mean()
+            e21_c_sq = closed_sq['close'].astype(float).ewm(span=21, adjust=false).mean()
+            e9_c1_sq, e21_c1_sq = float(e9_c_sq.iloc[-1]), float(e21_c_sq.iloc[-1])
+            e9_c2_sq, e21_c2_sq = float(e9_c_sq.iloc[-2]), float(e21_c_sq.iloc[-2])
+            c1_open_sq = float(closed_sq['open'].iloc[-1])
+            c1_close_sq = float(closed_sq['close'].iloc[-1])
+
+            min_sq_sep_pct = 0.08
+            closed_sep_sq = ((e9_c1_sq - e21_c1_sq) / e21_c1_sq * 100.0) if e21_c1_sq > 0 else 0.0
+            prev_sep_sq = ((e9_c2_sq - e21_c2_sq) / e21_c2_sq * 100.0) if e21_c2_sq > 0 else 0.0
+
+            fresh_cross_sq = (
+                (closed_sep_sq >= min_sq_sep_pct)
+                and (prev_sep_sq < min_sq_sep_pct)
+                and (e9_c1_sq > e9_c2_sq)
+                and (c1_close_sq > c1_open_sq)
+                and (c1_close_sq > e9_c1_sq)
+                and (spread_pct_sq >= min_sq_sep_pct)
+                and (live_e9_sq >= e9_c1_sq)
+                and (current_price > live_e9_sq)
+            )
+            if fresh_cross_sq:
+                buy_sc_sq = min(98, max(78, round(80 + spread_pct_sq * 25)))
+                return {'type': 'ema squeeze 9/21', 'score': buy_sc_sq, 'tranches': 1, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"fresh 9>21 squeeze entry: closed green 1m bar pierced 9-ema (${e9_c1_sq:.2f}) +{closed_sep_sq:.2f}% above 21-ema (${e21_c1_sq:.2f}).", 'is_smart': true, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.02, 2), 'status': 'fresh 9>21 cross', 'color': '#0ecb81', 'action_main': 'buy', 'action_sub': '(fresh 9>21 cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': 'fresh 9>21 cross'}
+
+            if closed_sep_sq >= min_sq_sep_pct and prev_sep_sq >= min_sq_sep_pct:
+                return {'type': 'ema squeeze 9/21', 'score': 45, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"trend in progress: 1m 9-ema (${live_e9_sq:.2f}) +{spread_pct_sq:.2f}% above 21-ema (${live_e21_sq:.2f}) — awaiting fresh cross reset.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'awaiting reset', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(awaiting reset)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'awaiting reset'}
+
+            if 0.0 <= spread_pct_sq < min_sq_sep_pct or 0.0 <= closed_sep_sq < min_sq_sep_pct:
+                return {'type': 'ema squeeze 9/21', 'score': 50, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"ema kiss filter: 9-ema (${live_e9_sq:.2f}) near 21-ema (${live_e21_sq:.2f}) [{spread_pct_sq:+.2f}% < +0.08% min].", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'ema kiss filtered', 'color': '#ff9900', 'action_main': 'hold / wait', 'action_sub': '(kiss filtered)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'kiss filtered'}
+
+            if spread_pct_sq >= min_sq_sep_pct:
+                return {'type': 'ema squeeze 9/21', 'score': 60, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"confirming 1m cross: live 9-ema (${live_e9_sq:.2f}) +{spread_pct_sq:.2f}% > 21-ema (${live_e21_sq:.2f}) — awaiting closed green 1m bar.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'confirming cross', 'color': '#ffd400', 'action_main': 'hold / wait', 'action_sub': '(1m confirm)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'confirming cross'}
+
+            wait_sc_sq = max(5, min(55, round(55 + spread_pct_sq * 40)))
+            return {'type': 'ema squeeze 9/21', 'score': wait_sc_sq, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"5m uptrend active: awaiting fresh 1m 9-ema (${live_e9_sq:.2f}) cross above 21-ema (${live_e21_sq:.2f}) [gap: {spread_pct_sq:+.2f}%].", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'awaiting 9>21 cross', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(9<21 ema)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'scanning...'}
+
         if 'ema cross' in prof:
             is_inverse_ec = ticker in ['SQQQ', '3SUS.L']
             trade_type_ec = 'SHORT' if is_inverse_ec else 'LONG'
@@ -2501,7 +2614,7 @@ def process_auto_profile(prof_name, client_email=None):
         engine = MarketScoringEngine()
         active_profile = prof_name.strip().lower()
         
-        is_auto_profile = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_auto_profile = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'ema squeeze', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         if not is_auto_profile: return
 
         # TEST B: PASSIVE BUY-AND-HOLD BENCHMARK
@@ -2615,7 +2728,7 @@ def process_auto_profile(prof_name, client_email=None):
 
         # Maximum allowable daily drawdown (-2.0% for EMA Cross 9/21; -5.0% for 1m bots; -2.5% for other 5m bots)
         is_p1m_risk = engine._is_1m_family(active_profile)
-        is_ema_cross_risk = ('ema cross' in active_profile)
+        is_ema_cross_risk = ('ema cross' in active_profile or 'ema squeeze' in active_profile)
         CIRCUIT_BREAKER_PCT = -2.00 if is_ema_cross_risk else (-5.00 if is_p1m_risk else -2.50)
         circuit_breaker_tripped = (daily_pnl_pct <= CIRCUIT_BREAKER_PCT)
 
@@ -2625,7 +2738,7 @@ def process_auto_profile(prof_name, client_email=None):
         r_clear_buf = 0.60
         force_daily_floor_sell = False
         daily_floor_locked = 0.0
-        if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s', 'ema cross']):
+        if any(x in active_profile for x in ['vector', 'apex', 'velocity', 'pulse', 'tqm', 'tq', 'test s', 'ema cross', 'ema squeeze']):
             if ud.get('last_ratchet_date') != today_str:
                 ud['last_ratchet_date'] = today_str
                 ud['daily_peak_pct'] = 0.0
@@ -2745,7 +2858,7 @@ def process_auto_profile(prof_name, client_email=None):
                 df.name = t
                 cur = float(df['Close'].iloc[-1])
                 is_pulse_1m = engine._is_1m_family(active_profile)
-                if is_pulse_1m or ('ema cross' in active_profile) or (now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
+                if is_pulse_1m or ('ema cross' in active_profile) or ('ema squeeze' in active_profile) or (now_uk.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
                     df_1m_open = fetch_yf_data(t, "1d", "1m")
                     if df_1m_open is not None and not df_1m_open.empty:
                         cand_1m = float(df_1m_open['Close'].iloc[-1])
@@ -2884,7 +2997,7 @@ def process_auto_profile(prof_name, client_email=None):
 
         # DEFENSIVE CHOP SHIELDS & COOLDOWNS FOR ACTIVE FLEET (Exempt 1m bots & EMA Cross 9/21 from curfew/cooldown; keep 3-strike guard on EMA Cross 9/21)
         is_pulse_1m_prof = engine._is_1m_family(active_profile)
-        is_ema_cross_prof = ('ema cross' in active_profile)
+        is_ema_cross_prof = ('ema cross' in active_profile or 'ema squeeze' in active_profile)
         cur_mins = now_uk.hour * 60 + now_uk.minute
         if not is_pulse_1m_prof and not is_ema_cross_prof and cur_mins >= (19 * 60 + 45):
             is_curfew_active = True
@@ -2984,7 +3097,7 @@ def global_background_worker():
             # Priority 1: Primary Live Admin profiles
             for prof_name in list(portfolio_store.data.get('users', {}).keys()):
                 p_lower = prof_name.lower()
-                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'tqm', 'tq', 'test s']):
+                if any(k in p_lower for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'ema squeeze', 'tqm', 'tq', 'test s']):
                     live_admin_tasks.append((prof_name, None))
 
             # Priority 2 & 3: Live Client accounts first, background Recon (ian_paper@gmail.com) strictly last
@@ -2999,7 +3112,7 @@ def global_background_worker():
                         is_recon_acc = (str(c_email or '').strip().lower() == PAPER_STATS_ACCOUNT.lower())
                         for p_name in list(users_dict.keys()):
                             p_low = p_name.lower()
-                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'tqm', 'tq', 'test s']):
+                            if any(k in p_low for k in ['vector', 'apex', 'velocity', 'pulse', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'ema squeeze', 'tqm', 'tq', 'test s']):
                                 if is_recon_acc:
                                     recon_tasks.append((p_name, c_email))
                                 else:
@@ -3032,7 +3145,7 @@ def global_background_worker():
         is_us_open_w = (now_uk_w.weekday() < 5) and ((14 * 60 + 30) <= w_mins < (21 * 60))
         any_live_holds = any(
             isinstance(u_d, dict) and (
-                'ema cross' in str(u_k).lower()
+                ('ema cross' in str(u_k).lower() or 'ema squeeze' in str(u_k).lower())
                 or any(int((v or {}).get('shares') or 0) > 0 for v in (u_d.get('holdings') or {}).values() if isinstance(v, dict))
             )
             for u_k, u_d in (portfolio_store.data.get('users') or {}).items()
@@ -3062,6 +3175,7 @@ def match_bot_from_order_id(client_order_id, profiles):
         if p_clean in coid_clean:
             return p
     # Prefix fallbacks (check 1m strategies before generic 'pulse' so Pulse 1M Reversal never routes to Velocity Pulse)
+    if 'ema_squeeze' in coid_clean or 'emasqueeze' in coid_clean: return 'EMA Squeeze 9/21'
     if 'ema_cross' in coid_clean or 'emacross' in coid_clean: return 'EMA Cross 9/21'
     if 'micro_shelf' in coid_clean or 'microshelf' in coid_clean: return 'Micro-Shelf 1M'
     if 'ema9_snap' in coid_clean or 'ema_9_snap' in coid_clean: return 'EMA-9 Snap 1M'
@@ -4842,8 +4956,8 @@ def get_score():
     try:
         active_profile = portfolio_store.active_username().strip().lower()
         engine = MarketScoringEngine()
-        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
-        is_1m_sc = engine._is_1m_family(active_profile) or ('ema cross' in active_profile) or any(x in active_profile for x in ['test p', 'test t'])
+        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'ema squeeze', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_1m_sc = engine._is_1m_family(active_profile) or ('ema cross' in active_profile) or ('ema squeeze' in active_profile) or any(x in active_profile for x in ['test p', 'test t'])
         interval = "1m" if is_1m_sc else "5m"
         period = "1d" if is_1m_sc else "5d"
         df = fetch_yf_data(t, period if is_momentum else "1y", interval if is_momentum else "1d")
@@ -4887,7 +5001,7 @@ def get_directives():
     dirs = []
     if scan_list:
         regime = engine.check_market_regime()
-        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'ema squeeze', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         
         dfs = {}
         def fetch_t(tick): 
@@ -5012,7 +5126,7 @@ def get_data():
 
         wl = ud.get('watchlist') or ['TQQQ', 'SOXL', 'SQQQ']
         t = request.args.get('t', '').upper().strip()
-        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
+        is_momentum = any(x in active_profile for x in ['vector', 'apex', 'precision', 'velocity', 'pulse', 'hybrid', '1m reversal', 'micro-shelf', 'micro shelf', 'ema-9 snap', 'ema9 snap', 'ema 9 snap', 'ema cross', 'ema squeeze', 'test e', 'test s', 'test tq', 'test r', 'test tqm'])
         is_rotator = is_momentum
 
         hist = ud.get('history') or []
@@ -5446,7 +5560,7 @@ def get_data():
             if df_score is None or df_score.empty: df_score = df
             df_score.name = t
             score_px = last_p
-            if ('ema cross' in active_profile) or (now_lon.weekday() < 5 and now_lon.hour == 14 and 30 <= now_lon.minute < 50):
+            if ('ema cross' in active_profile) or ('ema squeeze' in active_profile) or (now_lon.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
                 df_1m_ui = fetch_yf_data(t, "1d", "1m")
                 if df_1m_ui is not None and not df_1m_ui.empty:
                     score_px = float(df_1m_ui['Close'].iloc[-1])
@@ -5551,7 +5665,7 @@ def get_data():
             h for h in hist
             if h.get('ticker') and h.get('ticker') not in ['CALIBRATION', 'CAPITAL_INJECTION', 'ALPACASYNC']
         ]
-        cd_total_guard = (180 if (len(real_hist_guard) >= 2 and real_hist_guard[0].get('action') == 'sell' and any(b.get('ticker') == real_hist_guard[0].get('ticker') and b.get('action') == 'buy' and float(real_hist_guard[0].get('price') or 0) < float(b.get('price') or 0) for b in real_hist_guard[1:4])) else 60) if ('ema cross' in active_profile or engine._is_1m_family(active_profile)) else 900
+        cd_total_guard = (180 if (len(real_hist_guard) >= 2 and real_hist_guard[0].get('action') == 'sell' and any(b.get('ticker') == real_hist_guard[0].get('ticker') and b.get('action') == 'buy' and float(real_hist_guard[0].get('price') or 0) < float(b.get('price') or 0) for b in real_hist_guard[1:4])) else 60) if ('ema cross' in active_profile or 'ema squeeze' in active_profile or engine._is_1m_family(active_profile)) else 900
         cd_15m_rem = 0
         if real_hist_guard and real_hist_guard[0].get('action') == 'SELL':
             last_sell_ts = int(real_hist_guard[0].get('timestamp') or 0)
@@ -6953,7 +7067,7 @@ def get_watchlist_scanner():
                 df.name = tick
                 cur = float(df['Close'].iloc[-1])
                 is_p1m_active = engine._is_1m_family(active_profile)
-                is_ec_active = ('ema cross' in active_profile.lower())
+                is_ec_active = ('ema cross' in active_profile.lower() or 'ema squeeze' in active_profile.lower())
                 if is_p1m_active or is_ec_active or is_open_win_scan:
                     df_1m_s = fetch_yf_data(tick, "1d", "1m")
                     if df_1m_s is not None and not df_1m_s.empty:
@@ -7302,7 +7416,8 @@ def get_strategy_stats():
         'Pulse 1M Reversal': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'Micro-Shelf 1M': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
         'EMA-9 Snap 1M': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
-        'EMA Cross 9/21': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
+        'EMA Cross 9/21': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0},
+        'EMA Squeeze 9/21': {'win_rate': '0.0% (0W/0L)', 'profit_factor': '0.00', 'daily_pace': '+0.00%', 'trades': 0}
     }
     if not portfolio_store.client:
         return jsonify({'stats': default_stats, 'connected': False, 'account': PAPER_STATS_ACCOUNT, **default_stats})
@@ -7337,6 +7452,7 @@ def get_strategy_stats():
         'Micro-Shelf 1M': ['micro-shelf', 'micro shelf'],
         'EMA-9 Snap 1M': ['ema-9 snap', 'ema9 snap', 'ema 9 snap'],
         'EMA Cross 9/21': ['ema cross'],
+        'EMA Squeeze 9/21': ['ema squeeze'],
         'Vector Hybrid': ['vector'],
         'Apex Precision': ['apex'],
         'Velocity Pulse': ['velocity', 'pulse']
