@@ -1923,24 +1923,24 @@ class MarketScoringEngine:
             return self.score_pulse_1m_reversal(ticker, current_price, avg_buy_price=avg_buy_price, highest_price=highest_price, regime=regime, overnight_sweep=overnight_sweep, buy_timestamp=buy_timestamp, variant=self._get_1m_variant(prof))
 
         if 'ema squeeze' in prof:
-            is_inverse_sq = ticker in ['sqqq', '3sus.l']
-            trade_type_sq = 'short' if is_inverse_sq else 'long'
+            is_inverse_sq = ticker in ['SQQQ', '3SUS.L']
+            trade_type_sq = 'SHORT' if is_inverse_sq else 'LONG'
             df_sq_1m = fetch_yf_data(ticker, "1d", "1m") if ticker else df_5m
-            if df_sq_1m is none or df_sq_1m.empty or len(df_sq_1m) < 23:
+            if df_sq_1m is None or df_sq_1m.empty or len(df_sq_1m) < 23:
                 df_sq_5d = fetch_yf_data(ticker, "5d", "1m") if ticker else df_5m
-                if df_sq_5d is not none and not df_sq_5d.empty:
+                if df_sq_5d is not None and not df_sq_5d.empty:
                     df_sq_1m = df_sq_5d
-            if df_sq_1m is none or df_sq_1m.empty or len(df_sq_1m) < 23:
-                return {'type': 'ema squeeze 9/21', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'awaiting 1m candle history for 9/21 ema squeeze.', 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'awaiting data', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(awaiting data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'no data'}
+            if df_sq_1m is None or df_sq_1m.empty or len(df_sq_1m) < 23:
+                return {'type': 'EMA Squeeze 9/21', 'score': 0, 'tranches': 0, 'discount': '0.00%', 'reason': 'Awaiting 1m candle history for 9/21 EMA squeeze.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Data', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'No Data'}
 
-            now_uk_sq = pd.timestamp.now(tz='europe/london')
-            pct_chg_sq = ((current_price - float(df_sq_1m['close'].iloc[0])) / float(df_sq_1m['close'].iloc[0])) * 100.0 if float(df_sq_1m['close'].iloc[0]) > 0 else 0.0
+            now_uk_sq = pd.Timestamp.now(tz='Europe/London')
+            pct_chg_sq = ((current_price - float(df_sq_1m['Close'].iloc[0])) / float(df_sq_1m['Close'].iloc[0])) * 100.0 if float(df_sq_1m['Close'].iloc[0]) > 0 else 0.0
 
-            closes_sq = df_sq_1m['close'].astype(float).copy()
+            closes_sq = df_sq_1m['Close'].astype(float).copy()
             if current_price > 0:
                 closes_sq.iloc[-1] = float(current_price)
-            e9_s_sq = closes_sq.ewm(span=9, adjust=false).mean()
-            e21_s_sq = closes_sq.ewm(span=21, adjust=false).mean()
+            e9_s_sq = closes_sq.ewm(span=9, adjust=False).mean()
+            e21_s_sq = closes_sq.ewm(span=21, adjust=False).mean()
             live_e9_sq = float(e9_s_sq.iloc[-1])
             live_e21_sq = float(e21_s_sq.iloc[-1])
             spread_diff_sq = live_e9_sq - live_e21_sq
@@ -1960,80 +1960,80 @@ class MarketScoringEngine:
                 peak_sp_sq = max([spread_diff_sq, c_sp_now, c_sp_prev, c_sp_prev2, 0.0])
 
                 if overnight_sweep and now_uk_sq.hour == 20 and now_uk_sq.minute >= 50:
-                    return {'type': 'eod sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': 'overnight sweep: liquidating to 100% cash.', 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'overnight sweep', 'color': '#ff9900', 'action_main': 'sell', 'action_sub': '(overnight sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'overnight sweep'}
+                    return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': 'OVERNIGHT SWEEP: Liquidating to 100% cash.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Overnight Sweep', 'color': '#ff9900', 'action_main': 'SELL', 'action_sub': '(Overnight Sweep)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Overnight Sweep'}
                 if pnl_sq <= -0.45:
-                    return {'type': 'ema squeeze hard stop', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"hard stop (-0.45%) {pnl_sq_str}: cut early reversal before squeeze.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'hard stop (-0.45%)', 'color': '#ff5364', 'action_main': 'sell', 'action_sub': '(-0.45% stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"-0.45% stop {pnl_sq_str}"}
+                    return {'type': 'EMA Squeeze Hard Stop', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"HARD STOP (-0.45%) {pnl_sq_str}: Cut early reversal before squeeze.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Hard Stop (-0.45%)', 'color': '#ff5364', 'action_main': 'SELL', 'action_sub': '(-0.45% Stop)', 'action_color': '#ff5364', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff5364', 'health_text': f"-0.45% Stop {pnl_sq_str}"}
                 if peak_pnl_sq >= 2.50:
                     sq_floor_pct = round(int(peak_pnl_sq * 2) / 2.0, 2)
                     sq_floor_px = avg_buy_price * (1.0 + (sq_floor_pct / 100.0))
                     if current_price <= sq_floor_px:
-                        return {'type': 'ema squeeze step ratchet', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"step ratchet floor banked (+{sq_floor_pct:.2f}%). peak was +{peak_pnl_sq:.2f}%.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': f"{sq_floor_pct:.1f}% floor banked", 'color': '#0ecb81', 'action_main': 'sell', 'action_sub': f'(bank +{sq_floor_pct:.1f}%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"banked (+{pnl_sq:.2f}%)"}
+                        return {'type': 'EMA Squeeze Step Ratchet', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"STEP RATCHET FLOOR BANKED (+{sq_floor_pct:.2f}%). Peak was +{peak_pnl_sq:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': f"{sq_floor_pct:.1f}% Floor Banked", 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': f'(Bank +{sq_floor_pct:.1f}%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"Banked (+{pnl_sq:.2f}%)"}
                 if live_e9_sq < live_e21_sq:
-                    return {'type': 'ema squeeze 9/21', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"orange below purple {pnl_sq_str}: 9-ema (${live_e9_sq:.2f}) crossed below 21-ema (${live_e21_sq:.2f}).", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '9<21 cross exit', 'color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'action_main': 'sell', 'action_sub': '(9<21 cross)', 'action_color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'health_text': f"9<21 cross {pnl_sq_str}"}
+                    return {'type': 'EMA Squeeze 9/21', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"ORANGE BELOW PURPLE {pnl_sq_str}: 9-EMA (${live_e9_sq:.2f}) crossed below 21-EMA (${live_e21_sq:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '9<21 Cross Exit', 'color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'action_main': 'SELL', 'action_sub': '(9<21 Cross)', 'action_color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'health_text': f"9<21 Cross {pnl_sq_str}"}
 
                 min_squeeze_margin = max(0.03, current_price * 0.0007)
                 squeezed_2_bars = (peak_sp_sq >= min_squeeze_margin) and (c_sp_now < c_sp_prev) and (c_sp_prev < c_sp_prev2) and (c_sp_now <= peak_sp_sq * 0.65)
                 live_squeezing_out = squeezed_2_bars and (spread_diff_sq <= c_sp_now * 1.02) and (current_price > avg_buy_price * 1.0005)
                 if live_squeezing_out:
                     shrink_pct = ((peak_sp_sq - max(0.0, spread_diff_sq)) / peak_sp_sq * 100.0) if peak_sp_sq > 0 else 0.0
-                    return {'type': 'ema squeeze exit', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"squeeze harvest {pnl_sq_str}: gap shrunk -{shrink_pct:.0f}% (${peak_sp_sq:.2f} -> ${max(0.0, spread_diff_sq):.2f}) above entry (${avg_buy_price:.2f}).", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'squeeze banked', 'color': '#0ecb81', 'action_main': 'sell', 'action_sub': '(squeeze bank)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"squeeze bank {pnl_sq_str}"}
+                    return {'type': 'EMA Squeeze Exit', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"SQUEEZE HARVEST {pnl_sq_str}: Gap shrunk -{shrink_pct:.0f}% (${peak_sp_sq:.2f} -> ${max(0.0, spread_diff_sq):.2f}) above entry (${avg_buy_price:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Squeeze Banked', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Squeeze Bank)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"Squeeze Bank {pnl_sq_str}"}
 
                 squeeze_ratio = (max(0.0, spread_diff_sq) / peak_sp_sq) if peak_sp_sq > 0 else 1.0
                 sq_health = int(max(10, min(100, squeeze_ratio * 100)))
-                return {'type': 'ema squeeze 9/21', 'score': 85, 'tranches': 1, 'discount': f"{pnl_sq:.2f}%", 'reason': f"riding squeeze {pnl_sq_str}: gap ${spread_diff_sq:.2f} (peak ${peak_sp_sq:.2f}) • watching for 2-bar squeeze above entry.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'riding gap', 'color': '#0ecb81', 'action_main': 'hold / wait', 'action_sub': '(riding gap)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': sq_health, 'health_color': '#0ecb81' if sq_health >= 50 else '#ff9900', 'health_text': f"gap ${spread_diff_sq:.2f} {pnl_sq_str}"}
+                return {'type': 'EMA Squeeze 9/21', 'score': 85, 'tranches': 1, 'discount': f"{pnl_sq:.2f}%", 'reason': f"RIDING SQUEEZE {pnl_sq_str}: Gap ${spread_diff_sq:.2f} (Peak ${peak_sp_sq:.2f}) • Watching for 2-bar squeeze above entry.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Riding Gap', 'color': '#0ecb81', 'action_main': 'HOLD / WAIT', 'action_sub': '(Riding Gap)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': sq_health, 'health_color': '#0ecb81' if sq_health >= 50 else '#ff9900', 'health_text': f"Gap ${spread_diff_sq:.2f} {pnl_sq_str}"}
 
             if overnight_sweep and now_uk_sq.hour == 20 and now_uk_sq.minute >= 50:
-                return {'type': 'eod sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': 'overnight sweep: blocking new entries before close.', 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'eod block active', 'color': '#ff9900', 'action_main': 'hold / wait', 'action_sub': '(eod blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'eod blocked'}
+                return {'type': 'EOD Sweep', 'score': 0, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': 'OVERNIGHT SWEEP: Blocking new entries before close.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EOD Block Active', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(EOD Blocked)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'EOD Blocked'}
 
-            df_5m_sq = df_5m if (df_5m is not none and not df_5m.empty and len(df_5m) >= 21) else (fetch_yf_data(ticker, "5d", "5m") if ticker else pd.dataframe())
-            if df_5m_sq is none or df_5m_sq.empty or len(df_5m_sq) < 21:
-                return {'type': 'ema squeeze 9/21', 'score': 10, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': 'awaiting 5m trend history for 9/21 ema filter.', 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'awaiting 5m trend', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(5m data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'scanning...'}
+            df_5m_sq = df_5m if (df_5m is not None and not df_5m.empty and len(df_5m) >= 21) else (fetch_yf_data(ticker, "5d", "5m") if ticker else pd.DataFrame())
+            if df_5m_sq is None or df_5m_sq.empty or len(df_5m_sq) < 21:
+                return {'type': 'EMA Squeeze 9/21', 'score': 10, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': 'Awaiting 5m trend history for 9/21 EMA filter.', 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting 5m Trend', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(5m Data)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
-            closes_5m_sq = df_5m_sq['close'].astype(float).copy()
+            closes_5m_sq = df_5m_sq['Close'].astype(float).copy()
             if current_price > 0:
                 closes_5m_sq.iloc[-1] = float(current_price)
-            e9_5m_sq = float(closes_5m_sq.ewm(span=9, adjust=false).mean().iloc[-1])
-            e21_5m_sq = float(closes_5m_sq.ewm(span=21, adjust=false).mean().iloc[-1])
-            if e9_5m_sq <= e21_5m_sq or e9_5m_sq <= float(closes_5m_sq.ewm(span=9, adjust=false).mean().iloc[-2]):
-                return {'type': 'ema squeeze 9/21', 'score': 18, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"5m trend blocked: {ticker} 5m 9-ema (${e9_5m_sq:.2f}) below 21-ema (${e21_5m_sq:.2f}).", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '5m trend blocked', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(5m trend < 21)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '5m trend blocked'}
+            e9_5m_sq = float(closes_5m_sq.ewm(span=9, adjust=False).mean().iloc[-1])
+            e21_5m_sq = float(closes_5m_sq.ewm(span=21, adjust=False).mean().iloc[-1])
+            if e9_5m_sq <= e21_5m_sq or e9_5m_sq <= float(closes_5m_sq.ewm(span=9, adjust=False).mean().iloc[-2]):
+                return {'type': 'EMA Squeeze 9/21', 'score': 18, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"5m Trend Blocked: {ticker} 5m 9-EMA (${e9_5m_sq:.2f}) below 21-EMA (${e21_5m_sq:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '5m Trend Blocked', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(5m Trend < 21)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': '5m Trend Blocked'}
 
             closed_sq = df_sq_1m.iloc[:-1]
-            e9_c_sq = closed_sq['close'].astype(float).ewm(span=9, adjust=false).mean()
-            e21_c_sq = closed_sq['close'].astype(float).ewm(span=21, adjust=false).mean()
+            e9_c_sq = closed_sq['Close'].astype(float).ewm(span=9, adjust=False).mean()
+            e21_c_sq = closed_sq['Close'].astype(float).ewm(span=21, adjust=False).mean()
             e9_c1_sq, e21_c1_sq = float(e9_c_sq.iloc[-1]), float(e21_c_sq.iloc[-1])
             e9_c2_sq, e21_c2_sq = float(e9_c_sq.iloc[-2]), float(e21_c_sq.iloc[-2])
-            c1_open_sq = float(closed_sq['open'].iloc[-1])
-            c1_close_sq = float(closed_sq['close'].iloc[-1])
+            c1_open_sq = float(closed_sq['Open'].iloc[-1])
+            c1_close_sq = float(closed_sq['Close'].iloc[-1])
 
-            min_sq_sep_pct = 0.08
+            MIN_SQ_SEP_PCT = 0.08
             closed_sep_sq = ((e9_c1_sq - e21_c1_sq) / e21_c1_sq * 100.0) if e21_c1_sq > 0 else 0.0
             prev_sep_sq = ((e9_c2_sq - e21_c2_sq) / e21_c2_sq * 100.0) if e21_c2_sq > 0 else 0.0
 
             fresh_cross_sq = (
-                (closed_sep_sq >= min_sq_sep_pct)
-                and (prev_sep_sq < min_sq_sep_pct)
+                (closed_sep_sq >= MIN_SQ_SEP_PCT)
+                and (prev_sep_sq < MIN_SQ_SEP_PCT)
                 and (e9_c1_sq > e9_c2_sq)
                 and (c1_close_sq > c1_open_sq)
                 and (c1_close_sq > e9_c1_sq)
-                and (spread_pct_sq >= min_sq_sep_pct)
+                and (spread_pct_sq >= MIN_SQ_SEP_PCT)
                 and (live_e9_sq >= e9_c1_sq)
                 and (current_price > live_e9_sq)
             )
             if fresh_cross_sq:
                 buy_sc_sq = min(98, max(78, round(80 + spread_pct_sq * 25)))
-                return {'type': 'ema squeeze 9/21', 'score': buy_sc_sq, 'tranches': 1, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"fresh 9>21 squeeze entry: closed green 1m bar pierced 9-ema (${e9_c1_sq:.2f}) +{closed_sep_sq:.2f}% above 21-ema (${e21_c1_sq:.2f}).", 'is_smart': true, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.02, 2), 'status': 'fresh 9>21 cross', 'color': '#0ecb81', 'action_main': 'buy', 'action_sub': '(fresh 9>21 cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': 'fresh 9>21 cross'}
+                return {'type': 'EMA Squeeze 9/21', 'score': buy_sc_sq, 'tranches': 1, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"FRESH 9>21 SQUEEZE ENTRY: Closed green 1m bar pierced 9-EMA (${e9_c1_sq:.2f}) +{closed_sep_sq:.2f}% above 21-EMA (${e21_c1_sq:.2f}).", 'is_smart': True, 'rec_buy': round(current_price * 0.995, 2), 'rec_sell': round(current_price * 1.02, 2), 'status': 'Fresh 9>21 Cross', 'color': '#0ecb81', 'action_main': 'BUY', 'action_sub': '(Fresh 9>21 Cross)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#0ecb81', 'health_text': 'Fresh 9>21 Cross'}
 
-            if closed_sep_sq >= min_sq_sep_pct and prev_sep_sq >= min_sq_sep_pct:
-                return {'type': 'ema squeeze 9/21', 'score': 45, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"trend in progress: 1m 9-ema (${live_e9_sq:.2f}) +{spread_pct_sq:.2f}% above 21-ema (${live_e21_sq:.2f}) — awaiting fresh cross reset.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'awaiting reset', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(awaiting reset)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'awaiting reset'}
+            if closed_sep_sq >= MIN_SQ_SEP_PCT and prev_sep_sq >= MIN_SQ_SEP_PCT:
+                return {'type': 'EMA Squeeze 9/21', 'score': 45, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"Trend In Progress: 1m 9-EMA (${live_e9_sq:.2f}) +{spread_pct_sq:.2f}% above 21-EMA (${live_e21_sq:.2f}) — awaiting fresh cross reset.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting Reset', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(Awaiting Reset)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Awaiting Reset'}
 
-            if 0.0 <= spread_pct_sq < min_sq_sep_pct or 0.0 <= closed_sep_sq < min_sq_sep_pct:
-                return {'type': 'ema squeeze 9/21', 'score': 50, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"ema kiss filter: 9-ema (${live_e9_sq:.2f}) near 21-ema (${live_e21_sq:.2f}) [{spread_pct_sq:+.2f}% < +0.08% min].", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'ema kiss filtered', 'color': '#ff9900', 'action_main': 'hold / wait', 'action_sub': '(kiss filtered)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'kiss filtered'}
+            if 0.0 <= spread_pct_sq < MIN_SQ_SEP_PCT or 0.0 <= closed_sep_sq < MIN_SQ_SEP_PCT:
+                return {'type': 'EMA Squeeze 9/21', 'score': 50, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"EMA Kiss Filter: 9-EMA (${live_e9_sq:.2f}) near 21-EMA (${live_e21_sq:.2f}) [{spread_pct_sq:+.2f}% < +0.08% min].", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'EMA Kiss Filtered', 'color': '#ff9900', 'action_main': 'HOLD / WAIT', 'action_sub': '(Kiss Filtered)', 'action_color': '#ff9900', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ff9900', 'health_text': 'Kiss Filtered'}
 
-            if spread_pct_sq >= min_sq_sep_pct:
-                return {'type': 'ema squeeze 9/21', 'score': 60, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"confirming 1m cross: live 9-ema (${live_e9_sq:.2f}) +{spread_pct_sq:.2f}% > 21-ema (${live_e21_sq:.2f}) — awaiting closed green 1m bar.", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'confirming cross', 'color': '#ffd400', 'action_main': 'hold / wait', 'action_sub': '(1m confirm)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'confirming cross'}
+            if spread_pct_sq >= MIN_SQ_SEP_PCT:
+                return {'type': 'EMA Squeeze 9/21', 'score': 60, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"Confirming 1m Cross: Live 9-EMA (${live_e9_sq:.2f}) +{spread_pct_sq:.2f}% > 21-EMA (${live_e21_sq:.2f}) — awaiting closed green 1m bar.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Confirming Cross', 'color': '#ffd400', 'action_main': 'HOLD / WAIT', 'action_sub': '(1m Confirm)', 'action_color': '#ffd400', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#ffd400', 'health_text': 'Confirming Cross'}
 
             wait_sc_sq = max(5, min(55, round(55 + spread_pct_sq * 40)))
-            return {'type': 'ema squeeze 9/21', 'score': wait_sc_sq, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"5m uptrend active: awaiting fresh 1m 9-ema (${live_e9_sq:.2f}) cross above 21-ema (${live_e21_sq:.2f}) [gap: {spread_pct_sq:+.2f}%].", 'is_smart': true, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'awaiting 9>21 cross', 'color': '#8a8a9e', 'action_main': 'hold / wait', 'action_sub': '(9<21 ema)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'scanning...'}
+            return {'type': 'EMA Squeeze 9/21', 'score': wait_sc_sq, 'tranches': 0, 'discount': f"{pct_chg_sq:.2f}%", 'reason': f"5m Uptrend Active: Awaiting fresh 1m 9-EMA (${live_e9_sq:.2f}) cross above 21-EMA (${live_e21_sq:.2f}) [Gap: {spread_pct_sq:+.2f}%].", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Awaiting 9>21 Cross', 'color': '#8a8a9e', 'action_main': 'HOLD / WAIT', 'action_sub': '(9<21 EMA)', 'action_color': '#8a8a9e', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#8a8a9e', 'health_text': 'Scanning...'}
 
         if 'ema cross' in prof:
             is_inverse_ec = ticker in ['SQQQ', '3SUS.L']
@@ -5560,7 +5560,7 @@ def get_data():
             if df_score is None or df_score.empty: df_score = df
             df_score.name = t
             score_px = last_p
-            if ('ema cross' in active_profile) or ('ema squeeze' in active_profile) or (now_lon.weekday() < 5 and now_uk.hour == 14 and 30 <= now_uk.minute < 50):
+            if ('ema cross' in active_profile) or ('ema squeeze' in active_profile) or (now_lon.weekday() < 5 and now_lon.hour == 14 and 30 <= now_lon.minute < 50):
                 df_1m_ui = fetch_yf_data(t, "1d", "1m")
                 if df_1m_ui is not None and not df_1m_ui.empty:
                     score_px = float(df_1m_ui['Close'].iloc[-1])
