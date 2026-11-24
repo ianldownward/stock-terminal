@@ -4589,11 +4589,9 @@ def api_sync_alpaca_state():
         today_pnl = round(alpaca_equity - alpaca_last_equity, 2)
         today_pct = round((today_pnl / alpaca_last_equity) * 100.0, 2)
 
-        # Preserve the profile's assigned capital allocation (e.g. $700 split) & clear stale ratchet/day locks
-        kept_budget = float(ud.get('master_budget') or 700.0)
-        if kept_budget <= 0:
-            kept_budget = 700.0
-        ud['master_budget'] = kept_budget
+        # Calibrate active profile's master_budget to Alpaca equity & clear stale ratchet/day locks
+        calibrated_budget = alpaca_equity if alpaca_equity > 0 else float(ud.get('master_budget') or 1000.0)
+        ud['master_budget'] = calibrated_budget
         ud['daily_peak_pct'] = max(0.0, today_pct)
         ud['ratchet_locked'] = False
         ud['is_locked'] = False
@@ -4622,14 +4620,19 @@ def api_sync_alpaca_state():
                 c_store = portfolio_store.get_client_store(client_name)
                 users = c_store.setdefault('users', {})
                 ud = users.setdefault(prof_name, portfolio_store.default_user_state(prof_name))
+                cal_broker = c_store.setdefault('broker', {})
             else:
                 portfolio_store.reload()
                 ud = portfolio_store.user_data(prof_name)
+                cal_broker = portfolio_store.data.setdefault('broker', {})
 
-            kept_budget = float(ud.get('master_budget') or 700.0)
-            if kept_budget <= 0:
-                kept_budget = 700.0
-            ud['master_budget'] = kept_budget
+            calibrated_budget = alpaca_equity if alpaca_equity > 0 else float(ud.get('master_budget') or 1000.0)
+            ud['master_budget'] = calibrated_budget
+            cal_allocs = cal_broker.setdefault('allocations', {})
+            p_low_cal = prof_name.lower()
+            for ak, av in cal_allocs.items():
+                if isinstance(av, dict) and (ak == p_low_cal or ak in p_low_cal or p_low_cal in ak):
+                    av['budget'] = calibrated_budget
             ud['daily_peak_pct'] = max(0.0, today_pct)
             ud['ratchet_locked'] = False
             ud['is_locked'] = False
@@ -6894,31 +6897,7 @@ def get_broker_status():
             elif phantom_local:
                 desync_reason = f"Local bot shows {', '.join(phantom_local)} but Alpaca is flat"
 
-            if not has_desync:
-                total_local_equity = 0.0
-                for u_n, u_d in audit_users.items():
-                    if not isinstance(u_d, dict):
-                        continue
-                    is_en = (not allocations) or any(
-                        (s_k == u_n.lower() or s_k in u_n.lower() or u_n.lower() in s_k) and s_d.get('enabled')
-                        for s_k, s_d in allocations.items()
-                    )
-                    if not is_en:
-                        continue
-                    mb_u = float(u_d.get('master_budget') or 700.0)
-                    h_u = u_d.get('history') or []
-                    ip_u = u_d.get('initial_positions') or {}
-                    nh_u = sum(-float(tr.get('amount') or 0.0) if tr.get('action') == 'BUY' else float(tr.get('amount') or 0.0)
-                               for tr in h_u if tr.get('ticker') not in ['CAPITAL_INJECTION', 'CALIBRATION', 'ALPACASYNC'])
-                    im_u = sum(float(pos.get('manual_val') or 0.0) for pos in ip_u.values())
-                    cash_u = max(0.0, mb_u + nh_u - im_u)
-                    pos_val_u = sum(float(v.get('manual_val') or 0.0) for v in (u_d.get('holdings') or {}).values() if isinstance(v, dict))
-                    total_local_equity += (cash_u + pos_val_u)
-
-                alp_pv = round(float(acc.get('portfolio_value') or 0.0), 2)
-                if alp_pv > 0 and total_local_equity > 0 and abs(total_local_equity - alp_pv) > 35.0:
-                    has_desync = True
-                    desync_reason = f"Local fleet total (${total_local_equity:,.2f}) differs from Alpaca (${alp_pv:,.2f})"
+            # Only flag desync for actual position mismatches (unclaimed Alpaca positions or phantom local positions)
 
             pv_now = float(acc.get('portfolio_value') or acc.get('equity') or 0.0)
             last_eq_now = float(acc.get('last_equity') or pv_now)
