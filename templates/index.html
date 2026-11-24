@@ -2129,6 +2129,28 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Strategy 8: EMA Squeeze 9/21 -->
+                    <div id="cardStratEmaSqueeze" onclick="selectWizardStrategy('EMA Squeeze 9/21')" style="background:#13161c; border:2px solid #262b36; border-radius:8px; padding:14px; cursor:pointer; display:flex; flex-direction:column; justify-content:space-between;">
+                        <div>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:15px; font-weight:800; color:#fff;" id="titleStratEmaSqueeze">EMA Squeeze 9/21</span>
+                                <input type="radio" name="wizardStratChoice" value="EMA Squeeze 9/21" style="accent-color:#ffd400; cursor:pointer;">
+                            </div>
+                            <div style="font-size:10px; font-weight:700; color:#0ecb81; margin-top:2px;">Orange-to-Purple Gap Squeeze Exit</div>
+                            
+                            <div style="font-size:11px; color:#e1e3e6; line-height:1.45; margin:10px 0; padding:8px 0; border-top:1px solid #1f2430; border-bottom:1px solid #1f2430;">
+                                Buys fresh 1m 9>21 crosses in a 5m uptrend and banks profit when the orange-to-purple gap squeezes smaller across 2 closed bars while price is above entry.
+                            </div>
+                            
+                            <div style="display:flex; flex-direction:column; gap:4px; font-size:10px; color:#8a8a9e;">
+                                <div>• Profit Factor: <b id="wiz-pf-EmaSqueeze" style="color:#0ecb81; font-size:12px;">--</b></div>
+                                <div>• Win Rate: <b id="wiz-wr-EmaSqueeze" style="color:#fff;">--</b></div>
+                                <div>• Daily Pace: <b id="wiz-dp-EmaSqueeze" style="color:#0ecb81;">--</b></div>
+                                <div>• Overnight Sweep: <b style="color:#ffd400;">100% Cash (Selectable)</b></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
@@ -3357,7 +3379,8 @@
             return p.includes('1m reversal') || p.includes('pulse 1m') || p.includes('micro-shelf') || p.includes('micro shelf') || p.includes('ema-9 snap') || p.includes('ema9 snap') || p.includes('ema 9 snap');
         }
         function isEmaCrossProfile(name) {
-            return String(name || '').toLowerCase().includes('ema cross');
+            let p = String(name || '').toLowerCase();
+            return p.includes('ema cross') || p.includes('ema squeeze');
         }
         function get1mVariant(name) {
             let p = String(name || '').toLowerCase();
@@ -3367,6 +3390,7 @@
         }
         function getStrategyStatsKey(name) {
             let p = String(name || '').toLowerCase();
+            if (p.includes('ema squeeze')) return 'EMA Squeeze 9/21';
             if (p.includes('ema cross')) return 'EMA Cross 9/21';
             if (p.includes('micro-shelf') || p.includes('micro shelf')) return 'Micro-Shelf 1M';
             if (p.includes('ema-9 snap') || p.includes('ema9 snap') || p.includes('ema 9 snap')) return 'EMA-9 Snap 1M';
@@ -3687,7 +3711,7 @@
                 if (wrEl && pfEl && rrEl) {
                     if (!window._reconStrategyStats) refreshReconStrategyStats();
                     let rStats = window._reconStrategyStats || {};
-                    let liveS = rStats['EMA Cross 9/21'];
+                    let liveS = rStats[getStrategyStatsKey(profName)];
                     wrEl.innerText = liveS ? liveS.win_rate : '--';
                     pfEl.innerText = liveS ? liveS.profit_factor : '--';
                     let curEq = activeLb.equity || budget;
@@ -3925,6 +3949,7 @@
             'Micro-Shelf 1M': 'Production Desk #5: 1-minute tight consolidation breakout scalper across TQQQ, SOXL & SQQQ. Enters on green breakout above a 4-bar <=0.35% box with Fast-Bail exit protection.',
             'EMA-9 Snap 1M': 'Production Desk #6: 1-minute trend pullback scalper across TQQQ, SOXL & SQQQ. Enters when a 9/21-EMA uptrend dips to the 9-EMA and snaps green back above the 9-EMA & dip high.',
             'EMA Cross 9/21': 'Production Desk #7: Trend-filtered 9/21-EMA crossover engine across TQQQ, SOXL & SQQQ. Enters on fresh closed-bar 1m 9>21 crosses aligned with the 5m 9/21 trend, with -0.45% hard stop & +0.45% BE lock.',
+            'EMA Squeeze 9/21': 'Production Desk #8: Orange-to-Purple EMA gap squeeze exit engine across TQQQ, SOXL & SQQQ. Enters on fresh 1m 9>21 crosses in a 5m uptrend and banks green exits when the 9/21 EMA margin squeezes down over 2 bars while above entry.',
             'Sovereign Core': 'Command Desk: Manual discretionary execution desk with full terminal controls and live order execution.'
         };
 
@@ -4944,8 +4969,8 @@
                         badge.innerText = `● Recon Account Offline (${data.account || 'ian_paper@gmail.com'})`;
                     }
                 }
-                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal', 'Micro-Shelf 1M', 'EMA-9 Snap 1M', 'EMA Cross 9/21'].forEach(strat => {
-                    let sId = strat === 'EMA Cross 9/21' ? 'EmaCross' : (strat === 'Pulse 1M Reversal' ? 'Pulse1M' : (strat === 'Micro-Shelf 1M' ? 'MicroShelf' : (strat === 'EMA-9 Snap 1M' ? 'Ema9Snap' : (strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0]))));
+                ['Vector Hybrid', 'Apex Precision', 'Velocity Pulse', 'Pulse 1M Reversal', 'Micro-Shelf 1M', 'EMA-9 Snap 1M', 'EMA Cross 9/21', 'EMA Squeeze 9/21'].forEach(strat => {
+                    let sId = strat === 'EMA Squeeze 9/21' ? 'EmaSqueeze' : (strat === 'EMA Cross 9/21' ? 'EmaCross' : (strat === 'Pulse 1M Reversal' ? 'Pulse1M' : (strat === 'Micro-Shelf 1M' ? 'MicroShelf' : (strat === 'EMA-9 Snap 1M' ? 'Ema9Snap' : (strat === 'Velocity Pulse' ? 'Pulse' : strat.split(' ')[0])))));
                     let wrEl = document.getElementById(`wiz-wr-${sId}`);
                     let pfEl = document.getElementById(`wiz-pf-${sId}`);
                     let dpEl = document.getElementById(`wiz-dp-${sId}`);
@@ -4973,10 +4998,10 @@
 
         function selectWizardStrategy(method) {
             selectedWizardMethod = method;
-            ['Vector', 'Apex', 'Pulse', 'Pulse1M', 'MicroShelf', 'Ema9Snap', 'EmaCross'].forEach(k => {
+            ['Vector', 'Apex', 'Pulse', 'Pulse1M', 'MicroShelf', 'Ema9Snap', 'EmaCross', 'EmaSqueeze'].forEach(k => {
                 let card = document.getElementById(`cardStrat${k}`);
                 let title = document.getElementById(`titleStrat${k}`);
-                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse') || (k === 'Pulse1M' && method === 'Pulse 1M Reversal') || (k === 'MicroShelf' && method === 'Micro-Shelf 1M') || (k === 'Ema9Snap' && method === 'EMA-9 Snap 1M') || (k === 'EmaCross' && method === 'EMA Cross 9/21');
+                let isMatch = (k === 'Vector' && method === 'Vector Hybrid') || (k === 'Apex' && method === 'Apex Precision') || (k === 'Pulse' && method === 'Velocity Pulse') || (k === 'Pulse1M' && method === 'Pulse 1M Reversal') || (k === 'MicroShelf' && method === 'Micro-Shelf 1M') || (k === 'Ema9Snap' && method === 'EMA-9 Snap 1M') || (k === 'EmaCross' && method === 'EMA Cross 9/21') || (k === 'EmaSqueeze' && method === 'EMA Squeeze 9/21');
                 if (card) card.style.borderColor = isMatch ? '#ffd400' : '#262b36';
                 if (title) title.style.color = isMatch ? '#ffd400' : '#ffffff';
             });
@@ -7491,6 +7516,7 @@
             'Micro-Shelf 1M': '1m Tight Box Breakout',
             'EMA-9 Snap 1M': '1m 9-EMA Pullback Snap',
             'EMA Cross 9/21': 'Live Orange/Purple 9/21 EMA Cross',
+            'EMA Squeeze 9/21': 'Orange/Purple EMA Gap Squeeze Exit',
             'Sovereign Core': 'Manual Execution'
         };
 
@@ -8376,6 +8402,13 @@
                             <div>
                                 <span style="font-weight:800; color:${guideState.strategy === 'EMA Cross 9/21' ? '#ffd400' : '#fff'};">EMA Cross 9/21</span>
                                 <div style="font-size:11px; color:#8a8a9e;">Buys the exact second Orange 9-EMA crosses above Purple 21-EMA and sells the second it crosses back below.</div>
+                            </div>
+                        </label>
+                        <label style="background:#0f1115; border:1px solid ${guideState.strategy === 'EMA Squeeze 9/21' ? '#ffd400' : '#262b36'}; border-radius:8px; padding:10px 12px; display:flex; align-items:center; gap:10px; cursor:pointer;" onchange="guideState.strategy='EMA Squeeze 9/21'; renderAssistStep();">
+                            <input type="radio" name="guideStrat" value="EMA Squeeze 9/21" ${guideState.strategy === 'EMA Squeeze 9/21' ? 'checked' : ''} style="accent-color:#ffd400;">
+                            <div>
+                                <span style="font-weight:800; color:${guideState.strategy === 'EMA Squeeze 9/21' ? '#ffd400' : '#fff'};">EMA Squeeze 9/21</span>
+                                <div style="font-size:11px; color:#8a8a9e;">Buys fresh 1m 9>21 crosses in a 5m uptrend and banks profit as the orange-to-purple gap squeezes smaller above entry.</div>
                             </div>
                         </label>
                     </div>
