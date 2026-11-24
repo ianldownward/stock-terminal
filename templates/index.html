@@ -3749,7 +3749,7 @@
                 `;
             } else {
 
-            let trailParam = (profName.includes('velocity') || profName.includes('pulse') || profName.includes('test s')) ? 0.65 : 0.75;
+            let trailParam = profName.includes('vector') ? 1.15 : (profName.includes('apex') ? 1.05 : 0.85);
 
             if (shOwned > 0 && curPrice > 0) {
                 let peakPrice = (holdsDict[heldTicker]?.high_water) || curPrice;
@@ -6262,7 +6262,7 @@
                                 healthMarker.style.left = `${Math.max(0, Math.min(100, p.metrics.health_pct || 0))}%`;
                             }
 
-                            let trailPct = (prof.includes('velocity') || prof.includes('pulse') || prof.includes('test s')) ? 0.65 : 0.75;
+                            let trailPct = prof.includes('vector') ? 1.15 : (prof.includes('apex') ? 1.05 : 0.85);
 
                             let peakPrice = (p.portfolio?.holdings?.[currentTicker]?.high_water) || curPrice;
                             let stopPrice = peakPrice * (1.0 - (trailPct / 100.0));
@@ -7960,7 +7960,7 @@
             let v15 = document.getElementById('dialCd15-val');
             if (d15 && v15) {
                 if (rem15 > 0) {
-                    let totalCd = (isP1MBg || isEcBg) ? 60 : (st.cd_15m_total || 900);
+                    let totalCd = st.cd_15m_total || ((isp1mbg || isecbg) ? 60 : 900);
                     let pct15 = Math.max(2, Math.min(100, (rem15 / totalCd) * 100));
                     d15.style.background = `conic-gradient(#ff9900 ${pct15}%, #262b36 0)`;
                     v15.innerText = formatCountdownMMSS(rem15);
