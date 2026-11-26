@@ -5899,7 +5899,7 @@
                 if (activeUser) url += `&user=${encodeURIComponent(activeUser)}`;
 
                 let ctrl = new AbortController();
-                let abortTimer = setTimeout(() => ctrl.abort(), 22000);
+                let abortTimer = setTimeout(() => ctrl.abort(), 45000);
                 let res;
                 try {
                     res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
@@ -6319,7 +6319,8 @@
                 window._fetchRetryCount = (window._fetchRetryCount || 0) + 1;
                 let titleEl = document.getElementById('activeTitle');
                 if (titleEl && (titleEl.innerText.startsWith('Loading Market Data') || titleEl.innerText.startsWith('Syncing Market Feed'))) {
-                    titleEl.innerText = `Syncing Market Feed (Retry ${window._fetchRetryCount}) [${e && e.message ? e.message : 'err'}]...`;
+                    let errReason = (e && e.name === 'AbortError') ? 'Request timed out (retrying)' : (e && e.message ? e.message : 'err');
+                    titleEl.innerText = `Syncing Market Feed (Retry ${window._fetchRetryCount}) [${errReason}]...`;
                 }
                 let retryDelay = window._fetchRetryCount <= 3 ? 2000 : 5000;
                 setTimeout(() => fetchData(true), retryDelay);
