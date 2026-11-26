@@ -115,7 +115,8 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                     now_lon_chk = pd.Timestamp.now(tz='Europe/London')
                     mins_lon_chk = now_lon_chk.hour * 60 + now_lon_chk.minute
                     is_us_live_chk = (now_lon_chk.weekday() < 5) and ((14 * 60 + 30) <= mins_lon_chk < (21 * 60))
-                    if is_us_live_chk and ((now - last_ts.timestamp()) > 240 or last_ts.timestamp() < LAST_GOOD_TICK.get(ticker, 0) - 300):
+                    is_same_day_bar = (last_ts.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_lon_chk.strftime('%Y-%m-%d'))
+                    if is_us_live_chk and is_same_day_bar and ((now - last_ts.timestamp()) > 240 or last_ts.timestamp() < LAST_GOOD_TICK.get(ticker, 0) - 300):
                         if cache_key in YF_CACHE:
                             c_time, c_df = YF_CACHE[cache_key]
                             if not c_df.empty and (now - c_time) < 120:
