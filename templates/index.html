@@ -5899,7 +5899,7 @@
                 if (activeUser) url += `&user=${encodeURIComponent(activeUser)}`;
 
                 let ctrl = new AbortController();
-                let abortTimer = setTimeout(() => ctrl.abort(), 22000);
+                let abortTimer = setTimeout(() => ctrl.abort(), 45000);
                 let res;
                 try {
                     res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
@@ -6312,14 +6312,37 @@
                 }
                 
                 renderChart();
-                if (typeof fetchReadinessScanner === 'function') fetchReadinessScanner();
+                if (typeof fetchReadinessScanner === 'function') {
+                    fetchReadinessScanner();
+                } else {
+                    let rUi = document.getElementById('readinessUI');
+                    let wlList = (globalPortfolioData && Array.isArray(globalPortfolioData.watchlist) && globalPortfolioData.watchlist.length > 0)
+                        ? globalPortfolioData.watchlist : ['TQQQ', 'SOXL', 'SQQQ'];
+                    if (rUi) {
+                        rUi.innerHTML = wlList.map(sym => {
+                            let isCur = (sym === currentTicker);
+                            let isH = Array.isArray(activeHolds) && activeHolds.includes(sym);
+                            let st = (p.wl_status && p.wl_status[sym]) || 'closed';
+                            let dotCol = st === 'up' ? '#0ecb81' : (st === 'down' ? '#ff5364' : '#8a8a9e');
+                            return `<div onclick="selectStock('${sym}')" style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-radius:6px; background:${isCur ? '#1e222d' : '#13161c'}; border:1px solid ${isCur ? '#ffd400' : '#262b36'}; cursor:pointer;">
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="width:7px; height:7px; border-radius:50%; background:${dotCol}; display:inline-block;"></span>
+                                    <span style="font-size:11px; font-weight:800; color:${isCur ? '#ffd400' : '#fff'};">${sym}</span>
+                                    ${isH ? '<span style="background:#ffd400; color:#000; padding:1px 4px; border-radius:3px; font-size:8.5px; font-weight:800;">HELD</span>' : ''}
+                                </div>
+                                <span style="font-size:10px; font-weight:700; color:#8a8a9e;">${isCur ? 'VIEWING' : 'SELECT'}</span>
+                            </div>`;
+                        }).join('');
+                    }
+                }
             } catch(e) { 
                 console.error("fetchData error:", e);
                 window._lastAutoSwitchedHoldKey = '';
                 window._fetchRetryCount = (window._fetchRetryCount || 0) + 1;
                 let titleEl = document.getElementById('activeTitle');
                 if (titleEl && (titleEl.innerText.startsWith('Loading Market Data') || titleEl.innerText.startsWith('Syncing Market Feed'))) {
-                    titleEl.innerText = `Syncing Market Feed (Retry ${window._fetchRetryCount}) [${e && e.message ? e.message : 'err'}]...`;
+                    let errReason = (e && e.name === 'AbortError') ? 'Request timed out (retrying)' : (e && e.message ? e.message : 'err');
+                    titleEl.innerText = `Syncing Market Feed (Retry ${window._fetchRetryCount}) [${errReason}]...`;
                 }
                 let retryDelay = window._fetchRetryCount <= 3 ? 2000 : 5000;
                 setTimeout(() => fetchData(true), retryDelay);

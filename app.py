@@ -89,6 +89,11 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                 df = yf.Ticker(ticker).history(period=period, interval=interval, timeout=5)
             except TypeError:
                 df = yf.Ticker(ticker).history(period=period, interval=interval)
+            if df.empty and period == "1d":
+                try:
+                    df = yf.Ticker(ticker).history(period="5d", interval=interval, timeout=5)
+                except TypeError:
+                    df = yf.Ticker(ticker).history(period="5d", interval=interval)
             if not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):
                     df.columns = df.columns.get_level_values(0)
@@ -5559,7 +5564,7 @@ def get_data():
                             portfolio_store.save_data(portfolio_store.data)
 
         if is_momentum:
-            df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else fetch_yf_data(t, "5d", "5m")
+            df_score = pnl_dfs_5m.get(t) if pnl_dfs_5m.get(t) is not None else df
             if df_score is None or df_score.empty: df_score = df
             df_score.name = t
             score_px = last_p
@@ -5650,7 +5655,7 @@ def get_data():
                     target = engine.nav_bases[t]
                     for d in data: mathLine.append({'time': d['time'], 'value': round(((target - d['close']) / target) * 100.0, 2)})
                 else:
-                    df_1y = fetch_yf_data(t, "1y", "1d")
+                    df_1y = df if req_i in ['1d', '5d', '1wk', '1mo', '3mo'] else pd.DataFrame()
                     if not df_1y.empty:
                         sma200 = df_1y['Close'].rolling(200, min_periods=1).mean()
                         sma_dict = {idx.strftime('%Y-%m-%d'): val for idx, val in sma200.items() if pd.notna(val)}
