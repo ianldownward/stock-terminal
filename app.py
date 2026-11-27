@@ -116,7 +116,8 @@ def fetch_yf_data(ticker, period="1y", interval="1d"):
                     mins_lon_chk = now_lon_chk.hour * 60 + now_lon_chk.minute
                     is_us_live_chk = (now_lon_chk.weekday() < 5) and ((14 * 60 + 30) <= mins_lon_chk < (21 * 60))
                     is_same_day_bar = (last_ts.tz_convert('Europe/London').strftime('%Y-%m-%d') == now_lon_chk.strftime('%Y-%m-%d'))
-                    if is_us_live_chk and is_same_day_bar and ((now - last_ts.timestamp()) > 240 or last_ts.timestamp() < LAST_GOOD_TICK.get(ticker, 0) - 300):
+                    is_early_close_day = (now_lon_chk.month == 11 and now_lon_chk.weekday() == 4 and 23 <= now_lon_chk.day <= 29 and mins_lon_chk >= 18 * 60)
+                    if is_us_live_chk and is_same_day_bar and not is_early_close_day and ((now - last_ts.timestamp()) > 240 or last_ts.timestamp() < LAST_GOOD_TICK.get(ticker, 0) - 300):
                         if cache_key in YF_CACHE:
                             c_time, c_df = YF_CACHE[cache_key]
                             if not c_df.empty and (now - c_time) < 120:
@@ -896,6 +897,11 @@ class PortfolioManager:
                 if shares <= 0: return None
                 
             if action == 'BUY':
+                today_lock_chk = pd.Timestamp.now(tz='Europe/London').strftime('%Y-%m-%d')
+                is_manual_sync = bool(metadata and metadata.get('source') == 'alpaca_sync')
+                if not is_manual_sync and (ud.get('manual_locked_day') == today_lock_chk or ud.get('ratchet_locked') or ud.get('is_locked')):
+                    print(f"[LOCK GUARD BLOCKED BUY] {username or self.active_username()} is locked for {today_lock_chk}.")
+                    return None
                 mb = float(ud.get('master_budget', 500.0))
                 hist = ud.get('history') or []
                 net_hist = sum(-tr.get('amount', 0) if tr.get('action') == 'BUY' else tr.get('amount', 0) for tr in hist)
@@ -1974,12 +1980,14 @@ class MarketScoringEngine:
                     sq_floor_px = avg_buy_price * (1.0 + (sq_floor_pct / 100.0))
                     if current_price <= sq_floor_px:
                         return {'type': 'EMA Squeeze Step Ratchet', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"STEP RATCHET FLOOR BANKED (+{sq_floor_pct:.2f}%). Peak was +{peak_pnl_sq:.2f}%.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': f"{sq_floor_pct:.1f}% Floor Banked", 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': f'(Bank +{sq_floor_pct:.1f}%)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"Banked (+{pnl_sq:.2f}%)"}
+                if peak_pnl_sq >= 0.45 and pnl_sq <= 0.15:
+                    return {'type': 'EMA Squeeze BE Lock', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"BREAKEVEN LOCK {pnl_sq_str}: Protected +0.15% floor after +{peak_pnl_sq:.2f}% peak.", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'BE Floor Lock', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(BE Lock)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 90, 'health_color': '#0ecb81', 'health_text': f"BE Lock {pnl_sq_str}"}
                 if live_e9_sq < live_e21_sq:
                     return {'type': 'EMA Squeeze 9/21', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"ORANGE BELOW PURPLE {pnl_sq_str}: 9-EMA (${live_e9_sq:.2f}) crossed below 21-EMA (${live_e21_sq:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': '9<21 Cross Exit', 'color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'action_main': 'SELL', 'action_sub': '(9<21 Cross)', 'action_color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 0, 'health_color': '#0ecb81' if pnl_sq > 0 else '#ff5364', 'health_text': f"9<21 Cross {pnl_sq_str}"}
 
-                min_squeeze_margin = max(0.03, current_price * 0.0007)
-                squeezed_2_bars = (peak_sp_sq >= min_squeeze_margin) and (c_sp_now < c_sp_prev) and (c_sp_prev < c_sp_prev2) and (c_sp_now <= peak_sp_sq * 0.65)
-                live_squeezing_out = squeezed_2_bars and (spread_diff_sq <= c_sp_now * 1.02) and (current_price > avg_buy_price * 1.0005)
+                min_squeeze_margin = max(0.02, current_price * 0.0005)
+                squeezed_bars = (peak_sp_sq >= min_squeeze_margin) and (c_sp_now < c_sp_prev) and (c_sp_now <= peak_sp_sq * 0.72)
+                live_squeezing_out = squeezed_bars and (spread_diff_sq <= c_sp_now * 1.02) and (current_price > avg_buy_price * 1.0008)
                 if live_squeezing_out:
                     shrink_pct = ((peak_sp_sq - max(0.0, spread_diff_sq)) / peak_sp_sq * 100.0) if peak_sp_sq > 0 else 0.0
                     return {'type': 'EMA Squeeze Exit', 'score': 0, 'tranches': 0, 'discount': f"{pnl_sq:.2f}%", 'reason': f"SQUEEZE HARVEST {pnl_sq_str}: Gap shrunk -{shrink_pct:.0f}% (${peak_sp_sq:.2f} -> ${max(0.0, spread_diff_sq):.2f}) above entry (${avg_buy_price:.2f}).", 'is_smart': True, 'rec_buy': current_price, 'rec_sell': current_price, 'status': 'Squeeze Banked', 'color': '#0ecb81', 'action_main': 'SELL', 'action_sub': '(Squeeze Bank)', 'action_color': '#0ecb81', 'regime': regime, 'trade_type': trade_type_sq, 'health_pct': 100, 'health_color': '#0ecb81', 'health_text': f"Squeeze Bank {pnl_sq_str}"}
@@ -2008,12 +2016,16 @@ class MarketScoringEngine:
             e21_c_sq = closed_sq['Close'].astype(float).ewm(span=21, adjust=False).mean()
             e9_c1_sq, e21_c1_sq = float(e9_c_sq.iloc[-1]), float(e21_c_sq.iloc[-1])
             e9_c2_sq, e21_c2_sq = float(e9_c_sq.iloc[-2]), float(e21_c_sq.iloc[-2])
+            e9_c4_sq, e21_c4_sq = float(e9_c_sq.iloc[-4]), float(e21_c_sq.iloc[-4])
             c1_open_sq = float(closed_sq['Open'].iloc[-1])
             c1_close_sq = float(closed_sq['Close'].iloc[-1])
 
-            MIN_SQ_SEP_PCT = 0.08
+            MIN_SQ_SEP_PCT = 0.04
             closed_sep_sq = ((e9_c1_sq - e21_c1_sq) / e21_c1_sq * 100.0) if e21_c1_sq > 0 else 0.0
-            prev_sep_sq = ((e9_c2_sq - e21_c2_sq) / e21_c2_sq * 100.0) if e21_c2_sq > 0 else 0.0
+            prev_sep_sq = min(
+                ((e9_c2_sq - e21_c2_sq) / e21_c2_sq * 100.0) if e21_c2_sq > 0 else 0.0,
+                ((e9_c4_sq - e21_c4_sq) / e21_c4_sq * 100.0) if e21_c4_sq > 0 else 0.0
+            )
 
             fresh_cross_sq = (
                 (closed_sep_sq >= MIN_SQ_SEP_PCT)
@@ -2108,12 +2120,16 @@ class MarketScoringEngine:
             e21_closed = closed_ec['Close'].astype(float).ewm(span=21, adjust=False).mean()
             e9_c1, e21_c1 = float(e9_closed.iloc[-1]), float(e21_closed.iloc[-1])
             e9_c2, e21_c2 = float(e9_closed.iloc[-2]), float(e21_closed.iloc[-2])
+            e9_c4, e21_c4 = float(e9_closed.iloc[-4]), float(e21_closed.iloc[-4])
             c1_open = float(closed_ec['Open'].iloc[-1])
             c1_close = float(closed_ec['Close'].iloc[-1])
 
-            MIN_CROSS_SEP_PCT = 0.08  # Requires >= +0.08% clean piercing separation above 21-EMA (blocks tangent kisses)
+            MIN_CROSS_SEP_PCT = 0.04  # Requires >= +0.04% clean piercing separation above 21-EMA (blocks tangent kisses)
             closed_sep_pct = ((e9_c1 - e21_c1) / e21_c1 * 100.0) if e21_c1 > 0 else 0.0
-            prev_sep_pct = ((e9_c2 - e21_c2) / e21_c2 * 100.0) if e21_c2 > 0 else 0.0
+            prev_sep_pct = min(
+                ((e9_c2 - e21_c2) / e21_c2 * 100.0) if e21_c2 > 0 else 0.0,
+                ((e9_c4 - e21_c4) / e21_c4 * 100.0) if e21_c4 > 0 else 0.0
+            )
 
             fresh_cross_1m = (
                 (closed_sep_pct >= MIN_CROSS_SEP_PCT)
@@ -3049,6 +3065,17 @@ def process_auto_profile(prof_name, client_email=None):
                 return True
             update_user_state_atomic(prof_name, client_email, _mut_ratchet_lock)
             is_curfew_active = True
+
+        if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
+            # Re-verify lock flags right before order sizing so mid-cycle manual locks are never bypassed
+            if is_client:
+                _chk_cs = portfolio_store.get_client_store(client_email) or {}
+                _chk_ud = (_chk_cs.get('users') or {}).get(prof_name) or {}
+            else:
+                portfolio_store.reload()
+                _chk_ud = portfolio_store.user_data(prof_name) or {}
+            if _chk_ud.get('manual_locked_day') == today_str or _chk_ud.get('ratchet_locked') or _chk_ud.get('is_locked'):
+                buys = []
 
         if buys and rem_cash >= MIN_BUY_VALUE and slots_available > 0:
             buys.sort(key=lambda x: x['s'], reverse=True)
